@@ -33,7 +33,6 @@ func AddRoutes(mux *http.ServeMux, svc terminalservice.Service, auth middleware.
 	mux.HandleFunc("GET /terminal/sessions", h.listSessions)
 	mux.HandleFunc("POST /terminal/sessions", h.createSession)
 	mux.HandleFunc("GET /terminal/sessions/{id}", h.getSession)
-	mux.HandleFunc("PATCH /terminal/sessions/{id}", h.patchSession)
 	mux.HandleFunc("DELETE /terminal/sessions/{id}", h.deleteSession)
 	mux.Handle("GET /terminal/sessions/{id}/ws", h.wsHandler())
 }
@@ -54,11 +53,6 @@ type createSessionRequest struct {
 type createSessionResponse struct {
 	ID     string `json:"id"`
 	WSPath string `json:"wsPath"`
-}
-
-type patchSessionRequest struct {
-	Cols int `json:"cols"`
-	Rows int `json:"rows"`
 }
 
 type wsErrorFrame struct {
@@ -229,38 +223,6 @@ func (h *handler) getSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = apiframework.Encode(w, r, http.StatusOK, sess) // @response terminalstore.Session
-}
-
-func (h *handler) patchSession(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	principal, err := h.principalFromRequest(r)
-	if err != nil {
-		writeAuthError(w, r, err)
-		return
-	}
-	id := strings.TrimSpace(apiframework.GetPathParam(r, "id", "The unique identifier of the terminal session."))
-	if id == "" {
-		_ = apiframework.Error(w, r, apiframework.BadRequest("id is required"), apiframework.UpdateOperation)
-		return
-	}
-	body, err := apiframework.Decode[patchSessionRequest](r) // @request terminalapi.patchSessionRequest
-	if err != nil {
-		_ = apiframework.Error(w, r, err, apiframework.UpdateOperation)
-		return
-	}
-	if body.Cols <= 0 || body.Rows <= 0 {
-		_ = apiframework.Error(w, r, apiframework.BadRequest("cols and rows must be positive"), apiframework.UpdateOperation)
-		return
-	}
-	if err := h.svc.UpdateGeometry(ctx, principal, id, body.Cols, body.Rows); err != nil {
-		if errors.Is(err, terminalservice.ErrSessionNotFound) {
-			_ = apiframework.Error(w, r, apiframework.NotFound("terminal session not found"), apiframework.UpdateOperation)
-			return
-		}
-		_ = apiframework.Error(w, r, err, apiframework.UpdateOperation)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *handler) deleteSession(w http.ResponseWriter, r *http.Request) {

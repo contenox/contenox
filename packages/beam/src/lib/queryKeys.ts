@@ -52,11 +52,6 @@ export const permissionKeys = {
   all: ['perms'] as const,
 };
 
-export const chatKeys = {
-  all: ['chats'] as const,
-  history: (chatId: string) => [...chatKeys.all, 'history', chatId] as const,
-};
-
 export const setupKeys = {
   all: ['setup'] as const,
   status: () => [...setupKeys.all, 'status'] as const,
@@ -96,20 +91,6 @@ export const hitlPolicyKeys = {
   all: ['hitl-policies'] as const,
   list: () => [...hitlPolicyKeys.all, 'list'] as const,
   byName: (name: string) => [...hitlPolicyKeys.all, 'name', name] as const,
-};
-
-export const activityKeys = {
-  all: ['activity'] as const,
-  logs: (limit?: number) => ['activity', 'logs', { limit }] as const,
-  requests: (limit?: number) => ['activity', 'requests', { limit }] as const,
-  requestById: (requestID: string) => ['activity', 'requests', 'detail', requestID] as const,
-  operations: () => ['activity', 'operations'] as const,
-  operationsByType: (operation: string, subject: string) =>
-    ['activity', 'operations', 'detail', operation, subject] as const,
-  state: (requestID: string) => ['activity', 'state', requestID] as const,
-  events: (requestID: string) => ['activity', 'events', requestID] as const,
-  statefulRequests: () => ['activity', 'statefulRequests'] as const,
-  alerts: (limit?: number) => ['activity', 'alerts', { limit }] as const,
 };
 
 export const telegramKeys = {
@@ -205,13 +186,6 @@ export const mcpServerKeys = {
 
 export const modelRegistryKeys = {
   all: ['model-registry'] as const,
-};
-
-export const terminalKeys = {
-  all: ['terminal'] as const,
-  probe: () => [...terminalKeys.all, 'probe'] as const,
-  sessions: () => [...terminalKeys.all, 'sessions'] as const,
-  session: (id: string) => [...terminalKeys.all, 'session', id] as const,
 };
 
 export const planKeys = {

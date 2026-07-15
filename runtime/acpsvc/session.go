@@ -16,9 +16,29 @@ import (
 	libacp "github.com/contenox/runtime/libacp"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/agentservice"
+	"github.com/contenox/runtime/runtime/chatservice"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/taskengine"
 )
+
+// sessionListTitleMaxLen bounds SessionInfo.Title derived from a session's
+// first user message, so a humane session picker never has to render a
+// multi-paragraph prompt as its label.
+const sessionListTitleMaxLen = 60
+
+// truncateSessionListTitle collapses whitespace and clips to
+// sessionListTitleMaxLen runes, appending an ellipsis when it clips.
+func truncateSessionListTitle(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	runes := []rune(s)
+	if len(runes) <= sessionListTitleMaxLen {
+		return s
+	}
+	if sessionListTitleMaxLen <= 3 {
+		return string(runes[:sessionListTitleMaxLen])
+	}
+	return string(runes[:sessionListTitleMaxLen-3]) + "..."
+}
 
 const mcpNamePrefix = runtimetypes.ACPMCPServerNamePrefix
 
@@ -738,6 +758,7 @@ func (t *Transport) ListSessions(ctx context.Context, req libacp.ListSessionsReq
 	defer rows.Close()
 
 	store := runtimetypes.New(exec)
+	chatMgr := chatservice.NewManager(t.workspaceID())
 	var sessions []libacp.SessionInfo
 	var lastScannedID string
 	scanned := 0
@@ -757,7 +778,7 @@ func (t *Transport) ListSessions(ctx context.Context, req libacp.ListSessionsReq
 
 		info := libacp.SessionInfo{
 			SessionID: libacp.SessionID(name),
-			Title:     name,
+			Title:     t.sessionListTitle(ctx, chatMgr, exec, internalID, name),
 			Cwd:       t.sessionCwd(ctx, store, libacp.SessionID(name)),
 		}
 		if ts, ok := parseDBTime(updatedAt); ok {
@@ -779,6 +800,26 @@ func (t *Transport) ListSessions(ctx context.Context, req libacp.ListSessionsReq
 		resp.NextCursor = lastScannedID
 	}
 	return resp, nil
+}
+
+// sessionListTitle derives a session/list Title from the session's first
+// user message — the same "subject" heuristic internalchatapi's chat listing
+// used before it was retired in favor of ACP: it describes what the chat is
+// about, unlike the last message which can be an assistant error or raw tool
+// JSON. Falls back to the session name (fallback) when there is no stored
+// user message yet, or on read failure — session/list must never error out
+// over a title.
+func (t *Transport) sessionListTitle(ctx context.Context, mgr *chatservice.Manager, exec libdb.Exec, internalSessionID, fallback string) string {
+	msgs, err := mgr.ListMessages(ctx, exec, internalSessionID)
+	if err != nil {
+		return fallback
+	}
+	for _, m := range msgs {
+		if m.Role == "user" && strings.TrimSpace(m.Content) != "" {
+			return truncateSessionListTitle(strings.TrimSpace(m.Content))
+		}
+	}
+	return fallback
 }
 
 const acpSessionCwdKVPrefix = "acp:session_cwd:"

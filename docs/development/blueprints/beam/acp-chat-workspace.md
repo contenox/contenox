@@ -112,9 +112,18 @@ A second, separate package: the transport-agnostic ACP **client** that turns a
 connection into the props `chat-kit` renders. This is the implementation of the
 long-dormant `BeamChatClient`-style seam.
 
-- Depends on the official ACP TypeScript SDK for wire types and framing — do not
-  hand-roll a third protocol implementation (the runtime already maintains
-  libacp and the vscode agent's bespoke RPC; a third would drift the same way).
+- Depends on the official ACP TypeScript SDK for wire **types only**, as a
+  compile-time (`import type`) dependency — not for framing or dispatch. The
+  SDK's own connection layer queues every write asynchronously (no
+  synchronous send) and validates built-in methods against a schema stricter
+  than libacp's actual traffic, so the message loop stays a thin, fully-owned
+  engine matching libacp's real contract; it moves onto the SDK's connection
+  only once the SDK exports a low-level connection, its validation tolerates
+  libacp's traffic, or the remote-transport RFD stabilizes and its WebSocket
+  transport graduates out of experimental. This is not license for a second
+  hand-rolled protocol implementation alongside it — the runtime already
+  maintains libacp, this client, and the vscode agent's bespoke RPC; a fourth
+  would drift the same way.
 - Exposes a small interface: `listSessions / newSession / loadSession /
   resumeSession / deleteSession / prompt(handlers) / cancel /
   setConfigOption / respondPermission`. `prompt` streams via handlers
@@ -199,42 +208,54 @@ elsewhere rather than into the workspace:
    character-by-character typing?** If no → it is editor work; attach an editor
    over ACP, do not rebuild one.
 
-### B.0.2 Reclaimed assets (built, currently unreachable)
+### B.0.2 Reclaimed and rebuildable assets
 
-A recent redesign stripped beam's navigation and orphaned substantial built work.
-The workspace does not start from zero — it *reclaims* these, which is also why
-the polished experience is achievable incrementally rather than as new build:
+Beam's navigation routes only to the setup wizard, the admin control plane,
+and the ACP chat workspace; several pieces of built work fell outside that
+routing and are not wired into any reachable page. The workspace does not
+start from zero for the pieces that survived — it *reclaims* those by
+re-pointing their data source to ACP; the pieces that were deleted alongside
+the surface that hosted them go back to being new build, scoped smaller by
+having a prior implementation to learn from:
 
 | Asset | Current state | Role in the workspace |
 | --- | --- | --- |
-| Monaco integration (`ChainJsonEditor`, `PolicyEditor`, `ExpandedMessageEditor`, `monacoAppTheme.ts`) | orphaned pages + trapped in legacy chat | Code/diff **viewer** in the review pane; chain/policy **editor** in the ownership surface; expanded composer |
-| Canvas/artifact system (`WorkspaceSplitPanel`, `CanvasPanel`, `useCanvas`, `lib/artifacts/canvas.ts`, `TimelinePanel`) | wired only into the dying legacy `ChatPage` | The review pane itself: click a turn/event → project to a canvas artifact. Re-point its data source from task-events to `session/update` |
-| Graph/workflow visualizer (`ChainVisualizer`, dagre) | orphaned with `ChainsPage` | Visualize the chain-as-contract in the ownership surface and as a run's shape |
-| `FileTree` file explorer (`@contenox/ui`) | built, **never imported** | Browse the session `cwd` / additional directories; anchor a file into a diff or the context artifact |
-| `Cmdbar` / `CommandPanel` command palette (`@contenox/ui`) | built, **never imported** | The keyboard spine (§B.5): sessions, slash commands, config options, "jump to" — one surface |
-| HITL policy editor (`PolicyEditor`) | orphaned `HitlPoliciesPage` | The "what rule caused this?" drill-down from an approval gate |
+| Monaco integration (`ChainJsonEditor`, `PolicyEditor`, `monacoAppTheme.ts`) | live but orphaned, inside unrouted admin pages (`ChainsPage`, `HitlPoliciesPage`); `ExpandedMessageEditor` was deleted with the legacy chat composer and would need to be rebuilt | Code/diff **viewer** in the review pane; chain/policy **editor** in the ownership surface; expanded composer |
+| Canvas/artifact system (`WorkspaceSplitPanel`, `CanvasPanel`, `useCanvas`, `TimelinePanel`) | deleted along with the legacy chat page they were wired into; `lib/artifacts/canvas.ts`'s artifact-shape types remain, unused | The review pane itself, rebuilt against `session/update`: click a turn/event → project to a canvas artifact |
+| Graph/workflow visualizer (`ChainVisualizer`, dagre) | live but orphaned, inside the unrouted `ChainsPage` | Visualize the chain-as-contract in the ownership surface and as a run's shape |
+| `FileTree` file explorer (`@contenox/ui`) | built, **never imported** anywhere | Browse the session `cwd` / additional directories; anchor a file into a diff or the context artifact |
+| `Cmdbar` / `CommandPanel` command palette (`@contenox/ui`) | built, **never imported** anywhere | The keyboard spine (§B.5): sessions, slash commands, config options, "jump to" — one surface |
+| HITL policy editor (`PolicyEditor`) | live but orphaned, inside the unrouted `HitlPoliciesPage` | The "what rule caused this?" drill-down from an approval gate |
 
 Rule: prefer reclaiming a built asset (re-pointing its data source to ACP) over
-rebuilding. The excise-from-library rule (§A.1) still applies to the *packaging*
-of the visualizer and Go-schema mirrors, but the *capability* is kept.
+rebuilding, wherever the asset still exists. The excise-from-library rule
+(§A.1) still applies to the *packaging* of the visualizer and Go-schema
+mirrors, but the *capability* is kept.
 
-### B.1 What to keep from each existing surface
+### B.1 What each prior chat surface contributed
 
-Beam has built the same chat three times; each contributed one good idea. The
-polished layout is the union, not any single one:
+Beam built the same chat three times before settling on the single ACP-native
+surface; each of the three contributed one idea the others lacked, and the
+workspace design is the union of those ideas, not any single surface:
 
-- **From the console** (`pages/admin/console/`): the **turn model** (user
-  command → work log → result), durable per-turn hydration, in-session run
-  retention/scrollback, unified diff and approval verdicts inline, keyboard-first
-  approvals, slash/bang commands. This is the best *rendering* prototype and the
-  closest to ACP's shape.
-- **From the legacy chat** (`pages/admin/chats/`): **live streamed tokens** with
-  caret and a thinking box, the **workspace right rail** (Timeline / Canvas /
-  Terminal), the blocking-setup guard, not-found/error states, and composer
-  amenities (expanded editor, attachment pills, per-message copy).
-- **From the dormant `ChatSurface`**: the **injected-client contract** and the
-  ACP-shaped permission model (option arrays with `kind`), which is the seam the
-  whole thing hangs on.
+- **The console** contributed the **turn model** (user command → work log →
+  result), durable per-turn hydration, in-session run retention/scrollback,
+  unified diff and approval verdicts inline, keyboard-first approvals, and
+  slash/bang commands — the rendering shape closest to ACP's own structure.
+- **The legacy chat page** contributed **live streamed tokens** with caret and
+  a thinking box, the **workspace right rail** (Timeline / Canvas / Terminal),
+  the blocking-setup guard, not-found/error states, and composer amenities
+  (expanded editor, attachment pills, per-message copy).
+- **`ChatSurface`'s injected-client contract** contributed the pattern this
+  whole workspace hangs on — a surface that receives a client interface,
+  never a transport — plus the ACP-shaped permission model (option arrays
+  with `kind`).
+
+The console and the legacy chat page are removed outright, superseded by the
+single ACP-native surface. `ChatSurface`'s injected-client contract lives on
+in the client core described below; its own view layer is not revived as
+part of this workspace (it remains live only as the VS Code webview's chat,
+a separate consumer with its own integration contract).
 
 ### B.2 The two-artifact model (load-bearing)
 
@@ -377,11 +398,11 @@ every capability by typing, an operator drives the whole workspace without the
 mouse. It is the one component whose absence most visibly separates "a chat page"
 from "a workspace."
 
-### B.6 Polish gaps to close (present in none of the three surfaces today)
+### B.6 Polish gaps to close (present in none of beam's three prior chat implementations)
 
-- **Syntax highlighting** in transcript code blocks and diffs — Monaco already
-  ships (reclaimed) and provides it for the review pane; the inline transcript
-  needs a lightweight highlighter.
+- **Syntax highlighting** in transcript code blocks and diffs — once the
+  review pane reclaims Monaco (§B.0.2) that renderer gets it for free; the
+  inline transcript still needs a lightweight highlighter of its own.
 - **Virtualization** of long transcripts / large tool outputs.
 - **Consistent i18n** — several keep-layer components still carry hardcoded
   English aria-labels and status strings; these become label props during
@@ -399,9 +420,11 @@ end-to-end check) and must not break plain chat, terminal, approvals, or the
 VS Code webview. Slices are ordered so the runtime surface is repaired *before*
 the UI is asked to consume it.
 
-### C.0 Prerequisite runtime repairs (downward, in `acpsvc`)
+### C.0 The protocol ceiling (downward, in `acpsvc`)
 
-The UI cannot render what the protocol does not emit. These land first, each
+The UI renders only what the protocol emits, and the workspace consumes only
+ACP — no chat capability may be built by reaching around this ceiling with a
+private endpoint. Three points define where the ceiling currently sits, each
 wire-verified against a conformant client:
 
 - **Live token streaming over ACP** — DEFERRED BY DESIGN, not a repair. Contenox
@@ -429,17 +452,21 @@ wire-verified against a conformant client:
   no downstream guardrail to feed — via a dedicated streaming answer task, while
   every intermediate (guardrail-feeding) step stays blocking. That avoids the
   high-blast-radius change to core `executeLLM` entirely. Decoupled from C.1–C.4:
-  the UI renders the final answer without it, exactly as the console does today.
-- **`/acp` transport on `contenox serve`.** A WebSocket endpoint that wraps the
-  connection as an `io.ReadWriteCloser` and hands it to
-  `libacp.NewAgentSideConnection(conn, acpsvc.New(deps))`. Serve already hosts a
-  WebSocket path (terminal sessions) and already has every dependency acpsvc
-  needs. Inherits serve's bearer-token auth; the token is mandatory off
-  loopback (already enforced). This is the ~50-line brick every consumer needs.
-- **Replay fidelity** where the console's journal hydration currently
-  out-delivers `session/load` — richer replay (step granularity, tool-call
-  detail) so the protocol matches what the side door provided, rather than the
-  UI keeping a private advantage.
+  the UI renders the final answer without it, the same way beam's prior
+  console-based surface did.
+- **`/acp` transport on `contenox serve` is the only chat path in or out of
+  `acpsvc`.** A WebSocket endpoint wraps the connection as an
+  `io.ReadWriteCloser` and hands it to
+  `libacp.NewAgentSideConnection(conn, acpsvc.New(deps))`, alongside serve's
+  other WebSocket path (terminal sessions), inheriting serve's bearer-token
+  auth (mandatory off loopback). Every consumer — this workspace, a future
+  standalone client, a demo — reaches `acpsvc` through this one endpoint;
+  there is no other route.
+- **Replay fidelity** remains a gap: `session/load` replays messages and tool
+  calls but not full execution-event fidelity (step granularity, retries,
+  timings), a level of detail beam's prior console-based surface had from its
+  own journal hydration. Richer replay benefits every client and closes that
+  gap without a private endpoint compensating for it.
 
 ### C.1 Extract the library
 
@@ -461,25 +488,32 @@ built on this is the acceptance case.
 Truth gate: a permission dialog traps focus, is keyboard-operable end to end,
 and restores focus on close; existing overlay consumers are visually unchanged.
 
-### C.3 Adapter: beam chat speaks ACP
+### C.3 The adapter: beam chat speaks only ACP
 
-Implement `acp-web-client` against the `/acp` WebSocket and wire the workspace
-layout's data layer to it — `session/update` handlers replace the task-event
-reducers, `session/request_permission` replaces heuristic approval inference,
-`configOptions` replace the hand-plumbed toolbar state. The console's turn/
-retention/hydration model ports *behind* the client interface.
+The workspace's data layer runs entirely against the `/acp` WebSocket:
+`session/update` handlers replace task-event reducers, `session/
+request_permission` replaces heuristic approval inference, `configOptions`
+replace hand-plumbed toolbar state. The turn/retention/hydration model that
+made beam's prior console-based surface usable ports *behind* the client
+interface — the rendering ideas survive extraction (§B.1); the private data
+path they used to run on does not. Once `acp-web-client` is extracted (C.1),
+this adapter is what it becomes; until then the same rule holds for the
+client code living directly in beam.
 
-Truth gate: beam chat, driven entirely over `/acp`, reaches parity with the
-current console on a real turn (≥3 distinct update kinds, live tokens, a tool
-card, a plan, a permission round-trip) — and the identical turn works from Zed
-and the headless CLI, proving no beam-only path remains.
+Truth gate: beam chat, driven entirely over `/acp`, reaches parity with beam's
+prior console-based surface on a real turn (≥3 distinct update kinds, live
+tokens, a tool card, a plan, a permission round-trip) — and the identical turn
+works from Zed and the headless CLI, proving no beam-only path remains.
 
-### C.4 Demote and delete the side doors
+### C.4 No side door outlives its last consumer
 
-Once C.3 holds, the legacy chat page and the private chat endpoints
-(`internalchatapi` chat path, the bespoke approval inference) have no consumer.
-Remove them. Beam shrinks to setup wizard + admin control plane + the ACP chat
-workspace.
+The legacy chat page and the private chat endpoints (the `internalchatapi`
+chat path, the bespoke approval inference) exist only as long as something
+still calls them. Once the adapter (C.3) covers a capability, the page or
+endpoint that used to provide it is removed in the same arc — not kept as a
+fallback, not left for a later cleanup pass. Beam's scope is the setup
+wizard, the admin control plane, and the ACP chat workspace; nothing else
+serves chat.
 
 Truth gate: no chat code path reaches the runtime except through `/acp`; a grep
 for the removed endpoints returns only history.
@@ -532,7 +566,10 @@ transcript and the gate are primary, the canvas is the review surface.
 - A hardcoded user-facing string without an overriding label prop.
 - The UI holding a capability no conformant ACP client can obtain. (The
   advantage has escaped the product.)
-- A third hand-rolled ACP protocol implementation. (Use the official SDK.)
+- A new hand-rolled ACP protocol implementation alongside the existing one.
+  (One dispatch engine; the official SDK is a compile-time type source until
+  it exports a low-level connection, tolerates libacp's real traffic, or its
+  WebSocket transport graduates out of experimental — see §A.3.)
 - Deriving core domain objects with `useMemo` in the page render tree instead of
   a pure reducer over `session/update`.
 - A big layout rewrite before the panels have content, or deleting the terminal /

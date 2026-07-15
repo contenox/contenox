@@ -144,4 +144,120 @@ into the client package; its view layer is not revived).
 User-message echo is client-owned: the client renders its own sent message
 immediately and reconciles against replay by `messageId`. No content-matching
 heuristics, no timestamp windows — those existed only because the old data
-layer ech
+layer reconstructed the transcript from task-event polling with no stable
+per-message id, so a locally-sent message had to be matched against its
+eventual server copy by comparing text and arrival time. ACP's `messageId`
+removes the need for guessing.
+
+## Part C — the migration doctrine
+
+The rewrite above is not a one-time event; it is how this surface is meant to
+keep changing. Three rules govern any future move of a capability across the
+client/runtime boundary:
+
+- **Protocol repairs land in `acpsvc` before the UI consumes them.** A
+  capability begins life as a change to the agent — a standard ACP method, or
+  a sanctioned extension (`_meta`, a namespaced method) where nothing
+  standard fits — and only then gets a client-side consumer. A UI change that
+  renders a capability the protocol does not yet emit is out of order; build
+  the runtime side first, same as the runtime prerequisites above were
+  repaired before Part B's data mapping was allowed to depend on them.
+- **A surface is replaced only when its replacement is demonstrably better
+  for that surface's consumer, and the losing surface is deleted in the same
+  arc — not kept behind a flag, not left as a fallback.** "Demonstrably
+  better" means parity plus improvement, checked against a real turn, not a
+  read of the diff. This is scoped per consumer: retiring Beam's own chat
+  page in favor of the ACP client does not obligate deleting a component that
+  a *different* consumer still legitimately uses through its own integration
+  contract — an injected-client view layer can go dormant for one consumer
+  while remaining live for another.
+- **A side-door endpoint is removed when its last consumer dies**, not before
+  and not long after. A route that only ever existed to serve one surface
+  becomes deletable the moment that surface stops calling it; a route with
+  the request pattern for a genuine public API keeps working until every
+  known caller has migrated. Any removal of a route that could plausibly have
+  external (non-Beam) consumers is owner-flagged before deletion, even if
+  the code shows no such caller today — silence in a grep is not proof of no
+  callers off the runtime's own request logs.
+
+## The wire layer
+
+The chat surface speaks ACP over a WebSocket to `/acp`, framed one JSON-RPC
+2.0 message per WebSocket TEXT frame — matching what the official ACP
+TypeScript SDK's own WebSocket transport does, and what `contenox serve`'s
+`/acp` handler expects on the wire.
+
+The official `@agentclientprotocol/sdk` is a pinned, exact-version
+devDependency used for its generated wire-shape **types only** — every import
+from it is `import type`. No SDK runtime code executes in the client: the
+package's runtime surface pulls its entire Zod-built validation schema into
+the bundle with no narrower subpath, and that validator is stricter than
+`acpsvc`'s real traffic (it marks fields libacp does not always send, e.g. a
+`tool_call` update's `title`, as required, and silently drops the
+notification instead of routing it when they're absent). The client's
+message loop — id correlation, per-prompt handler routing, `session/update`
+dispatch, JSON-RPC error construction — is therefore a small, fully-owned
+engine matching libacp's actual (narrower, more lenient) contract, not a
+wrapper around the SDK's connection object.
+
+This is a standing decision, not a permanent one. The engine moves onto the
+SDK's connection machinery when, and only when, evidence changes on at least
+one of three points: the SDK exports its low-level connection primitive
+(today only a validating high-level client wrapper and a deprecated
+connection class are exported); the SDK's built-in method validation becomes
+tolerant of libacp's real traffic instead of rejecting it; or the
+remote-transport RFD stabilizes and the SDK's WebSocket transport graduates
+out of its experimental entry point. Until one of those is true, a second
+hand-rolled ACP engine is not "hand-rolling a protocol" in the pejorative
+sense the invariants below reject — it is the only implementation that
+correctly speaks libacp's wire contract today.
+
+## The capability-provider seam
+
+An ACP agent can ask its client to execute a command or touch the
+filesystem (`terminal/*`, `fs/*`). The client answers those with
+`methodNotFound` unless something plugs in support. The capability-provider
+seam is that plug point: an embedder supplies an object that contributes
+capability flags (merged into what `initialize()` advertises) and answers
+the agent's `terminal/*`/`fs/*` requests; declining to implement a specific
+method still falls through to the same refusal the client would send with no
+provider at all.
+
+Today the chat surface supplies no provider — `acpsvc` executes commands and
+file IO on the server side against the terminal REST/WS substrate that was
+kept specifically to back this. The seam exists so that if browser- or
+client-local execution is ever wanted (a sandboxed local shell, a
+browser-side filesystem), it is added by implementing this interface, not by
+inventing a new endpoint or a second execution path server-side.
+
+## Session identity
+
+ACP-originated sessions and REST/CLI-originated sessions are partitioned by
+identity in the same session and message tables, not merged. Sessions
+created through this chat surface belong to one identity; sessions created
+through the CLI belong to another. The chat surface therefore starts with an
+empty session list on first use — this is intentional, not a bug — and
+older CLI-created history remains reachable through the CLI itself. No
+migration ever reparents one identity's sessions onto the other; doing so
+would silently move ownership of sessions a different tool created.
+
+## Invariants (anti-patterns to reject in review)
+
+- A chat feature that lands as a Beam-only endpoint instead of an `acpsvc`
+  capability. (Repair downward — see the rule that forces this, above.)
+- A client-side workaround that simulates token-level streaming (buffering,
+  fake-typing, or splitting an end-of-turn message into fabricated chunks).
+  The whole-message-at-end-of-turn path is the honest rendering of what the
+  protocol emits; faking granularity it doesn't have misleads the user about
+  what has actually completed.
+- A second hand-rolled ACP dispatch engine outside `lib/acp`. One engine
+  owns the wire; other consumers integrate through it or through their own
+  non-ACP bridge (e.g. a host/webview postMessage bridge), never by
+  re-implementing JSON-RPC framing against the transport directly.
+- Permission UX that binds keys or buttons to option *positions* (first
+  option, second option) instead of option *kinds*
+  (`allow_once`/`allow_always`/`reject_once`/`reject_always`). Kinds are
+  stable across agents and prompts; positions are not.
+- A permission gate that only renders usably at desktop width. The gate must
+  degrade to a phone-usable accept/deny surface, not disappear or become
+  unreadable, on narrow viewports.

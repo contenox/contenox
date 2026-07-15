@@ -5,10 +5,9 @@ import { createAcpWorkspaceController, type AcpWorkspaceController } from './acp
 import { acpWorkspaceReducer, initialAcpWorkspaceState, type AcpWorkspaceState } from './acpWorkspaceState';
 
 /**
- * `@testing-library/react` is not a dependency of `packages/beam` (see
- * useAcpSession.test.tsx's header comment) — this drives
- * `acpWorkspaceController` directly against a `Transport` double, the same
- * approach `acpSessionController`'s tests used for the single-session
+ * `@testing-library/react` is not a dependency of `packages/beam` — this
+ * drives `acpWorkspaceController` directly against a `Transport` double, the
+ * same approach `acpSessionController`'s tests used for the single-session
  * controller it replaces.
  */
 
@@ -216,6 +215,20 @@ describe('acpWorkspaceController: newSession() is lazy (D5)', () => {
     await flushMicrotasks();
     expect(h.sessStore.state.messages['m1']).toMatchObject({ text: 'hi' });
   });
+
+  it('applies configOptions carried inline on the session/new response (no separate notification arrives for a fresh session)', async () => {
+    const h = setup();
+    await connectReady(h);
+
+    const p = h.controller.newSession();
+    await flushMicrotasks();
+    const req = h.transports[0].lastSent();
+    const configOptions = [{ id: 'think', name: 'Think', type: 'boolean', currentValue: 'false', options: [] }];
+    h.transports[0].feed({ jsonrpc: '2.0', id: req.id, result: { sessionId: 'sess-a', configOptions } });
+    await p;
+
+    expect(h.sessStore.state.configOptions).toEqual(configOptions);
+  });
 });
 
 describe('acpWorkspaceController: openSession() switching', () => {
@@ -291,6 +304,94 @@ describe('acpWorkspaceController: openSession() switching', () => {
 
     await h.controller.openSession('sess-a');
     expect(h.transports[0].sentRaw.length).toBe(sentBefore);
+  });
+
+  it('applies configOptions carried inline on the session/load response', async () => {
+    const h = setup();
+    await connectReady(h);
+
+    const openPromise = h.controller.openSession('sess-b');
+    await flushMicrotasks();
+    const req = h.transports[0].lastSent();
+    const configOptions = [{ id: 'model', name: 'Model', type: 'string', currentValue: 'openvino/qwen2.5-coder-0.5b-ov', options: [] }];
+    h.transports[0].feed({ jsonrpc: '2.0', id: req.id, result: { configOptions } });
+    await openPromise;
+
+    expect(h.sessStore.state.configOptions).toEqual(configOptions);
+  });
+});
+
+describe('acpWorkspaceController: openSession() explicit outcome signal (replaces the deleted notFound heuristic)', () => {
+  it('sets sessionLoadState to not_found on an invalidParams failure (acpsvc/session.go maps unknown session to -32602)', async () => {
+    const h = setup();
+    await connectReady(h);
+
+    expect(h.wsStore.state.sessionLoadState).toBe('ready');
+    const openPromise = h.controller.openSession('missing');
+    await flushMicrotasks();
+    expect(h.wsStore.state.sessionLoadState).toBe('loading');
+
+    const req = h.transports[0].lastSent();
+    expect(req.method).toBe('session/load');
+    h.transports[0].feed({ jsonrpc: '2.0', id: req.id, error: { code: -32602, message: 'load session "missing": not found' } });
+    await openPromise;
+
+    expect(h.wsStore.state.sessionLoadState).toBe('not_found');
+    expect(h.wsStore.state.sessionLoadError).toBeNull();
+    // No session is left "open" pointing at an id that doesn't exist.
+    expect(h.wsStore.state.activeSessionId).toBeNull();
+    expect(h.sessStore.state.sessionId).toBeNull();
+    // The connection-level status is untouched — this is not a connection error.
+    expect(h.wsStore.state.status).toBe('ready');
+  });
+
+  it('sets sessionLoadState to error (with message) on a non-not-found failure', async () => {
+    const h = setup();
+    await connectReady(h);
+
+    const openPromise = h.controller.openSession('sess-x');
+    await flushMicrotasks();
+    const req = h.transports[0].lastSent();
+    h.transports[0].feed({ jsonrpc: '2.0', id: req.id, error: { code: -32603, message: 'internal boom' } });
+    await openPromise;
+
+    expect(h.wsStore.state.sessionLoadState).toBe('error');
+    expect(h.wsStore.state.sessionLoadError).toBe('internal boom');
+    expect(h.wsStore.state.status).toBe('ready');
+  });
+
+  it('a subsequent successful openSession() resets a stale not_found/error back to ready', async () => {
+    const h = setup();
+    await connectReady(h);
+
+    const failedOpen = h.controller.openSession('missing');
+    await flushMicrotasks();
+    h.transports[0].feed({ jsonrpc: '2.0', id: h.transports[0].lastSent().id, error: { code: -32602, message: 'nope' } });
+    await failedOpen;
+    expect(h.wsStore.state.sessionLoadState).toBe('not_found');
+
+    const openPromise = h.controller.openSession('sess-real');
+    await flushMicrotasks();
+    h.transports[0].feed({ jsonrpc: '2.0', id: h.transports[0].lastSent().id, result: {} });
+    await openPromise;
+
+    expect(h.wsStore.state.sessionLoadState).toBe('ready');
+    expect(h.wsStore.state.sessionLoadError).toBeNull();
+    expect(h.wsStore.state.activeSessionId).toBe('sess-real');
+  });
+
+  it('newSession() also resets a stale not_found/error back to ready', async () => {
+    const h = setup();
+    await connectReady(h);
+
+    const failedOpen = h.controller.openSession('missing');
+    await flushMicrotasks();
+    h.transports[0].feed({ jsonrpc: '2.0', id: h.transports[0].lastSent().id, error: { code: -32602, message: 'nope' } });
+    await failedOpen;
+    expect(h.wsStore.state.sessionLoadState).toBe('not_found');
+
+    await createSession(h, 'sess-fresh');
+    expect(h.wsStore.state.sessionLoadState).toBe('ready');
   });
 });
 
@@ -449,13 +550,18 @@ describe('acpWorkspaceController: reconnect supervisor (D2)', () => {
     const resumeReq = h.transports[1].lastSent();
     expect(resumeReq.method).toBe('session/resume');
     expect((resumeReq.params as Record<string, unknown>).sessionId).toBe('sess-a');
-    h.transports[1].feed({ jsonrpc: '2.0', id: resumeReq.id, result: {} });
+    const configOptions = [{ id: 'think', name: 'Think', type: 'boolean', currentValue: 'true', options: [] }];
+    h.transports[1].feed({ jsonrpc: '2.0', id: resumeReq.id, result: { configOptions } });
     await vi.advanceTimersByTimeAsync(0);
 
     // Resume keeps the client-side transcript — no session_reset happened.
     expect(h.sessStore.state.messages['a1']).toMatchObject({ text: 'before the drop' });
     expect(h.sessStore.state.connectionBanner).toBe('resumed');
     expect(h.wsStore.state.status).toBe('ready');
+    // session/resume's response carries configOptions inline too (same as
+    // session/new / session/load) — applied here rather than waiting on a
+    // session/update notification that may never come.
+    expect(h.sessStore.state.configOptions).toEqual(configOptions);
 
     const listReq = h.transports[1].lastSent();
     expect(listReq.method).toBe('session/list');
@@ -541,5 +647,101 @@ describe('acpWorkspaceController: reconnect supervisor (D2)', () => {
 
     expect(h.transports).toHaveLength(1);
     expect(h.wsStore.state.status).toBe('ready'); // untouched by the post-dispose close
+  });
+});
+
+describe('acpWorkspaceController: reconnect() (manual retry, D2 follow-up)', () => {
+  it('retries immediately (no backoff wait) from disconnected, and succeeds', async () => {
+    const h = setup();
+    await connectReady(h);
+    vi.useFakeTimers();
+
+    // Exhaust the automatic supervisor, mirroring the "gives up after 8
+    // attempts" test above.
+    h.transports[0].fireClose();
+    await vi.advanceTimersByTimeAsync(0);
+    const delays = [1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000];
+    for (let i = 0; i < delays.length; i++) {
+      await vi.advanceTimersByTimeAsync(delays[i]);
+      h.transports[i + 1].fireClose();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(h.wsStore.state.status).toBe('disconnected');
+    const transportCountBeforeManualRetry = h.transports.length;
+
+    const reconnectPromise = h.controller.reconnect();
+    await vi.advanceTimersByTimeAsync(0);
+    // A brand-new transport was opened immediately — no 1s+ wait required.
+    expect(h.transports).toHaveLength(transportCountBeforeManualRetry + 1);
+    expect(h.wsStore.state.status).toBe('reconnecting');
+
+    const latest = h.transports.at(-1)!;
+    const initReq = latest.lastSent();
+    expect(initReq.method).toBe('initialize');
+    latest.feed({ jsonrpc: '2.0', id: initReq.id, result: { protocolVersion: 1, agentInfo: { name: 'contenox' } } });
+    await vi.advanceTimersByTimeAsync(0);
+    const listReq = latest.lastSent();
+    expect(listReq.method).toBe('session/list');
+    latest.feed({ jsonrpc: '2.0', id: listReq.id, result: { sessions: [] } });
+    await reconnectPromise;
+
+    expect(h.wsStore.state.status).toBe('ready');
+  });
+
+  it('cancels a pending automatic backoff timer and retries right away', async () => {
+    const h = setup();
+    await connectReady(h);
+    vi.useFakeTimers();
+
+    h.transports[0].fireClose();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.wsStore.state.status).toBe('reconnecting');
+    // Still mid-backoff: the automatic attempt is not due for another ~1s.
+
+    const reconnectPromise = h.controller.reconnect();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.transports).toHaveLength(2); // fired immediately, not after the scheduled 1s
+
+    const latest = h.transports[1];
+    latest.feed({ jsonrpc: '2.0', id: latest.lastSent().id, result: { protocolVersion: 1 } });
+    await vi.advanceTimersByTimeAsync(0);
+    latest.feed({ jsonrpc: '2.0', id: latest.lastSent().id, result: { sessions: [] } });
+    await reconnectPromise;
+    expect(h.wsStore.state.status).toBe('ready');
+
+    // The original (now-superseded) backoff timer must not fire a second,
+    // redundant reconnect attempt later.
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(h.transports).toHaveLength(2);
+  });
+
+  it('re-enters the exponential backoff supervisor if the manual attempt itself fails', async () => {
+    const h = setup();
+    await connectReady(h);
+    vi.useFakeTimers();
+
+    h.transports[0].fireClose();
+    await vi.advanceTimersByTimeAsync(0);
+
+    void h.controller.reconnect();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.transports).toHaveLength(2);
+    h.transports[1].fireClose();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Failing right away schedules attempt index 1 next (2s), not 0 again —
+    // "resets the attempt counter" means the manual call itself is attempt 0,
+    // not that every subsequent automatic failure restarts from scratch.
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(h.transports).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(h.transports).toHaveLength(3);
+  });
+
+  it('rejects when called after dispose()', async () => {
+    const h = setup();
+    await connectReady(h);
+    h.controller.dispose();
+    await expect(h.controller.reconnect()).rejects.toThrow('disposed');
   });
 });

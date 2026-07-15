@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"io"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	libacp "github.com/contenox/runtime/libacp"
 	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/runtime/chatservice"
 	"github.com/contenox/runtime/runtime/enginesvc"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/taskengine"
@@ -195,6 +197,34 @@ func TestE2E_Wire_SessionNewListLoadRoundTrip(t *testing.T) {
 	assert.Equal(t, newResp.SessionID, listResp.Sessions[0].SessionID,
 		"list must return the loadable session id (mi.name), not the internal UUID")
 	assert.Equal(t, cwd, listResp.Sessions[0].Cwd, "list must report the session's cwd")
+	assert.Equal(t, string(newResp.SessionID), listResp.Sessions[0].Title,
+		"title falls back to the session name when there is no first user message yet")
+
+	// Stage 6.5: once the session has a first user message, session/list must
+	// title it with that message (truncated), not the session name — mirroring
+	// the "subject" internalchatapi's chat listing derived before it was
+	// retired in favor of ACP. Insert directly through chatservice against the
+	// session's internal id (mi.id), which is distinct from the ACP-level
+	// session id (mi.name) that session/new returned.
+	var internalSessionID string
+	require.NoError(t, db.WithoutTransaction().QueryRowContext(ctx,
+		`SELECT id FROM message_indices WHERE name = $1 AND workspace_id = $2 AND identity = 'acp-client'`,
+		string(newResp.SessionID), "wire-test-ws",
+	).Scan(&internalSessionID))
+	longFirstMessage := "   this   is the very first user message and it runs on for a good long while past sixty characters   "
+	require.NoError(t, chatservice.NewManager("wire-test-ws").PersistDiff(ctx, db.WithoutTransaction(), internalSessionID, []taskengine.Message{
+		{Role: "user", Content: longFirstMessage, Timestamp: time.Now()},
+		{Role: "assistant", Content: "an unrelated reply", Timestamp: time.Now().Add(time.Second)},
+	}))
+	resp, _ = client.call(libacp.MethodSessionList, libacp.ListSessionsRequest{})
+	require.Nil(t, resp.Error)
+	require.NoError(t, json.Unmarshal(resp.Result, &listResp))
+	require.Len(t, listResp.Sessions, 1)
+	wantTitle := strings.Join(strings.Fields(longFirstMessage), " ")
+	wantTitle = string([]rune(wantTitle)[:57]) + "..."
+	assert.Equal(t, wantTitle, listResp.Sessions[0].Title,
+		"title must be the first user message, whitespace-collapsed and truncated to 60 runes, not the last (assistant) message")
+	assert.LessOrEqual(t, len([]rune(listResp.Sessions[0].Title)), 60, "title must not exceed the 60-rune budget")
 
 	// cwd filter: a different cwd excludes the session, the matching one keeps it.
 	resp, _ = client.call(libacp.MethodSessionList, libacp.ListSessionsRequest{Cwd: "/somewhere/else"})

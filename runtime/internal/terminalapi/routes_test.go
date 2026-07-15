@@ -108,7 +108,12 @@ func TestAddRoutes_DisabledDoesNotRegister(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rr.Code)
 }
 
-func TestTerminalRoutes_CreateListGetPatchDelete(t *testing.T) {
+// TestTerminalRoutes_CreateListGetDelete pins the surviving substrate for the
+// future ACP terminal capability-provider seam: create/list/get/delete plus
+// the WS. PATCH /terminal/sessions/{id} was removed in Stage 6 of the beam
+// ACP unification (zero consumers; resize now rides the WS control frame —
+// see termConn.Read's "resize" message handling) and must 405, not succeed.
+func TestTerminalRoutes_CreateListGetDelete(t *testing.T) {
 	mux := http.NewServeMux()
 	svc := newFakeTerminalService()
 	AddRoutes(mux, svc, nil, true, "")
@@ -139,7 +144,7 @@ func TestTerminalRoutes_CreateListGetPatchDelete(t *testing.T) {
 
 	rr = httptest.NewRecorder()
 	mux.ServeHTTP(rr, jsonReq(http.MethodPatch, "/terminal/sessions/term-1", map[string]any{"cols": 100, "rows": 40}))
-	require.Equal(t, http.StatusNoContent, rr.Code)
+	require.Equal(t, http.StatusMethodNotAllowed, rr.Code, "PATCH is retired; the mux must not route it")
 
 	rr = httptest.NewRecorder()
 	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodDelete, "/terminal/sessions/term-1", nil))
@@ -157,10 +162,6 @@ func TestTerminalRoutes_InvalidInputs(t *testing.T) {
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/terminal/sessions?limit=0", nil))
 	require.Equal(t, http.StatusUnprocessableEntity, rr.Code)
-
-	rr = httptest.NewRecorder()
-	mux.ServeHTTP(rr, jsonReq(http.MethodPatch, "/terminal/sessions/missing", map[string]any{"cols": 0, "rows": 40}))
-	require.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
 type cappedTerminalService struct {

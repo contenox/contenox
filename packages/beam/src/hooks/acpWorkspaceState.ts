@@ -19,6 +19,16 @@ export type AcpWorkspaceStatus =
   | 'setup_required'
   | 'error';
 
+/**
+ * Outcome of the most recent explicit `openSession()` call (deep link / rail
+ * switch) — kept independent of `AcpWorkspaceStatus`, which is reserved for
+ * the connection lifecycle. Previously the page inferred "session not found"
+ * from a combination of `status === 'error'`, `activeSessionId`, and empty
+ * session state (see acpWorkspaceController.ts's pre-Stage-4 history); that
+ * heuristic is gone — this field is the one authoritative signal.
+ */
+export type AcpSessionLoadState = 'loading' | 'ready' | 'not_found' | 'error';
+
 export interface AcpWorkspaceState {
   status: AcpWorkspaceStatus;
   /** Set on `setup_required`/`error`; cleared on `connecting`/`ready`. */
@@ -27,6 +37,10 @@ export interface AcpWorkspaceState {
   /** The `session/list` roster, sorted freshest-first (see `compareByFreshness`). */
   sessions: SessionInfo[];
   activeSessionId: string | null;
+  /** Outcome of the in-flight/most-recent `openSession()` call — see `AcpSessionLoadState`. */
+  sessionLoadState: AcpSessionLoadState;
+  /** Set on `session_load_failed`; cleared on `session_load_start`/`session_load_succeeded`. */
+  sessionLoadError: string | null;
 }
 
 export const initialAcpWorkspaceState: AcpWorkspaceState = {
@@ -35,6 +49,8 @@ export const initialAcpWorkspaceState: AcpWorkspaceState = {
   agentName: null,
   sessions: [],
   activeSessionId: null,
+  sessionLoadState: 'ready',
+  sessionLoadError: null,
 };
 
 export type AcpWorkspaceAction =
@@ -50,7 +66,15 @@ export type AcpWorkspaceAction =
   /** Insert-or-merge one session (new session created/opened, or a live `session_info_update`) and re-sort by freshness. */
   | { type: 'session_upserted'; session: SessionInfo }
   | { type: 'session_removed'; sessionId: string }
-  | { type: 'active_session_changed'; sessionId: string | null };
+  | { type: 'active_session_changed'; sessionId: string | null }
+  /** An explicit `openSession()` call started — the page can show a loading affordance instead of stale content. */
+  | { type: 'session_load_start' }
+  /** The `openSession()` call resolved: whichever session was requested is now open. */
+  | { type: 'session_load_succeeded' }
+  /** `openSession()`'s `session/load` failed with an unknown-session error — see acpWorkspaceController.ts's `classifySessionOpenFailure`. */
+  | { type: 'session_load_not_found' }
+  /** `openSession()`'s `session/load` failed for a reason other than "unknown session". */
+  | { type: 'session_load_failed'; message: string };
 
 /**
  * Freshest-first: sessions with a parseable `updatedAt` sort by it
@@ -119,6 +143,18 @@ export function acpWorkspaceReducer(state: AcpWorkspaceState, action: AcpWorkspa
 
     case 'active_session_changed':
       return { ...state, activeSessionId: action.sessionId };
+
+    case 'session_load_start':
+      return { ...state, sessionLoadState: 'loading', sessionLoadError: null };
+
+    case 'session_load_succeeded':
+      return { ...state, sessionLoadState: 'ready', sessionLoadError: null };
+
+    case 'session_load_not_found':
+      return { ...state, sessionLoadState: 'not_found', sessionLoadError: null };
+
+    case 'session_load_failed':
+      return { ...state, sessionLoadState: 'error', sessionLoadError: action.message };
 
     default:
       return state;

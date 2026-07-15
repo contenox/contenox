@@ -43,8 +43,7 @@ export interface AcpWorkspaceControllerDeps {
    * Builds a fresh `Transport` for one connection attempt. Called anew for
    * the initial `connect()` AND for every reconnect attempt — this is what
    * lets a reconnect re-read a possibly-refreshed auth token (see
-   * `AcpWorkspaceProvider.tsx`, which closes over `getStoredApiToken()` the
-   * same way `useAcpSession.ts` does today).
+   * `AcpWorkspaceProvider.tsx`, which closes over `getStoredApiToken()`).
    */
   createTransport: () => Transport;
   /** Wraps a transport into a client. Defaults to `createAcpClient(transport)` with no capability provider. */
@@ -70,6 +69,15 @@ export interface AcpWorkspaceController {
   /** Fire-and-forget `session/cancel` for the open session. */
   cancel(): void;
   setConfigOption(configId: string, value: SessionConfigOptionValue): Promise<void>;
+  /**
+   * Manual reconnect: cancels any pending automatic backoff timer and
+   * immediately runs the same fresh-transport+initialize+resume path the
+   * supervisor uses (see `attemptReconnect`), restarting the attempt counter
+   * at 0. Intended for a "Retry connection" button shown once the automatic
+   * supervisor has given up (`disconnected`), but safe to call any time the
+   * connection isn't `ready` — e.g. to jump a pending backoff wait.
+   */
+  reconnect(): Promise<void>;
   /** Tears down: further async continuations become no-ops, the reconnect supervisor stops, any pending permission is rejected. */
   dispose(): void;
 }
@@ -91,6 +99,28 @@ function errMessage(err: unknown): string {
 
 function isAuthRequired(err: unknown): boolean {
   return err instanceof AcpError && err.code === JSON_RPC_ERROR_CODES.authRequired;
+}
+
+/**
+ * Classifies an `openSession()` failure as "no such session" vs. some other
+ * problem. `acpsvc/session.go`'s `LoadSession` wraps an unknown-session
+ * lookup as `ErrInvalidParams` (-32602), not the more specific
+ * `ErrResourceNotFound` (-32002) — but `session/load`'s only
+ * externally-supplied parameter on this call path is `id` (`cwd` is this
+ * controller's own constant, always a valid absolute path — see the `cwd`
+ * closure variable above), so ANY `invalidParams`/`resourceNotFound` failure
+ * reaching this specific call site can only mean "no such session". Anything
+ * else (internal error, a non-`AcpError` transport-level failure) is treated
+ * as a generic error instead.
+ */
+function classifySessionOpenFailure(err: unknown): 'not_found' | 'error' {
+  if (
+    err instanceof AcpError &&
+    (err.code === JSON_RPC_ERROR_CODES.resourceNotFound || err.code === JSON_RPC_ERROR_CODES.invalidParams)
+  ) {
+    return 'not_found';
+  }
+  return 'error';
 }
 
 export function createAcpWorkspaceController(
@@ -246,8 +276,11 @@ export function createAcpWorkspaceController(
     const sid = activeSessionId;
     if (!sid) return;
     try {
-      await c.resumeSession(sid, cwd);
+      const result = await c.resumeSession(sid, cwd);
       unsubscribeActive = c.subscribe(sid, buildSessionHandlers(sid));
+      // See the equivalent comment in newSession() — session/resume's
+      // response carries this session's config options inline too.
+      if (result.configOptions) sessionDispatch({ type: 'config_options', configOptions: result.configOptions });
       sessionDispatch({ type: 'connection_resumed' });
       return;
     } catch {
@@ -259,7 +292,8 @@ export function createAcpWorkspaceController(
     // acpsvc/session.go's replayMessages).
     unsubscribeActive = c.subscribe(sid, buildSessionHandlers(sid));
     try {
-      await c.loadSession(sid, cwd);
+      const result = await c.loadSession(sid, cwd);
+      if (result.configOptions) sessionDispatch({ type: 'config_options', configOptions: result.configOptions });
       sessionDispatch({ type: 'connection_resumed' });
     } catch (err) {
       sessionDispatch({ type: 'prompt_error', message: `failed to restore session after reconnect: ${errMessage(err)}` });
@@ -303,6 +337,16 @@ export function createAcpWorkspaceController(
     }
   }
 
+  function reconnect(): Promise<void> {
+    if (disposed) return Promise.reject(new Error('acp: workspace controller disposed'));
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    workspaceDispatch({ type: 'reconnecting' });
+    return attemptReconnect(0);
+  }
+
   function handleTransportClose(transport: Transport): void {
     if (disposed) return; // User-initiated (dispose()) — never reconnect.
     if (transport !== currentTransport) return; // Stale listener from a superseded transport.
@@ -337,9 +381,19 @@ export function createAcpWorkspaceController(
     activeSessionId = sid;
     currentTurnId = '';
     unsubscribeActive = c.subscribe(sid, buildSessionHandlers(sid));
+    // session/new's response carries the session's initial config options
+    // (model/think/token-limit/hitl-policy) inline — unlike everything else
+    // in buildSessionHandlers(), this never arrives as a session/update
+    // notification on a fresh session, so it has to be applied here rather
+    // than relying on onConfigOptions.
+    if (result.configOptions) sessionDispatch({ type: 'config_options', configOptions: result.configOptions });
 
     workspaceDispatch({ type: 'session_upserted', session: { sessionId: sid, cwd } });
     workspaceDispatch({ type: 'active_session_changed', sessionId: sid });
+    // A brand-new session is trivially "open" — clears any stale
+    // not_found/error left by a previous failed openSession() (e.g. the
+    // NotFoundState page's "start new session" action).
+    workspaceDispatch({ type: 'session_load_succeeded' });
 
     if (previousId && previousId !== sid) {
       previousUnsubscribe?.();
@@ -358,6 +412,7 @@ export function createAcpWorkspaceController(
     const c = client;
 
     rejectPendingPermission();
+    workspaceDispatch({ type: 'session_load_start' });
     const previousId = activeSessionId;
     const previousUnsubscribe = unsubscribeActive;
 
@@ -372,12 +427,36 @@ export function createAcpWorkspaceController(
     unsubscribeActive = c.subscribe(id, buildSessionHandlers(id));
 
     try {
-      await runGuarded(() => c.loadSession(id, cwd));
+      const result = await runGuarded(() => c.loadSession(id, cwd));
+      // See the equivalent comment in newSession() — session/load's response
+      // carries this session's config options inline, same as session/new's.
+      if (result.configOptions) sessionDispatch({ type: 'config_options', configOptions: result.configOptions });
     } catch (err) {
-      workspaceDispatch({ type: 'error', message: errMessage(err) });
+      // The optimistic switch above already tore down `previousId`'s
+      // subscription and reset the session reducer to represent `id` — there
+      // is no live state left to roll back to. Land in a well-defined "no
+      // session open" state instead of leaving activeSessionId pointed at a
+      // session that doesn't exist.
+      unsubscribeActive?.(); // the failed `id`'s subscription
+      previousUnsubscribe?.(); // `previousId`'s subscription, still live until now — see the mirrored cleanup on the success path below
+      unsubscribeActive = null;
+      activeSessionId = null;
+      currentTurnId = '';
+      sessionDispatch({ type: 'session_reset', sessionId: null });
+      workspaceDispatch({ type: 'active_session_changed', sessionId: null });
+      if (previousId) {
+        // Fire-and-forget — see the equivalent comment in newSession().
+        void c.closeSession(previousId).catch(() => {});
+      }
+      if (classifySessionOpenFailure(err) === 'not_found') {
+        workspaceDispatch({ type: 'session_load_not_found' });
+      } else {
+        workspaceDispatch({ type: 'session_load_failed', message: errMessage(err) });
+      }
       return;
     }
 
+    workspaceDispatch({ type: 'session_load_succeeded' });
     if (previousId && previousId !== id) {
       previousUnsubscribe?.();
       // Fire-and-forget — see the equivalent comment in newSession().
@@ -488,6 +567,7 @@ export function createAcpWorkspaceController(
     respondPermission,
     cancel,
     setConfigOption,
+    reconnect,
     dispose,
   };
 }

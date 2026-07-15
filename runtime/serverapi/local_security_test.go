@@ -1,5 +1,12 @@
 package serverapi
 
+// These tests exercise ProtectMutatingAPI(WithAllowedOrigins) directly against
+// a bare stub handler — the request never reaches the real mux — so the path
+// below is only a stand-in for "some mutating product route" and carries no
+// dependency on any specific handler being registered. It uses /api/backends
+// (a route that both accepts POST and survives; see backendapi) rather than
+// the retired /api/chats, which internalchatapi (deleted, Stage 6 of the beam
+// ACP unification) used to serve.
 import (
 	"net/http"
 	"net/http/httptest"
@@ -14,7 +21,7 @@ func TestProtectMutatingAPI_NoTokenRejectsCrossOriginBrowserMutation(t *testing.
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
-	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:32123/api/chats", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:32123/api/backends", strings.NewReader(`{}`))
 	req.Host = "127.0.0.1:32123"
 	req.Header.Set("Origin", "https://evil.com")
 	rr := httptest.NewRecorder()
@@ -35,7 +42,7 @@ func TestProtectMutatingAPI_NoTokenAllowsSameOriginBrowserMutation(t *testing.T)
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
-	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:32123/api/chats", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:32123/api/backends", strings.NewReader(`{}`))
 	req.Host = "127.0.0.1:32123"
 	req.Header.Set("Origin", "http://127.0.0.1:32123")
 	rr := httptest.NewRecorder()
@@ -56,7 +63,7 @@ func TestProtectMutatingAPI_NoTokenAllowsNonBrowserMutation(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
-	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:32123/api/chats", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:32123/api/backends", strings.NewReader(`{}`))
 	req.Host = "127.0.0.1:32123"
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
@@ -76,7 +83,7 @@ func TestProtectMutatingAPI_NoTokenRejectsSecFetchCrossSiteMutation(t *testing.T
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
-	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:32123/api/chats", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:32123/api/backends", strings.NewReader(`{}`))
 	req.Host = "127.0.0.1:32123"
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	rr := httptest.NewRecorder()
@@ -97,7 +104,7 @@ func TestProtectMutatingAPIWithAllowedOrigins_NoTokenAllowsExplicitOrigin(t *tes
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
-	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:32123/api/chats", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:32123/api/backends", strings.NewReader(`{}`))
 	req.Host = "127.0.0.1:32123"
 	req.Header.Set("Origin", "http://127.0.0.1:5173")
 	rr := httptest.NewRecorder()
@@ -118,7 +125,7 @@ func TestProtectMutatingAPIWithAllowedOrigins_NoTokenWildcardDoesNotBypassMutati
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
-	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:32123/api/chats", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:32123/api/backends", strings.NewReader(`{}`))
 	req.Host = "127.0.0.1:32123"
 	req.Header.Set("Origin", "https://evil.com")
 	rr := httptest.NewRecorder()
@@ -139,7 +146,7 @@ func TestProtectMutatingAPI_TokenStillRequiredWhenConfigured(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
-	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:32123/api/chats", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:32123/api/backends", strings.NewReader(`{}`))
 	req.Host = "127.0.0.1:32123"
 	req.Header.Set("Origin", "http://127.0.0.1:32123")
 	rr := httptest.NewRecorder()
@@ -152,7 +159,7 @@ func TestProtectMutatingAPI_TokenStillRequiredWhenConfigured(t *testing.T) {
 		t.Fatalf("status = %d, want 401: %s", rr.Code, rr.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "http://127.0.0.1:32123/api/chats", strings.NewReader(`{}`))
+	req = httptest.NewRequest(http.MethodPost, "http://127.0.0.1:32123/api/backends", strings.NewReader(`{}`))
 	req.Host = "127.0.0.1:32123"
 	req.Header.Set("Origin", "https://evil.com")
 	req.Header.Set("Authorization", "Bearer secret")
@@ -174,7 +181,7 @@ func TestProtectMutatingAPI_TokenRejectsAllowedCrossOriginBrowserReadWithoutToke
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:32123/api/chats", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:32123/api/backends", nil)
 	req.Host = "127.0.0.1:32123"
 	req.Header.Set("Origin", "https://evil.com")
 	rr := httptest.NewRecorder()
@@ -195,7 +202,7 @@ func TestProtectMutatingAPI_TokenRejectsSecFetchCrossSiteReadWithoutToken(t *tes
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:32123/api/chats", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:32123/api/backends", nil)
 	req.Host = "127.0.0.1:32123"
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	rr := httptest.NewRecorder()
@@ -216,7 +223,7 @@ func TestProtectMutatingAPI_TokenAllowsSameOriginBrowserReadWithoutToken(t *test
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:32123/api/chats", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:32123/api/backends", nil)
 	req.Host = "127.0.0.1:32123"
 	req.Header.Set("Origin", "http://127.0.0.1:32123")
 	rr := httptest.NewRecorder()
@@ -237,7 +244,7 @@ func TestProtectMutatingAPI_TokenAllowsNonBrowserReadWithoutToken(t *testing.T) 
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:32123/api/chats", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:32123/api/backends", nil)
 	req.Host = "127.0.0.1:32123"
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
@@ -257,7 +264,7 @@ func TestProtectMutatingAPI_TokenAllowsCrossOriginBrowserReadWithToken(t *testin
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:32123/api/chats", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:32123/api/backends", nil)
 	req.Host = "127.0.0.1:32123"
 	req.Header.Set("Origin", "https://evil.com")
 	req.Header.Set("Authorization", "Bearer secret")

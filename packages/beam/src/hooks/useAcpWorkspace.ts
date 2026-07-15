@@ -20,6 +20,8 @@ export interface UseAcpWorkspaceResult {
   respondPermission: (optionId: string) => void;
   cancel: () => void;
   setConfigOption: (configId: string, value: string | boolean) => void;
+  /** Manual reconnect — cancels any pending automatic backoff and retries immediately. See `acpWorkspaceController.ts`'s `reconnect()` doc comment. */
+  reconnect: () => void;
 }
 
 /**
@@ -31,9 +33,9 @@ export interface UseAcpWorkspaceResult {
  * hook simultaneously still share one connection.
  *
  * Must be rendered under `<AcpWorkspaceProvider>` — which in practice means
- * under an authenticated route (mirrors how `useAcpSession.ts` today only
- * ever runs once `ProtectedRoute` has confirmed a session/token exists; see
- * `components/ProtectedRoute.tsx`).
+ * under an authenticated route, since the provider is only mounted once
+ * `ProtectedRoute` has confirmed a session/token exists; see
+ * `components/ProtectedRoute.tsx`.
  */
 export function useAcpWorkspace(): UseAcpWorkspaceResult {
   const { workspace, session, controller } = useAcpWorkspaceContext();
@@ -87,6 +89,10 @@ export function useAcpWorkspace(): UseAcpWorkspaceResult {
     [controller],
   );
 
+  const reconnect = useCallback(() => {
+    void controller.reconnect();
+  }, [controller]);
+
   return {
     workspace,
     session,
@@ -98,5 +104,6 @@ export function useAcpWorkspace(): UseAcpWorkspaceResult {
     respondPermission,
     cancel,
     setConfigOption,
+    reconnect,
   };
 }

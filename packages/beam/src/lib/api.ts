@@ -1,13 +1,9 @@
-import { apiFetch, ApiError } from './fetch';
+import { apiFetch } from './fetch';
 import {
   AuthenticatedUser,
   Backend,
   BackendRuntimeState,
-  CapturedStateUnit,
   ChainDefinition,
-  ChatContextPayload,
-  ChatMessage,
-  ChatSession,
   CLIConfigUpdateRequest,
   CLIConfigUpdateResponse,
   CloudProviderType,
@@ -25,14 +21,10 @@ import {
   PushModelResult,
   RemoteHook,
   SetupStatus,
-  StateResponse,
   StatusResponse,
   SupportedProvider,
-  TaskEvent,
   TaskExecutionRequest,
   TaskExecutionResponse,
-  TerminalSession,
-  TerminalSessionCreate,
 } from './types';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -176,51 +168,6 @@ export const api = {
   deletePolicy: (name: string) =>
     apiFetch<string>(`/api/hitl-policies?name=${encodeURIComponent(name)}`, options('DELETE')),
 
-  // Chats
-  createChat: ({ model }: Partial<ChatSession>) =>
-    apiFetch<Partial<ChatSession>>('/api/chats', options('POST', { model })),
-
-  sendMessage: (
-    id: string,
-    message: string,
-    chainId: string,
-    opts?: {
-      model?: string;
-      provider?: string;
-      signal?: AbortSignal;
-      requestId?: string;
-      context?: ChatContextPayload;
-    },
-  ) => {
-    const params = new URLSearchParams();
-    if (chainId) params.append('chainId', chainId);
-    if (opts?.model) params.append('model', opts.model);
-    if (opts?.provider) params.append('provider', opts.provider);
-
-    const body: Record<string, unknown> = { message };
-    if (opts?.context && Object.keys(opts.context).length > 0) body.context = opts.context;
-
-    const requestOptions = options('POST', body);
-    if (opts?.requestId) {
-      requestOptions.headers = {
-        ...requestOptions.headers,
-        'X-Request-ID': opts.requestId,
-      };
-    }
-
-    return apiFetch<StateResponse>(`/api/chats/${id}/chat?${params.toString()}`, {
-      ...requestOptions,
-      signal: opts?.signal,
-      // No client-side timer: agentic runs can take arbitrarily long.
-      // The user's Stop button (signal) and closing the tab are the only
-      // cancellation paths — both propagate through the Go request context.
-      timeoutMs: null,
-    });
-  },
-
-  getChatHistory: (id: string) => apiFetch<ChatMessage[]>(`/api/chats/${id}`),
-  getChats: () => apiFetch<ChatSession[]>('/api/chats'),
-
   /** Runtime sync snapshot per backend (OSS backend refresh loop; not a managed download queue). */
   getRuntimeBackendState: () => apiFetch<BackendRuntimeState[]>('/api/state'),
 
@@ -245,18 +192,6 @@ export const api = {
     // /chat/api/... and hits the SPA shell instead of the API mux.
     return new EventSource(`/api/task-events?requestId=${encodeURIComponent(requestId)}`);
   },
-
-  /** Durable per-run execution evidence (empty state = never captured or evicted). */
-  getExecutionState: (requestId: string) =>
-    apiFetch<{ requestId: string; state: CapturedStateUnit[] }>(
-      `/api/execution-state?requestId=${encodeURIComponent(requestId)}`,
-    ),
-
-  /** Durable per-run event journal: the full work log (tool calls, diffs, approvals). */
-  getExecutionEvents: (requestId: string) =>
-    apiFetch<{ requestId: string; events: TaskEvent[] }>(
-      `/api/execution-events?requestId=${encodeURIComponent(requestId)}`,
-    ),
 
   configureProvider: (provider: CloudProviderType, data: ConfigureProviderInput) =>
     apiFetch<StatusResponse>(`/api/providers/${provider}/configure`, options('POST', data)),
@@ -315,29 +250,6 @@ export const api = {
     ),
   deleteChain: (path: string) =>
     apiFetch<void>(`/api/taskchains?path=${encodeURIComponent(path)}`, options('DELETE')),
-
-  // ── Terminal ──────────────────────────────────────────────────────
-  listTerminalSessions: () => apiFetch<TerminalSession[]>('/api/terminal/sessions'),
-  getTerminalSession: (id: string) =>
-    apiFetch<TerminalSession>(`/api/terminal/sessions/${encodeURIComponent(id)}`),
-  createTerminalSession: (body: { cwd: string; cols?: number; rows?: number }) =>
-    apiFetch<TerminalSessionCreate>('/api/terminal/sessions', options('POST', body)),
-  deleteTerminalSession: async (id: string) => {
-    try {
-      await apiFetch<void>(`/api/terminal/sessions/${encodeURIComponent(id)}`, options('DELETE'));
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 404) return;
-      throw e;
-    }
-  },
-
-  // ── HITL approvals ───────────────────────────────────────────────
-  /** Approve or deny a pending HITL tool call. Returns 204 on success, 404 if already resolved. */
-  respondToApproval: (approvalId: string, approved: boolean) =>
-    apiFetch<void>(
-      `/api/approvals/${encodeURIComponent(approvalId)}`,
-      options('POST', { approved }),
-    ),
 
   // ── Model Registry ───────────────────────────────────────────────
   listModelRegistry: () => apiFetch<ModelDescriptor[]>('/api/model-registry'),

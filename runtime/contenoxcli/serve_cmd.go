@@ -22,7 +22,6 @@ import (
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/acpsvc"
 	"github.com/contenox/runtime/runtime/agentservice"
-	"github.com/contenox/runtime/runtime/chatservice"
 	"github.com/contenox/runtime/runtime/enginesvc"
 	"github.com/contenox/runtime/runtime/hitlservice"
 	internaltools "github.com/contenox/runtime/runtime/internal/tools"
@@ -57,8 +56,10 @@ Foundation routes:
   GET /version
 
 The product API is served under /api (state, models, model-registry, backends,
-setup-status, providers, tools, mcp-servers, task-chains, hitl-policies, chat,
-task execution, approvals, task events, terminal sessions). The Beam web UI is served at /.
+setup-status, providers, tools, mcp-servers, task-chains, hitl-policies, task
+execution, task events, terminal sessions). Chat, its HITL approvals, and
+execution-state/event replay run over the /acp WebSocket instead (see
+'contenox acp'). The Beam web UI is served at /.
 
 Terminal routes are enabled by default on local serve under /api/terminal/sessions.
 Set TERMINAL_ENABLED=false to disable them. TERMINAL_ALLOWED_ROOT defaults to the
@@ -208,8 +209,6 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		DB:          db,
 		WorkspaceID: workspaceID,
 	})
-	chatMgr := chatservice.NewManager(workspaceID)
-
 	terminalCfg, err := resolveTerminalConfig(config, workspaceRoot)
 	if err != nil {
 		return err
@@ -262,9 +261,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		State:                engine.State,
 		ToolsProviderService: toolsProviderSvc,
 		Agent:                agent,
-		ChatManager:          chatMgr,
 		Chains:               chains,
-		HITLService:          hitlSvc,
 		TerminalService:      terminalSvc,
 		TerminalEnabled:      terminalCfg.Enabled,
 		WorkspaceID:          workspaceID,

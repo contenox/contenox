@@ -28,14 +28,6 @@
         },
         "type": "object"
       },
-      "approvalapi_respondBody": {
-        "properties": {
-          "approved": {
-            "type": "boolean"
-          }
-        },
-        "type": "object"
-      },
       "backendapi_ObservedModel": {
         "properties": {
           "canChat": {
@@ -181,28 +173,6 @@
         },
         "type": "object"
       },
-      "execstateapi_executionEventsResponse": {
-        "properties": {
-          "events": {
-            "$ref": "#/components/schemas/taskengine_TaskEvent"
-          },
-          "requestId": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "execstateapi_executionStateResponse": {
-        "properties": {
-          "requestId": {
-            "type": "string"
-          },
-          "state": {
-            "$ref": "#/components/schemas/taskengine_CapturedStateUnit"
-          }
-        },
-        "type": "object"
-      },
       "hitlservice_Condition": {
         "properties": {
           "key": {
@@ -253,124 +223,6 @@
               "$ref": "#/components/schemas/hitlservice_Condition"
             },
             "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "internalchatapi_chatMessage": {
-        "properties": {
-          "callTools": {
-            "$ref": "#/components/schemas/taskengine_ToolCall"
-          },
-          "chainRef": {
-            "type": "string"
-          },
-          "content": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "isLatest": {
-            "type": "boolean"
-          },
-          "isUser": {
-            "type": "boolean"
-          },
-          "requestId": {
-            "type": "string"
-          },
-          "role": {
-            "type": "string"
-          },
-          "sentAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "thinking": {
-            "type": "string"
-          },
-          "toolCallId": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "internalchatapi_chatRequest": {
-        "properties": {
-          "context": {
-            "additionalProperties": {},
-            "type": "object"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "internalchatapi_chatResponse": {
-        "properties": {
-          "error": {
-            "type": "string"
-          },
-          "inputTokenCount": {
-            "type": "integer"
-          },
-          "outputTokenCount": {
-            "type": "integer"
-          },
-          "requestId": {
-            "type": "string"
-          },
-          "response": {
-            "type": "string"
-          },
-          "state": {
-            "$ref": "#/components/schemas/taskengine_CapturedStateUnit"
-          },
-          "stopReason": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "internalchatapi_chatSession": {
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "isActive": {
-            "type": "boolean"
-          },
-          "lastMessage": {
-            "$ref": "#/components/schemas/internalchatapi_chatMessage"
-          },
-          "messageCount": {
-            "type": "integer"
-          },
-          "model": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "startedAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "subject": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "internalchatapi_newChatInstanceRequest": {
-        "properties": {
-          "model": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
           }
         },
         "type": "object"
@@ -1501,17 +1353,6 @@
         },
         "type": "object"
       },
-      "taskengine_FunctionCall": {
-        "properties": {
-          "arguments": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
       "taskengine_LLMExecutionConfig": {
         "properties": {
           "hide_tools": {
@@ -1641,112 +1482,6 @@
         },
         "type": "object"
       },
-      "taskengine_TaskEvent": {
-        "properties": {
-          "approval_args": {
-            "additionalProperties": {},
-            "type": "object"
-          },
-          "approval_diff": {
-            "type": "string"
-          },
-          "approval_id": {
-            "type": "string"
-          },
-          "backend_id": {
-            "type": "string"
-          },
-          "chain_id": {
-            "type": "string"
-          },
-          "content": {
-            "type": "string"
-          },
-          "error": {
-            "type": "string"
-          },
-          "hitl_action": {
-            "type": "string"
-          },
-          "hitl_approval_requested": {
-            "type": "boolean"
-          },
-          "hitl_args_summary": {
-            "type": "string"
-          },
-          "hitl_matched_rule": {
-            "type": "integer"
-          },
-          "hitl_policy_name": {
-            "type": "string"
-          },
-          "hitl_policy_path": {
-            "type": "string"
-          },
-          "hitl_reason": {
-            "type": "string"
-          },
-          "hitl_timeout_s": {
-            "type": "integer"
-          },
-          "hook_name": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "model_name": {
-            "type": "string"
-          },
-          "output_type": {
-            "type": "string"
-          },
-          "provider_type": {
-            "type": "string"
-          },
-          "request_id": {
-            "type": "string"
-          },
-          "retry": {
-            "type": "integer"
-          },
-          "task_handler": {
-            "type": "string"
-          },
-          "task_id": {
-            "type": "string"
-          },
-          "thinking": {
-            "type": "string"
-          },
-          "timestamp": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "token_size": {
-            "type": "integer"
-          },
-          "token_used": {
-            "type": "integer"
-          },
-          "tool_diff_new_text": {
-            "type": "string"
-          },
-          "tool_diff_old_text": {
-            "type": "string"
-          },
-          "tool_diff_path": {
-            "type": "string"
-          },
-          "tool_name": {
-            "type": "string"
-          },
-          "transition": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
       "taskengine_TaskTransition": {
         "properties": {
           "branches": {
@@ -1768,26 +1503,6 @@
           },
           "total": {
             "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "taskengine_ToolCall": {
-        "properties": {
-          "function": {
-            "$ref": "#/components/schemas/taskengine_FunctionCall"
-          },
-          "id": {
-            "type": "string"
-          },
-          "provider_meta": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "type": "object"
-          },
-          "type": {
-            "type": "string"
           }
         },
         "type": "object"
@@ -1886,17 +1601,6 @@
           },
           "wsPath": {
             "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "terminalapi_patchSessionRequest": {
-        "properties": {
-          "cols": {
-            "type": "integer"
-          },
-          "rows": {
-            "type": "integer"
           }
         },
         "type": "object"
@@ -2121,54 +1825,6 @@
         "summary": "GET /api/tags",
         "tags": [
           "compat"
-        ]
-      }
-    },
-    "/approvals/{approvalId}": {
-      "post": {
-        "operationId": "approval_respond",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "approvalId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/approvalapi_respondBody"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIError"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "POST /approvals/{approvalId}",
-        "tags": [
-          "approval"
         ]
       }
     },
@@ -2413,204 +2069,6 @@
         ]
       }
     },
-    "/chats": {
-      "get": {
-        "operationId": "internalchat_listChats",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/internalchatapi_chatSession"
-                  },
-                  "type": "array"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIError"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "GET /chats",
-        "tags": [
-          "internalchat"
-        ]
-      },
-      "post": {
-        "operationId": "internalchat_createChat",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/internalchatapi_newChatInstanceRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/internalchatapi_chatSession"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIError"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "POST /chats",
-        "tags": [
-          "internalchat"
-        ]
-      }
-    },
-    "/chats/{id}": {
-      "get": {
-        "operationId": "internalchat_history",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/internalchatapi_chatMessage"
-                  },
-                  "type": "array"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIError"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "GET /chats/{id}",
-        "tags": [
-          "internalchat"
-        ]
-      }
-    },
-    "/chats/{id}/chat": {
-      "post": {
-        "operationId": "internalchat_chat",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "chainId",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "model",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "provider",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "think",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/internalchatapi_chatRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/internalchatapi_chatResponse"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIError"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "POST /chats/{id}/chat",
-        "tags": [
-          "internalchat"
-        ]
-      }
-    },
     "/cli-config": {
       "put": {
         "operationId": "setup_putCLIConfig",
@@ -2648,88 +2106,6 @@
         "summary": "PUT /cli-config",
         "tags": [
           "setup"
-        ]
-      }
-    },
-    "/execution-events": {
-      "get": {
-        "operationId": "execstate_getEvents",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "requestId",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/execstateapi_executionEventsResponse"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIError"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "GET /execution-events",
-        "tags": [
-          "execstate"
-        ]
-      }
-    },
-    "/execution-state": {
-      "get": {
-        "operationId": "execstate_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "requestId",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/execstateapi_executionStateResponse"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIError"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "GET /execution-state",
-        "tags": [
-          "execstate"
         ]
       }
     },
@@ -4979,52 +4355,6 @@
           }
         },
         "summary": "GET /terminal/sessions/{id}",
-        "tags": [
-          "terminal"
-        ]
-      },
-      "patch": {
-        "operationId": "terminal_patchSession",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/terminalapi_patchSessionRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIError"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "PATCH /terminal/sessions/{id}",
         "tags": [
           "terminal"
         ]

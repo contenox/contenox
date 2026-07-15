@@ -14,13 +14,8 @@ import (
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/agentservice"
 	"github.com/contenox/runtime/runtime/backendservice"
-	"github.com/contenox/runtime/runtime/chatservice"
-	"github.com/contenox/runtime/runtime/hitlservice"
-	"github.com/contenox/runtime/runtime/internal/approvalapi"
 	"github.com/contenox/runtime/runtime/internal/backendapi"
-	"github.com/contenox/runtime/runtime/internal/execstateapi"
 	"github.com/contenox/runtime/runtime/internal/hitlpolicyapi"
-	"github.com/contenox/runtime/runtime/internal/internalchatapi"
 	"github.com/contenox/runtime/runtime/internal/localfileapi"
 	"github.com/contenox/runtime/runtime/internal/mcpserverapi"
 	"github.com/contenox/runtime/runtime/internal/modeldapi"
@@ -73,9 +68,7 @@ type Dependencies struct {
 	ToolsProviderService toolsproviderservice.Service
 	Auth                 middleware.AuthZReader
 	Agent                agentservice.Agent
-	ChatManager          *chatservice.Manager
 	Chains               taskchainservice.Service
-	HITLService          hitlservice.Service
 	WorkspaceID          string
 	ProjectRoot          string
 	ContenoxDir          string
@@ -152,24 +145,8 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 		hitlpolicyapi.AddRoutes(mux, chainFiles)
 	}
 
-	if deps.Agent != nil && deps.ChatManager != nil && chains != nil {
-		internalchatapi.AddChatRoutes(mux, internalchatapi.ChatDeps{
-			Agent:        deps.Agent,
-			ChatMgr:      deps.ChatManager,
-			Chains:       chains,
-			DB:           deps.DB,
-			StateService: stateSvc,
-			Defaults:     deps.Defaults,
-		}, deps.Auth)
-	}
 	if deps.Agent != nil {
 		taskexecapi.AddRoutes(mux, deps.Agent, deps.Auth, stateSvc, deps.Defaults)
-	}
-	if deps.DB != nil {
-		execstateapi.AddRoutes(mux, deps.DB, nil, deps.Auth)
-	}
-	if deps.HITLService != nil {
-		approvalapi.AddRoutes(mux, deps.HITLService, deps.Auth)
 	}
 
 	if deps.TerminalService != nil {

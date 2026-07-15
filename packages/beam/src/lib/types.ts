@@ -1,4 +1,4 @@
-import type { CapturedStateUnit, InlineAttachment, TaskEvent } from '@contenox/ui';
+import type { CapturedStateUnit, InlineAttachment } from '@contenox/ui';
 export type { InlineAttachment };
 
 export type ModelDescriptor = {
@@ -211,10 +211,6 @@ export type ChatContextArtifact = {
   payload?: unknown;
 };
 
-export type ChatContextPayload = {
-  artifacts?: ChatContextArtifact[];
-};
-
 // TaskEvent mirrors taskengine.TaskEvent on the Go side. The canonical client
 // type lives in @contenox/ui (shared with ExecutionTimeline and TaskEventFeed);
 // beam re-exports it so there is a single definition.
@@ -357,17 +353,6 @@ export type Job = {
   createdAt: Date;
 };
 
-export type ChatSession = {
-  id: string;
-  /** User-assigned session name (e.g. set at creation) — the most intentional title. */
-  name?: string;
-  startedAt: string;
-  model: string;
-  /** First user message in the session — the human-readable title. */
-  subject?: string;
-  lastMessage?: ChatMessage;
-};
-
 // CapturedStateUnit mirrors taskengine.CapturedStateUnit on the Go side.
 // The canonical client type lives in @contenox/ui (shared with
 // ExecutionTimeline and StateVisualizer); beam re-exports it.
@@ -375,42 +360,6 @@ export type { CapturedStateUnit } from '@contenox/ui';
 
 export type ErrorState = {
   error: string | null;
-};
-
-export type ToolCallFunction = {
-  name: string;
-  arguments: string;
-};
-
-export type ToolCallEntry = {
-  id: string;
-  type?: string;
-  function: ToolCallFunction;
-};
-
-export type ChatMessage = {
-  id?: string;
-  role: 'user' | 'assistant' | 'system' | 'tool';
-  content: string;
-  sentAt: string;
-  isUser: boolean;
-  isLatest: boolean;
-  state?: CapturedStateUnit[];
-  error?: string;
-  /** Assistant message still receiving task-event stream (Beam live row). */
-  streaming?: boolean;
-  /** Inline attachments rendered alongside this message in the chat thread. */
-  attachments?: InlineAttachment[];
-  /** Tool calls requested by this assistant message; used to label tool-result messages. */
-  callTools?: ToolCallEntry[];
-  /** For role=tool messages: links this result back to the assistant's callTools entry. */
-  toolCallId?: string;
-  /** Task events streamed during the generation of this message. */
-  events?: TaskEvent[];
-  /** Turn provenance: the run that produced this message (joins to GET /api/execution-state). */
-  requestId?: string;
-  /** Turn provenance: the chain path that ran this turn. */
-  chainRef?: string;
 };
 
 export type QueueItem = {
@@ -881,24 +830,6 @@ export type ExecutionHistory = {
   duration: number;
   error?: string;
 }[];
-
-export type TerminalSessionCreate = {
-  id: string;
-  wsPath: string;
-};
-
-export type TerminalSession = {
-  id: string;
-  principal: string;
-  cwd: string;
-  shell: string;
-  cols: number;
-  rows: number;
-  status: string;
-  nodeInstanceId: string;
-  createdAt: string;
-  updatedAt: string;
-};
 
 // Pagination Types
 export type PaginationParams = {
