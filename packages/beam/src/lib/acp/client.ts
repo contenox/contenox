@@ -98,7 +98,6 @@ import {
   type SessionUpdate,
   type SetSessionConfigOptionResponse,
   type StopReason,
-  type TokenUsage,
   type ToolCallContent,
   type ToolCallLocation,
   type ToolCallStatus,
@@ -571,10 +570,10 @@ export class AcpClient {
     sessionId: SessionId,
     blocks: ContentBlock[],
     handlers: SessionEventHandlers = {},
-  ): Promise<{ stopReason: StopReason; usage?: TokenUsage }> {
+  ): Promise<{ stopReason: StopReason }> {
     this.activePrompts.set(sessionId, handlers);
     try {
-      return await this.call<{ stopReason: StopReason; usage?: TokenUsage }>('session/prompt', {
+      return await this.call<{ stopReason: StopReason }>('session/prompt', {
         sessionId,
         prompt: blocks,
       });

@@ -428,6 +428,15 @@ func (t *Transport) ResumeSession(ctx context.Context, req libacp.ResumeSessionR
 	return libacp.ResumeSessionResponse{ConfigOptions: t.sessionConfigOptions(ctx, entry)}, nil
 }
 
+// SetSessionMode is not supported: contenox does not model a Zed-style
+// Ask/Code session mode toggle as a first-class session/set_mode capability —
+// the equivalent controls (model, HITL policy, think level) are exposed as
+// session config options instead. Initialize never returns a Modes state in
+// session/new or session/load, so a conformant client will never call this.
+func (t *Transport) SetSessionMode(_ context.Context, _ libacp.SetSessionModeRequest) (libacp.SetSessionModeResponse, error) {
+	return libacp.SetSessionModeResponse{}, libacp.MethodNotFound(libacp.MethodSessionSetMode)
+}
+
 // CloseSession releases the connection-local resources of a session without
 // touching its stored history. Closing an unknown session succeeds: the
 // desired state (not open here) already holds.

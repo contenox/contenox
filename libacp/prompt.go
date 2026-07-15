@@ -18,16 +18,21 @@ type PromptRequest struct {
 	Meta      json.RawMessage `json:"_meta,omitempty"`
 }
 
+// PromptResponse is the result of a "session/prompt" request. Per the ACP v1
+// schema it carries only stopReason and _meta — a prior revision added a
+// non-spec "usage" field (per-turn token counts) directly at the type's
+// root, which extensibility.mdx forbids: "Implementations MUST NOT add any
+// custom fields at the root of a type that's part of the specification."
+// It was removed rather than migrated into _meta because nothing in this
+// repo produced or consumed it: acpsvc never populated it, and the beam
+// client only ever destructured stopReason from the call result. Session
+// context/cost reporting already has a sanctioned, fully wired channel — the
+// "usage_update" SessionUpdate (see SessionUpdateUsageUpdate) — which is
+// where that data belongs and is already emitted (see acpsvc's
+// sendInitialUsageUpdate and its translateEvents usage_update path).
 type PromptResponse struct {
 	StopReason StopReason      `json:"stopReason"`
-	Usage      *TokenUsage     `json:"usage,omitempty"`
 	Meta       json.RawMessage `json:"_meta,omitempty"`
-}
-
-type TokenUsage struct {
-	InputTokens  int `json:"inputTokens,omitempty"`
-	OutputTokens int `json:"outputTokens,omitempty"`
-	TotalTokens  int `json:"totalTokens,omitempty"`
 }
 
 type SessionUpdateKind string
@@ -99,11 +104,17 @@ type sessionUpdateWire struct {
 
 	Entries []PlanEntry `json:"entries,omitempty"`
 
-	AvailableCommands []AvailableCommand `json:"availableCommands,omitempty"`
+	// AvailableCommands is a pointer: the spec REQUIRES it on
+	// available_commands_update (an empty list must still reach the wire as
+	// `[]`, not be omitted — omitempty on a plain slice can't tell "empty" from
+	// "absent"), while every other update kind must omit it entirely.
+	AvailableCommands *[]AvailableCommand `json:"availableCommands,omitempty"`
 
 	CurrentModeID string `json:"currentModeId,omitempty"`
 
-	ConfigOptions []SessionConfigOption `json:"configOptions,omitempty"`
+	// ConfigOptions is a pointer for the same reason as AvailableCommands
+	// above, required on config_option_update.
+	ConfigOptions *[]SessionConfigOption `json:"configOptions,omitempty"`
 
 	// Pointers: the spec REQUIRES used and size on usage_update (zero values
 	// must reach the wire there), while every other update kind must omit them.
@@ -124,26 +135,38 @@ type UsageCost struct {
 
 func (u SessionUpdate) MarshalJSON() ([]byte, error) {
 	w := sessionUpdateWire{
-		SessionUpdate:     u.SessionUpdate,
-		ToolCallID:        u.ToolCallID,
-		Title:             u.Title,
-		Kind:              u.Kind,
-		Status:            u.Status,
-		Locations:         u.Locations,
-		RawInput:          u.RawInput,
-		RawOutput:         u.RawOutput,
-		Entries:           u.Entries,
-		AvailableCommands: u.AvailableCommands,
-		CurrentModeID:     u.CurrentModeID,
-		ConfigOptions:     u.ConfigOptions,
-		Cost:              u.Cost,
-		MessageID:         u.MessageID,
-		UpdatedAt:         u.UpdatedAt,
-		Meta:              u.Meta,
+		SessionUpdate: u.SessionUpdate,
+		ToolCallID:    u.ToolCallID,
+		Title:         u.Title,
+		Kind:          u.Kind,
+		Status:        u.Status,
+		Locations:     u.Locations,
+		RawInput:      u.RawInput,
+		RawOutput:     u.RawOutput,
+		Entries:       u.Entries,
+		CurrentModeID: u.CurrentModeID,
+		Cost:          u.Cost,
+		MessageID:     u.MessageID,
+		UpdatedAt:     u.UpdatedAt,
+		Meta:          u.Meta,
 	}
 	if u.SessionUpdate == SessionUpdateUsageUpdate {
 		used, size := u.Used, u.Size
 		w.Used, w.Size = &used, &size
+	}
+	if u.SessionUpdate == SessionUpdateAvailableCommands {
+		commands := u.AvailableCommands
+		if commands == nil {
+			commands = []AvailableCommand{}
+		}
+		w.AvailableCommands = &commands
+	}
+	if u.SessionUpdate == SessionUpdateConfigOption {
+		options := u.ConfigOptions
+		if options == nil {
+			options = []SessionConfigOption{}
+		}
+		w.ConfigOptions = &options
 	}
 	switch u.SessionUpdate {
 	case SessionUpdateToolCall, SessionUpdateToolCallUpdate:
@@ -172,28 +195,32 @@ func (u *SessionUpdate) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*u = SessionUpdate{
-		SessionUpdate:     w.SessionUpdate,
-		ToolCallID:        w.ToolCallID,
-		Title:             w.Title,
-		Kind:              w.Kind,
-		Status:            w.Status,
-		Locations:         w.Locations,
-		RawInput:          w.RawInput,
-		RawOutput:         w.RawOutput,
-		Entries:           w.Entries,
-		AvailableCommands: w.AvailableCommands,
-		CurrentModeID:     w.CurrentModeID,
-		ConfigOptions:     w.ConfigOptions,
-		Cost:              w.Cost,
-		MessageID:         w.MessageID,
-		UpdatedAt:         w.UpdatedAt,
-		Meta:              w.Meta,
+		SessionUpdate: w.SessionUpdate,
+		ToolCallID:    w.ToolCallID,
+		Title:         w.Title,
+		Kind:          w.Kind,
+		Status:        w.Status,
+		Locations:     w.Locations,
+		RawInput:      w.RawInput,
+		RawOutput:     w.RawOutput,
+		Entries:       w.Entries,
+		CurrentModeID: w.CurrentModeID,
+		Cost:          w.Cost,
+		MessageID:     w.MessageID,
+		UpdatedAt:     w.UpdatedAt,
+		Meta:          w.Meta,
 	}
 	if w.Used != nil {
 		u.Used = *w.Used
 	}
 	if w.Size != nil {
 		u.Size = *w.Size
+	}
+	if w.AvailableCommands != nil {
+		u.AvailableCommands = *w.AvailableCommands
+	}
+	if w.ConfigOptions != nil {
+		u.ConfigOptions = *w.ConfigOptions
 	}
 	if len(w.Content) == 0 {
 		return nil

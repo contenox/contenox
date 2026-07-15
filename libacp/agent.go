@@ -5,12 +5,14 @@ import "context"
 type Agent interface {
 	Initialize(ctx context.Context, req InitializeRequest) (InitializeResponse, error)
 	Authenticate(ctx context.Context, req AuthenticateRequest) (AuthenticateResponse, error)
+	Logout(ctx context.Context, req LogoutRequest) (LogoutResponse, error)
 	NewSession(ctx context.Context, req NewSessionRequest) (NewSessionResponse, error)
 	LoadSession(ctx context.Context, req LoadSessionRequest) (LoadSessionResponse, error)
 	ResumeSession(ctx context.Context, req ResumeSessionRequest) (ResumeSessionResponse, error)
 	CloseSession(ctx context.Context, req CloseSessionRequest) (CloseSessionResponse, error)
 	DeleteSession(ctx context.Context, req DeleteSessionRequest) (DeleteSessionResponse, error)
 	ListSessions(ctx context.Context, req ListSessionsRequest) (ListSessionsResponse, error)
+	SetSessionMode(ctx context.Context, req SetSessionModeRequest) (SetSessionModeResponse, error)
 	SetSessionConfigOption(ctx context.Context, req SetSessionConfigOptionRequest) (SetSessionConfigOptionResponse, error)
 	Prompt(ctx context.Context, req PromptRequest) (PromptResponse, error)
 	Cancel(ctx context.Context, req CancelNotification) error
@@ -25,6 +27,9 @@ func (UnimplementedAgent) Initialize(context.Context, InitializeRequest) (Initia
 }
 func (UnimplementedAgent) Authenticate(context.Context, AuthenticateRequest) (AuthenticateResponse, error) {
 	return AuthenticateResponse{}, MethodNotFound(MethodAuthenticate)
+}
+func (UnimplementedAgent) Logout(context.Context, LogoutRequest) (LogoutResponse, error) {
+	return LogoutResponse{}, MethodNotFound(MethodLogout)
 }
 func (UnimplementedAgent) NewSession(context.Context, NewSessionRequest) (NewSessionResponse, error) {
 	return NewSessionResponse{}, MethodNotFound(MethodSessionNew)
@@ -43,6 +48,9 @@ func (UnimplementedAgent) DeleteSession(context.Context, DeleteSessionRequest) (
 }
 func (UnimplementedAgent) ListSessions(context.Context, ListSessionsRequest) (ListSessionsResponse, error) {
 	return ListSessionsResponse{}, MethodNotFound(MethodSessionList)
+}
+func (UnimplementedAgent) SetSessionMode(context.Context, SetSessionModeRequest) (SetSessionModeResponse, error) {
+	return SetSessionModeResponse{}, MethodNotFound(MethodSessionSetMode)
 }
 func (UnimplementedAgent) SetSessionConfigOption(context.Context, SetSessionConfigOptionRequest) (SetSessionConfigOptionResponse, error) {
 	return SetSessionConfigOptionResponse{}, MethodNotFound(MethodSessionSetConfigOption)

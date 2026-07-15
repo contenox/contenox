@@ -324,15 +324,14 @@ export interface ListSessionsResponse {
 /** Byte-identical to the SDK's `StopReason` — re-exported rather than redeclared. */
 export type StopReason = SdkStopReason;
 
-export interface TokenUsage {
-  inputTokens?: number;
-  outputTokens?: number;
-  totalTokens?: number;
-}
-
+// PromptResponse mirrors the ACP v1 schema: only `stopReason` and `_meta`
+// (the latter omitted here, unused by this client). A prior revision typed a
+// non-spec `usage` field here; it was removed — nothing produced or
+// consumed it (see libacp/prompt.go's PromptResponse doc comment for the
+// full rationale). Session context/cost reporting uses the spec-sanctioned
+// `usage_update` channel instead (see UsageEvent in client.ts).
 export interface PromptResponse {
   stopReason: StopReason;
-  usage?: TokenUsage;
 }
 
 export interface UsageCost {

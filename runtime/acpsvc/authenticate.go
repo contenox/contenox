@@ -35,3 +35,11 @@ func (t *Transport) Authenticate(ctx context.Context, req libacp.AuthenticateReq
 	}
 	return libacp.AuthenticateResponse{}, libacp.NewErrorf(libacp.ErrInvalidParams, "auth method %q is not supported; use the terminal method to run --setup", req.MethodID)
 }
+
+// Logout is not supported: contenox's auth model (the terminal/browser/env
+// setup wizards above) has no persisted "logged in" session to tear down, and
+// Initialize never advertises AgentCapabilities.Auth.Logout, so a conformant
+// client will never call this.
+func (t *Transport) Logout(_ context.Context, _ libacp.LogoutRequest) (libacp.LogoutResponse, error) {
+	return libacp.LogoutResponse{}, libacp.MethodNotFound(libacp.MethodLogout)
+}

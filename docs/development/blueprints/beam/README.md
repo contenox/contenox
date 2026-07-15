@@ -14,4 +14,6 @@ restoration, current scope, and R&D directions.
 | [auth.md](auth.md) | R&D / vision | Single-operator password auth for Beam; builds on the loopback + bearer `TOKEN` model |
 
 `docs/blueprints/v1-feature-map.md` describes how Beam relates to the V1
-product surface.
+product surface. The agent-manager direction — Beam fronting a fleet of
+declared agents rather than one chat at a time — is specified in
+[`../acp/declared-agents-and-harnesses.md`](../acp/declared-agents-and-harnesses.md).

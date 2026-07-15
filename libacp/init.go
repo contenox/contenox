@@ -9,8 +9,9 @@ type Implementation struct {
 }
 
 type FileSystemCapabilities struct {
-	ReadTextFile  bool `json:"readTextFile,omitempty"`
-	WriteTextFile bool `json:"writeTextFile,omitempty"`
+	ReadTextFile  bool            `json:"readTextFile,omitempty"`
+	WriteTextFile bool            `json:"writeTextFile,omitempty"`
+	Meta          json.RawMessage `json:"_meta,omitempty"`
 }
 
 // AuthCapabilities is the client-side auth capability object (unstable spec
@@ -47,30 +48,51 @@ func (c ClientCapabilities) SupportsBooleanConfigOptions() bool {
 }
 
 type PromptCapabilities struct {
-	Image           bool `json:"image,omitempty"`
-	Audio           bool `json:"audio,omitempty"`
-	EmbeddedContext bool `json:"embeddedContext,omitempty"`
+	Image           bool            `json:"image,omitempty"`
+	Audio           bool            `json:"audio,omitempty"`
+	EmbeddedContext bool            `json:"embeddedContext,omitempty"`
+	Meta            json.RawMessage `json:"_meta,omitempty"`
 }
 
 type McpCapabilities struct {
-	HTTP bool `json:"http,omitempty"`
-	SSE  bool `json:"sse,omitempty"`
+	HTTP bool            `json:"http,omitempty"`
+	SSE  bool            `json:"sse,omitempty"`
+	Meta json.RawMessage `json:"_meta,omitempty"`
 }
 
 type SessionCapabilities struct {
-	List   *struct{}       `json:"list,omitempty"`
-	Resume *struct{}       `json:"resume,omitempty"`
-	Close  *struct{}       `json:"close,omitempty"`
-	Delete *struct{}       `json:"delete,omitempty"`
-	Meta   json.RawMessage `json:"_meta,omitempty"`
+	List   *struct{} `json:"list,omitempty"`
+	Resume *struct{} `json:"resume,omitempty"`
+	Close  *struct{} `json:"close,omitempty"`
+	Delete *struct{} `json:"delete,omitempty"`
+	// AdditionalDirectories present ({}) means the agent honors
+	// additionalDirectories on session/new, session/load, and session/resume,
+	// and may report SessionInfo.AdditionalDirectories from session/list.
+	AdditionalDirectories *struct{}       `json:"additionalDirectories,omitempty"`
+	Meta                  json.RawMessage `json:"_meta,omitempty"`
+}
+
+// AgentAuthCapabilities describes authentication-related capabilities
+// supported by the agent — currently just whether it supports the `logout`
+// method.
+type AgentAuthCapabilities struct {
+	Logout *LogoutCapabilities `json:"logout,omitempty"`
+	Meta   json.RawMessage     `json:"_meta,omitempty"`
+}
+
+// LogoutCapabilities is present ({}) when the agent supports the `logout`
+// method.
+type LogoutCapabilities struct {
+	Meta json.RawMessage `json:"_meta,omitempty"`
 }
 
 type AgentCapabilities struct {
-	LoadSession         bool                `json:"loadSession,omitempty"`
-	PromptCapabilities  PromptCapabilities  `json:"promptCapabilities,omitempty"`
-	McpCapabilities     McpCapabilities     `json:"mcpCapabilities,omitempty"`
-	SessionCapabilities SessionCapabilities `json:"sessionCapabilities,omitempty"`
-	Meta                json.RawMessage     `json:"_meta,omitempty"`
+	LoadSession         bool                  `json:"loadSession,omitempty"`
+	PromptCapabilities  PromptCapabilities    `json:"promptCapabilities,omitempty"`
+	McpCapabilities     McpCapabilities       `json:"mcpCapabilities,omitempty"`
+	SessionCapabilities SessionCapabilities   `json:"sessionCapabilities,omitempty"`
+	Auth                AgentAuthCapabilities `json:"auth,omitempty"`
+	Meta                json.RawMessage       `json:"_meta,omitempty"`
 }
 
 // AuthMethod covers the spec's auth method union in one struct. Type
@@ -127,5 +149,15 @@ type AuthenticateRequest struct {
 }
 
 type AuthenticateResponse struct {
+	Meta json.RawMessage `json:"_meta,omitempty"`
+}
+
+// LogoutRequest terminates the current authenticated session. Only meaningful
+// when the agent advertises AgentCapabilities.Auth.Logout.
+type LogoutRequest struct {
+	Meta json.RawMessage `json:"_meta,omitempty"`
+}
+
+type LogoutResponse struct {
 	Meta json.RawMessage `json:"_meta,omitempty"`
 }

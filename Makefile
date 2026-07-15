@@ -161,6 +161,7 @@ CONTENOX_DEV_URL ?= http://$(CONTENOX_DEV_ADDR):$(CONTENOX_DEV_PORT)
 	dev-beam dev-web-proxy dev-install dev-install-vscode dev-link dev-unlink vscode-dev-install \
 	run-modeld \
 	test test-unit test-api test-ui test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help \
+	acp-conformance acp-client-e2e \
 	verify-ui-embed
 
 help:
@@ -169,6 +170,8 @@ help:
 	@echo "release-*  bundle-modeld-deps[-linux|-darwin|-windows] push/pull-modeld-deps package-modeld-release[-<os>] modeld-release-metadata push-modeld-release push-modeld-index"
 	@echo "           (devices publish native dep bundles; release assembly later pulls a bundle and packages modeld; see docs/development/modeld-release-runbook.md)"
 	@echo "test-*     test test-unit test-api test-ui test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help"
+	@echo "acp-conformance  validate libacp's agent-side wire dispatch against Rust reference ACP clients (needs ACP_VALIDATOR_BIN, see Makefile comment)"
+	@echo "acp-client-e2e   validate libacp's client-side wire dispatch against the Rust reference testy agent over a real subprocess (needs ACP_TESTY_BIN, see Makefile comment)"
 	@echo "dev-*      dev-beam dev-web-proxy dev-install dev-install-vscode dev-link dev-unlink run-modeld"
 	@echo "           (modeld includes llama.cpp, adds OpenVINO/CUDA when available, and selects backend at runtime)"
 	@echo "deps-*     deps-modeld deps-modeld-prebuilt deps-llamacpp-ref deps-openvino deps-ui deps-vscode"
@@ -699,6 +702,42 @@ test-contenox-verbose:
 test-contenox-help: build-contenox
 	@chmod +x $(PROJECT_ROOT)/scripts/verify_cli_help.sh
 	@CONTENOX_BIN=$(PROJECT_ROOT)/bin/contenox $(PROJECT_ROOT)/scripts/verify_cli_help.sh
+
+# ACP conformance harness (Slice 6): validates libacp's agent-side wire dispatch
+# (conn.go/agent.go — NewAgentSideConnection's initialize/session/prompt/cancel
+# handling) against the Rust reference ACP client implementations, driving the
+# hermetic libacp/cmd/acp-stub-agent instead of a real LLM backend. Both tests
+# skip with a clear message when their env var is unset.
+# ACP_VALIDATOR_BIN: build from https://github.com/agentclientprotocol (the
+#   acp-validator crate); e.g. a local checkout builds it at
+#   <checkout>/target/debug/acp-validator.
+# ACP_YOPO_BIN: build the `yopo` binary from the agentclientprotocol rust-sdk
+#   (src/yopo); e.g. <rust-sdk checkout>/target/debug/yopo.
+ACP_VALIDATOR_BIN ?=
+ACP_YOPO_BIN ?=
+
+acp-conformance:
+	@test -n "$(ACP_VALIDATOR_BIN)" || { echo "set ACP_VALIDATOR_BIN=/path/to/acp-validator (see Makefile comment above test-contenox-help)"; exit 1; }
+	ACP_VALIDATOR_BIN=$(ACP_VALIDATOR_BIN) ACP_YOPO_BIN=$(ACP_YOPO_BIN) go test -C $(PROJECT_ROOT) -run '^TestConformance_' -v ./libacp/...
+
+# ACP client e2e harness (Slice 3): validates libacp's client-side wire
+# dispatch (client.go/clientconn.go — ClientSideConnection's outbound
+# initialize/session/prompt calls and its handling of agent-initiated
+# requests + session/update) against testy, the Rust reference SDK's
+# deterministic test agent, spoken to over a real subprocess
+# (libacp/acpexec). Gated on ACP_TESTY_BIN; the MCP pass-down test is
+# additionally gated on ACP_MCP_ECHO_BIN and skips on its own if unset.
+# ACP_TESTY_BIN: build the `testy` binary from the agentclientprotocol
+#   rust-sdk (src/agent-client-protocol-test); e.g. a local checkout builds it
+#   at <checkout>/target/debug/testy.
+# ACP_MCP_ECHO_BIN: build the `mcp-echo-server` binary from the same crate;
+#   e.g. <checkout>/target/debug/mcp-echo-server.
+ACP_TESTY_BIN ?=
+ACP_MCP_ECHO_BIN ?=
+
+acp-client-e2e:
+	@test -n "$(ACP_TESTY_BIN)" || { echo "set ACP_TESTY_BIN=/path/to/testy (see Makefile comment above acp-client-e2e)"; exit 1; }
+	ACP_TESTY_BIN=$(ACP_TESTY_BIN) ACP_MCP_ECHO_BIN=$(ACP_MCP_ECHO_BIN) go test -C $(PROJECT_ROOT) -run '^TestTesty_' -v ./libacp/acpexec/...
 
 # dev
 dev-beam:

@@ -3,14 +3,18 @@ package libacp
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 )
 
 type SessionID string
 
 type NewSessionRequest struct {
-	Cwd        string          `json:"cwd"`
-	McpServers []McpServer     `json:"mcpServers"`
-	Meta       json.RawMessage `json:"_meta,omitempty"`
+	Cwd string `json:"cwd"`
+	// AdditionalDirectories are extra workspace roots for this session, on top
+	// of Cwd. Each path must be absolute. Omitted or empty means none.
+	AdditionalDirectories []string        `json:"additionalDirectories,omitempty"`
+	McpServers            []McpServer     `json:"mcpServers"`
+	Meta                  json.RawMessage `json:"_meta,omitempty"`
 }
 
 type NewSessionResponse struct {
@@ -21,10 +25,14 @@ type NewSessionResponse struct {
 }
 
 type LoadSessionRequest struct {
-	SessionID  SessionID       `json:"sessionId"`
-	Cwd        string          `json:"cwd"`
-	McpServers []McpServer     `json:"mcpServers"`
-	Meta       json.RawMessage `json:"_meta,omitempty"`
+	SessionID SessionID `json:"sessionId"`
+	Cwd       string    `json:"cwd"`
+	// AdditionalDirectories are extra workspace roots to activate for this
+	// session, on top of Cwd. Each path must be absolute. Omitted or empty
+	// means none.
+	AdditionalDirectories []string        `json:"additionalDirectories,omitempty"`
+	McpServers            []McpServer     `json:"mcpServers"`
+	Meta                  json.RawMessage `json:"_meta,omitempty"`
 }
 
 type LoadSessionResponse struct {
@@ -49,15 +57,114 @@ type SessionMode struct {
 	Meta        json.RawMessage `json:"_meta,omitempty"`
 }
 
+// SetSessionModeRequest is session/set_mode's params: switch a session to a
+// different SessionMode.ID, one of the ids SessionModeState.AvailableModes
+// advertised.
+type SetSessionModeRequest struct {
+	SessionID SessionID       `json:"sessionId"`
+	ModeID    string          `json:"modeId"`
+	Meta      json.RawMessage `json:"_meta,omitempty"`
+}
+
+type SetSessionModeResponse struct {
+	Meta json.RawMessage `json:"_meta,omitempty"`
+}
+
+// Session configuration option type discriminators (SessionConfigOption.Type).
+const (
+	SessionConfigOptionTypeSelect  = "select"
+	SessionConfigOptionTypeBoolean = "boolean"
+)
+
 type SessionConfigOption struct {
-	ID           string              `json:"id"`
-	Name         string              `json:"name"`
-	Description  string              `json:"description,omitempty"`
-	Category     string              `json:"category,omitempty"`
-	Type         string              `json:"type"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Category    string `json:"category,omitempty"`
+	Type        string `json:"type"`
+	// CurrentValue is always the Go-side string form: for
+	// SessionConfigOptionTypeSelect it is the selected SessionConfigValue.Value
+	// id; for SessionConfigOptionTypeBoolean it is "true"/"false" (mirroring
+	// SessionConfigOptionValue.AsString). MarshalJSON renders it as a JSON
+	// boolean on the wire for the boolean type, as SessionConfigBoolean
+	// requires; UnmarshalJSON accepts either wire shape back into this string.
 	CurrentValue string              `json:"currentValue"`
 	Options      SessionConfigValues `json:"options"`
 	Meta         json.RawMessage     `json:"_meta,omitempty"`
+}
+
+// sessionConfigOptionWire is SessionConfigOption's wire shape: CurrentValue is
+// deferred as raw JSON (string for "select", boolean for "boolean"), and
+// Options is a pointer so the "boolean" variant — which the spec's
+// SessionConfigBoolean has no options field for — can omit it entirely.
+type sessionConfigOptionWire struct {
+	ID           string               `json:"id"`
+	Name         string               `json:"name"`
+	Description  string               `json:"description,omitempty"`
+	Category     string               `json:"category,omitempty"`
+	Type         string               `json:"type"`
+	CurrentValue json.RawMessage      `json:"currentValue"`
+	Options      *SessionConfigValues `json:"options,omitempty"`
+	Meta         json.RawMessage      `json:"_meta,omitempty"`
+}
+
+func (o SessionConfigOption) MarshalJSON() ([]byte, error) {
+	w := sessionConfigOptionWire{
+		ID:          o.ID,
+		Name:        o.Name,
+		Description: o.Description,
+		Category:    o.Category,
+		Type:        o.Type,
+		Meta:        o.Meta,
+	}
+	if o.Type == SessionConfigOptionTypeBoolean {
+		raw, err := json.Marshal(o.CurrentValue == "true")
+		if err != nil {
+			return nil, err
+		}
+		w.CurrentValue = raw
+	} else {
+		raw, err := json.Marshal(o.CurrentValue)
+		if err != nil {
+			return nil, err
+		}
+		w.CurrentValue = raw
+		options := o.Options
+		w.Options = &options
+	}
+	return json.Marshal(w)
+}
+
+func (o *SessionConfigOption) UnmarshalJSON(data []byte) error {
+	var w sessionConfigOptionWire
+	if err := json.Unmarshal(data, &w); err != nil {
+		return err
+	}
+	*o = SessionConfigOption{
+		ID:          w.ID,
+		Name:        w.Name,
+		Description: w.Description,
+		Category:    w.Category,
+		Type:        w.Type,
+		Meta:        w.Meta,
+	}
+	if w.Options != nil {
+		o.Options = *w.Options
+	}
+	if len(w.CurrentValue) == 0 {
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(w.CurrentValue, &s); err == nil {
+		o.CurrentValue = s
+		return nil
+	}
+	var b bool
+	if err := json.Unmarshal(w.CurrentValue, &b); err == nil {
+		o.CurrentValue = strconv.FormatBool(b)
+		return nil
+	}
+	return fmt.Errorf("libacp: session config option %q currentValue must be a string or a boolean, got %s", w.ID, w.CurrentValue)
 }
 
 type SessionConfigValues struct {
@@ -208,10 +315,14 @@ type SetSessionConfigOptionResponse struct {
 // replay (the client kept its transcript). McpServers is optional here,
 // unlike session/new and session/load.
 type ResumeSessionRequest struct {
-	SessionID  SessionID       `json:"sessionId"`
-	Cwd        string          `json:"cwd"`
-	McpServers []McpServer     `json:"mcpServers,omitempty"`
-	Meta       json.RawMessage `json:"_meta,omitempty"`
+	SessionID SessionID `json:"sessionId"`
+	Cwd       string    `json:"cwd"`
+	// AdditionalDirectories are extra workspace roots to activate for this
+	// session, on top of Cwd. Each path must be absolute. Omitted or empty
+	// means none.
+	AdditionalDirectories []string        `json:"additionalDirectories,omitempty"`
+	McpServers            []McpServer     `json:"mcpServers,omitempty"`
+	Meta                  json.RawMessage `json:"_meta,omitempty"`
 }
 
 type ResumeSessionResponse struct {
@@ -257,11 +368,14 @@ type ListSessionsRequest struct {
 }
 
 type SessionInfo struct {
-	SessionID SessionID       `json:"sessionId"`
-	Cwd       string          `json:"cwd,omitempty"`
-	Title     string          `json:"title,omitempty"`
-	UpdatedAt string          `json:"updatedAt,omitempty"`
-	Meta      json.RawMessage `json:"_meta,omitempty"`
+	SessionID SessionID `json:"sessionId"`
+	Cwd       string    `json:"cwd,omitempty"`
+	// AdditionalDirectories is the complete ordered additional-root list
+	// associated with this session, when the agent tracks and reports it.
+	AdditionalDirectories []string        `json:"additionalDirectories,omitempty"`
+	Title                 string          `json:"title,omitempty"`
+	UpdatedAt             string          `json:"updatedAt,omitempty"`
+	Meta                  json.RawMessage `json:"_meta,omitempty"`
 }
 
 type ListSessionsResponse struct {

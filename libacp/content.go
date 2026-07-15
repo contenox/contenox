@@ -13,16 +13,20 @@ const (
 )
 
 type Annotations struct {
-	Audience []string        `json:"audience,omitempty"`
-	Priority *float64        `json:"priority,omitempty"`
-	Meta     json.RawMessage `json:"_meta,omitempty"`
+	Audience []string `json:"audience,omitempty"`
+	// LastModified is an ISO 8601 timestamp indicating when the underlying
+	// resource was last modified.
+	LastModified string          `json:"lastModified,omitempty"`
+	Priority     *float64        `json:"priority,omitempty"`
+	Meta         json.RawMessage `json:"_meta,omitempty"`
 }
 
 type EmbeddedResource struct {
-	URI      string `json:"uri"`
-	MimeType string `json:"mimeType,omitempty"`
-	Text     string `json:"text,omitempty"`
-	Blob     string `json:"blob,omitempty"`
+	URI      string          `json:"uri"`
+	MimeType string          `json:"mimeType,omitempty"`
+	Text     string          `json:"text,omitempty"`
+	Blob     string          `json:"blob,omitempty"`
+	Meta     json.RawMessage `json:"_meta,omitempty"`
 }
 
 type ContentBlock struct {

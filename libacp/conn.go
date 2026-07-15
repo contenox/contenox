@@ -87,6 +87,15 @@ type AgentSideConnection struct {
 	reqCancelMu    sync.Mutex
 	requestCancels map[string]context.CancelFunc
 
+	// extRequest and extNotification, if set (via SetExtRequestHandler /
+	// SetExtNotificationHandler), handle inbound extension methods and
+	// notifications (see IsExtensionMethod). Nil preserves the connection's
+	// behavior before extension support existed: MethodNotFound for requests,
+	// silent drop for notifications. Set once from the AgentFactory before Run
+	// starts reading, like c.agent itself; no separate synchronization.
+	extRequest      ExtRequestHandler
+	extNotification ExtNotificationHandler
+
 	closeOnce sync.Once
 	closed    chan struct{}
 	closeErr  error
@@ -121,6 +130,23 @@ func NewAgentSideConnection(rw io.ReadWriteCloser, factory AgentFactory) *AgentS
 	}
 	c.agent = factory(c)
 	return c
+}
+
+// SetExtRequestHandler installs h to handle inbound extension requests
+// (method names starting with ExtensionMethodPrefix that fall outside the
+// core ACP method set). Call it from the AgentFactory, before Run starts
+// reading. A nil h (the default) leaves extension requests answered with
+// MethodNotFound, exactly as before this seam existed.
+func (c *AgentSideConnection) SetExtRequestHandler(h ExtRequestHandler) {
+	c.extRequest = h
+}
+
+// SetExtNotificationHandler installs h to handle inbound extension
+// notifications. Call it from the AgentFactory, before Run starts reading. A
+// nil h (the default) leaves extension notifications silently ignored,
+// exactly as before this seam existed.
+func (c *AgentSideConnection) SetExtNotificationHandler(h ExtNotificationHandler) {
+	c.extNotification = h
 }
 
 func (c *AgentSideConnection) Run(ctx context.Context) error {
@@ -373,6 +399,14 @@ func (c *AgentSideConnection) handleNotification(ctx context.Context, n Notifica
 			return
 		}
 		_ = c.agent.Cancel(ctx, p)
+	default:
+		// "$/"-prefixed methods (MethodCancelRequest) never reach here as an
+		// extension notification: IsExtensionMethod only matches the "_"
+		// namespace, so they fall through and stay ignored, same as any other
+		// unrecognized notification.
+		if IsExtensionMethod(n.Method) && c.extNotification != nil {
+			c.extNotification(ctx, n.Method, n.Params)
+		}
 	}
 }
 
@@ -401,6 +435,17 @@ func (c *AgentSideConnection) callMethod(ctx context.Context, req Request, pc *p
 			return nil, InvalidParams(err.Error())
 		}
 		resp, err := c.agent.Authenticate(ctx, p)
+		if err != nil {
+			return nil, AsError(err)
+		}
+		return resp, nil
+
+	case MethodLogout:
+		var p LogoutRequest
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, InvalidParams(err.Error())
+		}
+		resp, err := c.agent.Logout(ctx, p)
 		if err != nil {
 			return nil, AsError(err)
 		}
@@ -472,6 +517,17 @@ func (c *AgentSideConnection) callMethod(ctx context.Context, req Request, pc *p
 		}
 		return resp, nil
 
+	case MethodSessionSetMode:
+		var p SetSessionModeRequest
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, InvalidParams(err.Error())
+		}
+		resp, err := c.agent.SetSessionMode(ctx, p)
+		if err != nil {
+			return nil, AsError(err)
+		}
+		return resp, nil
+
 	case MethodSessionSetConfigOption:
 		var p SetSessionConfigOptionRequest
 		if err := json.Unmarshal(params, &p); err != nil {
@@ -513,6 +569,16 @@ func (c *AgentSideConnection) callMethod(ctx context.Context, req Request, pc *p
 		return resp, nil
 
 	default:
+		// req.Params (not the []byte("{}") default above) so the handler sees
+		// exactly what arrived on the wire, including a genuinely absent
+		// params field — extension methods own their own params schema.
+		if IsExtensionMethod(req.Method) && c.extRequest != nil {
+			result, extErr := c.extRequest(ctx, req.Method, req.Params)
+			if extErr != nil {
+				return nil, extErr
+			}
+			return result, nil
+		}
 		return nil, MethodNotFound(req.Method)
 	}
 }
@@ -666,4 +732,38 @@ func (c *AgentSideConnection) ReleaseTerminal(ctx context.Context, req ReleaseTe
 		return ReleaseTerminalResponse{}, err
 	}
 	return resp, nil
+}
+
+// CallExtMethod sends a custom extension request (method must satisfy
+// IsExtensionMethod) to the client and returns its raw result. This is the
+// outbound half of the extension-method seam; SetExtRequestHandler installs
+// the inbound half. A canceled ctx aborts the wait and best-effort notifies
+// the client with "$/cancel_request", exactly like any other outbound call
+// (see call).
+func (c *AgentSideConnection) CallExtMethod(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+	if !IsExtensionMethod(method) {
+		return nil, fmt.Errorf("libacp: %q is not an extension method (must start with %q)", method, ExtensionMethodPrefix)
+	}
+	var paramsAny any
+	if len(params) > 0 {
+		paramsAny = params
+	}
+	var result json.RawMessage
+	if err := c.call(ctx, method, paramsAny, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// SendExtNotification sends a custom, fire-and-forget extension notification
+// (method must satisfy IsExtensionMethod) to the client.
+func (c *AgentSideConnection) SendExtNotification(method string, params json.RawMessage) error {
+	if !IsExtensionMethod(method) {
+		return fmt.Errorf("libacp: %q is not an extension method (must start with %q)", method, ExtensionMethodPrefix)
+	}
+	var paramsAny any
+	if len(params) > 0 {
+		paramsAny = params
+	}
+	return c.notify(method, paramsAny)
 }
