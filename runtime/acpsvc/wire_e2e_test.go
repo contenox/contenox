@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,9 +14,11 @@ import (
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/chatservice"
 	"github.com/contenox/runtime/runtime/enginesvc"
+	"github.com/contenox/runtime/runtime/localtools"
 	"github.com/contenox/runtime/runtime/messagestore"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/taskengine"
+	"github.com/contenox/runtime/runtime/vfs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -622,4 +625,156 @@ func TestUnit_ToolCallWireID_DisambiguatesRepeatedInvocations(t *testing.T) {
 	// clearToolCallState resets the counters for the session.
 	tr.clearToolCallState(sid)
 	assert.Equal(t, "web_search", tr.toolCallWireID(sid, ev, false))
+}
+
+// TestE2E_Wire_SessionWorkspaceCwd drives session/new over the real wire with a
+// workspace-root allowlist configured and pins the Session Workspaces contract:
+// a non-allowlisted cwd is refused, the "/" sentinel resolves to the default
+// root, an allowlisted root is accepted and reported by session/list, and the
+// serve local_fs cwd resolver roots the agent tool at the session's chosen
+// workspace (files under it are visible; files under the default root are not).
+func TestE2E_Wire_SessionWorkspaceCwd(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	db, err := libdb.NewSQLiteDBManager(ctx, filepath.Join(t.TempDir(), "wire-ws.db"), runtimetypes.SchemaSQLite)
+	require.NoError(t, err)
+	defer db.Close()
+
+	rootA := t.TempDir() // default root
+	rootB := t.TempDir() // second allowlisted root
+	require.NoError(t, os.WriteFile(filepath.Join(rootA, "only-in-a.txt"), []byte("a"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(rootB, "hello-b.txt"), []byte("b"), 0o644))
+
+	factory, err := vfs.NewFactory(rootA, rootB)
+	require.NoError(t, err)
+	resolvedA := factory.Default()
+	resolvedB, ok := factory.Allows(rootB)
+	require.True(t, ok)
+
+	agentR, clientW := io.Pipe()
+	clientR, agentW := io.Pipe()
+	agentSide := &wirePipe{r: agentR, w: agentW}
+	clientSide := &wirePipe{r: clientR, w: clientW}
+
+	factoryFn := New(Deps{
+		Engine:         &enginesvc.Engine{},
+		DB:             db,
+		WorkspaceID:    "wire-ws",
+		WorkspaceRoots: factory,
+	})
+	conn := libacp.NewAgentSideConnection(agentSide, func(c *libacp.AgentSideConnection) libacp.Agent {
+		return factoryFn(c)
+	})
+	runDone := make(chan error, 1)
+	go func() { runDone <- conn.Run(ctx) }()
+	defer func() {
+		_ = clientSide.Close()
+		select {
+		case <-runDone:
+		case <-time.After(2 * time.Second):
+			t.Error("connection did not shut down")
+		}
+	}()
+
+	client := &wireClient{t: t, rw: clientSide}
+	resp, _ := client.call(libacp.MethodInitialize, libacp.InitializeRequest{
+		ProtocolVersion: libacp.ProtocolVersion,
+		ClientInfo:      &libacp.Implementation{Name: "wiretest", Version: "0"},
+	})
+	require.Nil(t, resp.Error)
+
+	// The empty chat learns the allowlist from the workspace config options _meta.
+	var initResp libacp.InitializeResponse
+	require.NoError(t, json.Unmarshal(resp.Result, &initResp))
+	var meta map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(initResp.Meta, &meta))
+	var wsOptions []libacp.SessionConfigOption
+	require.NoError(t, json.Unmarshal(meta[WorkspaceConfigOptionsMetaKey], &wsOptions))
+	rootOption := optionByID(t, wsOptions, configIDWorkspaceRoot)
+	assert.Equal(t, resolvedA, rootOption.CurrentValue, "default root is the current workspace value")
+	var rootValues []string
+	for _, v := range rootOption.Options.AllValues() {
+		rootValues = append(rootValues, v.Value)
+	}
+	assert.ElementsMatch(t, []string{resolvedA, resolvedB}, rootValues, "picker must list every allowlisted root")
+
+	// 1. A non-allowlisted cwd is refused.
+	resp, _ = client.call(libacp.MethodSessionNew, libacp.NewSessionRequest{
+		Cwd:        "/definitely/not/allowed",
+		McpServers: []libacp.McpServer{},
+	})
+	require.NotNil(t, resp.Error, "a cwd outside the allowlist must be rejected")
+	assert.Equal(t, libacp.ErrInvalidParams, resp.Error.Code)
+
+	// 2. The "/" sentinel resolves to the default root (compat with beam).
+	resp, _ = client.call(libacp.MethodSessionNew, libacp.NewSessionRequest{
+		Cwd:        "/",
+		McpServers: []libacp.McpServer{},
+	})
+	require.Nil(t, resp.Error)
+	var defResp libacp.NewSessionResponse
+	require.NoError(t, json.Unmarshal(resp.Result, &defResp))
+	client.drainNotifications(1)
+	resp, _ = client.call(libacp.MethodSessionList, libacp.ListSessionsRequest{})
+	require.Nil(t, resp.Error)
+	var listResp libacp.ListSessionsResponse
+	require.NoError(t, json.Unmarshal(resp.Result, &listResp))
+	found := false
+	for _, s := range listResp.Sessions {
+		if s.SessionID == defResp.SessionID {
+			found = true
+			assert.Equal(t, resolvedA, s.Cwd, `"/" must resolve to the default root`)
+		}
+	}
+	assert.True(t, found)
+
+	// 3. An allowlisted root is accepted and reported.
+	resp, _ = client.call(libacp.MethodSessionNew, libacp.NewSessionRequest{
+		Cwd:        rootB,
+		McpServers: []libacp.McpServer{},
+	})
+	require.Nil(t, resp.Error)
+	var bResp libacp.NewSessionResponse
+	require.NoError(t, json.Unmarshal(resp.Result, &bResp))
+	client.drainNotifications(1)
+
+	// 4. The serve cwd resolver roots local_fs at the session's chosen workspace.
+	var internalID string
+	require.NoError(t, db.WithoutTransaction().QueryRowContext(ctx,
+		`SELECT id FROM message_indices WHERE name = $1 AND identity = 'acp-client'`,
+		string(bResp.SessionID),
+	).Scan(&internalID))
+
+	resolver := NewServeCwdResolver(db, factory.Default())
+	toolCtx := context.WithValue(ctx, runtimetypes.SessionIDContextKey, internalID)
+	assert.Equal(t, resolvedB, resolver(toolCtx), "resolver must return the session's persisted cwd")
+
+	tool := localtools.NewLocalFSToolsWith("", nil, nil, "local_fs", resolver)
+	out, _, err := tool.Exec(toolCtx, time.Now(), map[string]any{"path": "."}, false, &taskengine.ToolsCall{ToolName: "list_dir"})
+	require.NoError(t, err)
+	outStr, _ := out.(string)
+	assert.Contains(t, outStr, "hello-b.txt", "local_fs must list files under the session workspace root")
+	assert.NotContains(t, outStr, "only-in-a.txt", "local_fs must not see the default root when the session chose another")
+
+	// A session without a workspace in scope falls back to the default root.
+	assert.Equal(t, factory.Default(), resolver(context.Background()))
+
+	// 5. Reloading the rootB session with the "/" sentinel (what beam sends)
+	// must PRESERVE its workspace, not clobber it back to the default root.
+	resp, _ = client.call(libacp.MethodSessionLoad, libacp.LoadSessionRequest{
+		SessionID:  bResp.SessionID,
+		Cwd:        "/",
+		McpServers: []libacp.McpServer{},
+	})
+	require.Nil(t, resp.Error)
+	client.drainNotifications(1) // deferred available_commands_update after load
+	resp, _ = client.call(libacp.MethodSessionList, libacp.ListSessionsRequest{})
+	require.Nil(t, resp.Error)
+	require.NoError(t, json.Unmarshal(resp.Result, &listResp))
+	for _, s := range listResp.Sessions {
+		if s.SessionID == bResp.SessionID {
+			assert.Equal(t, resolvedB, s.Cwd, `reloading with "/" must not reset the session's workspace`)
+		}
+	}
 }

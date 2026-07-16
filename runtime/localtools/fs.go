@@ -18,6 +18,7 @@ import (
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/taskengine"
+	"github.com/contenox/runtime/runtime/vfs"
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
@@ -192,98 +193,39 @@ func (h *LocalFSTools) baseDir(ctx context.Context) (string, error) {
 	return base, nil
 }
 
+// absAllowedDir returns the symlink-resolved base directory for the current
+// call context. Base resolution lives in the vfs package (the single home for
+// workspace-root handling).
 func (h *LocalFSTools) absAllowedDir(ctx context.Context) (string, error) {
 	base, err := h.baseDir(ctx)
 	if err != nil {
 		return "", err
 	}
-	absBase, err := filepath.Abs(base)
+	resolved, err := vfs.ResolveRoot(base)
 	if err != nil {
 		return "", fmt.Errorf("local_fs: invalid allowed dir: %w", err)
 	}
-	if realBase, err := filepath.EvalSymlinks(absBase); err == nil {
-		absBase = realBase
-	} else if !os.IsNotExist(err) {
-		return "", fmt.Errorf("local_fs: allowed dir resolution error: %w", err)
-	}
-	return filepath.Clean(absBase), nil
+	return resolved, nil
 }
 
-// resolvePathFollowingExistingSymlinks resolves symlinks for an existing target,
-// and for a non-existing target resolves the deepest existing parent directory
-// before appending the missing suffix. This prevents writes such as
-// "link/new.txt" where "link" is a symlink escaping the sandbox.
-func resolvePathFollowingExistingSymlinks(absPath string) (string, error) {
-	absPath = filepath.Clean(absPath)
-
-	if realPath, err := filepath.EvalSymlinks(absPath); err == nil {
-		return filepath.Abs(realPath)
-	} else if !os.IsNotExist(err) {
-		return "", err
-	}
-
-	probe := absPath
-	var missing []string
-
-	for {
-		realPath, err := filepath.EvalSymlinks(probe)
-		if err == nil {
-			resolved := realPath
-			for i := len(missing) - 1; i >= 0; i-- {
-				resolved = filepath.Join(resolved, missing[i])
-			}
-			return filepath.Abs(resolved)
-		}
-		if !os.IsNotExist(err) {
-			return "", err
-		}
-
-		parent := filepath.Dir(probe)
-		if parent == probe {
-			return "", err
-		}
-
-		missing = append(missing, filepath.Base(probe))
-		probe = parent
-	}
-}
-
-// checkPath verifies if a path is within the allowed directory.
-// It resolves symlinks so that a symlink inside the sandbox pointing outside it
-// (e.g. ln -s /etc /allowed/link) is caught before any I/O is performed.
+// checkPath verifies if a path is within the allowed directory. Containment —
+// path normalization plus symlink-escape guarding — is delegated to the vfs
+// package so there is a single implementation shared with the /files browse
+// API. A symlink inside the sandbox pointing outside it (e.g. ln -s /etc
+// /allowed/link) is caught before any I/O is performed.
 func (h *LocalFSTools) checkPath(ctx context.Context, path string) (string, error) {
 	base, err := h.baseDir(ctx)
 	if err != nil {
 		return "", err
 	}
-
-	absBase, err := h.absAllowedDir(ctx)
+	resolved, err := vfs.Contain(base, path)
 	if err != nil {
-		return "", err
+		if errors.Is(err, vfs.ErrEscape) {
+			return "", fmt.Errorf("local_fs: path %s escapes allowed directory %s", path, base)
+		}
+		return "", fmt.Errorf("local_fs: %w", err)
 	}
-
-	absPath := path
-	if !filepath.IsAbs(path) {
-		absPath = filepath.Join(absBase, path)
-	}
-	absPath, err = filepath.Abs(absPath)
-	if err != nil {
-		return "", fmt.Errorf("local_fs: invalid path: %w", err)
-	}
-
-	realPath, err := resolvePathFollowingExistingSymlinks(absPath)
-	if err != nil {
-		return "", fmt.Errorf("local_fs: path resolution error: %w", err)
-	}
-	absPath = filepath.Clean(realPath)
-
-	sep := string(filepath.Separator)
-	rel, err := filepath.Rel(absBase, absPath)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+sep) {
-		return "", fmt.Errorf("local_fs: path %s escapes allowed directory %s", path, base)
-	}
-
-	return absPath, nil
+	return resolved, nil
 }
 
 // argBool returns the boolean value for key when present and typed as bool (JSON booleans).

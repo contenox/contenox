@@ -633,6 +633,10 @@ func defaultPolicy() *Policy {
 			{Tools: "local_shell", Tool: "local_shell", Action: ActionApprove, When: []Condition{{Key: "args", Op: OpNoCommandSubstitution, Value: ""}}},
 			// local_shell: default to requiring approval (fail-closed safety)
 			{Tools: "local_shell", Tool: "local_shell", Action: ActionApprove},
+			// shell_session: reading scrollback is reference-only and never gated;
+			// submitting a line (shell_session_run) is gated exactly like local_shell,
+			// falling through to DefaultAction (approve) below.
+			{Tools: "shell_session", Tool: "shell_session_read", Action: ActionAllow},
 			{Tools: "webtools", Tool: "web_get", Action: ActionAllow},
 			{Tools: "webtools", Tool: "web_head", Action: ActionAllow},
 			{Tools: "webtools", Tool: "web_post", Action: ActionApprove},

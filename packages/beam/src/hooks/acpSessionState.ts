@@ -9,7 +9,7 @@ import type {
   ToolCallStatus,
   ToolKind,
 } from '../lib/acp';
-import type { ToolCallEvent, UsageEvent } from '../lib/acp';
+import type { ToolCallEvent, TerminalOutputPayload, UsageEvent } from '../lib/acp';
 
 /**
  * Pure, framework-free state for the ACP workspace's currently-open session:
@@ -28,7 +28,7 @@ import type { ToolCallEvent, UsageEvent } from '../lib/acp';
  * collapsible block data, exactly like the text itself.
  */
 
-export type AcpTimelineItemKind = 'message' | 'tool_call';
+export type AcpTimelineItemKind = 'message' | 'tool_call' | 'terminal';
 
 /** One entry in `AcpSessionState.items`, in arrival order. Look the full record up in `messages`/`toolCalls` by `id`. */
 export interface AcpTimelineItem {
@@ -65,6 +65,24 @@ export interface AcpUsageState {
 }
 
 /**
+ * Live scrollback of the session's shell, accumulated from
+ * `_contenox.terminalOutput` stream events for the terminal panel. `offset` is
+ * the last seen absolute scrollback offset; a `reset` event (the initial
+ * snapshot on subscribe/reconnect) replaces `text` rather than appending.
+ */
+export interface AcpTerminalState {
+  text: string;
+  offset: number;
+}
+
+/** A compact record of one `!` passthrough line, rendered in the transcript. */
+export interface AcpTerminalCard {
+  id: string;
+  command: string;
+  output: string;
+}
+
+/**
  * Transient banner state for the currently-open session, driven by the
  * workspace controller's reconnect supervisor: `'disconnected'` while the
  * transport is down and this session's live updates may be stale,
@@ -79,6 +97,10 @@ export interface AcpSessionState {
   items: AcpTimelineItem[];
   messages: Record<string, AcpChatMessage>;
   toolCalls: Record<string, AcpToolCallState>;
+  /** Compact `!` passthrough records, keyed by timeline item id. */
+  terminals: Record<string, AcpTerminalCard>;
+  /** Live shell scrollback for the terminal panel (null until first output). */
+  terminal: AcpTerminalState | null;
   plan: PlanEntry[];
   usage: AcpUsageState | null;
   configOptions: SessionConfigOption[];
@@ -122,6 +144,8 @@ export const initialAcpSessionState: AcpSessionState = {
   items: [],
   messages: {},
   toolCalls: {},
+  terminals: {},
+  terminal: null,
   plan: [],
   usage: null,
   configOptions: [],
@@ -141,6 +165,10 @@ export type AcpSessionAction =
   | { type: 'message_chunk'; id: string; text: string }
   | { type: 'thought_chunk'; id: string; text: string }
   | { type: 'tool_call'; event: ToolCallEvent }
+  /** Live shell output batch (append, or replace when `payload.reset`). */
+  | { type: 'terminal_output'; payload: TerminalOutputPayload }
+  /** Record a `!` passthrough line as a compact transcript card. */
+  | { type: 'terminal_card'; id: string; command: string; output: string }
   | { type: 'plan'; entries: PlanEntry[] }
   | { type: 'usage'; usage: UsageEvent }
   | { type: 'available_commands'; commands: AvailableCommand[] }
@@ -262,6 +290,19 @@ export function acpSessionReducer(state: AcpSessionState, action: AcpSessionActi
         toolCalls: { ...state.toolCalls, [event.toolCallId]: merged },
       };
     }
+
+    case 'terminal_output': {
+      const { chunk, offset, reset } = action.payload;
+      const text = reset ? chunk : (state.terminal?.text ?? '') + chunk;
+      return { ...state, terminal: { text, offset } };
+    }
+
+    case 'terminal_card':
+      return {
+        ...state,
+        items: ensureItem(state.items, 'terminal', action.id),
+        terminals: { ...state.terminals, [action.id]: { id: action.id, command: action.command, output: action.output } },
+      };
 
     case 'plan':
       return { ...state, plan: action.entries };

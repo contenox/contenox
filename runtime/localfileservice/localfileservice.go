@@ -13,6 +13,7 @@ import (
 	"time"
 
 	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/runtime/vfs"
 )
 
 const MaxWriteSize = 10 * 1024 * 1024
@@ -41,8 +42,8 @@ type Service interface {
 }
 
 type localService struct {
-	root     string
-	rootReal string
+	root string
+	view *vfs.View
 }
 
 func New(root string) (Service, error) {
@@ -56,11 +57,14 @@ func New(root string) (Service, error) {
 	if err := os.MkdirAll(abs, 0750); err != nil {
 		return nil, fmt.Errorf("create root: %w", err)
 	}
-	real, err := filepath.EvalSymlinks(abs)
+	// Containment (path normalization + symlink-escape guarding) is delegated to
+	// the vfs package — the single implementation shared with the local_fs agent
+	// tool.
+	view, err := vfs.OpenView(abs)
 	if err != nil {
-		return nil, fmt.Errorf("resolve root symlinks: %w", err)
+		return nil, fmt.Errorf("resolve root: %w", err)
 	}
-	return &localService{root: abs, rootReal: real}, nil
+	return &localService{root: abs, view: view}, nil
 }
 
 func (s *localService) Root() string {
@@ -246,48 +250,47 @@ func (s *localService) Move(ctx context.Context, fromPath, toPath string) (*Entr
 	return &entry, nil
 }
 
+// resolveExisting normalizes a client path (rejecting absolute paths and
+// traversal via NormalizeRelPath), contains it within the root via vfs, then
+// confirms the target exists — vfs.Contain tolerates a missing leaf, but the
+// read/list/delete/move-source callers require existence and expect ErrNotFound.
 func (s *localService) resolveExisting(raw string, allowRoot bool) (string, string, error) {
 	rel, err := NormalizeRelPath(raw, allowRoot)
 	if err != nil {
 		return "", "", err
 	}
-	abs := filepath.Join(s.root, filepath.FromSlash(rel))
-	real, err := filepath.EvalSymlinks(abs)
+	abs, err := s.view.Resolve(rel)
 	if err != nil {
+		if errors.Is(err, vfs.ErrEscape) {
+			return "", "", fmt.Errorf("%w: symlink escapes root", ErrInvalidPath)
+		}
 		return "", "", mapOSError(err)
 	}
-	if !s.isWithinRoot(real) {
-		return "", "", fmt.Errorf("%w: symlink escapes root", ErrInvalidPath)
+	if _, err := os.Lstat(abs); err != nil {
+		return "", "", mapOSError(err)
 	}
 	return abs, rel, nil
 }
 
+// resolveForWrite normalizes and contains a write target (which need not exist
+// yet), rejecting any path whose deepest existing parent escapes the root
+// before creating intermediate directories.
 func (s *localService) resolveForWrite(raw string) (string, string, error) {
 	rel, err := NormalizeRelPath(raw, false)
 	if err != nil {
 		return "", "", err
 	}
-	abs := filepath.Join(s.root, filepath.FromSlash(rel))
-	parent := filepath.Dir(abs)
-	if err := os.MkdirAll(parent, 0755); err != nil {
-		return "", "", mapOSError(err)
-	}
-	parentReal, err := filepath.EvalSymlinks(parent)
+	abs, err := s.view.Resolve(rel)
 	if err != nil {
+		if errors.Is(err, vfs.ErrEscape) {
+			return "", "", fmt.Errorf("%w: parent symlink escapes root", ErrInvalidPath)
+		}
 		return "", "", mapOSError(err)
 	}
-	if !s.isWithinRoot(parentReal) {
-		return "", "", fmt.Errorf("%w: parent symlink escapes root", ErrInvalidPath)
+	if err := os.MkdirAll(filepath.Dir(abs), 0755); err != nil {
+		return "", "", mapOSError(err)
 	}
 	return abs, rel, nil
-}
-
-func (s *localService) isWithinRoot(abs string) bool {
-	rel, err := filepath.Rel(s.rootReal, abs)
-	if err != nil {
-		return false
-	}
-	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 func entryFromInfo(rel string, info os.FileInfo) Entry {

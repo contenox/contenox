@@ -8,6 +8,7 @@ import {
   Collapsible,
   DiffView,
   diffLinesFromTexts,
+  InlineAttachments,
   ToolCallCard,
   type ToolCallCardProps,
 } from '@contenox/ui';
@@ -17,7 +18,7 @@ import remarkGfm from 'remark-gfm';
 import { useTranslation } from 'react-i18next';
 import logoMarkDarkUrl from '../../../assets/logo-mark.svg?url';
 import logoMarkLightUrl from '../../../assets/logo-mark-light.svg?url';
-import type { AcpChatMessage, AcpSessionState, AcpToolCallState } from '../../../hooks/acpSessionState';
+import type { AcpChatMessage, AcpSessionState, AcpTerminalCard, AcpToolCallState } from '../../../hooks/acpSessionState';
 import { useTheme } from '../../../lib/ThemeProvider';
 import { shouldShowStreamingCaret, shouldShowStreamingPlaceholder } from '../lib/streamingPresentation';
 
@@ -174,6 +175,21 @@ function TranscriptToolCall({ toolCall }: { toolCall: AcpToolCallState }) {
   );
 }
 
+/**
+ * A `!` passthrough line recorded in the transcript: a compact, collapsible
+ * terminal-output excerpt (reuses the shared `terminal_excerpt` attachment). The
+ * live/full stream lives in the terminal panel; this is the durable record.
+ */
+function TranscriptTerminal({ card }: { card: AcpTerminalCard }) {
+  const { t } = useTranslation();
+  return (
+    <InlineAttachments
+      attachments={[{ kind: 'terminal_excerpt', command: card.command, output: card.output }]}
+      labels={{ terminalOutput: t('terminal.card_label') }}
+    />
+  );
+}
+
 export interface TranscriptItemsProps {
   session: AcpSessionState;
   agentName: string | null;
@@ -193,6 +209,11 @@ export function TranscriptItems({ session, agentName }: TranscriptItemsProps) {
           const message = session.messages[item.id];
           if (!message) return null;
           return <TranscriptMessage key={`m-${item.id}`} message={message} agentName={agentName} isLatest={isLatest} />;
+        }
+        if (item.kind === 'terminal') {
+          const card = session.terminals[item.id];
+          if (!card) return null;
+          return <TranscriptTerminal key={`x-${item.id}`} card={card} />;
         }
         const toolCall = session.toolCalls[item.id];
         if (!toolCall) return null;

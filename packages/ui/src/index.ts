@@ -1,5 +1,6 @@
 import "./index.css";
 export { cn } from "./utils";
+export { sanitizeTerminalText, stripAnsi } from "./ansi";
 export { formatCompactNumber } from "./format";
 export * from "./components/DragDropContext";
 export * from "./components/MonoLogList";

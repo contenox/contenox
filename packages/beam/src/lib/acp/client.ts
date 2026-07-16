@@ -97,6 +97,9 @@ import {
   type SessionNotification,
   type SessionUpdate,
   type SetSessionConfigOptionResponse,
+  TERMINAL_OUTPUT_UPDATE_KIND,
+  type TerminalOutputPayload,
+  terminalOutputFromUpdate,
   type StopReason,
   type ToolCallContent,
   type ToolCallLocation,
@@ -200,6 +203,12 @@ export interface SessionEventHandlers {
   onConfigOptions?: (configOptions: SessionConfigOption[]) => void;
   /** `session_info_update` — sent after a prompt turn resolves. */
   onSessionInfo?: (info: SessionInfoEvent) => void;
+  /**
+   * Live shell-session output (`_contenox.terminalOutput` extension update).
+   * `reset` marks the initial scrollback snapshot on (re)subscribe — replace the
+   * buffer rather than append. See the terminal panel + `!` passthrough.
+   */
+  onTerminalOutput?: (payload: TerminalOutputPayload) => void;
   /**
    * Answers the server's `session/request_permission`. Resolve with the
    * `optionId` of the chosen `PermissionOption`. If the returned promise
@@ -479,6 +488,11 @@ export class AcpClient {
       case 'session_info_update':
         handlers.onSessionInfo?.({ title: update.title, updatedAt: update.updatedAt });
         return;
+      case TERMINAL_OUTPUT_UPDATE_KIND: {
+        const payload = terminalOutputFromUpdate(update);
+        if (payload) handlers.onTerminalOutput?.(payload);
+        return;
+      }
       case 'current_mode_update':
         return;
     }
@@ -551,6 +565,20 @@ export class AcpClient {
       configId,
       type: isBool ? 'boolean' : undefined,
       value,
+    });
+  }
+
+  /**
+   * `!` passthrough: runs one user line in the session's persistent shell
+   * WITHOUT an LLM turn (a contenox extension request, `_contenox/terminal/run`).
+   * Output streams back as `onTerminalOutput` events; the resolved snapshot is a
+   * short initial capture. User lines are not HITL-gated. A non-contenox agent
+   * answers method-not-found, which surfaces as a rejected promise.
+   */
+  async runTerminal(sessionId: SessionId, command: string): Promise<{ offset: number; output?: string }> {
+    return this.call<{ offset: number; output?: string }>('_contenox/terminal/run', {
+      sessionId,
+      command,
     });
   }
 

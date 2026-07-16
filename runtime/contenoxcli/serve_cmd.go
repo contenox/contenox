@@ -31,12 +31,14 @@ import (
 	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/serverapi"
+	"github.com/contenox/runtime/runtime/shellsession"
 	"github.com/contenox/runtime/runtime/stateservice"
 	"github.com/contenox/runtime/runtime/taskchainservice"
 	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/contenox/runtime/runtime/terminalservice"
 	"github.com/contenox/runtime/runtime/toolsproviderservice"
 	"github.com/contenox/runtime/runtime/version"
+	"github.com/contenox/runtime/runtime/vfs"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
@@ -74,7 +76,33 @@ BEAM_DEV_PROXY_URL to proxy Beam UI requests to a Vite dev server while keeping
 	RunE: runServe,
 }
 
-func runServe(cmd *cobra.Command, _ []string) error {
+func init() {
+	serveCmd.Flags().StringArray("workspace-root", nil,
+		"Directory a browser client may choose as a session workspace (repeatable). The serve directory is always the default; these extend the allowlist. Also settable via WORKSPACE_ROOTS (OS path-list separated) or as `contenox serve [dir]...` positional arguments.")
+}
+
+// buildWorkspaceFactory assembles the workspace-root allowlist. The serve
+// directory (defaultRoot) is always first, making it the Factory default and
+// preserving today's behavior when nothing else is configured. Positional args,
+// --workspace-root flags, and the WORKSPACE_ROOTS env (OS path-list separated)
+// extend the allowlist. Duplicates are collapsed by the Factory.
+func buildWorkspaceFactory(cmd *cobra.Command, args []string, config *serverapi.Config, defaultRoot string) (*vfs.Factory, error) {
+	roots := []string{defaultRoot}
+	roots = append(roots, args...)
+	if flags, _ := cmd.Flags().GetStringArray("workspace-root"); len(flags) > 0 {
+		roots = append(roots, flags...)
+	}
+	if config != nil {
+		for _, r := range filepath.SplitList(config.WorkspaceRoots) {
+			if strings.TrimSpace(r) != "" {
+				roots = append(roots, r)
+			}
+		}
+	}
+	return vfs.NewFactory(roots...)
+}
+
+func runServe(cmd *cobra.Command, args []string) error {
 	baseCtx := cmd.Context()
 	if baseCtx == nil {
 		baseCtx = context.Background()
@@ -137,6 +165,14 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		opts.EffectiveLocalExecAllowedDir = workspaceRoot
 	}
 
+	// The workspace-root allowlist bounds what a browser client may choose as a
+	// session's workspace. The serve directory is the default root, so behavior
+	// is unchanged when nothing else is configured.
+	workspaceFactory, err := buildWorkspaceFactory(cmd, args, config, workspaceRoot)
+	if err != nil {
+		return fmt.Errorf("resolve workspace roots: %w", err)
+	}
+
 	var tracker libtracker.ActivityTracker = libtracker.NoopTracker{}
 	if opts.EffectiveTracing {
 		tracker = libtracker.NewLogActivityTracker(slog.Default())
@@ -150,7 +186,16 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		"echo":     localtools.NewEchoTools(),
 		"print":    localtools.NewPrint(tracker),
 		"webtools": localtools.NewWebCaller(tracker),
-		"local_fs": localtools.NewLocalFSTools(opts.EffectiveLocalExecAllowedDir, db),
+		// local_fs roots at the session's chosen workspace (its cwd), falling back
+		// to the default workspace root for sessions without one. The fixed root is
+		// intentionally empty so the cwd resolver, not a static dir, drives
+		// containment — mirroring the stdio ACP path, but resolving the cwd from
+		// the DB because serve shares one tool across many per-connection
+		// transports (there is no single Transport to close over).
+		"local_fs": localtools.NewLocalFSToolsWith(
+			"", db, nil, "local_fs",
+			acpsvc.NewServeCwdResolver(db, workspaceFactory.Default()),
+		),
 	}
 	if opts.EffectiveEnableLocalExec {
 		execOpts := []localtools.LocalExecOption{}
@@ -158,6 +203,22 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			execOpts = append(execOpts, localtools.WithLocalExecAllowedDir(opts.EffectiveLocalExecAllowedDir))
 		}
 		localTools["local_shell"] = localtools.NewLocalExecTools(execOpts...)
+	}
+
+	// The shell-session surface (persistent per-chat PTY behind the terminal
+	// panel, the `!` passthrough, and the shell_session_run/read agent tools)
+	// shares the same enablement gate as local_shell. Each shell is rooted at its
+	// session's workspace via the same cwd resolver local_fs uses. When disabled,
+	// the tools are absent and the terminal extension methods report
+	// method-not-found — the feature is absent, not broken.
+	var shellSessions shellsession.Manager
+	if opts.EffectiveEnableLocalExec {
+		shellSessions = shellsession.NewManager(shellsession.Config{
+			CwdResolver: acpsvc.NewServeCwdResolver(db, workspaceFactory.Default()),
+			DefaultRoot: workspaceFactory.Default(),
+		})
+		defer shellSessions.Shutdown()
+		localTools[shellsession.ToolsProviderName] = shellsession.NewTools(shellSessions)
 	}
 
 	toolsRepo := internaltools.NewPersistentRepo(localTools, db, http.DefaultClient, bus, tracker)
@@ -245,6 +306,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 			DefaultThink:       opts.EffectiveThink,
 			WorkspaceID:        workspaceID,
 			ContenoxDir:        contenoxDir,
+			WorkspaceRoots:     workspaceFactory,
+			ShellSessions:      shellSessions,
 			KnownPolicies:      embeddedPolicyNames(),
 			// serve passes no fallbackPolicy to hitlservice.NewWithDefaultPolicy
 			// above ("" = the service's own built-in default), so there is no
@@ -267,6 +330,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		WorkspaceID:          workspaceID,
 		ProjectRoot:          workspaceRoot,
 		ContenoxDir:          contenoxDir,
+		WorkspaceRoots:       workspaceFactory,
 		Defaults: stateservice.RuntimeDefaults{
 			ChainRef:    firstNonEmptyStr(opts.EffectiveChain, "default-chain.json"),
 			Model:       opts.EffectiveDefaultModel,

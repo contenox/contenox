@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useRef } from "react";
 import { cn } from "../utils";
+import { sanitizeTerminalText } from "../ansi";
 
 export interface TerminalOutputProps
   extends React.HTMLAttributes<HTMLDivElement> {
@@ -110,7 +111,11 @@ const ANSI_CLASSES: Record<string, string> = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ANSI_RE = /\x1b\[([0-9;]*)m/g;
 
-function colorize(text: string): React.ReactNode {
+function colorize(rawText: string): React.ReactNode {
+  // Drop non-SGR control sequences (bracketed paste, OSC titles, cursor
+  // moves) first so only color codes remain for the parser below; otherwise
+  // they render as literal garbage.
+  const text = sanitizeTerminalText(rawText);
   if (!text.includes("\x1b[")) return text;
 
   const parts: React.ReactNode[] = [];

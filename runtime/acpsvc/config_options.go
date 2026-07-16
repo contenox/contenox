@@ -3,6 +3,7 @@ package acpsvc
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,14 +17,16 @@ import (
 )
 
 const (
-	configIDModel      = "model"
-	configIDHITLPolicy = "hitl-policy"
-	configIDThink      = "think"
-	configIDTokenLimit = "token-limit"
+	configIDModel         = "model"
+	configIDHITLPolicy    = "hitl-policy"
+	configIDThink         = "think"
+	configIDTokenLimit    = "token-limit"
+	configIDWorkspaceRoot = "workspace-root"
 
-	configCategoryModel      = "model"
-	configCategoryHITLPolicy = "_hitl_policy"
-	configCategoryThink      = "thought_level"
+	configCategoryModel         = "model"
+	configCategoryHITLPolicy    = "_hitl_policy"
+	configCategoryThink         = "thought_level"
+	configCategoryWorkspaceRoot = "workspace"
 
 	configTypeSelect = "select"
 
@@ -63,12 +66,68 @@ func (t *Transport) workspaceConfigOptions(ctx context.Context) []libacp.Session
 }
 
 func (t *Transport) sessionConfigOptions(ctx context.Context, sess *sessionEntry) []libacp.SessionConfigOption {
-	return []libacp.SessionConfigOption{
+	opts := []libacp.SessionConfigOption{
 		t.modelConfigOption(ctx, sess),
 		t.hitlPolicyConfigOption(ctx),
 		t.thinkConfigOption(sess),
 		t.tokenLimitConfigOption(ctx, sess),
 	}
+	if opt, ok := t.workspaceRootConfigOption(sess); ok {
+		opts = append(opts, opt)
+	}
+	return opts
+}
+
+// workspaceRootConfigOption advertises the allowlisted workspace roots a client
+// may choose for a session. Present only when an allowlist is configured
+// (serve); the stdio ACP path (no allowlist) omits it. The chosen root becomes
+// the session's cwd at session/new time and is immutable afterward, so this
+// option is informational for a live session — the picker reads its Options list
+// on the empty chat (via the workspace config options _meta extension) and
+// passes the selection as the new session's cwd. set_config_option for it is
+// refused (see setSessionConfigOption).
+func (t *Transport) workspaceRootConfigOption(sess *sessionEntry) (libacp.SessionConfigOption, bool) {
+	f := t.deps.WorkspaceRoots
+	if f == nil {
+		return libacp.SessionConfigOption{}, false
+	}
+	roots := f.Roots()
+	if len(roots) == 0 {
+		return libacp.SessionConfigOption{}, false
+	}
+	current := f.Default()
+	if sess != nil {
+		sess.mu.Lock()
+		if sess.Cwd != "" {
+			current = sess.Cwd
+		}
+		sess.mu.Unlock()
+	}
+	values := make([]libacp.SessionConfigValue, 0, len(roots))
+	for _, r := range roots {
+		values = append(values, libacp.SessionConfigValue{
+			Value:       r,
+			Name:        workspaceRootDisplayName(r),
+			Description: r,
+		})
+	}
+	return libacp.SessionConfigOption{
+		ID:           configIDWorkspaceRoot,
+		Name:         "Workspace",
+		Description:  "Directory the agent and file explorer operate in for this session.",
+		Category:     configCategoryWorkspaceRoot,
+		Type:         configTypeSelect,
+		CurrentValue: current,
+		Options:      libacp.NewSessionConfigValues(values),
+	}, true
+}
+
+func workspaceRootDisplayName(root string) string {
+	base := filepath.Base(root)
+	if base == "" || base == string(filepath.Separator) || base == "." {
+		return root
+	}
+	return base
 }
 
 func (t *Transport) modelConfigOption(ctx context.Context, sess *sessionEntry) libacp.SessionConfigOption {
@@ -470,6 +529,13 @@ func (t *Transport) setSessionConfigOption(ctx context.Context, sess *sessionEnt
 		}
 		sess.setEffectiveTokenLimit(eff)
 		return nil
+
+	case configIDWorkspaceRoot:
+		// The workspace root is the session's cwd, fixed at session/new time and
+		// immutable afterward (changing it would re-root the agent mid-session).
+		// The picker chooses it before the session exists; a live change is
+		// refused rather than silently ignored.
+		return libacp.NewErrorf(libacp.ErrInvalidParams, "the workspace cannot be changed after the session starts")
 
 	default:
 		return libacp.NewErrorf(libacp.ErrInvalidParams, "unknown config option %q", configID)

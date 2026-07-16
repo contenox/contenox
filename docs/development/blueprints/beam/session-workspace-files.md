@@ -1,7 +1,9 @@
 # Session Workspaces: shared file context for agent and user
 
-Status: draft blueprint, 2026-07-16. Grounded in a full code audit (file:line
-references below are current as of that date). Not started.
+Status: IMPLEMENTED, 2026-07-16 (walking-skeleton steps 1–4). Grounded in a full
+code audit (file:line references below are current as of the draft date). See
+"Implementation status" at the bottom for what shipped, where, and the
+deliberate deviations.
 
 ## Definition
 
@@ -109,3 +111,95 @@ A browser choosing arbitrary host paths is a capability grant; treat it so:
 5. Later: multi-root sessions (ACP `AdditionalDirectories`, deliberately
    unset today — `initialize.go:85-96`), client-FS proxy for editor-hosted
    beam variants, write-path UX (agent edits surfacing as diffs vs the tree).
+
+## Implementation status (2026-07-16)
+
+Walking-skeleton steps 1–4 shipped. Step 5 (multi-root sessions / client-FS
+proxy / write-path diffs) remains future work.
+
+### Slice A — backend (done)
+1. **New package `runtime/vfs`** (`vfs.go`, `factory.go`): the single containment
+   home — `Contain`/`Within`/`ResolveRoot`, plus a `Factory` (allowlist + default
+   root, `"/"`/`""` → default) and `View`. `runtime/localtools/fs.go` (`checkPath`,
+   `absAllowedDir`) and `runtime/localfileservice/localfileservice.go`
+   (`resolveExisting`/`resolveForWrite`) both delegate here; the old
+   `resolvePathFollowingExistingSymlinks`/`isWithinRoot` copies are gone. Existing
+   tests stay green; `runtime/vfs/vfs_test.go` covers containment, symlink escape,
+   and allowlist.
+2. **Allowlist sources** (`serve_cmd.go` `buildWorkspaceFactory`): serve dir is the
+   always-present default root; extended by `contenox serve [dir]...` positional
+   args, repeatable `--workspace-root`, and `WORKSPACE_ROOTS` env
+   (`serverapi.Config.WorkspaceRoots`, path-list separated). Unchanged when nothing
+   is configured.
+3. **Per-session cwd → tools** (`serve_cmd.go`): `local_fs` is now built with an
+   empty fixed root + `acpsvc.NewServeCwdResolver(db, factory.Default())`.
+   DEVIATION from "copy acp_cmd's transport-closure resolver": serve shares ONE
+   `local_fs` across many per-connection WebSocket transports, so there is no
+   single transport to close over. The serve resolver instead reads the session's
+   persisted cwd from the DB (message_indices name → cwd KV), falling back to the
+   default root. `local_shell` stays fixed at the default root (out of scope).
+4. **`session/new` validation** (`acpsvc/session.go` `resolveWorkspaceCwd`):
+   requested cwd validated against the Factory; non-allowlisted → typed
+   `ErrInvalidParams`. Compat: `"/"`/missing → default root. ADDED
+   `resolveExistingSessionCwd` for `session/load`/`session/resume` so the `"/"`
+   sentinel (what beam sends on every reload) PRESERVES the session's stored
+   workspace instead of clobbering it to the default — a correctness fix beyond
+   the skeleton.
+5. **Workspace-root config option** (`acpsvc/config_options.go`): a
+   `workspace-root` select listing allowlisted roots, surfaced in
+   `workspaceConfigOptions`/`sessionConfigOptions` only when an allowlist is
+   configured. It is a pre-session picker; `set_config_option` for it is rejected
+   (cwd is immutable after creation).
+6. **`/files` per-root** (`internal/localfileapi/workspace.go`,
+   `serverapi/server.go`): when an allowlist is present, `AddWorkspaceRoutes`
+   resolves each request's `root` query param through the Factory (empty/`"/"` →
+   default; non-allowlisted → 422) and serves a cached per-root
+   `localfileservice`. Legacy single-`ProjectRoot` mode is the fallback. The
+   second contenoxDir-rooted instance (chain/hitl files) is untouched.
+7. **Gate A**: `go build ./...` clean; `runtime/vfs` unit tests; `localtools` /
+   `localfileservice` existing tests green; `internal/localfileapi/workspace_test.go`
+   (per-root + allowlist reject); `acpsvc/wire_e2e_test.go`
+   `TestE2E_Wire_SessionWorkspaceCwd` (non-allowlisted rejected, allowlisted
+   accepted, `"/"`→default, local_fs resolves against the session cwd, reload
+   preserves the workspace); `acpsvc/content_test.go` pins the resource_link wire
+   contract. (Postgres-container tests skip/fail only on the missing-docker path,
+   as before.)
+
+### Slice B — frontend (done)
+1. **Root picker**: the `workspace-root` config option renders automatically via
+   `ConfigOptionControls` on the empty chat; the pick feeds `newSession(cwd)` and
+   is filtered out of the live-session header (`AcpChatPage.tsx`).
+2. **IDE workspace panel** (`pages/chat/components/WorkspacePanel.tsx`): toggleable
+   (own header button, state persisted via `lib/workspacePanelPref.ts`), lazily-
+   loaded `FileTree` fed by `hooks/useWorkspaceFiles.ts` (+ pure
+   `lib/workspaceTree.ts`), file peek via `/files/content` rendered through the
+   existing `InlineAttachmentRenderer` `file_view` presentation.
+3. **@-mentions** (`pages/chat/components/MentionMenu.tsx` +
+   `lib/mentions.ts`): composer `@` autocomplete over the workspace listing
+   (cloning the SlashCommandMenu interaction), inserts a visible `@path` token,
+   and on submit serializes text + one `resource_link` block per mention — no
+   embed variant. Controller `sendPrompt(text, mentions)` and
+   `newSession(cwd)` extended. NOTE: mentions autocomplete over currently-loaded
+   files (root + expanded dirs); a deep file needs its directory expanded first
+   (no recursive index yet).
+4. **UI constraints**: packages/ui primitives + design tokens; single-purpose
+   hooks with pure helpers; all strings in a new `workspace` i18n namespace (en +
+   de), no protocol terms leaked.
+5. **Gate B**: `npx tsc --noEmit` clean; `npx vitest run` 253 passed (adds
+   `mentions.test.ts`, `workspaceTree.test.ts`); `npm run build` succeeds; eslint
+   clean on touched files (only the same pre-existing hook+component fast-refresh
+   warning SlashCommandMenu.tsx already emits).
+
+### End-to-end (browser pass, done)
+Isolated serve on :32125 (write-isolated copy of the DB, temp workspace roots).
+Verified via Playwright + DOM assertions: the Workspace picker lists both
+allowlisted roots on the empty chat; the panel toggles and lists the fixture
+tree; file peek renders `hello.txt`; `@hel` opens the menu and selecting inserts
+`@hello.txt`. No prompt turn sent (single GPU slot). No session was created
+(lazy creation), so nothing to clean up.
+
+### Incidental fix
+`hooks/acpWorkspaceController.ts`: guarded the empty-roster crash — `session/list`
+returns `sessions: null` (Go marshals a nil slice as null) for a fresh workspace,
+which the roster-paging spread turned into a "not iterable" TypeError (the first
+empty-workspace load, e.g. any brand-new install). Now `page.sessions ?? []`.

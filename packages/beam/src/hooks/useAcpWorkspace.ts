@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import type { SessionConfigOptionValue } from '../lib/acp';
+import type { WorkspaceFileRef } from '../pages/chat/lib/mentions';
 import { useAcpWorkspaceContext } from '../lib/acp/AcpWorkspaceProvider';
 import type { AcpSessionState } from './acpSessionState';
 import type { AcpWorkspaceState } from './acpWorkspaceState';
@@ -11,15 +12,17 @@ export interface UseAcpWorkspaceResult {
   session: AcpSessionState;
   /** Pages `session/list` to completion and replaces the roster. */
   refreshSessions: () => void;
-  /** Lazy-creation primitive (D5): creates a session, subscribes to it, and makes it active. Call this on first prompt submit, not on mount — see acpWorkspaceController.ts. */
-  newSession: () => Promise<string>;
+  /** Lazy-creation primitive (D5): creates a session, subscribes to it, and makes it active. Call this on first prompt submit, not on mount — see acpWorkspaceController.ts. `cwd` sets the session's workspace root (the user's pre-session pick). */
+  newSession: (cwd?: string) => Promise<string>;
   /** Switches the open session (closing whichever was open). */
   openSession: (id: string) => void;
   deleteSession: (id: string) => void;
   /** Client-side reset of "which session is open" — no server-side deletion. Call before navigating to bare `/chat` from any "new session" affordance so the next lazy `newSession()` call mints a genuinely new session. See acpWorkspaceController.ts's doc comment. */
   clearActiveSession: () => void;
-  /** No-ops with no active session — call `newSession()` first if `workspace.activeSessionId` is null. */
-  sendPrompt: (text: string) => void;
+  /** No-ops with no active session — call `newSession()` first if `workspace.activeSessionId` is null. `mentions` become `resource_link` blocks (reference only). */
+  sendPrompt: (text: string, mentions?: WorkspaceFileRef[]) => void;
+  /** `!` passthrough: runs one user line in the session's shell without an LLM turn. No-op with no active session. See `acpWorkspaceController.ts`'s `runTerminal()`. */
+  runTerminal: (command: string) => Promise<void>;
   respondPermission: (optionId: string) => void;
   cancel: () => void;
   setConfigOption: (configId: string, value: string | boolean) => void;
@@ -53,7 +56,7 @@ export function useAcpWorkspace(): UseAcpWorkspaceResult {
     void controller.refreshSessions();
   }, [controller]);
 
-  const newSession = useCallback(() => controller.newSession(), [controller]);
+  const newSession = useCallback((cwd?: string) => controller.newSession(cwd), [controller]);
 
   const openSession = useCallback(
     (id: string) => {
@@ -74,9 +77,14 @@ export function useAcpWorkspace(): UseAcpWorkspaceResult {
   }, [controller]);
 
   const sendPrompt = useCallback(
-    (text: string) => {
-      controller.sendPrompt(text);
+    (text: string, mentions?: WorkspaceFileRef[]) => {
+      controller.sendPrompt(text, mentions);
     },
+    [controller],
+  );
+
+  const runTerminal = useCallback(
+    (command: string) => controller.runTerminal(command),
     [controller],
   );
 
@@ -117,6 +125,7 @@ export function useAcpWorkspace(): UseAcpWorkspaceResult {
     deleteSession,
     clearActiveSession,
     sendPrompt,
+    runTerminal,
     respondPermission,
     cancel,
     setConfigOption,

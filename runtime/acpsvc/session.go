@@ -93,12 +93,17 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 		reportErr(err)
 		return libacp.LoadSessionResponse{}, err
 	}
+	store := runtimetypes.New(t.deps.DB.WithoutTransaction())
+	sessionCwd, err := t.resolveExistingSessionCwd(ctx, store, req.SessionID, req.Cwd)
+	if err != nil {
+		reportErr(err)
+		return libacp.LoadSessionResponse{}, err
+	}
 	workspaceID := t.workspaceID()
 	if resolved, ok := t.resolveSessionWorkspace(ctx, string(req.SessionID)); ok {
 		workspaceID = resolved
 	}
 
-	store := runtimetypes.New(t.deps.DB.WithoutTransaction())
 	registered, err := t.registerMcpServers(ctx, store, req.SessionID, req.McpServers)
 	if err != nil {
 		reportErr(err)
@@ -122,7 +127,7 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 
 	entry := &sessionEntry{
 		WorkspaceID:       workspaceID,
-		Cwd:               req.Cwd,
+		Cwd:               sessionCwd,
 		InternalSessionID: contenoxSessionID,
 		Agent:             ag,
 		McpServerNames:    registered,
@@ -134,9 +139,10 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 	t.sessions[req.SessionID] = entry
 	t.contenoxToACPID[contenoxSessionID] = req.SessionID
 	t.sessionMu.Unlock()
-	t.persistSessionCwd(ctx, store, req.SessionID, req.Cwd)
+	t.persistSessionCwd(ctx, store, req.SessionID, sessionCwd)
 
 	t.clearToolCallState(req.SessionID)
+	t.subscribeTerminal(req.SessionID, contenoxSessionID)
 	t.replayMessages(ctx, req.SessionID, messages)
 	// Emit the slash-command menu only after the session/load result is on the
 	// wire (see sendAvailableCommands) so the client can resolve the session.
@@ -271,6 +277,56 @@ func errSetupRequired() error {
 	return libacp.NewError(libacp.ErrAuthRequired, "contenox is not configured yet: no default-model is set. Run the \"Setup Contenox\" auth method, set the CONTENOX_DEFAULT_* environment variables (or run `contenox acp --setup`), then reconnect.")
 }
 
+// resolveWorkspaceCwd validates a requested session cwd against the workspace
+// allowlist and returns the concrete root the session will use. When no
+// allowlist is configured (Deps.WorkspaceRoots nil — the stdio ACP path) the
+// cwd is returned unchanged, preserving the editor-owns-the-filesystem
+// behavior. When an allowlist IS configured (serve), the sentinel cwd "/" (what
+// beam sends today) and an empty cwd resolve to the default root so existing
+// clients keep working; any other value must be an allowlisted root, else the
+// request is refused with an actionable error.
+func (t *Transport) resolveWorkspaceCwd(cwd string) (string, error) {
+	f := t.deps.WorkspaceRoots
+	if f == nil {
+		return cwd, nil
+	}
+	resolved, err := f.Resolve(cwd)
+	if err != nil {
+		return "", libacp.NewErrorf(libacp.ErrInvalidParams,
+			"workspace directory %q is not permitted; choose one of the configured workspace roots", cwd)
+	}
+	return resolved, nil
+}
+
+// resolveExistingSessionCwd resolves the cwd for session/load and session/resume
+// on an existing session. A concrete requested cwd is validated and adopted (a
+// client may re-root a session it owns to another allowlisted directory). The
+// sentinel "/" or empty cwd — what beam sends on every load/resume — must NOT
+// clobber the session's stored workspace back to the default; it preserves the
+// persisted cwd (when still allowlisted), falling back to the default only when
+// the session has none. When no allowlist is configured the requested cwd is
+// returned unchanged (stdio behavior).
+func (t *Transport) resolveExistingSessionCwd(ctx context.Context, store runtimetypes.Store, sid libacp.SessionID, cwd string) (string, error) {
+	f := t.deps.WorkspaceRoots
+	if f == nil {
+		return cwd, nil
+	}
+	if cwd != "" && cwd != "/" {
+		resolved, err := f.Resolve(cwd)
+		if err != nil {
+			return "", libacp.NewErrorf(libacp.ErrInvalidParams,
+				"workspace directory %q is not permitted; choose one of the configured workspace roots", cwd)
+		}
+		return resolved, nil
+	}
+	if existing := t.sessionCwd(ctx, store, sid); existing != "" {
+		if resolved, ok := f.Allows(existing); ok {
+			return resolved, nil
+		}
+	}
+	return f.Default(), nil
+}
+
 func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest) (libacp.NewSessionResponse, error) {
 	internalID := newSessionID(sessionNamespace(t))
 	sessionID := libacp.SessionID(internalID)
@@ -285,6 +341,11 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 	}
 	if t.deps.Engine == nil {
 		err := errSetupRequired()
+		reportErr(err)
+		return libacp.NewSessionResponse{}, err
+	}
+	sessionCwd, err := t.resolveWorkspaceCwd(req.Cwd)
+	if err != nil {
 		reportErr(err)
 		return libacp.NewSessionResponse{}, err
 	}
@@ -315,7 +376,7 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 
 	entry := &sessionEntry{
 		WorkspaceID:       workspaceID,
-		Cwd:               req.Cwd,
+		Cwd:               sessionCwd,
 		InternalSessionID: contenoxSessionID,
 		Agent:             ag,
 		McpServerNames:    registered,
@@ -327,8 +388,9 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 	t.sessions[sessionID] = entry
 	t.contenoxToACPID[contenoxSessionID] = sessionID
 	t.sessionMu.Unlock()
-	t.persistSessionCwd(ctx, store, sessionID, req.Cwd)
+	t.persistSessionCwd(ctx, store, sessionID, sessionCwd)
 	t.clearToolCallState(sessionID)
+	t.subscribeTerminal(sessionID, contenoxSessionID)
 
 	// A client learns this new session's id only from the session/new result;
 	// emitting available_commands_update before that result makes the client drop
@@ -376,12 +438,17 @@ func (t *Transport) ResumeSession(ctx context.Context, req libacp.ResumeSessionR
 		reportErr(err)
 		return libacp.ResumeSessionResponse{}, err
 	}
+	store := runtimetypes.New(t.deps.DB.WithoutTransaction())
+	sessionCwd, err := t.resolveExistingSessionCwd(ctx, store, req.SessionID, req.Cwd)
+	if err != nil {
+		reportErr(err)
+		return libacp.ResumeSessionResponse{}, err
+	}
 	workspaceID := t.workspaceID()
 	if resolved, ok := t.resolveSessionWorkspace(ctx, string(req.SessionID)); ok {
 		workspaceID = resolved
 	}
 
-	store := runtimetypes.New(t.deps.DB.WithoutTransaction())
 	registered, err := t.registerMcpServers(ctx, store, req.SessionID, req.McpServers)
 	if err != nil {
 		reportErr(err)
@@ -405,7 +472,7 @@ func (t *Transport) ResumeSession(ctx context.Context, req libacp.ResumeSessionR
 
 	entry := &sessionEntry{
 		WorkspaceID:       workspaceID,
-		Cwd:               req.Cwd,
+		Cwd:               sessionCwd,
 		InternalSessionID: contenoxSessionID,
 		Agent:             ag,
 		McpServerNames:    registered,
@@ -417,8 +484,9 @@ func (t *Transport) ResumeSession(ctx context.Context, req libacp.ResumeSessionR
 	t.sessions[req.SessionID] = entry
 	t.contenoxToACPID[contenoxSessionID] = req.SessionID
 	t.sessionMu.Unlock()
-	t.persistSessionCwd(ctx, store, req.SessionID, req.Cwd)
+	t.persistSessionCwd(ctx, store, req.SessionID, sessionCwd)
 	t.clearToolCallState(req.SessionID)
+	t.subscribeTerminal(req.SessionID, contenoxSessionID)
 
 	libacp.AfterResponse(ctx, func() {
 		t.sendAvailableCommands(ctx, req.SessionID)
@@ -455,6 +523,10 @@ func (t *Transport) CloseSession(ctx context.Context, req libacp.CloseSessionReq
 		t.cleanupMcpServers(ctx, store, entry.McpServerNames)
 	}
 	t.clearToolCallState(req.SessionID)
+	// An explicit close is a user action ending the session on this connection —
+	// tear down its shell (unlike a bare connection drop, which keeps the shell
+	// alive for reconnect and lets the idle reaper reclaim it).
+	t.closeTerminal(req.SessionID, entry)
 	reportChange(string(req.SessionID), map[string]any{"was_open": entry != nil})
 	return libacp.CloseSessionResponse{}, nil
 }
@@ -488,6 +560,8 @@ func (t *Transport) DeleteSession(ctx context.Context, req libacp.DeleteSessionR
 		t.cleanupMcpServers(ctx, store, entry.McpServerNames)
 	}
 	t.clearToolCallState(req.SessionID)
+	// The session's history is being deleted; its shell must not outlive it.
+	t.closeTerminal(req.SessionID, entry)
 
 	ag := agentservice.New(agentservice.Deps{
 		Engine:      t.deps.Engine,
@@ -699,6 +773,11 @@ func sessionNamespace(t *Transport) string {
 
 func (t *Transport) Close(ctx context.Context) error {
 	store := runtimetypes.New(t.deps.DB.WithoutTransaction())
+
+	// A bare connection drop stops streaming but does NOT kill shells: a browser
+	// reload reconnects and re-subscribes, and persistent shells are the point.
+	// Idle-timeout reclaims anything genuinely abandoned.
+	t.unsubscribeAllTerminals()
 
 	t.sessionMu.Lock()
 	entries := make([]*sessionEntry, 0, len(t.sessions))

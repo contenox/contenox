@@ -268,6 +268,46 @@ describe('acpSessionReducer: tool calls, plan, usage, config, commands', () => {
   });
 });
 
+describe('acpSessionReducer: terminal stream + cards', () => {
+  it('appends terminal_output chunks and tracks the offset', () => {
+    const state = run(
+      { type: 'session_reset', sessionId: 's1' },
+      { type: 'terminal_output', payload: { sessionId: 's1', offset: 3, chunk: 'foo' } },
+      { type: 'terminal_output', payload: { sessionId: 's1', offset: 6, chunk: 'bar' } },
+    );
+    expect(state.terminal).toEqual({ text: 'foobar', offset: 6 });
+  });
+
+  it('replaces the buffer on a reset chunk (reconnect snapshot)', () => {
+    const state = run(
+      { type: 'session_reset', sessionId: 's1' },
+      { type: 'terminal_output', payload: { sessionId: 's1', offset: 6, chunk: 'foobar' } },
+      { type: 'terminal_output', payload: { sessionId: 's1', offset: 4, chunk: 'fresh', reset: true } },
+    );
+    expect(state.terminal).toEqual({ text: 'fresh', offset: 4 });
+  });
+
+  it('records a terminal_card as a distinct timeline item', () => {
+    const state = run(
+      { type: 'session_reset', sessionId: 's1' },
+      { type: 'terminal_card', id: 'term-1', command: 'echo hi', output: 'hi' },
+    );
+    expect(state.items).toContainEqual({ kind: 'terminal', id: 'term-1' });
+    expect(state.terminals['term-1']).toEqual({ id: 'term-1', command: 'echo hi', output: 'hi' });
+  });
+
+  it('clears terminal state on session_reset', () => {
+    const dirty = run(
+      { type: 'session_reset', sessionId: 's1' },
+      { type: 'terminal_output', payload: { sessionId: 's1', offset: 3, chunk: 'foo' } },
+      { type: 'terminal_card', id: 'term-1', command: 'echo hi', output: 'hi' },
+    );
+    const fresh = acpSessionReducer(dirty, { type: 'session_reset', sessionId: 's2' });
+    expect(fresh.terminal).toBeNull();
+    expect(fresh.terminals).toEqual({});
+  });
+});
+
 describe('acpSessionReducer: permission gate', () => {
   it('sets and clears pendingPermission', () => {
     const withRequest = run(

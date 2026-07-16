@@ -12,10 +12,12 @@ import {
   Span,
   useChatScroll,
 } from '@contenox/ui';
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { PanelLeft, PanelLeftClose, PanelRight, PanelRightClose } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAcpWorkspace } from '../../hooks/useAcpWorkspace';
+import { useWorkspaceFiles } from '../../hooks/useWorkspaceFiles';
 import type { AcpWorkspaceStatus } from '../../hooks/acpWorkspaceState';
 import type { SessionConfigOption, SessionConfigOptionValue } from '../../lib/acp';
 import { useSetupStatus } from '../../hooks/useSetupStatus';
@@ -23,12 +25,28 @@ import { classifyAcpExecutionError, classifySetupIssueCode } from '../../lib/acp
 import { getBlockingSetupIssue, getSetupIssueFixPath } from '../../lib/setupHealth';
 import type { SetupIssue } from '../../lib/types';
 import { SlashCommandRegistryProvider } from '../../lib/slashCommands';
+import { activeMentions, type WorkspaceFileRef } from './lib/mentions';
+import { readWorkspacePanelOpen, writeWorkspacePanelOpen } from './lib/workspacePanelPref';
+import { readTerminalPanelOpen, writeTerminalPanelOpen } from './lib/terminalPanelPref';
+import { parseTerminalPassthrough } from './lib/terminalPassthrough';
 import { ConfigOptionControls } from './components/ConfigOptionControls';
+import { MentionMenu, useMentionMenu } from './components/MentionMenu';
 import { PermissionGate } from './components/PermissionGate';
 import { PlanPanel } from './components/PlanPanel';
 import { SlashCommandMenu, useSlashCommandMenu } from './components/SlashCommandMenu';
 import { TranscriptItems } from './components/TranscriptItems';
 import { UsageMeter } from './components/UsageMeter';
+import { WorkspacePanel } from './components/WorkspacePanel';
+import { TerminalPanel } from './components/TerminalPanel';
+
+// Mirrors acpsvc's workspace-root config option id. The chosen root becomes the
+// session's cwd at creation time and is immutable afterward, so it is handled
+// specially (fed to newSession, filtered out of the live-session controls).
+const WORKSPACE_ROOT_CONFIG_ID = 'workspace-root';
+
+function configOptionCurrentValue(options: SessionConfigOption[], id: string): string | undefined {
+  return options.find(o => o.id === id)?.currentValue;
+}
 
 /**
  * THE chat surface, mounted at `/chat` and `/chat/:sessionId` (Stage 4 — see
@@ -248,6 +266,7 @@ function AcpChatWorkspace({ paramSessionId }: { paramSessionId: string | null })
     openSession,
     clearActiveSession,
     sendPrompt,
+    runTerminal,
     respondPermission,
     cancel,
     setConfigOption,
@@ -270,6 +289,68 @@ function AcpChatWorkspace({ paramSessionId }: { paramSessionId: string | null })
   const { containerRef, endRef, isNearBottom, scrollToEnd } = useChatScroll({
     deps: [session.items, session.pendingPermission],
   });
+
+  const onEmptyChat = workspace.activeSessionId == null;
+
+  // The session's workspace root: an active session's persisted cwd, or (on the
+  // empty chat) the staged/default workspace-root pick. Drives both the file
+  // panel and the @-mention candidate list.
+  const stagedRoot = stagedConfig[WORKSPACE_ROOT_CONFIG_ID];
+  const activeSessionCwd = workspace.sessions.find(s => s.sessionId === workspace.activeSessionId)?.cwd ?? null;
+  const defaultRoot = configOptionCurrentValue(workspace.workspaceConfigOptions, WORKSPACE_ROOT_CONFIG_ID);
+  const workspaceRoot = onEmptyChat
+    ? typeof stagedRoot === 'string' && stagedRoot
+      ? stagedRoot
+      : (defaultRoot ?? null)
+    : activeSessionCwd;
+
+  const files = useWorkspaceFiles(workspaceRoot);
+
+  const [panelOpen, setPanelOpen] = useState(readWorkspacePanelOpen);
+  const togglePanel = useCallback(() => {
+    setPanelOpen(prev => {
+      const next = !prev;
+      writeWorkspacePanelOpen(next);
+      return next;
+    });
+  }, []);
+
+  const [terminalPanelOpen, setTerminalPanelOpen] = useState(readTerminalPanelOpen);
+  const toggleTerminalPanel = useCallback(() => {
+    setTerminalPanelOpen(prev => {
+      const next = !prev;
+      writeTerminalPanelOpen(next);
+      return next;
+    });
+  }, []);
+  const openTerminalPanel = useCallback(() => {
+    setTerminalPanelOpen(true);
+    writeTerminalPanelOpen(true);
+  }, []);
+
+  // @-mention state: which workspace files the user has referenced in the draft,
+  // and the caret position the mention menu parses against.
+  const [mentions, setMentions] = useState<WorkspaceFileRef[]>([]);
+  const [caret, setCaret] = useState(0);
+  const mentionMenu = useMentionMenu({
+    draft,
+    caret,
+    cache: files.cache,
+    ensureLoaded: files.ensureLoaded,
+    isLoading: files.isLoading,
+    onInsert: (nextDraft, nextCaret, file) => {
+      setDraft(nextDraft);
+      setCaret(nextCaret);
+      setMentions(prev => (prev.some(m => m.path === file.path) ? prev : [...prev, file]));
+    },
+    onDrill: (nextDraft, nextCaret) => {
+      setDraft(nextDraft);
+      setCaret(nextCaret);
+    },
+  });
+  const trackCaret = useCallback((e: KeyboardEvent<HTMLTextAreaElement> | MouseEvent<HTMLTextAreaElement>) => {
+    setCaret(e.currentTarget.selectionStart ?? 0);
+  }, []);
 
   // Deduplication for the "modeld down" double-error-surface bug: a failed
   // `session/prompt` classifies as backend_unreachable/model_unavailable
@@ -341,6 +422,17 @@ function AcpChatWorkspace({ paramSessionId }: { paramSessionId: string | null })
 
   const slashMenu = useSlashCommandMenu({ draft, onDraftChange: setDraft, availableCommands: session.availableCommands });
 
+  // The composer's textarea routes keydowns to whichever completion menu is open
+  // — each handler no-ops when its own menu is closed (they are mutually
+  // exclusive: `/name` at the start vs. `@path` after whitespace).
+  const composerKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      slashMenu.handleKeyDown(e);
+      mentionMenu.handleKeyDown(e);
+    },
+    [slashMenu, mentionMenu],
+  );
+
   // Canonical "new session" affordance (BUG 1 / BUG 2): clears the
   // workspace-global activeSessionId at CLICK time (not via an effect keyed
   // on it — that would race handleSubmit's lazy newSession(), which sets
@@ -356,10 +448,10 @@ function AcpChatWorkspace({ paramSessionId }: { paramSessionId: string | null })
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
-      // The slash menu intercepts Enter to accept a completion while it's
-      // open (see SlashCommandMenu.tsx) — a submit event firing while it's
-      // still open means the browser raced us; treat it as consumed.
-      if (slashMenu.open) return;
+      // The slash / mention menus intercept Enter to accept a completion while
+      // open — a submit event firing while one is still open means the browser
+      // raced us; treat it as consumed.
+      if (slashMenu.open || mentionMenu.open) return;
 
       if (session.isPrompting) {
         // D6: Enter must NOT submit/cancel while prompting — only an
@@ -373,27 +465,65 @@ function AcpChatWorkspace({ paramSessionId }: { paramSessionId: string | null })
 
       const text = draft.trim();
       if (!text) return;
+
+      // `!` passthrough: a leading `!` runs the rest as a shell line in the
+      // session's persistent shell — NOT a prompt, no LLM turn, no tokens. The
+      // terminal panel opens and the output streams there; a compact card lands
+      // in the transcript to record it (see acpWorkspaceController.runTerminal).
+      const shellCommand = parseTerminalPassthrough(draft);
+      if (shellCommand) {
+        setDraft('');
+        setMentions([]);
+        openTerminalPanel();
+        let shellSid = workspace.activeSessionId;
+        if (!shellSid) {
+          // The shell is per-session; mint one lazily just like the prompt path
+          // (session/new runs no model), rooted at the staged workspace pick.
+          const rootPick =
+            typeof stagedRoot === 'string' && stagedRoot.trim() !== '' ? stagedRoot : undefined;
+          try {
+            shellSid = await newSession(rootPick);
+          } catch {
+            setDraft(draft);
+            return;
+          }
+          navigate(`/chat/${shellSid}`, { replace: true });
+        }
+        void runTerminal(shellCommand);
+        return;
+      }
+
+      const turnMentions = activeMentions(draft, mentions);
       setDraft('');
+      setMentions([]);
 
       let sid = workspace.activeSessionId;
       if (!sid) {
-        // Lazy creation (D5): no session/new until the first submit.
+        // Lazy creation (D5): no session/new until the first submit. The staged
+        // workspace-root pick (if any) becomes the new session's cwd.
+        const rootPick =
+          typeof stagedRoot === 'string' && stagedRoot.trim() !== '' ? stagedRoot : undefined;
         try {
-          sid = await newSession();
+          sid = await newSession(rootPick);
         } catch {
           // newSession() itself already surfaced the failure (setup_required
           // for auth errors, session.error otherwise — see
           // acpWorkspaceController.ts's newSession()). Restore the draft so
           // the user doesn't lose what they typed and can just retry.
           setDraft(text);
+          setMentions(turnMentions);
           return;
         }
         // Flush the empty-chat's staged config choices onto the just-minted
         // session BEFORE the prompt runs, so they win over the server's
         // per-session defaults for this first turn — the turn that fails when
         // the configured default model is broken and the user picked a working
-        // one on the empty chat.
-        const staged = Object.entries(stagedConfig).map(([configId, value]) => ({ configId, value }));
+        // one on the empty chat. The workspace-root pick is excluded: it was
+        // already applied as the session's cwd and is not a set_config_option
+        // target (the runtime rejects changing it after creation).
+        const staged = Object.entries(stagedConfig)
+          .filter(([configId]) => configId !== WORKSPACE_ROOT_CONFIG_ID)
+          .map(([configId, value]) => ({ configId, value }));
         if (staged.length > 0) {
           try {
             await applyConfigOptions(staged);
@@ -403,23 +533,29 @@ function AcpChatWorkspace({ paramSessionId }: { paramSessionId: string | null })
             // user can adjust their pick and retry rather than silently running
             // against the broken default.
             setDraft(text);
+            setMentions(turnMentions);
             return;
           }
         }
         navigate(`/chat/${sid}`, { replace: true });
       }
-      sendPrompt(text);
+      sendPrompt(text, turnMentions);
     },
     [
       slashMenu.open,
+      mentionMenu.open,
       session.isPrompting,
       draft,
+      mentions,
+      stagedRoot,
       workspace.activeSessionId,
       stagedConfig,
       newSession,
       applyConfigOptions,
       navigate,
       sendPrompt,
+      runTerminal,
+      openTerminalPanel,
       cancel,
     ],
   );
@@ -475,11 +611,13 @@ function AcpChatWorkspace({ paramSessionId }: { paramSessionId: string | null })
   // drive them and changes push straight through `setConfigOption`. On an empty
   // chat (no session yet) they come from the workspace-level options advertised
   // at initialize (see acpWorkspaceState), and changes are staged locally to be
-  // flushed on the first submit — see `stagedConfig` / handleSubmit.
-  const onEmptyChat = workspace.activeSessionId == null;
+  // flushed on the first submit — see `stagedConfig` / handleSubmit. The
+  // workspace-root option is a pre-session picker only: on the empty chat it lets
+  // the user choose the session's workspace, but on a live session it is filtered
+  // out (the root is fixed at creation and the runtime rejects changing it).
   const headerConfigOptions = onEmptyChat
     ? overlayStagedValues(workspace.workspaceConfigOptions, stagedConfig)
-    : session.configOptions;
+    : session.configOptions.filter(o => o.id !== WORKSPACE_ROOT_CONFIG_ID);
 
   return (
     <div className="bg-surface dark:bg-dark-surface flex h-full min-h-0 flex-col">
@@ -496,6 +634,32 @@ function AcpChatWorkspace({ paramSessionId }: { paramSessionId: string | null })
           )}
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          {workspaceRoot && (
+            <Button
+              type="button"
+              variant={panelOpen ? 'primary' : 'outline'}
+              palette="neutral"
+              size="sm"
+              className="hidden sm:inline-flex"
+              aria-pressed={panelOpen}
+              aria-label={t('workspace.toggle_label')}
+              onClick={togglePanel}>
+              {panelOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
+              <span className="ml-1.5">{t('workspace.show_files')}</span>
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant={terminalPanelOpen ? 'primary' : 'outline'}
+            palette="neutral"
+            size="sm"
+            className="hidden sm:inline-flex"
+            aria-pressed={terminalPanelOpen}
+            aria-label={t('terminal.toggle_label')}
+            onClick={toggleTerminalPanel}>
+            {terminalPanelOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRight className="h-4 w-4" />}
+            <span className="ml-1.5">{t('terminal.show_terminal')}</span>
+          </Button>
           <UsageMeter usage={session.usage} />
           <ConfigOptionControls configOptions={headerConfigOptions} onChange={handleConfigChange} />
           {paramSessionId && (
@@ -526,47 +690,77 @@ function AcpChatWorkspace({ paramSessionId }: { paramSessionId: string | null })
 
       <PlanPanel entries={session.plan} />
 
-      {!hasContent ? (
-        <div className="m-auto">
-          <EmptyState title={t('acp_chat.empty_title')} description={t('acp_chat.empty_description')} />
-        </div>
-      ) : (
-        <div className="relative flex min-h-0 flex-1 flex-col">
-          {/* Wrapper must be a flex column: ChatThread sizes itself with
-              flex-1/min-h-0, which is inert inside a plain block wrapper — the
-              scroll region then grows unbounded and the thread stops scrolling. */}
-          <ChatThread containerRef={containerRef} endRef={endRef}>
-            <TranscriptItems session={session} agentName={workspace.agentName} />
-          </ChatThread>
-          <ChatScrollToLatest
-            visible={!isNearBottom}
-            onClick={scrollToEnd}
-            label={t('acp_chat.scroll_to_latest')}
-          />
-        </div>
-      )}
-
-      <div className="relative shrink-0 px-3 pb-3 sm:px-4">
-        {slashMenu.open && (
-          <SlashCommandMenu
-            entries={slashMenu.entries}
-            activeIndex={slashMenu.activeIndex}
-            onPick={slashMenu.pick}
-            onHoverIndex={slashMenu.setActiveIndex}
-          />
+      {/* IDE-style layout: the toggleable workspace file panel sits to the left
+          of the thread + composer column. The panel is hidden on narrow
+          viewports (where horizontal space is scarce); the toggle only shows at
+          sm+. */}
+      <div className="flex min-h-0 flex-1">
+        {panelOpen && workspaceRoot && (
+          <div className="hidden sm:flex">
+            <WorkspacePanel root={workspaceRoot} files={files} onClose={togglePanel} />
+          </div>
         )}
-        <ChatComposer
-          value={draft}
-          onChange={setDraft}
-          onSubmit={handleSubmit}
-          isPending={false}
-          disabled={composerDisabled}
-          canSubmit={workspace.status === 'ready' || session.isPrompting}
-          allowEmptyMessage={session.isPrompting}
-          submitLabel={session.isPrompting ? t('acp_chat.composer_stop') : t('acp_chat.composer_send')}
-          placeholder={workspace.status === 'ready' ? t('acp_chat.composer_placeholder') : t('acp_chat.composer_placeholder_connecting')}
-          textareaProps={{ onKeyDown: slashMenu.handleKeyDown }}
-        />
+        <div className="flex min-h-0 flex-1 flex-col">
+          {!hasContent ? (
+            <div className="m-auto">
+              <EmptyState title={t('acp_chat.empty_title')} description={t('acp_chat.empty_description')} />
+            </div>
+          ) : (
+            <div className="relative flex min-h-0 flex-1 flex-col">
+              {/* Wrapper must be a flex column: ChatThread sizes itself with
+                  flex-1/min-h-0, which is inert inside a plain block wrapper — the
+                  scroll region then grows unbounded and the thread stops scrolling. */}
+              <ChatThread containerRef={containerRef} endRef={endRef}>
+                <TranscriptItems session={session} agentName={workspace.agentName} />
+              </ChatThread>
+              <ChatScrollToLatest
+                visible={!isNearBottom}
+                onClick={scrollToEnd}
+                label={t('acp_chat.scroll_to_latest')}
+              />
+            </div>
+          )}
+
+          <div className="relative shrink-0 px-3 pb-3 sm:px-4">
+            {slashMenu.open ? (
+              <SlashCommandMenu
+                entries={slashMenu.entries}
+                activeIndex={slashMenu.activeIndex}
+                onPick={slashMenu.pick}
+                onHoverIndex={slashMenu.setActiveIndex}
+              />
+            ) : mentionMenu.open ? (
+              <MentionMenu
+                entries={mentionMenu.entries}
+                scope={mentionMenu.scope}
+                loading={mentionMenu.loading}
+                activeIndex={mentionMenu.activeIndex}
+                onPick={mentionMenu.pick}
+                onHoverIndex={mentionMenu.setActiveIndex}
+              />
+            ) : null}
+            <ChatComposer
+              value={draft}
+              onChange={setDraft}
+              onSubmit={handleSubmit}
+              isPending={false}
+              disabled={composerDisabled}
+              canSubmit={workspace.status === 'ready' || session.isPrompting}
+              allowEmptyMessage={session.isPrompting}
+              submitLabel={session.isPrompting ? t('acp_chat.composer_stop') : t('acp_chat.composer_send')}
+              placeholder={workspace.status === 'ready' ? t('acp_chat.composer_placeholder') : t('acp_chat.composer_placeholder_connecting')}
+              textareaProps={{ onKeyDown: composerKeyDown, onKeyUp: trackCaret, onClick: trackCaret, onSelect: trackCaret }}
+            />
+          </div>
+        </div>
+        {terminalPanelOpen && (
+          // Second IDE-style panel: the terminal observer, to the RIGHT of the
+          // thread column (the file panel is on the left). Hidden on narrow
+          // viewports like its sibling.
+          <div className="hidden sm:flex">
+            <TerminalPanel onClose={toggleTerminalPanel} />
+          </div>
+        )}
       </div>
 
       <PermissionGate permission={session.pendingPermission} onRespond={respondPermission} />

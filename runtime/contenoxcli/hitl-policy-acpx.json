@@ -19,6 +19,9 @@
     {"tools": "local_shell", "tool": "local_shell", "action": "deny", "when": [{"key": "args", "op": "no_command_substitution", "value": ""}]},
     {"tools": "local_shell", "tool": "local_shell", "action": "deny"},
 
+    {"tools": "shell_session", "tool": "shell_session_run", "action": "deny"},
+    {"tools": "shell_session", "tool": "shell_session_read", "action": "allow"},
+
     {"tools": "webtools", "tool": "*", "action": "deny", "when": [{"key": "url", "op": "host", "value": "localhost,127.0.0.1,0.0.0.0,::1,169.254.169.254,169.254.170.2,metadata.google.internal,metadata.azure.com"}]},
 
     {"tools": "webtools", "tool": "web_post", "action": "deny"},

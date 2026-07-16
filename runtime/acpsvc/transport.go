@@ -13,7 +13,9 @@ import (
 	"github.com/contenox/runtime/runtime/enginesvc"
 	"github.com/contenox/runtime/runtime/internal/clikv"
 	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/shellsession"
 	"github.com/contenox/runtime/runtime/taskengine"
+	"github.com/contenox/runtime/runtime/vfs"
 )
 
 type Deps struct {
@@ -30,6 +32,22 @@ type Deps struct {
 	// ContenoxDir is the active .contenox directory, used to locate auxiliary
 	// chains (e.g. chain-compact.json for the /compact command).
 	ContenoxDir string
+
+	// WorkspaceRoots is the allowlist of directories a client may choose as a
+	// session's workspace (its cwd). When nil, no allowlist is enforced and any
+	// absolute cwd is accepted — the historical behavior for the stdio ACP path,
+	// where the editor owns the filesystem. serve sets it so a browser client
+	// can only root a session inside an operator-approved directory. The sentinel
+	// cwd "/" (what beam sends today) and an empty cwd both resolve to the
+	// default root, so existing clients keep working.
+	WorkspaceRoots *vfs.Factory
+
+	// ShellSessions manages the per-chat-session persistent PTY shells behind the
+	// shell-session surface (the terminal panel + shell_session_run/read tools).
+	// Nil when shell tooling is disabled: the terminal extension methods report
+	// method-not-found and no live output is streamed — the feature is absent,
+	// not broken.
+	ShellSessions shellsession.Manager
 
 	// KnownPolicies are the HITL policy preset names shown by /policy when
 	// listing. Display only — empty just omits the list.
@@ -112,6 +130,12 @@ type Transport struct {
 
 	bannerMu      sync.Mutex
 	pendingBanner string
+
+	// termSubMu guards termSubs, the per-open-session cancel funcs for live
+	// terminal-output subscriptions to the shell manager. One subscription per
+	// ACP session id; re-subscribing (on reload) cancels the prior one.
+	termSubMu sync.Mutex
+	termSubs  map[libacp.SessionID]func()
 }
 
 func permKey(sid libacp.SessionID, toolCallID string) string {
@@ -144,7 +168,7 @@ func (t *Transport) sendToolCallUpdateGuarded(ctx context.Context, sid libacp.Se
 
 func New(deps Deps) libacp.AgentFactory {
 	return func(conn *libacp.AgentSideConnection) libacp.Agent {
-		return &Transport{
+		t := &Transport{
 			deps:               deps,
 			conn:               conn,
 			connectionID:       newSessionID("conn"),
@@ -158,7 +182,14 @@ func New(deps Deps) libacp.AgentFactory {
 			defaultMaxTokens:   deps.DefaultMaxTokens,
 			defaultThink:       deps.DefaultThink,
 			pendingBanner:      deps.UpdateBanner,
+			termSubs:           make(map[libacp.SessionID]func()),
 		}
+		// The `!` shell passthrough and any future contenox-namespaced client
+		// requests arrive as ACP extension methods (see terminal.go). A conformant
+		// foreign client never calls them; unknown extension methods still answer
+		// MethodNotFound because this handler only claims the contenox namespace.
+		conn.SetExtRequestHandler(t.handleExtRequest)
+		return t
 	}
 }
 

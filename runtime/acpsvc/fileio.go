@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	libacp "github.com/contenox/runtime/libacp"
+	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/localtools"
+	"github.com/contenox/runtime/runtime/runtimetypes"
 )
 
 var osFallback = localtools.NewOSFileIO()
@@ -94,4 +96,47 @@ func NewACPCwdResolver(transport func() *Transport) func(context.Context) string
 		}
 		return ""
 	}
+}
+
+// NewServeCwdResolver returns the cwd resolver for the serve path, where a
+// single shared local_fs tool is consulted by many per-connection transports —
+// so it cannot close over one transport the way the stdio path does. Instead it
+// resolves the session's persisted workspace cwd from the database (keyed by the
+// internal session id in ctx), falling back to defaultRoot when the session has
+// none, its stored cwd is the legacy "/" sentinel, or there is no session in
+// scope. The stored cwd is already validated against the allowlist at
+// session/new time, so this read is trusted; defaultRoot is the Factory default.
+func NewServeCwdResolver(db libdb.DBManager, defaultRoot string) func(context.Context) string {
+	return func(ctx context.Context) string {
+		if db == nil {
+			return defaultRoot
+		}
+		internalID := sessionIDFromCtx(ctx)
+		if internalID == "" {
+			return defaultRoot
+		}
+		cwd := serveSessionCwd(ctx, db, internalID)
+		if cwd == "" || cwd == "/" {
+			return defaultRoot
+		}
+		return cwd
+	}
+}
+
+// serveSessionCwd maps an internal session id to its persisted workspace cwd:
+// message_indices.name is the ACP session id, under which persistSessionCwd
+// stores the cwd in the KV store.
+func serveSessionCwd(ctx context.Context, db libdb.DBManager, internalID string) string {
+	exec := db.WithoutTransaction()
+	var name string
+	if err := exec.QueryRowContext(ctx,
+		`SELECT name FROM message_indices WHERE id = $1`, internalID,
+	).Scan(&name); err != nil || name == "" {
+		return ""
+	}
+	var rec sessionCwdRecord
+	if err := runtimetypes.New(exec).GetKV(ctx, acpSessionCwdKVPrefix+name, &rec); err != nil {
+		return ""
+	}
+	return rec.Cwd
 }

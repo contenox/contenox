@@ -3,7 +3,6 @@ import {
   AcpError,
   createAcpClient,
   JSON_RPC_ERROR_CODES,
-  textContent,
   workspaceConfigOptionsFromInit,
   type SessionConfigOption,
   type SessionConfigOptionValue,
@@ -12,6 +11,7 @@ import {
   type SessionInfo,
   type Transport,
 } from '../lib/acp';
+import { promptBlocksFromDraft, type WorkspaceFileRef } from '../pages/chat/lib/mentions';
 import type { AcpSessionAction } from './acpSessionState';
 import type { AcpWorkspaceAction } from './acpWorkspaceState';
 
@@ -59,8 +59,8 @@ export interface AcpWorkspaceController {
   connect(): Promise<void>;
   /** Pages `session/list` to completion and replaces the roster. No-op while disconnected. */
   refreshSessions(): Promise<void>;
-  /** Lazy-creation primitive (D5): creates a session, subscribes to it, and makes it active. Returns the new session id. */
-  newSession(): Promise<SessionId>;
+  /** Lazy-creation primitive (D5): creates a session, subscribes to it, and makes it active. Returns the new session id. `cwd` overrides the default workspace root for this session (the root the user picked before the first prompt); falls back to the controller's default cwd. */
+  newSession(cwd?: string): Promise<SessionId>;
   /** Subscribes to `id` BEFORE issuing `session/load` (replay arrives before the response resolves — see client.ts), then closes whichever session was previously open. */
   openSession(id: SessionId): Promise<void>;
   deleteSession(id: SessionId): Promise<void>;
@@ -75,8 +75,23 @@ export interface AcpWorkspaceController {
    * reusing whatever was active.
    */
   clearActiveSession(): void;
-  /** No-ops while disposed, disconnected, no session is open, or the OPEN session already has a prompt in flight (an old session's still-settling turn never blocks a newly-opened session). Slash-command text passes through verbatim. */
-  sendPrompt(text: string): void;
+  /**
+   * No-ops while disposed, disconnected, no session is open, or the OPEN session
+   * already has a prompt in flight (an old session's still-settling turn never
+   * blocks a newly-opened session). Slash-command text passes through verbatim.
+   * `mentions` are workspace files referenced with `@` in the composer; each is
+   * sent as a `resource_link` content block alongside the text — reference only,
+   * the agent reads the file through its tools (never an embedded/attached copy).
+   */
+  sendPrompt(text: string, mentions?: WorkspaceFileRef[]): void;
+  /**
+   * `!` passthrough: runs one user line in the open session's persistent shell
+   * without an LLM turn (no prompt, no tokens). Output streams to the terminal
+   * panel via the standing subscription; a compact card is added to the
+   * transcript to record the line. No-op with no open session. Rejects if shell
+   * sessions are disabled on the server.
+   */
+  runTerminal(command: string): Promise<void>;
   /** Resolves the in-flight `session/request_permission`, if any, for the open session. */
   respondPermission(optionId: string): void;
   /** Fire-and-forget `session/cancel` for the open session. */
@@ -222,6 +237,7 @@ export function createAcpWorkspaceController(
       onToolCall: event => sessionDispatch({ type: 'tool_call', event }),
       onPlan: entries => sessionDispatch({ type: 'plan', entries }),
       onUsage: usage => sessionDispatch({ type: 'usage', usage }),
+      onTerminalOutput: payload => sessionDispatch({ type: 'terminal_output', payload }),
       onAvailableCommands: commands => sessionDispatch({ type: 'available_commands', commands }),
       onConfigOptions: configOptions => sessionDispatch({ type: 'config_options', configOptions }),
       onSessionInfo: info =>
@@ -281,7 +297,10 @@ export function createAcpWorkspaceController(
     let cursor: string | undefined;
     for (;;) {
       const page = await runGuarded(() => c.listSessions(cursor));
-      collected.push(...page.sessions);
+      // An empty roster comes back as `sessions: null` on the wire (Go marshals a
+      // nil slice as null), so guard the spread rather than throwing "not
+      // iterable" on a fresh workspace with no sessions yet.
+      collected.push(...(page.sessions ?? []));
       if (!page.nextCursor) break;
       cursor = page.nextCursor;
     }
@@ -418,9 +437,12 @@ export function createAcpWorkspaceController(
     await refreshSessionsInternal(client);
   }
 
-  async function newSession(): Promise<SessionId> {
+  async function newSession(overrideCwd?: string): Promise<SessionId> {
     if (disposed || !client) throw new Error('acp: workspace controller is not connected');
     const c = client;
+    // The workspace root the user picked on the empty chat becomes this
+    // session's cwd; absent a pick, the controller's default cwd is used.
+    const sessionCwd = overrideCwd && overrideCwd.trim() !== '' ? overrideCwd : cwd;
 
     rejectPendingPermission();
     const previousId = activeSessionId;
@@ -428,7 +450,7 @@ export function createAcpWorkspaceController(
 
     // session/new mints the id server-side, so (unlike session/load) we
     // cannot subscribe until the response carries it.
-    const result = await runGuarded(() => c.newSession(cwd)).catch(err => {
+    const result = await runGuarded(() => c.newSession(sessionCwd)).catch(err => {
       // Auth failures are already surfaced as `setup_required` by
       // guardAuthRequired (inside runGuarded) — that swaps the whole page to
       // SetupRequiredState, so there's no composer left to show an inline
@@ -455,7 +477,7 @@ export function createAcpWorkspaceController(
     // than relying on onConfigOptions.
     if (result.configOptions) sessionDispatch({ type: 'config_options', configOptions: result.configOptions });
 
-    workspaceDispatch({ type: 'session_upserted', session: { sessionId: sid, cwd } });
+    workspaceDispatch({ type: 'session_upserted', session: { sessionId: sid, cwd: sessionCwd } });
     workspaceDispatch({ type: 'active_session_changed', sessionId: sid });
     // A brand-new session is trivially "open" — clears any stale
     // not_found/error left by a previous failed openSession() (e.g. the
@@ -574,13 +596,17 @@ export function createAcpWorkspaceController(
   // Turn + permission + config actions on the open session
   // ---------------------------------------------------------------------
 
-  function sendPrompt(text: string): void {
+  function sendPrompt(text: string, mentions: WorkspaceFileRef[] = []): void {
     if (disposed || !client || !activeSessionId || promptSessionId === activeSessionId || !text.trim()) return;
     const c = client;
     const sid = activeSessionId;
     // Fallback grouping key for chunks that arrive without a `messageId` — one
     // assistant message per turn, per the client core's documented contract.
     currentTurnId = nextId('assistant');
+
+    // text block + one resource_link per @-mention (reference only — the agent
+    // reads via its tools; see promptBlocksFromDraft). No embedded resources.
+    const blocks = promptBlocksFromDraft(text, mentions);
 
     // Slash-command text passes through verbatim — acpsvc/commandrunner.go
     // parses `/name args` itself; this layer never inspects it.
@@ -601,7 +627,7 @@ export function createAcpWorkspaceController(
     // cleared mid-turn; `session_reset` already put that state in a clean
     // not-prompting shape), or the old turn's failure banner / stopReason
     // would bleed into the freshly-opened session.
-    c.prompt(sid, [textContent(text)])
+    c.prompt(sid, blocks)
       .then(({ stopReason }) => {
         if (promptSessionId === sid) promptSessionId = null;
         if (activeSessionId !== sid) return;
@@ -613,6 +639,18 @@ export function createAcpWorkspaceController(
         if (activeSessionId !== sid) return;
         sessionDispatch({ type: 'prompt_error', message: errMessage(err) });
       });
+  }
+
+  async function runTerminal(command: string): Promise<void> {
+    if (disposed || !client || !activeSessionId) return;
+    const sid = activeSessionId;
+    const res = await runGuarded(() => client!.runTerminal(sid, command));
+    // Record the line in the transcript even after a session switch would be
+    // wrong, so gate on the still-active session — the live stream already
+    // reached the panel via the standing subscription.
+    if (activeSessionId === sid) {
+      sessionDispatch({ type: 'terminal_card', id: nextId('term'), command, output: res.output ?? '' });
+    }
   }
 
   function respondPermission(optionId: string): void {
@@ -683,6 +721,7 @@ export function createAcpWorkspaceController(
     deleteSession,
     clearActiveSession,
     sendPrompt,
+    runTerminal,
     respondPermission,
     cancel,
     setConfigOption,

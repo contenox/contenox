@@ -1,3 +1,4 @@
+import { stripAnsi } from "../ansi";
 import { CodeBlock } from "./CodeBlock";
 import { Collapsible } from "./Collapsible";
 import { Span } from "./Typography";
@@ -109,7 +110,7 @@ function TerminalExcerptAttachment({
           <span>{labels?.terminalOutput ?? "Terminal output"}</span>
           {attachment.command && (
             <Span variant="muted" className="font-mono text-[10px]">
-              $ {attachment.command}
+              $ {stripAnsi(attachment.command)}
             </Span>
           )}
         </span>
@@ -117,7 +118,7 @@ function TerminalExcerptAttachment({
       defaultExpanded={false}
       className="border-surface-300 dark:border-dark-surface-400 bg-surface-100 dark:bg-dark-surface-200 mt-2 rounded border"
     >
-      <CodeBlock className="px-3 py-2 leading-relaxed">{attachment.output}</CodeBlock>
+      <CodeBlock className="px-3 py-2 leading-relaxed">{stripAnsi(attachment.output)}</CodeBlock>
     </Collapsible>
   );
 }

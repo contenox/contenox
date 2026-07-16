@@ -384,7 +384,45 @@ export type SessionUpdateKind =
   | 'current_mode_update'
   | 'config_option_update'
   | 'usage_update'
-  | 'session_info_update';
+  | 'session_info_update'
+  | typeof TERMINAL_OUTPUT_UPDATE_KIND;
+
+/**
+ * Extension `session/update` discriminator (underscore-prefixed = extension)
+ * that carries live shell-session output in its `_meta` under
+ * {@link TERMINAL_OUTPUT_META_KEY}. Mirrors `acpsvc.TerminalOutputUpdateKind`. A
+ * conformant non-contenox client that doesn't know the kind ignores the update.
+ */
+export const TERMINAL_OUTPUT_UPDATE_KIND = '_contenox.terminalOutput';
+
+/** The `_meta` key carrying a {@link TerminalOutputPayload}. Mirrors `acpsvc.TerminalOutputMetaKey`. */
+export const TERMINAL_OUTPUT_META_KEY = 'contenox.terminalOutput';
+
+/** Payload streamed under {@link TERMINAL_OUTPUT_META_KEY} on each shell output batch. */
+export interface TerminalOutputPayload {
+  sessionId: string;
+  /** Absolute scrollback offset where `chunk` begins. */
+  offset: number;
+  chunk: string;
+  /** True for the initial snapshot on (re)subscribe: replace the buffer, don't append. */
+  reset?: boolean;
+}
+
+/** Extracts the terminal-output payload from an extension `session/update`, or null. */
+export function terminalOutputFromUpdate(update: {
+  _meta?: Record<string, unknown>;
+}): TerminalOutputPayload | null {
+  const raw = update._meta?.[TERMINAL_OUTPUT_META_KEY];
+  if (raw === null || typeof raw !== 'object') return null;
+  const p = raw as Partial<TerminalOutputPayload>;
+  if (typeof p.chunk !== 'string') return null;
+  return {
+    sessionId: typeof p.sessionId === 'string' ? p.sessionId : '',
+    offset: typeof p.offset === 'number' ? p.offset : 0,
+    chunk: p.chunk,
+    reset: p.reset === true,
+  };
+}
 
 interface ToolCallFields {
   toolCallId: string;
@@ -413,7 +451,8 @@ export type SessionUpdate =
   | { sessionUpdate: 'current_mode_update'; currentModeId: string }
   | { sessionUpdate: 'config_option_update'; configOptions: SessionConfigOption[] }
   | { sessionUpdate: 'usage_update'; used: number; size: number; cost?: UsageCost }
-  | { sessionUpdate: 'session_info_update'; title?: string; updatedAt?: string };
+  | { sessionUpdate: 'session_info_update'; title?: string; updatedAt?: string }
+  | { sessionUpdate: typeof TERMINAL_OUTPUT_UPDATE_KIND; _meta?: Record<string, unknown> };
 
 export interface SessionNotification {
   sessionId: SessionId;

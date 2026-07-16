@@ -28,7 +28,6 @@ import (
 	"github.com/contenox/runtime/runtime/internal/taskexecapi"
 	"github.com/contenox/runtime/runtime/internal/terminalapi"
 	"github.com/contenox/runtime/runtime/internal/toolsapi"
-	"github.com/contenox/runtime/runtime/terminalservice"
 	"github.com/contenox/runtime/runtime/localfileservice"
 	"github.com/contenox/runtime/runtime/mcpserverservice"
 	"github.com/contenox/runtime/runtime/modelregistry"
@@ -38,24 +37,32 @@ import (
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/stateservice"
 	"github.com/contenox/runtime/runtime/taskchainservice"
+	"github.com/contenox/runtime/runtime/terminalservice"
 	"github.com/contenox/runtime/runtime/toolsproviderservice"
 	"github.com/contenox/runtime/runtime/version"
+	"github.com/contenox/runtime/runtime/vfs"
 )
 
 // Config holds the HTTP serving configuration for `contenox serve`.
 type Config struct {
-	Addr              string `json:"addr"`
-	Port              string `json:"port"`
-	Token             string `json:"token"`
-	UIBaseURL         string `json:"ui_base_url"`
-	AllowedAPIOrigins string `json:"allowed_api_origins"`
-	ProxyOrigin       string `json:"proxy_origin"`
-	BeamDevProxyURL      string `json:"beam_dev_proxy_url"`
-	TerminalEnabled      string `json:"terminal_enabled"`
-	TerminalAllowedRoot  string `json:"terminal_allowed_root"`
-	TerminalShell        string `json:"terminal_shell"`
-	TerminalIdleTimeout  string `json:"terminal_idle_timeout"`
-	TerminalMaxSessions  string `json:"terminal_max_sessions"`
+	Addr                string `json:"addr"`
+	Port                string `json:"port"`
+	Token               string `json:"token"`
+	UIBaseURL           string `json:"ui_base_url"`
+	AllowedAPIOrigins   string `json:"allowed_api_origins"`
+	ProxyOrigin         string `json:"proxy_origin"`
+	BeamDevProxyURL     string `json:"beam_dev_proxy_url"`
+	TerminalEnabled     string `json:"terminal_enabled"`
+	TerminalAllowedRoot string `json:"terminal_allowed_root"`
+	TerminalShell       string `json:"terminal_shell"`
+	TerminalIdleTimeout string `json:"terminal_idle_timeout"`
+	TerminalMaxSessions string `json:"terminal_max_sessions"`
+	// WorkspaceRoots is the operator's allowlist of directories a browser client
+	// may choose as a session workspace, separated by the OS path-list separator
+	// (":" on POSIX). The serve directory is always the default root; these
+	// extend the allowlist. Also settable via `--workspace-root` flags and the
+	// `contenox serve [dir]` positional arguments.
+	WorkspaceRoots string `json:"workspace_roots"`
 }
 
 // Dependencies are the services the product routes are mounted on. All fields
@@ -72,9 +79,13 @@ type Dependencies struct {
 	WorkspaceID          string
 	ProjectRoot          string
 	ContenoxDir          string
-	Defaults             stateservice.RuntimeDefaults
-	TerminalService      terminalservice.Service
-	TerminalEnabled      bool
+	// WorkspaceRoots is the workspace-root allowlist. When set, the /files browse
+	// API resolves each request against a client-supplied `root` (validated
+	// through the allowlist) instead of the single fixed ProjectRoot.
+	WorkspaceRoots  *vfs.Factory
+	Defaults        stateservice.RuntimeDefaults
+	TerminalService terminalservice.Service
+	TerminalEnabled bool
 }
 
 // New registers the spine routes (not-found shape, health, version) on mux and,
@@ -125,7 +136,17 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 	providerSvc := providerservice.New(deps.DB, deps.WorkspaceID)
 	providerapi.AddProviderRoutes(mux, providerSvc)
 
-	if deps.ProjectRoot != "" {
+	// The /files browse API is the file-explorer data source. When a workspace
+	// allowlist is configured (serve), it is per-root: each request names a
+	// `root` (the session's chosen workspace), validated through the allowlist,
+	// so a browser can browse any allowlisted root but nothing outside it. When
+	// no allowlist is configured, it stays rooted at the single fixed ProjectRoot
+	// (unchanged legacy behavior).
+	if deps.WorkspaceRoots != nil {
+		if err := localfileapi.AddWorkspaceRoutes(mux, deps.WorkspaceRoots); err != nil {
+			return fmt.Errorf("workspace files: %w", err)
+		}
+	} else if deps.ProjectRoot != "" {
 		projectFiles, err := localfileservice.New(deps.ProjectRoot)
 		if err != nil {
 			return fmt.Errorf("project files: %w", err)
