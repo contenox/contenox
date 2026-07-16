@@ -9,6 +9,7 @@ import (
 	"github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/internal/clikv"
 	"github.com/contenox/runtime/runtime/internal/setupcheck"
+	"github.com/contenox/runtime/runtime/reasoning"
 	"github.com/contenox/runtime/runtime/runtimestate"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/statetype"
@@ -40,6 +41,8 @@ type CLIConfigPatch struct {
 	DefaultThink                *string
 	DefaultChain                *string
 	HITLPolicyName              *string
+	TelemetryEnabled            *string
+	UpdateCheck                 *string
 }
 
 // CLIConfigSnapshot is the resolved KV values after an update.
@@ -54,6 +57,8 @@ type CLIConfigSnapshot struct {
 	DefaultThink                string
 	DefaultChain                string
 	HITLPolicyName              string
+	TelemetryEnabled            string
+	UpdateCheck                 string
 	ResolvedFrom                map[string]string
 	Present                     map[string]bool
 }
@@ -118,7 +123,9 @@ func (s *service) SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLICo
 		patch.DefaultMaxTokens == nil &&
 		patch.DefaultThink == nil &&
 		patch.DefaultChain == nil &&
-		patch.HITLPolicyName == nil {
+		patch.HITLPolicyName == nil &&
+		patch.TelemetryEnabled == nil &&
+		patch.UpdateCheck == nil {
 		return CLIConfigSnapshot{}, fmt.Errorf("provide at least one CLI config key")
 	}
 	store := runtimetypes.New(s.db.WithoutTransaction())
@@ -162,7 +169,11 @@ func (s *service) SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLICo
 		}
 	}
 	if patch.DefaultThink != nil {
-		if err := clikv.SetString(ctx, store, "default-think", strings.TrimSpace(*patch.DefaultThink)); err != nil {
+		think, err := normalizeDefaultThink(*patch.DefaultThink)
+		if err != nil {
+			return CLIConfigSnapshot{}, err
+		}
+		if err := clikv.SetString(ctx, store, "default-think", think); err != nil {
 			return CLIConfigSnapshot{}, fmt.Errorf("set default-think: %w", err)
 		}
 	}
@@ -174,6 +185,16 @@ func (s *service) SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLICo
 	if patch.HITLPolicyName != nil {
 		if err := clikv.WriteConfig(ctx, store, s.workspaceID, "hitl-policy-name", strings.TrimSpace(*patch.HITLPolicyName)); err != nil {
 			return CLIConfigSnapshot{}, fmt.Errorf("set hitl-policy-name: %w", err)
+		}
+	}
+	if patch.TelemetryEnabled != nil {
+		if err := clikv.SetString(ctx, store, "telemetry-enabled", strings.TrimSpace(*patch.TelemetryEnabled)); err != nil {
+			return CLIConfigSnapshot{}, fmt.Errorf("set telemetry-enabled: %w", err)
+		}
+	}
+	if patch.UpdateCheck != nil {
+		if err := clikv.SetString(ctx, store, "update-check", strings.TrimSpace(*patch.UpdateCheck)); err != nil {
+			return CLIConfigSnapshot{}, fmt.Errorf("set update-check: %w", err)
 		}
 	}
 	return s.cliConfigSnapshot(ctx, store), nil
@@ -190,6 +211,8 @@ func (s *service) cliConfigSnapshot(ctx context.Context, store runtimetypes.Stor
 	defaultThink, defaultThinkPresent := readCLIConfigValue(ctx, store, "default-think")
 	defaultChain, chainFrom, defaultChainPresent := readWorkspaceCLIConfigValue(ctx, store, s.workspaceID, "default-chain")
 	hitlPolicy, policyFrom, hitlPolicyPresent := readWorkspaceCLIConfigValue(ctx, store, s.workspaceID, "hitl-policy-name")
+	telemetryEnabled, telemetryEnabledPresent := readCLIConfigValue(ctx, store, "telemetry-enabled")
+	updateCheck, updateCheckPresent := readCLIConfigValue(ctx, store, "update-check")
 	return CLIConfigSnapshot{
 		DefaultModel:                defaultModel,
 		DefaultProvider:             defaultProvider,
@@ -201,6 +224,8 @@ func (s *service) cliConfigSnapshot(ctx context.Context, store runtimetypes.Stor
 		DefaultThink:                defaultThink,
 		DefaultChain:                defaultChain,
 		HITLPolicyName:              hitlPolicy,
+		TelemetryEnabled:            telemetryEnabled,
+		UpdateCheck:                 updateCheck,
 		ResolvedFrom: map[string]string{
 			"defaultChain":   chainFrom,
 			"hitlPolicyName": policyFrom,
@@ -216,6 +241,8 @@ func (s *service) cliConfigSnapshot(ctx context.Context, store runtimetypes.Stor
 			"default-think":                 defaultThinkPresent,
 			"default-chain":                 defaultChainPresent,
 			"hitl-policy-name":              hitlPolicyPresent,
+			"telemetry-enabled":             telemetryEnabledPresent,
+			"update-check":                  updateCheckPresent,
 		},
 	}
 }
@@ -237,6 +264,17 @@ func readWorkspaceCLIConfigValue(ctx context.Context, store runtimetypes.Store, 
 	}
 	val, present := readCLIConfigValue(ctx, store, key)
 	return val, "global", present
+}
+
+// normalizeDefaultThink validates/normalizes a default-think value the same
+// way `contenox config set default-think` does (see reasoning.Normalize).
+// Empty clears the override, letting the runtime's own "high" fallback apply.
+func normalizeDefaultThink(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	return reasoning.Normalize(value)
 }
 
 func normalizeDefaultMaxTokens(value string) (string, error) {

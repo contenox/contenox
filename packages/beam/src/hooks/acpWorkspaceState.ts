@@ -1,4 +1,4 @@
-import type { SessionInfo } from '../lib/acp';
+import type { SessionConfigOption, SessionInfo } from '../lib/acp';
 
 /**
  * Pure, framework-free workspace-level state: reducer + types only, no React,
@@ -41,6 +41,14 @@ export interface AcpWorkspaceState {
   sessionLoadState: AcpSessionLoadState;
   /** Set on `session_load_failed`; cleared on `session_load_start`/`session_load_succeeded`. */
   sessionLoadError: string | null;
+  /**
+   * The workspace-level (session-less) config options advertised in the
+   * agent's `initialize` `_meta` (see `workspaceConfigOptionsFromInit`).
+   * Re-read on every (re)connect. Empty for agents that don't advertise the
+   * extension. The empty-chat surface renders its model/think/HITL/token-limit
+   * controls from this, before any session exists — see `AcpChatPage`.
+   */
+  workspaceConfigOptions: SessionConfigOption[];
 }
 
 export const initialAcpWorkspaceState: AcpWorkspaceState = {
@@ -51,11 +59,12 @@ export const initialAcpWorkspaceState: AcpWorkspaceState = {
   activeSessionId: null,
   sessionLoadState: 'ready',
   sessionLoadError: null,
+  workspaceConfigOptions: [],
 };
 
 export type AcpWorkspaceAction =
   | { type: 'connecting' }
-  | { type: 'ready'; agentName: string | null }
+  | { type: 'ready'; agentName: string | null; workspaceConfigOptions: SessionConfigOption[] }
   | { type: 'reconnecting' }
   | { type: 'disconnected' }
   /** JSON-RPC `-32000 auth_required` — terminal, the controller never auto-retries past this (see acpWorkspaceController.ts). */
@@ -110,7 +119,13 @@ export function acpWorkspaceReducer(state: AcpWorkspaceState, action: AcpWorkspa
       return { ...state, status: 'connecting', error: null };
 
     case 'ready':
-      return { ...state, status: 'ready', error: null, agentName: action.agentName };
+      return {
+        ...state,
+        status: 'ready',
+        error: null,
+        agentName: action.agentName,
+        workspaceConfigOptions: action.workspaceConfigOptions,
+      };
 
     case 'reconnecting':
       return { ...state, status: 'reconnecting', error: null };

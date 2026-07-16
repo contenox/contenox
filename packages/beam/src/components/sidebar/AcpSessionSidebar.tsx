@@ -1,5 +1,5 @@
 import { Button, Span, Spinner } from '@contenox/ui';
-import { MessageSquarePlus, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link, useMatch, useNavigate } from 'react-router-dom';
 import { useAcpWorkspace } from '../../hooks/useAcpWorkspace';
@@ -53,9 +53,12 @@ export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =>
   const navigate = useNavigate();
   const match = useMatch('/chat/:sessionId');
   const activeSessionId = match?.params.sessionId;
-  const { workspace, deleteSession } = useAcpWorkspace();
+  const { workspace, deleteSession, clearActiveSession } = useAcpWorkspace();
 
   const handleNewSession = () => {
+    // Clear at CLICK time, before navigating — see
+    // acpWorkspaceController.ts's clearActiveSession() doc comment (BUG 1).
+    clearActiveSession();
     navigate('/chat');
     setIsOpen(false);
   };
@@ -74,8 +77,7 @@ export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =>
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="border-surface-300 dark:border-dark-surface-700 shrink-0 border-b p-3">
-        <Button variant="primary" size="sm" className="w-full gap-2" onClick={handleNewSession}>
-          <MessageSquarePlus className="h-4 w-4 shrink-0" aria-hidden />
+        <Button variant="primary" size="sm" className="w-full" onClick={handleNewSession}>
           <span className="truncate">{t('acp_sidebar.new_session')}</span>
         </Button>
       </div>

@@ -1,4 +1,4 @@
-import { Button, FormField, H2, P, Panel, Select } from '@contenox/ui';
+import { Button, FormField, H2, InlineNotice, P, Panel, Select } from '@contenox/ui';
 import { FormEvent, useContext, useEffect, useId, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useListChains } from '../../../hooks/useChains';
@@ -81,6 +81,10 @@ export function WorkspaceSettingsSection() {
         </div>
 
         <form id={formId} onSubmit={onSubmit} className="grid max-w-xl gap-4">
+          <InlineNotice variant="info" className="rounded-lg">
+            {t('settingsAdvanced.chain_scope_notice')}
+          </InlineNotice>
+
           <FormField label={t('settings.default_chain_label')}>
             <Select
               name="default-chain"
@@ -101,7 +105,9 @@ export function WorkspaceSettingsSection() {
             )}
           </FormField>
 
-          <FormField label={t('settings.hitl_policy_label')}>
+          <FormField
+            label={t('settings.hitl_policy_label')}
+            tooltip={t('settings.hitl_policy_tooltip')}>
             <Select
               name="hitl-policy-name"
               className="w-full"
@@ -121,15 +127,16 @@ export function WorkspaceSettingsSection() {
             )}
           </FormField>
 
-          {putConfig.isError && (
-            <P className="text-error text-sm">{putConfig.error.message}</P>
-          )}
-          {putConfig.isSuccess && (
-            <P className="text-text-muted text-sm">{t('settings.saved')}</P>
-          )}
+          {putConfig.isError && <P className="text-error text-sm">{putConfig.error.message}</P>}
+          {putConfig.isSuccess && <P className="text-text-muted text-sm">{t('settings.saved')}</P>}
 
           <div>
-            <Button type="submit" form={formId} variant="primary" size="sm" disabled={putConfig.isPending}>
+            <Button
+              type="submit"
+              form={formId}
+              variant="primary"
+              size="sm"
+              disabled={putConfig.isPending}>
               {t('settings.save')}
             </Button>
           </div>

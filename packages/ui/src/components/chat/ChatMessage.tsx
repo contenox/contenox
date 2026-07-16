@@ -1,3 +1,4 @@
+import { Check } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../../utils";
 import { Badge } from "../Badge";
@@ -28,15 +29,17 @@ function defaultAvatarLetter(role: ChatMessageBaseProps["role"]): string {
 }
 
 function avatarRingClass(role: ChatMessageBaseProps["role"]): string {
+  // Light mode uses the soft -100/-800 pairing (same convention as Badge) —
+  // a solid -600 disc reads far too heavy next to light bubbles.
   switch (role) {
     case "user":
-      return "bg-primary-600 text-text-inverted dark:bg-dark-primary-600 dark:text-dark-text-inverted";
+      return "bg-primary-100 text-primary-800 dark:bg-dark-primary-600 dark:text-dark-text-inverted";
     case "system":
-      return "bg-accent-600 text-text-inverted dark:bg-dark-accent-600 dark:text-dark-text";
+      return "bg-accent-100 text-accent-800 dark:bg-dark-accent-600 dark:text-dark-text";
     case "tool":
-      return "bg-secondary-600 text-text-inverted dark:bg-dark-secondary-600 dark:text-dark-text";
+      return "bg-secondary-100 text-secondary-800 dark:bg-dark-secondary-600 dark:text-dark-text";
     default:
-      return "bg-secondary-600 text-text-inverted dark:bg-dark-secondary-600 dark:text-dark-text";
+      return "bg-secondary-100 text-secondary-800 dark:bg-dark-secondary-600 dark:text-dark-text";
   }
 }
 
@@ -81,6 +84,7 @@ export function ChatMessage({
   highlightLatest = true,
   defaultOpen = true,
   onOpenChange,
+  collapsible = true,
   error,
   onRetry,
   retryLabel,
@@ -96,6 +100,10 @@ export function ChatMessage({
   const [open, setOpen] = useState(defaultOpen);
   const [copied, setCopied] = useState(false);
   const isUser = role === "user";
+  // Zed-style transcripts opt out of the per-message Hide/Show toggle
+  // entirely (only thought blocks / tool detail collapse there) — force the
+  // body open and skip rendering the trigger below.
+  const effectiveOpen = collapsible ? open : true;
 
   const bubbleRing =
     isLatest && highlightLatest
@@ -112,12 +120,18 @@ export function ChatMessage({
     onOpenChange?.(next);
   };
 
-  const handleCopy = async () => {
+  const handleCopy = async (button?: HTMLButtonElement | null) => {
     if (!copyText) return;
     const ok = await copyTextToClipboard(copyText);
     if (ok) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
+      // Root cause of the ring "sticking" after a mouse click: focus never
+      // leaves the button once clicked, so its focus ring stays visible
+      // indefinitely. Blurring on successful copy clears it without
+      // affecting keyboard users (a subsequent Tab/Shift+Tab still moves
+      // focus normally).
+      button?.blur();
     }
   };
 
@@ -151,7 +165,7 @@ export function ChatMessage({
     return (
       <article aria-label={articleLabel} className={cn("group", className)}>
         <Collapsible
-          open={open}
+          open={effectiveOpen}
           onOpenChange={handleOpenChange}
           className="flex flex-col gap-1.5"
         >
@@ -165,16 +179,18 @@ export function ChatMessage({
                 {latestLabel}
               </Badge>
             )}
-            <CollapsibleTrigger asChild>
-              <Button
-                variant="ghost"
-                size="xs"
-                className="h-6 px-2 text-xs"
-                type="button"
-              >
-                {open ? collapseLabels.open : collapseLabels.closed}
-              </Button>
-            </CollapsibleTrigger>
+            {collapsible && (
+              <CollapsibleTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="h-6 px-2 text-xs"
+                  type="button"
+                >
+                  {open ? collapseLabels.open : collapseLabels.closed}
+                </Button>
+              </CollapsibleTrigger>
+            )}
           </div>
 
           <CollapsibleContent>
@@ -203,13 +219,13 @@ export function ChatMessage({
               )}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 p-0.5">
               {copyText != null && (
                 <Button
                   variant="ghost"
                   size="sm"
                   className="h-6 text-xs"
-                  onClick={() => void handleCopy()}
+                  onClick={e => void handleCopy(e.currentTarget)}
                   aria-live="polite"
                   type="button"
                   aria-label={
@@ -222,7 +238,14 @@ export function ChatMessage({
                         : "Copy"
                   }
                 >
-                  {copied ? (copiedLabel ?? "Copied!") : (copyLabel ?? "Copy")}
+                  {copied ? (
+                    <span className="flex items-center gap-1">
+                      <Check className="h-3.5 w-3.5" aria-hidden />
+                      {copiedLabel ?? "Copied!"}
+                    </span>
+                  ) : (
+                    (copyLabel ?? "Copy")
+                  )}
                 </Button>
               )}
               {secondaryActions}
@@ -236,7 +259,7 @@ export function ChatMessage({
   return (
     <article aria-label={articleLabel} className={cn("group", className)}>
       <Collapsible
-        open={open}
+        open={effectiveOpen}
         onOpenChange={handleOpenChange}
         className={cn("flex gap-3", isUser && "flex-row-reverse")}
       >
@@ -266,16 +289,18 @@ export function ChatMessage({
                 {latestLabel}
               </Badge>
             )}
-            <CollapsibleTrigger asChild>
-              <Button
-                variant="ghost"
-                size="xs"
-                className="h-6 px-2 text-xs"
-                type="button"
-              >
-                {open ? collapseLabels.open : collapseLabels.closed}
-              </Button>
-            </CollapsibleTrigger>
+            {collapsible && (
+              <CollapsibleTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  className="h-6 px-2 text-xs"
+                  type="button"
+                >
+                  {open ? collapseLabels.open : collapseLabels.closed}
+                </Button>
+              </CollapsibleTrigger>
+            )}
           </div>
 
           <CollapsibleContent>
@@ -307,7 +332,7 @@ export function ChatMessage({
 
             <div
               className={cn(
-                "flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100",
+                "flex items-center gap-2 p-0.5 opacity-0 transition-opacity group-hover:opacity-100",
                 isUser && "flex-row-reverse",
               )}
             >
@@ -316,7 +341,7 @@ export function ChatMessage({
                   variant="ghost"
                   size="sm"
                   className="h-6 text-xs"
-                  onClick={() => void handleCopy()}
+                  onClick={e => void handleCopy(e.currentTarget)}
                   aria-live="polite"
                   type="button"
                   aria-label={
@@ -329,7 +354,14 @@ export function ChatMessage({
                         : "Copy"
                   }
                 >
-                  {copied ? (copiedLabel ?? "Copied!") : (copyLabel ?? "Copy")}
+                  {copied ? (
+                    <span className="flex items-center gap-1">
+                      <Check className="h-3.5 w-3.5" aria-hidden />
+                      {copiedLabel ?? "Copied!"}
+                    </span>
+                  ) : (
+                    (copyLabel ?? "Copy")
+                  )}
                 </Button>
               )}
               {secondaryActions}

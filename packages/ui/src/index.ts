@@ -1,5 +1,6 @@
 import "./index.css";
 export { cn } from "./utils";
+export { formatCompactNumber } from "./format";
 export * from "./components/DragDropContext";
 export * from "./components/MonoLogList";
 export * from "./components/NumberInput";
@@ -49,6 +50,7 @@ export * from "./components/Section";
 export * from "./components/GridLayout";
 export * from "./components/ButtonGroup";
 export * from "./components/KeyValue";
+export * from "./components/LabelWithHelp";
 export * from "./components/TabbedPage";
 export * from "./components/panels";
 export * from "./components/forms";

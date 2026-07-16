@@ -118,6 +118,36 @@ export interface InitializeResponse {
   agentCapabilities?: AgentCapabilities;
   agentInfo?: Implementation;
   authMethods?: AuthMethod[];
+  /** Spec-reserved extension namespace — see `WORKSPACE_CONFIG_OPTIONS_META_KEY`. */
+  _meta?: Record<string, unknown>;
+}
+
+/**
+ * The `_meta` key under which a contenox agent advertises the workspace-level
+ * (session-less) config options in its `initialize` response — mirrored from
+ * `acpsvc.WorkspaceConfigOptionsMetaKey`. Sessions are minted lazily (on the
+ * first prompt), so a fresh chat has no session and thus none of the
+ * per-session config options that normally arrive with `session/new`. This
+ * extension lets the client render the model/think/HITL/token-limit controls
+ * on the empty chat, stage the user's choices, and re-apply them via
+ * `set_config_option` right after `session/new`. A contenox extension in the
+ * spec's reserved `_meta` namespace: non-contenox agents simply omit it.
+ */
+export const WORKSPACE_CONFIG_OPTIONS_META_KEY = 'contenox.workspaceConfigOptions';
+
+/**
+ * Extracts the workspace-level config options from an `initialize` response's
+ * `_meta` (see `WORKSPACE_CONFIG_OPTIONS_META_KEY`). Returns `[]` for any
+ * agent that doesn't advertise the extension, or malformed payloads — the
+ * empty-chat controls degrade to nothing rather than throwing.
+ */
+export function workspaceConfigOptionsFromInit(init: InitializeResponse): SessionConfigOption[] {
+  const raw = init._meta?.[WORKSPACE_CONFIG_OPTIONS_META_KEY];
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (o): o is SessionConfigOption =>
+      typeof o === 'object' && o !== null && typeof (o as SessionConfigOption).id === 'string',
+  );
 }
 
 export interface AuthenticateResponse {

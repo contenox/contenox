@@ -1,5 +1,5 @@
-import i18n from 'i18next';
 import type { ParseKeys } from 'i18next';
+import i18n from 'i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 import { initReactI18next } from 'react-i18next';
 
@@ -36,16 +36,82 @@ const resources = {
         default_provider_label: 'Default provider',
         default_chain_label: 'Default task chain',
         hitl_policy_label: 'HITL policy',
+        hitl_policy_tooltip:
+          'Controls which tool and chain actions run automatically and which pause for your approval. Presets range from permissive (dev) to strict (deny unless explicitly allowed).',
         inherit_runtime_default: 'Inherit runtime default',
         inherited_value: 'Inherited: {{value}}',
         chain_options_error: 'Could not load task chains: {{message}}',
         policy_options_error: 'Could not load HITL policies: {{message}}',
         save: 'Save',
         saved: 'Saved.',
+        run_wizard_title: 'Setup wizard',
+        run_wizard_description: 'Reconfigure providers, models, and backends step by step.',
+        run_wizard_action: 'Run setup wizard',
+      },
+      // New Settings-page coverage for the CLI config keys the UI previously
+      // omitted (see `contenox config --help`). Kept in its own namespace so
+      // concurrent edits to `settings` above don't collide with this slice.
+      settingsAdvanced: {
+        not_set: 'Not set',
+        restart_notice:
+          'Applies immediately to the OpenAI-compatible API, VS Code, and task-chain runs. This chat window is different: it reads its defaults once at startup, so restart contenox serve for the change to reach chat.',
+        chain_scope_notice:
+          'This chat window always runs the chain it started up with — changing this has no effect here. It only applies to the OpenAI-compatible API and the VS Code extension.',
+        default_model_tooltip:
+          'Default LLM model name (e.g. qwen2.5:7b). Used by internal chat and task chains referencing {var:model} when no session override is set.',
+        default_provider_tooltip:
+          'Default LLM provider type (e.g. llama, ollama, openrouter, openai, gemini). Used together with the default model.',
+        routing_section_title: 'Alt model (routing)',
+        routing_section_description:
+          "Optional secondary model used by the chat chain's router and recovery steps ({var:alt_model} / {var:alt_provider}). A small, fast model here keeps routing and error recovery cheap.",
+        alt_model_label: 'Alt model',
+        alt_model_tooltip:
+          'Optional alt LLM model name. Chains reference it as {var:alt_model} — used for cheap routing/recovery steps, not the main reply.',
+        alt_provider_label: 'Alt provider',
+        alt_provider_tooltip:
+          'Optional provider for the alt model. Falls back to the default provider when not set.',
+        response_section_title: 'Response length & reasoning',
+        response_section_description:
+          'Tunes how long a reply can be and how much the model reasons before answering.',
+        max_tokens_label: 'Max tokens',
+        max_tokens_tooltip:
+          'Optional default response token cap. Used by chains referencing {var:max_tokens}. Leave empty to use the chain/model default.',
+        max_tokens_placeholder: 'e.g. 8192',
+        max_tokens_invalid: 'Must be a non-negative integer.',
+        think_label: 'Reasoning level (think)',
+        think_tooltip:
+          'Default reasoning level. When left unset, the runtime falls back to "High" — on a local thinking model that means a long reasoning chain on every turn. Consider Low or Medium on smaller local GPUs.',
+        think_option_auto: 'Auto',
+        think_option_off: 'Off',
+        think_option_minimal: 'Minimal',
+        think_option_low: 'Low',
+        think_option_medium: 'Medium',
+        think_option_high: 'High (runtime fallback when unset)',
+        think_option_xhigh: 'XHigh',
+        autocomplete_section_title: 'VS Code autocomplete',
+        autocomplete_section_description:
+          'Independent model/provider for ghost-text completions in the VS Code extension, separate from chat. Applies immediately — no restart needed.',
+        autocomplete_model_label: 'Autocomplete model',
+        autocomplete_model_tooltip:
+          'Optional VS Code autocomplete model name, independent from the chat default model.',
+        autocomplete_provider_label: 'Autocomplete provider',
+        autocomplete_provider_tooltip:
+          'Optional VS Code autocomplete provider type, independent from the chat default provider.',
+        telemetry_section_title: 'Telemetry & updates',
+        telemetry_section_description:
+          'Local-only diagnostics settings. Applies to the next contenox command — the running server does not read these.',
+        telemetry_enabled_label: 'Write telemetry logs',
+        telemetry_enabled_description:
+          'Writes diagnostics to <data-dir>/telemetry.log on the machine running contenox. Off by default.',
+        update_check_label: 'Automatic update checks',
+        update_check_description:
+          'Checks for newer contenox releases. On by default; turn off for zero-trust/air-gapped environments.',
       },
       setup: {
         banner_title: 'Finish setup before using chat',
         banner_title_warnings: 'Recommended: add an LLM backend',
+        incomplete_banner_title: 'Setup incomplete',
+        incomplete_banner_action: 'Finish setup',
         open_fix: 'Open {{path}}',
         set_defaults: 'Default model & provider',
         model_placeholder: 'e.g. qwen2.5:7b',
@@ -354,7 +420,7 @@ const resources = {
         github: 'Github',
         home: 'Home',
         backends: 'Backends',
-        local_runtime_modeld: 'modeld',
+        local_runtime_modeld: 'Modeld',
         settings: 'Settings',
         chat: 'Chat',
         chats: 'Chats',
@@ -458,7 +524,7 @@ const resources = {
       control_plane: {
         hub_title: 'Control plane',
         hub_description:
-          'Configure backends, the local modeld runtime, and runtime defaults for local chat.',
+          'Configure backends, the local Modeld runtime, and runtime defaults for local chat.',
         menu_aria: 'Open control plane menu',
         all_tools: 'All tools',
       },
@@ -751,6 +817,16 @@ const resources = {
         status_env_missing:
           'Configured via {{env}}, but that environment variable is not present in this server process.',
         status_not_configured: 'Not configured',
+        tooltip_secret_api_key:
+          'A literal API key, encrypted at rest in the local database. Prefer the environment variable field below so the raw key is never stored.',
+        tooltip_secret_service_account:
+          'The full contents of a Google service account key (JSON). Leave blank to fall back to Application Default Credentials from `gcloud auth application-default login`.',
+        tooltip_secret_aws_credentials:
+          'Optional static AWS credentials as JSON. Leave blank to use the ambient AWS credential chain (environment, profile, or IAM role).',
+        tooltip_api_key_env:
+          'Name of an environment variable on this server holding the API key, read at request time instead of storing the key itself.',
+        tooltip_status:
+          'Configured means a secret is present, either stored directly or resolved from the given environment variable. Env missing means the environment variable name is saved but not set in this server process.',
       },
       chains: {
         compose_preview: 'Compose preview',
@@ -1156,6 +1232,12 @@ const resources = {
         empty_title: 'No Backends',
         empty_description: 'No backends configured. Create your first backend to get started.',
         loading: 'Loading backends...',
+        tooltip_name:
+          'A short identifier for this backend. Used internally to reference it from task chains and defaults; not shown to end users.',
+        tooltip_url:
+          'Where the backend is reached. For local Llama/OpenVINO backends this is the models directory; for a Modeld node it is "local" (this machine) or host:port (a remote node); for hosted providers it is the API base URL.',
+        tooltip_type:
+          'The protocol this backend speaks. Ollama needs a running Ollama daemon; Local and OpenVINO run through the Modeld daemon with no external server or API key; a Modeld node can be this machine or a remote one; vLLM points at a self-hosted OpenAI-compatible server.',
         hint_ollama:
           'Requires Ollama to be running on the host. Start it with: ollama serve — then pull a model: ollama pull qwen2.5:7b',
         hint_vllm:
@@ -1163,9 +1245,9 @@ const resources = {
         hint_local:
           'Path to a directory containing .gguf model files. Contenox scans this directory at startup and registers discovered models automatically.',
         hint_openvino:
-          'Path to a directory containing OpenVINO IR model folders. Served by the same modeld daemon as GGUF; only one engine is live on a machine at a time.',
+          'Path to a directory containing OpenVINO IR model folders. Served by the same Modeld daemon as GGUF; only one engine is live on a machine at a time.',
         hint_modeld:
-          'A modeld daemon, local or remote. Leave the URL as "local" for the machine contenox is running on, or enter host:port to reach a modeld instance on another machine (e.g. a GPU box). Once registered, push a GGUF file to it below or with `contenox model push`.',
+          'A Modeld daemon, local or remote. Leave the URL as "local" for the machine Contenox is running on, or enter host:port to reach a Modeld instance on another machine (e.g. a GPU box). Once registered, push a GGUF file to it below or with `contenox model push`.',
         push_toggle: 'Push model',
         push_name_label: 'Model name',
         push_name_placeholder: 'my-qwen',
@@ -1204,13 +1286,13 @@ const resources = {
       state: {
         title: 'Backend State',
         runtime_tab: 'Runtime state',
-        local_runtime_tab: 'modeld',
+        local_runtime_tab: 'Modeld',
         runtime_title: 'Runtime sync',
         runtime_intro:
           'Latest snapshot from the runtime backend refresh loop (reachability, observed models, sync errors). This is not a download queue.',
         local_runtime_title: 'Local runtime',
         local_runtime_intro:
-          'modeld daemon state and slot controls exposed by contenox serve. Beam does not talk to modeld directly.',
+          'Modeld daemon state and slot controls exposed by contenox serve. Beam does not talk to Modeld directly.',
         local_runtime_refresh: 'Refresh',
         local_runtime_load_error: 'Could not load local runtime state.',
         local_runtime_availability: 'Availability',
@@ -1218,8 +1300,12 @@ const resources = {
         local_runtime_unavailable: 'Unavailable',
         local_runtime_daemon_title: 'Daemon',
         local_runtime_slot_title: 'Resident slot',
+        local_runtime_slot_help:
+          'Modeld keeps at most one model resident at a time (the slot). Loading a different model evicts whatever is currently resident.',
         local_runtime_config_title: 'Active runtime config',
         local_runtime_daemon_state: 'Daemon state',
+        local_runtime_state_help:
+          'running: a live daemon is answering health checks. stale: its lease expired, it may have crashed. not-running: installed but not started. unreachable: a lease is held, but the daemon does not answer.',
         local_runtime_slot_state: 'Slot state',
         local_runtime_backend: 'Backend',
         local_runtime_endpoint: 'Endpoint',
@@ -1253,10 +1339,18 @@ const resources = {
         local_runtime_cfg_disable_bos: 'Disable BOS',
         local_runtime_cfg_reasoning: 'Reasoning format',
         local_runtime_load: 'Load',
+        local_runtime_load_help:
+          'Load the selected model into the resident slot, evicting any model that is currently loaded.',
         local_runtime_unload: 'Unload',
+        local_runtime_unload_help:
+          'Unload the resident model, freeing its memory without loading a replacement.',
         local_runtime_capacity_title: 'Capacity diagnostics',
+        local_runtime_capacity_help:
+          'Estimates whether the selected model fits in available device memory and the effective context window that results. This does not load the model.',
         local_runtime_capacity_empty: 'No registered local models are available.',
         local_runtime_capacity_refreshing: 'Refreshing diagnostics...',
+        local_runtime_capacity_load_estimate: 'Load estimate',
+        local_runtime_capacity_refresh_estimate: 'Refresh estimate',
         local_runtime_capacity_model_max: 'Model max context',
         local_runtime_capacity_effective: 'Effective context',
         local_runtime_capacity_memory_context: 'Memory-fit context',
@@ -1580,17 +1674,19 @@ const resources = {
         no_response: 'No response received',
       },
       acp_chat: {
-        title: 'ACP Chat',
+        title: 'Chat',
         new_session: 'New session',
         role_user: 'You',
         role_agent: 'Agent',
         latest_label: 'Latest',
         thinking_label: 'Thinking',
+        thinking_streaming_label: 'Thinking…',
+        thinking_done_label: 'Thoughts',
         typing_label: 'Assistant is typing',
         copy: 'Copy',
         copied: 'Copied!',
         empty_title: 'No messages yet',
-        empty_description: 'Say hello — this talks to the runtime over ACP, live.',
+        empty_description: 'Say hello — you are talking to the runtime, live.',
         composer_placeholder: 'Message the agent…',
         composer_placeholder_connecting: 'Connecting…',
         composer_send: 'Send',
@@ -1602,14 +1698,14 @@ const resources = {
         status_setup_required: 'Setup required',
         status_error: 'Error',
         connecting_label: 'Connecting to the agent…',
-        setup_required_title: 'ACP setup needs attention',
+        setup_required_title: 'Setup needs attention',
         setup_required_generic: 'The agent connection could not be authorized.',
         setup_required_action: 'Open setup',
         disconnected_title: 'Connection lost',
         disconnected_description: 'The agent connection could not be re-established automatically.',
         disconnected_retry: 'Retry connection',
         error_title: 'Something went wrong',
-        error_generic: 'The ACP connection failed unexpectedly.',
+        error_generic: 'The connection to the runtime failed unexpectedly.',
         not_found_title: 'Session not found',
         not_found_description: 'This session no longer exists or is not available.',
         not_found_action: 'Start new session',
@@ -1622,11 +1718,36 @@ const resources = {
         plan_status_completed: 'Done',
         usage_label: 'Context usage',
         tool_raw_output: 'Raw output',
+        tool_status_pending: 'Pending',
+        tool_status_running: 'Running',
+        tool_status_success: 'Done',
+        tool_status_error: 'Error',
+        tool_toggle_detail: 'Toggle detail',
         config_options_label: 'Options',
         slash_menu_label: 'Command suggestions',
         permission_title: 'Permission requested',
         permission_default_kind: 'action',
         permission_raw_input_label: 'Raw input',
+        error_banner_headline: 'Execution failed',
+        error_details_toggle: 'Show details',
+        error_model_hint:
+          'The selected model doesn\'t match any available backend — pick a different model above under "Model".',
+        scroll_to_latest: 'Scroll to latest',
+      },
+      // Deduplicated, component-named error recovery states shared between a
+      // live session/prompt failure and a `/setup-status` blocking issue for
+      // the same underlying problem (see lib/acpFailureKind.ts). Kept in its
+      // own namespace, separate from acp_chat, to avoid clashing with other
+      // in-flight edits to that namespace.
+      acp_recovery: {
+        backend_unreachable_title: 'Runtime backend unreachable',
+        backend_unreachable_description:
+          'The configured LLM backend (e.g. the local Modeld runtime, or Ollama) is not reachable right now. Start it, then retry.',
+        backend_unreachable_retry: 'Retry',
+        model_unavailable_title: 'Default model not servable',
+        model_unavailable_description:
+          'The default model is misconfigured for the currently running backend — this is a Settings fix, not a connectivity problem.',
+        model_unavailable_action: 'Open Settings',
       },
       acp_sidebar: {
         title: 'Sessions',
@@ -1660,16 +1781,80 @@ const resources = {
         default_provider_label: 'Standardanbieter',
         default_chain_label: 'Standard-Task-Chain',
         hitl_policy_label: 'HITL-Policy',
+        hitl_policy_tooltip:
+          'Bestimmt, welche Tool- und Chain-Aktionen automatisch laufen und welche auf Ihre Freigabe warten. Presets reichen von freizügig (dev) bis streng (verweigern, sofern nicht ausdrücklich erlaubt).',
         inherit_runtime_default: 'Runtime-Standard erben',
         inherited_value: 'Geerbt: {{value}}',
         chain_options_error: 'Task-Chains konnten nicht geladen werden: {{message}}',
         policy_options_error: 'HITL-Policies konnten nicht geladen werden: {{message}}',
         save: 'Speichern',
         saved: 'Gespeichert.',
+        run_wizard_title: 'Einrichtungsassistent',
+        run_wizard_description:
+          'Anbieter, Modelle und Backends Schritt für Schritt neu konfigurieren.',
+        run_wizard_action: 'Einrichtungsassistent starten',
+      },
+      settingsAdvanced: {
+        not_set: 'Nicht gesetzt',
+        restart_notice:
+          'Wirkt sofort für die OpenAI-kompatible API, VS Code und Task-Chain-Läufe. Dieses Chat-Fenster ist anders: Es liest seine Standards einmalig beim Start, daher contenox serve neu starten, damit die Änderung den Chat erreicht.',
+        chain_scope_notice:
+          'Dieses Chat-Fenster nutzt immer die Chain, mit der es gestartet wurde — diese Änderung wirkt sich hier nicht aus. Sie gilt nur für die OpenAI-kompatible API und die VS-Code-Erweiterung.',
+        default_model_tooltip:
+          'Standard-LLM-Modellname (z. B. qwen2.5:7b). Wird von internem Chat und Task-Chains verwendet, die {var:model} referenzieren, wenn kein Sitzungs-Override gesetzt ist.',
+        default_provider_tooltip:
+          'Standard-LLM-Anbietertyp (z. B. llama, ollama, openrouter, openai, gemini). Wird zusammen mit dem Standardmodell verwendet.',
+        routing_section_title: 'Alt-Modell (Routing)',
+        routing_section_description:
+          'Optionales Zweitmodell für die Router- und Recovery-Schritte der Chat-Chain ({var:alt_model} / {var:alt_provider}). Ein kleines, schnelles Modell hält Routing und Fehler-Recovery günstig.',
+        alt_model_label: 'Alt-Modell',
+        alt_model_tooltip:
+          'Optionaler alternativer LLM-Modellname. Chains referenzieren ihn als {var:alt_model} — für günstige Routing-/Recovery-Schritte, nicht für die Hauptantwort.',
+        alt_provider_label: 'Alt-Anbieter',
+        alt_provider_tooltip:
+          'Optionaler Anbieter für das Alt-Modell. Fällt auf den Standardanbieter zurück, wenn nicht gesetzt.',
+        response_section_title: 'Antwortlänge & Reasoning',
+        response_section_description:
+          'Steuert, wie lang eine Antwort sein darf und wie viel das Modell vor der Antwort nachdenkt.',
+        max_tokens_label: 'Max. Tokens',
+        max_tokens_tooltip:
+          'Optionale Standard-Obergrenze für Antwort-Tokens. Wird von Chains verwendet, die {var:max_tokens} referenzieren. Leer lassen, um den Chain-/Modell-Standard zu verwenden.',
+        max_tokens_placeholder: 'z. B. 8192',
+        max_tokens_invalid: 'Muss eine nicht-negative Ganzzahl sein.',
+        think_label: 'Reasoning-Level (think)',
+        think_tooltip:
+          'Standard-Reasoning-Level. Bleibt es ungesetzt, fällt die Runtime auf "High" zurück — bei einem lokalen Thinking-Modell bedeutet das eine lange Reasoning-Kette pro Turn. Auf kleineren lokalen GPUs Low oder Medium erwägen.',
+        think_option_auto: 'Auto',
+        think_option_off: 'Aus',
+        think_option_minimal: 'Minimal',
+        think_option_low: 'Niedrig',
+        think_option_medium: 'Mittel',
+        think_option_high: 'Hoch (Runtime-Fallback, wenn ungesetzt)',
+        think_option_xhigh: 'XHoch',
+        autocomplete_section_title: 'VS-Code-Autocomplete',
+        autocomplete_section_description:
+          'Unabhängiges Modell/Anbieter für Ghost-Text-Vervollständigungen in der VS-Code-Erweiterung, getrennt vom Chat. Wirkt sofort — kein Neustart nötig.',
+        autocomplete_model_label: 'Autocomplete-Modell',
+        autocomplete_model_tooltip:
+          'Optionaler VS-Code-Autocomplete-Modellname, unabhängig vom Chat-Standardmodell.',
+        autocomplete_provider_label: 'Autocomplete-Anbieter',
+        autocomplete_provider_tooltip:
+          'Optionaler VS-Code-Autocomplete-Anbietertyp, unabhängig vom Chat-Standardanbieter.',
+        telemetry_section_title: 'Telemetrie & Updates',
+        telemetry_section_description:
+          'Rein lokale Diagnose-Einstellungen. Wirkt beim nächsten contenox-Befehl — der laufende Server liest diese Werte nicht.',
+        telemetry_enabled_label: 'Telemetrie-Logs schreiben',
+        telemetry_enabled_description:
+          'Schreibt Diagnosedaten nach <data-dir>/telemetry.log auf der Maschine, die contenox ausführt. Standardmäßig aus.',
+        update_check_label: 'Automatische Update-Prüfung',
+        update_check_description:
+          'Prüft auf neuere contenox-Releases. Standardmäßig an; für Zero-Trust-/Air-Gapped-Umgebungen deaktivieren.',
       },
       setup: {
         banner_title: 'Einrichtung abschließen, bevor Sie chatten',
         banner_title_warnings: 'Empfohlen: LLM-Backend hinzufügen',
+        incomplete_banner_title: 'Einrichtung unvollständig',
+        incomplete_banner_action: 'Einrichtung abschließen',
         open_fix: '{{path}} öffnen',
         set_defaults: 'Standard-Modell & Anbieter',
         model_placeholder: 'z. B. qwen2.5:7b',
@@ -1954,7 +2139,7 @@ const resources = {
         github: 'Github',
         home: 'Startseite',
         backends: 'Backends',
-        local_runtime_modeld: 'modeld',
+        local_runtime_modeld: 'Modeld',
         settings: 'Einstellungen',
         chat: 'Chat',
         chats: 'Chats',
@@ -2063,7 +2248,7 @@ const resources = {
       control_plane: {
         hub_title: 'Control Plane',
         hub_description:
-          'Backends, die lokale modeld-Laufzeit und Laufzeit-Standards für lokalen Chat konfigurieren.',
+          'Backends, die lokale Modeld-Laufzeit und Laufzeit-Standards für lokalen Chat konfigurieren.',
         menu_aria: 'Control-Plane-Menü öffnen',
         all_tools: 'Alle Werkzeuge',
       },
@@ -2288,6 +2473,16 @@ const resources = {
         status_env_missing:
           'Über {{env}} konfiguriert, aber diese Umgebungsvariable ist im Server-Prozess nicht vorhanden.',
         status_not_configured: 'Nicht konfiguriert',
+        tooltip_secret_api_key:
+          'Ein literaler API-Schlüssel, verschlüsselt in der lokalen Datenbank gespeichert. Bevorzugen Sie das Feld für die Umgebungsvariable unten, damit der Schlüssel selbst nicht gespeichert wird.',
+        tooltip_secret_service_account:
+          'Der vollständige Inhalt eines Google-Service-Account-Schlüssels (JSON). Leer lassen, um auf Application Default Credentials aus `gcloud auth application-default login` zurückzufallen.',
+        tooltip_secret_aws_credentials:
+          'Optionale statische AWS-Zugangsdaten als JSON. Leer lassen, um die AWS-Standardkette zu nutzen (Umgebung, Profil oder IAM-Rolle).',
+        tooltip_api_key_env:
+          'Name einer Umgebungsvariable auf diesem Server, die den API-Schlüssel enthält; wird bei jeder Anfrage gelesen, statt den Schlüssel zu speichern.',
+        tooltip_status:
+          '„Konfiguriert“ bedeutet, dass ein Secret vorhanden ist — entweder direkt gespeichert oder über die angegebene Umgebungsvariable aufgelöst. „Env fehlt“ bedeutet, der Name der Umgebungsvariable ist gespeichert, aber in diesem Serverprozess nicht gesetzt.',
       },
       chains: {
         list_title: 'Ketten',
@@ -2395,6 +2590,12 @@ const resources = {
         error: 'Backend-Fehler',
         observed_models_title: 'Beobachtete Modelle',
         empty_title: 'Keine Backends',
+        tooltip_name:
+          'Ein kurzer Bezeichner für dieses Backend. Wird intern genutzt, um es aus Task-Chains und Standardeinstellungen zu referenzieren; erscheint nicht für Endnutzer.',
+        tooltip_url:
+          'Wie das Backend erreicht wird: bei lokalen Llama-/OpenVINO-Backends das Modellverzeichnis, bei einem Modeld-Knoten „local“ (diese Maschine) oder host:port (ein entfernter Knoten), bei gehosteten Anbietern die Basis-URL der API.',
+        tooltip_type:
+          'Das Protokoll, das dieses Backend spricht. Ollama benötigt einen laufenden Ollama-Prozess; Local und OpenVINO laufen über den Modeld-Daemon ohne externen Server oder API-Schlüssel; ein Modeld-Knoten kann diese oder eine entfernte Maschine sein; vLLM zeigt auf einen selbst gehosteten OpenAI-kompatiblen Server.',
         hint_ollama:
           'Erfordert einen laufenden Ollama-Prozess auf dem Host. Starten mit: ollama serve — dann ein Modell laden: ollama pull qwen2.5:7b',
         hint_vllm:
@@ -2402,24 +2603,25 @@ const resources = {
         hint_local:
           'Pfad zu einem Verzeichnis mit .gguf-Modelldateien. Contenox durchsucht dieses Verzeichnis beim Start und registriert gefundene Modelle automatisch.',
         hint_openvino:
-          'Pfad zu einem Verzeichnis mit OpenVINO-IR-Modellordnern. Wird vom selben modeld-Daemon wie GGUF bedient; auf einer Maschine ist jeweils nur eine Engine aktiv.',
+          'Pfad zu einem Verzeichnis mit OpenVINO-IR-Modellordnern. Wird vom selben Modeld-Daemon wie GGUF bedient; auf einer Maschine ist jeweils nur eine Engine aktiv.',
         hint_modeld:
-          'Ein modeld-Daemon, lokal oder remote. Lassen Sie die URL auf "local" für diese Maschine, oder geben Sie host:port ein, um einen modeld-Daemon auf einer anderen Maschine zu erreichen (z. B. einen GPU-Rechner). Nach der Registrierung können Sie unten eine GGUF-Datei dorthin übertragen oder `contenox model push` verwenden.',
+          'Ein Modeld-Daemon, lokal oder remote. Lassen Sie die URL auf "local" für diese Maschine, oder geben Sie host:port ein, um einen Modeld-Daemon auf einer anderen Maschine zu erreichen (z. B. einen GPU-Rechner). Nach der Registrierung können Sie unten eine GGUF-Datei dorthin übertragen oder `contenox model push` verwenden.',
         push_toggle: 'Modell übertragen',
         push_name_label: 'Modellname',
         push_name_placeholder: 'my-qwen',
         push_file_label: 'GGUF-Datei',
         push_action: 'Übertragen',
         push_success: '"{{name}}" übertragen ({{bytes}}).',
-        push_already_present: 'Bereits auf diesem Knoten vorhanden — geprüft und unverändert gelassen.',
+        push_already_present:
+          'Bereits auf diesem Knoten vorhanden — geprüft und unverändert gelassen.',
         push_error: 'Übertragung fehlgeschlagen',
         empty_description:
           'Keine Backends konfiguriert. Erstellen Sie Ihr erstes Backend, um zu beginnen.',
         loading: 'Lade Backends...',
         status: {
-          available: 'Verfugbar',
-          unavailable: 'Nicht verfugbar',
-          unverified: 'Nicht gepruft',
+          available: 'Verfügbar',
+          unavailable: 'Nicht verfügbar',
+          unverified: 'Nicht geprüft',
         },
       },
       pools: {
@@ -2443,13 +2645,13 @@ const resources = {
       state: {
         title: 'Backend-Status',
         runtime_tab: 'Laufzeitstatus',
-        local_runtime_tab: 'modeld',
+        local_runtime_tab: 'Modeld',
         runtime_title: 'Laufzeit-Sync',
         runtime_intro:
           'Aktueller Stand aus der Backend-Aktualisierung der Laufzeit (Erreichbarkeit, beobachtete Modelle, Sync-Fehler). Keine Download-Warteschlange.',
         local_runtime_title: 'Lokale Laufzeit',
         local_runtime_intro:
-          'modeld-Daemonstatus und Slot-Steuerung aus contenox serve. Beam spricht nicht direkt mit modeld.',
+          'Modeld-Daemonstatus und Slot-Steuerung aus contenox serve. Beam spricht nicht direkt mit Modeld.',
         local_runtime_refresh: 'Aktualisieren',
         local_runtime_load_error: 'Lokaler Laufzeitstatus konnte nicht geladen werden.',
         local_runtime_availability: 'Verfügbarkeit',
@@ -2457,8 +2659,12 @@ const resources = {
         local_runtime_unavailable: 'Nicht verfügbar',
         local_runtime_daemon_title: 'Daemon',
         local_runtime_slot_title: 'Residenter Slot',
+        local_runtime_slot_help:
+          'Modeld hält höchstens ein Modell gleichzeitig resident (den Slot). Ein anderes Modell zu laden verdrängt das aktuell resident Modell.',
         local_runtime_config_title: 'Aktive Laufzeitkonfiguration',
         local_runtime_daemon_state: 'Daemonstatus',
+        local_runtime_state_help:
+          'running: ein laufender Daemon beantwortet Health-Checks. stale: sein Lease ist abgelaufen, er ist möglicherweise abgestürzt. not-running: installiert, aber nicht gestartet. unreachable: ein Lease wird gehalten, aber der Daemon antwortet nicht.',
         local_runtime_slot_state: 'Slotstatus',
         local_runtime_backend: 'Backend',
         local_runtime_endpoint: 'Endpoint',
@@ -2492,10 +2698,18 @@ const resources = {
         local_runtime_cfg_disable_bos: 'BOS deaktivieren',
         local_runtime_cfg_reasoning: 'Reasoning-Format',
         local_runtime_load: 'Laden',
+        local_runtime_load_help:
+          'Lädt das ausgewählte Modell in den residenten Slot und verdrängt dabei ein eventuell geladenes Modell.',
         local_runtime_unload: 'Entladen',
+        local_runtime_unload_help:
+          'Entlädt das residente Modell und gibt seinen Speicher frei, ohne einen Ersatz zu laden.',
         local_runtime_capacity_title: 'Kapazitätsdiagnose',
+        local_runtime_capacity_help:
+          'Schätzt, ob das ausgewählte Modell in den verfügbaren Gerätespeicher passt, und das sich daraus ergebende effektive Kontextfenster. Lädt das Modell dabei nicht.',
         local_runtime_capacity_empty: 'Keine registrierten lokalen Modelle verfügbar.',
         local_runtime_capacity_refreshing: 'Kapazitätsdiagnose wird aktualisiert...',
+        local_runtime_capacity_load_estimate: 'Schätzung laden',
+        local_runtime_capacity_refresh_estimate: 'Schätzung aktualisieren',
         local_runtime_capacity_model_max: 'Maximaler Modellkontext',
         local_runtime_capacity_effective: 'Effektiver Kontext',
         local_runtime_capacity_memory_context: 'Speicherpassender Kontext',
@@ -2831,17 +3045,19 @@ const resources = {
         no_response: 'Keine Antwort erhalten',
       },
       acp_chat: {
-        title: 'ACP-Chat',
+        title: 'Chat',
         new_session: 'Neue Sitzung',
         role_user: 'Du',
         role_agent: 'Agent',
         latest_label: 'Neueste',
         thinking_label: 'Überlegung',
+        thinking_streaming_label: 'Denkt nach…',
+        thinking_done_label: 'Gedanken',
         typing_label: 'Assistent tippt',
         copy: 'Kopieren',
         copied: 'Kopiert!',
         empty_title: 'Noch keine Nachrichten',
-        empty_description: 'Sag Hallo — das läuft live über ACP mit der Runtime.',
+        empty_description: 'Sag Hallo — du sprichst live mit der Runtime.',
         composer_placeholder: 'Nachricht an den Agenten…',
         composer_placeholder_connecting: 'Verbinde…',
         composer_send: 'Senden',
@@ -2853,14 +3069,15 @@ const resources = {
         status_setup_required: 'Einrichtung erforderlich',
         status_error: 'Fehler',
         connecting_label: 'Verbindung zum Agenten wird aufgebaut…',
-        setup_required_title: 'ACP-Einrichtung erforderlich',
+        setup_required_title: 'Einrichtung erforderlich',
         setup_required_generic: 'Die Verbindung zum Agenten konnte nicht autorisiert werden.',
         setup_required_action: 'Einrichtung öffnen',
         disconnected_title: 'Verbindung verloren',
-        disconnected_description: 'Die Verbindung zum Agenten konnte nicht automatisch wiederhergestellt werden.',
+        disconnected_description:
+          'Die Verbindung zum Agenten konnte nicht automatisch wiederhergestellt werden.',
         disconnected_retry: 'Verbindung erneut versuchen',
         error_title: 'Etwas ist schiefgelaufen',
-        error_generic: 'Die ACP-Verbindung ist unerwartet fehlgeschlagen.',
+        error_generic: 'Die Verbindung zur Runtime ist unerwartet fehlgeschlagen.',
         not_found_title: 'Sitzung nicht gefunden',
         not_found_description: 'Diese Sitzung existiert nicht mehr oder ist nicht verfügbar.',
         not_found_action: 'Neue Sitzung starten',
@@ -2873,11 +3090,31 @@ const resources = {
         plan_status_completed: 'Erledigt',
         usage_label: 'Kontextnutzung',
         tool_raw_output: 'Rohausgabe',
+        tool_status_pending: 'Ausstehend',
+        tool_status_running: 'Läuft',
+        tool_status_success: 'Fertig',
+        tool_status_error: 'Fehler',
+        tool_toggle_detail: 'Detail umschalten',
         config_options_label: 'Optionen',
         slash_menu_label: 'Befehlsvorschläge',
         permission_title: 'Berechtigung angefragt',
         permission_default_kind: 'Aktion',
         permission_raw_input_label: 'Roheingabe',
+        error_banner_headline: 'Ausführung fehlgeschlagen',
+        error_details_toggle: 'Details anzeigen',
+        error_model_hint:
+          'Das gewählte Modell passt nicht zu den verfügbaren Backends — wähle oben unter »Model« ein anderes Modell.',
+        scroll_to_latest: 'Zum neuesten Eintrag scrollen',
+      },
+      acp_recovery: {
+        backend_unreachable_title: 'Runtime-Backend nicht erreichbar',
+        backend_unreachable_description:
+          'Das konfigurierte LLM-Backend (z. B. die lokale Modeld-Runtime oder Ollama) ist gerade nicht erreichbar. Starte es und versuche es erneut.',
+        backend_unreachable_retry: 'Erneut versuchen',
+        model_unavailable_title: 'Standardmodell nicht nutzbar',
+        model_unavailable_description:
+          'Das Standardmodell ist für das aktuell laufende Backend falsch konfiguriert — das ist ein Einstellungsproblem, kein Verbindungsproblem.',
+        model_unavailable_action: 'Einstellungen öffnen',
       },
       acp_sidebar: {
         title: 'Sitzungen',

@@ -126,11 +126,15 @@ func Evaluate(in Input) Result {
 
 	if r.DefaultModel == "" {
 		addIssue(&r, Issue{
-			Code:       "missing_default_model",
-			Severity:   "error",
-			Category:   CategoryDefaults,
-			Message:    "No default model is set. Internal chat and chains using {{var:model}} need it.",
-			FixPath:    "/backends",
+			Code:     "missing_default_model",
+			Severity: "error",
+			Category: CategoryDefaults,
+			Message:  "No default model is set. Internal chat and chains using {{var:model}} need it.",
+			// The default model/provider fields live on the Settings page
+			// (GlobalSettingsSection), not Backends — a registered backend
+			// alone never sets a default. See default_model_not_available
+			// below for the same distinction once a default IS set.
+			FixPath:    "/settings",
 			CLICommand: "contenox config set default-model <name>",
 		})
 	}
@@ -140,7 +144,7 @@ func Evaluate(in Input) Result {
 			Severity:   "error",
 			Category:   CategoryDefaults,
 			Message:    "No default provider is set. Internal chat and chains using {{var:provider}} need it.",
-			FixPath:    "/backends",
+			FixPath:    "/settings",
 			CLICommand: "contenox config set default-provider ollama",
 		})
 	}
@@ -422,11 +426,15 @@ func addDefaultProviderIssues(r *Result) {
 	available := strings.Join(chatModels, ", ")
 	cmd := fmt.Sprintf("contenox config set default-model %q", chatModels[0])
 	addIssue(r, Issue{
-		Code:       "default_model_not_available",
-		Severity:   "error",
-		Category:   CategoryHealth,
-		Message:    fmt.Sprintf("Default model %q is not currently available for provider %q. Available chat models: %s.", r.DefaultModel, r.DefaultProvider, available),
-		FixPath:    "/backends?tab=backends",
+		Code:     "default_model_not_available",
+		Severity: "error",
+		Category: CategoryHealth,
+		Message:  fmt.Sprintf("Default model %q is not currently available for provider %q. Available chat models: %s.", r.DefaultModel, r.DefaultProvider, available),
+		// The backend is reachable and serving fine — the misconfiguration is
+		// the *default model choice* (e.g. an OpenVINO artifact set as
+		// default while a llama backend is what's actually running), which is
+		// picked on the Settings page (GlobalSettingsSection), not Backends.
+		FixPath:    "/settings",
 		CLICommand: cmd,
 	})
 }

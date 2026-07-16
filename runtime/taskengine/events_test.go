@@ -231,6 +231,8 @@ func TestTaskEvents_ChatStreamingPublishesChunks(t *testing.T) {
 	assert.Equal(t, []taskengine.TaskEventKind{
 		taskengine.TaskEventChainStarted,
 		taskengine.TaskEventStepStarted,
+		// Pre-check usage indicator emitted before generation begins.
+		taskengine.TaskEventTokenUsage,
 		taskengine.TaskEventStepChunk,
 		taskengine.TaskEventStepChunk,
 		taskengine.TaskEventStepChunk,
@@ -242,6 +244,88 @@ func TestTaskEvents_ChatStreamingPublishesChunks(t *testing.T) {
 	assert.Equal(t, "hello ", chunks[1].Content)
 	assert.Equal(t, "world", chunks[2].Content)
 	assert.Equal(t, "test-model", chunks[2].ModelName)
+}
+
+// TestTaskEvents_ChatStreamingWithToolsParsesToolCalls locks in the streaming
+// path for tool-bearing chat_completion tasks: visible content still streams
+// token-by-token, tool calls delivered on the terminal parcel are parsed onto
+// the assistant message (not leaked into the transcript as prose), and the full
+// reply is never re-published as a duplicate chunk after streaming.
+func TestTaskEvents_ChatStreamingWithToolsParsesToolCalls(t *testing.T) {
+	sink := &captureTaskEventSink{}
+	constructorCtx := taskengine.WithTaskEventSink(context.Background(), sink)
+
+	repo := &mockModelRepo{
+		streamFunc: func(ctx context.Context, req llmrepo.Request, messages []libmodelprovider.Message, opts ...libmodelprovider.ChatArgument) (<-chan *libmodelprovider.StreamParcel, llmrepo.Meta, error) {
+			ch := make(chan *libmodelprovider.StreamParcel, 4)
+			ch <- &libmodelprovider.StreamParcel{Data: "let me "}
+			ch <- &libmodelprovider.StreamParcel{Data: "check"}
+			// Terminal parcel: assembled tool calls, no visible tokens. This is
+			// how providers surface tool calls from a stream.
+			tc := libmodelprovider.ToolCall{ID: "call-1", Type: "function"}
+			tc.Function.Name = "get_weather"
+			tc.Function.Arguments = `{"city":"Berlin"}`
+			ch <- &libmodelprovider.StreamParcel{ToolCalls: []libmodelprovider.ToolCall{tc}}
+			close(ch)
+			return ch, llmrepo.Meta{ModelName: "test-model", ProviderType: "llama", BackendID: "b1"}, nil
+		},
+	}
+
+	exec, err := taskengine.NewExec(constructorCtx, repo, tools.NewMockToolsRegistry(), libtracker.NoopTracker{})
+	require.NoError(t, err)
+	env, err := taskengine.NewEnv(constructorCtx, libtracker.NoopTracker{}, exec, taskengine.NewSimpleInspector(), tools.NewMockToolsRegistry())
+	require.NoError(t, err)
+
+	chain := &taskengine.TaskChainDefinition{
+		ID: "chain.stream.tools",
+		Tasks: []taskengine.TaskDefinition{
+			{
+				ID:             "task1",
+				Handler:        taskengine.HandleChatCompletion,
+				PromptTemplate: "Weather in {{.input}}?",
+				ExecuteConfig: &taskengine.LLMExecutionConfig{
+					Model: "test-model",
+				},
+				Transition: taskengine.TaskTransition{
+					Branches: []taskengine.TransitionBranch{
+						{Operator: taskengine.OpEquals, When: taskengine.TransitionToolCall, Goto: taskengine.TermEnd},
+						{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd},
+					},
+				},
+			},
+		},
+	}
+
+	result, _, _, err := env.ExecEnv(context.Background(), chain, "Berlin", taskengine.DataTypeString)
+	require.NoError(t, err)
+	hist, ok := result.(taskengine.ChatHistory)
+	require.True(t, ok)
+	require.NotEmpty(t, hist.Messages)
+	last := hist.Messages[len(hist.Messages)-1]
+
+	// Content accumulated from streamed parcels.
+	assert.Equal(t, "let me check", last.Content)
+	// Tool call parsed off the terminal parcel onto the assistant message.
+	require.Len(t, last.CallTools, 1)
+	assert.Equal(t, "get_weather", last.CallTools[0].Function.Name)
+	assert.Equal(t, `{"city":"Berlin"}`, last.CallTools[0].Function.Arguments)
+
+	var chunks []taskengine.TaskEvent
+	for _, event := range sink.events {
+		if event.Kind == taskengine.TaskEventStepChunk {
+			chunks = append(chunks, event)
+		}
+	}
+	// Only the two visible-content parcels stream; the terminal tool-call parcel
+	// carries no prose and must not publish a chunk.
+	require.Len(t, chunks, 2, "the terminal tool-call parcel must not publish a chunk")
+	assert.Equal(t, "let me ", chunks[0].Content)
+	assert.Equal(t, "check", chunks[1].Content)
+	// No duplicate final emission: the full reply must never appear as one extra
+	// chunk after the incremental ones.
+	for _, c := range chunks {
+		assert.NotEqual(t, "let me check", c.Content)
+	}
 }
 
 func TestBusTaskEventSink_PublishesBroadAndRequestSubjects(t *testing.T) {

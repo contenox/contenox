@@ -12,6 +12,7 @@ func AddSetupRoutes(mux *http.ServeMux, stateService stateservice.Service, auth 
 	h := &setupHandler{state: stateService, auth: auth}
 	mux.HandleFunc("GET /setup-status", h.getStatus)
 	mux.HandleFunc("POST /setup/refresh", h.refreshStatus)
+	mux.HandleFunc("GET /cli-config", h.getCLIConfig)
 	mux.HandleFunc("PUT /cli-config", h.putCLIConfig)
 }
 
@@ -67,8 +68,12 @@ type putCLIConfigRequest struct {
 	DefaultThink                *string `json:"default-think"`
 	DefaultChain                *string `json:"default-chain"`
 	HITLPolicyName              *string `json:"hitl-policy-name"`
+	TelemetryEnabled            *string `json:"telemetry-enabled"`
+	UpdateCheck                 *string `json:"update-check"`
 }
 
+// putCLIConfigResponse is the resolved CLI config snapshot, shared by
+// GET /cli-config (full read) and PUT /cli-config (post-update read).
 type putCLIConfigResponse struct {
 	DefaultModel                string            `json:"defaultModel"`
 	DefaultProvider             string            `json:"defaultProvider"`
@@ -80,7 +85,41 @@ type putCLIConfigResponse struct {
 	DefaultThink                string            `json:"defaultThink"`
 	DefaultChain                string            `json:"defaultChain"`
 	HITLPolicyName              string            `json:"hitlPolicyName"`
+	TelemetryEnabled            string            `json:"telemetryEnabled"`
+	UpdateCheck                 string            `json:"updateCheck"`
 	ResolvedFrom                map[string]string `json:"resolvedFrom,omitempty"`
+}
+
+func cliConfigResponseFromSnapshot(snap stateservice.CLIConfigSnapshot) putCLIConfigResponse {
+	return putCLIConfigResponse{
+		DefaultModel:                snap.DefaultModel,
+		DefaultProvider:             snap.DefaultProvider,
+		DefaultAltModel:             snap.DefaultAltModel,
+		DefaultAltProvider:          snap.DefaultAltProvider,
+		DefaultAutocompleteModel:    snap.DefaultAutocompleteModel,
+		DefaultAutocompleteProvider: snap.DefaultAutocompleteProvider,
+		DefaultMaxTokens:            snap.DefaultMaxTokens,
+		DefaultThink:                snap.DefaultThink,
+		DefaultChain:                snap.DefaultChain,
+		HITLPolicyName:              snap.HITLPolicyName,
+		TelemetryEnabled:            snap.TelemetryEnabled,
+		UpdateCheck:                 snap.UpdateCheck,
+		ResolvedFrom:                snap.ResolvedFrom,
+	}
+}
+
+func (h *setupHandler) getCLIConfig(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := h.authorize(r); err != nil {
+		_ = apiframework.Error(w, r, err, apiframework.AuthorizeOperation)
+		return
+	}
+	snap, err := h.state.CLIConfig(ctx)
+	if err != nil {
+		_ = apiframework.Error(w, r, err, apiframework.ListOperation)
+		return
+	}
+	_ = apiframework.Encode(w, r, http.StatusOK, cliConfigResponseFromSnapshot(snap)) // @response setupapi.putCLIConfigResponse
 }
 
 func (h *setupHandler) putCLIConfig(w http.ResponseWriter, r *http.Request) {
@@ -103,7 +142,9 @@ func (h *setupHandler) putCLIConfig(w http.ResponseWriter, r *http.Request) {
 		body.DefaultMaxTokens == nil &&
 		body.DefaultThink == nil &&
 		body.DefaultChain == nil &&
-		body.HITLPolicyName == nil {
+		body.HITLPolicyName == nil &&
+		body.TelemetryEnabled == nil &&
+		body.UpdateCheck == nil {
 		_ = apiframework.Error(w, r, apiframework.BadRequest("Provide at least one CLI config key."), apiframework.UpdateOperation)
 		return
 	}
@@ -118,23 +159,12 @@ func (h *setupHandler) putCLIConfig(w http.ResponseWriter, r *http.Request) {
 		DefaultThink:                body.DefaultThink,
 		DefaultChain:                body.DefaultChain,
 		HITLPolicyName:              body.HITLPolicyName,
+		TelemetryEnabled:            body.TelemetryEnabled,
+		UpdateCheck:                 body.UpdateCheck,
 	})
 	if err != nil {
 		_ = apiframework.Error(w, r, err, apiframework.UpdateOperation)
 		return
 	}
-	resp := putCLIConfigResponse{
-		DefaultModel:                snap.DefaultModel,
-		DefaultProvider:             snap.DefaultProvider,
-		DefaultAltModel:             snap.DefaultAltModel,
-		DefaultAltProvider:          snap.DefaultAltProvider,
-		DefaultAutocompleteModel:    snap.DefaultAutocompleteModel,
-		DefaultAutocompleteProvider: snap.DefaultAutocompleteProvider,
-		DefaultMaxTokens:            snap.DefaultMaxTokens,
-		DefaultThink:                snap.DefaultThink,
-		DefaultChain:                snap.DefaultChain,
-		HITLPolicyName:              snap.HITLPolicyName,
-		ResolvedFrom:                snap.ResolvedFrom,
-	}
-	_ = apiframework.Encode(w, r, http.StatusOK, resp) // @response setupapi.putCLIConfigResponse
+	_ = apiframework.Encode(w, r, http.StatusOK, cliConfigResponseFromSnapshot(snap)) // @response setupapi.putCLIConfigResponse
 }

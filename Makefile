@@ -708,9 +708,10 @@ test-contenox-help: build-contenox
 # handling) against the Rust reference ACP client implementations, driving the
 # hermetic libacp/cmd/acp-stub-agent instead of a real LLM backend. Both tests
 # skip with a clear message when their env var is unset.
-# ACP_VALIDATOR_BIN: build from https://github.com/agentclientprotocol (the
-#   acp-validator crate); e.g. a local checkout builds it at
-#   <checkout>/target/debug/acp-validator.
+# ACP_VALIDATOR_BIN: build the acp-validator crate vendored at
+#   tools/acp-validator (see its README: it needs a sibling checkout of the
+#   agentclientprotocol rust-sdk); the build lands at
+#   <crate dir>/target/debug/acp-validator.
 # ACP_YOPO_BIN: build the `yopo` binary from the agentclientprotocol rust-sdk
 #   (src/yopo); e.g. <rust-sdk checkout>/target/debug/yopo.
 ACP_VALIDATOR_BIN ?=

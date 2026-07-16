@@ -4,6 +4,7 @@ import {
   Backend,
   BackendRuntimeState,
   ChainDefinition,
+  CLIConfig,
   CLIConfigUpdateRequest,
   CLIConfigUpdateResponse,
   CloudProviderType,
@@ -12,8 +13,8 @@ import {
   LocalHook,
   MCPServer,
   ModeldCapacityResponse,
-  ModeldLoadResponse,
   ModelDescriptor,
+  ModeldLoadResponse,
   ModeldLocalModel,
   ModeldStatusResponse,
   ModeldUnloadResponse,
@@ -148,6 +149,7 @@ export const api = {
     normalizeSetupStatus(await apiFetch<SetupStatus>('/api/setup-status')),
   refreshSetupStatus: async (): Promise<SetupStatus> =>
     normalizeSetupStatus(await apiFetch<SetupStatus>('/api/setup/refresh', options('POST'))),
+  getCLIConfig: () => apiFetch<CLIConfig>('/api/cli-config'),
   putCLIConfig: (body: CLIConfigUpdateRequest) =>
     apiFetch<CLIConfigUpdateResponse>('/api/cli-config', options('PUT', body)),
 

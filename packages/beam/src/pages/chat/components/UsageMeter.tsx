@@ -1,4 +1,4 @@
-import { ProgressBar, Span } from '@contenox/ui';
+import { formatCompactNumber, ProgressBar, Span } from '@contenox/ui';
 import { useTranslation } from 'react-i18next';
 import type { AcpUsageState } from '../../../hooks/acpSessionState';
 
@@ -9,12 +9,13 @@ export function UsageMeter({ usage }: { usage: AcpUsageState | null }) {
 
   const pct = Math.min(100, Math.max(0, Math.round((usage.used / usage.size) * 100)));
   const palette = pct >= 90 ? 'error' : pct >= 70 ? 'warning' : 'neutral';
+  const exact = `${usage.used.toLocaleString()} / ${usage.size.toLocaleString()}`;
 
   return (
     <div className="flex items-center gap-2" aria-label={t('acp_chat.usage_label')}>
       <ProgressBar value={pct} palette={palette} className="w-16 sm:w-28" />
-      <Span variant="muted" className="text-xs tabular-nums">
-        {usage.used.toLocaleString()} / {usage.size.toLocaleString()}
+      <Span variant="muted" className="text-xs tabular-nums" title={exact}>
+        {formatCompactNumber(usage.used)} / {formatCompactNumber(usage.size)}
       </Span>
     </div>
   );

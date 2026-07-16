@@ -97,6 +97,12 @@ export default defineConfig(({ mode }) => {
               changeOrigin: true,
               ws: true,
             },
+            /** ACP chat speaks WebSocket NDJSON on /acp (runtime/contenoxcli/acp_ws.go), outside /api. */
+            '/acp': {
+              target: proxyTarget,
+              changeOrigin: true,
+              ws: true,
+            },
           },
         }
       : undefined,

@@ -55,6 +55,7 @@ export const permissionKeys = {
 export const setupKeys = {
   all: ['setup'] as const,
   status: () => [...setupKeys.all, 'status'] as const,
+  cliConfig: () => [...setupKeys.all, 'cli-config'] as const,
 };
 
 export const userKeys = {

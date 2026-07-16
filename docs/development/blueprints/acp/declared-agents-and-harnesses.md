@@ -175,3 +175,77 @@ headless stage. Consumers named in
 modelprovider) and [`../opsclient/operator-console.md`](../opsclient/operator-console.md)
 (remote-host administration) plug into the same registry and harness
 declarations rather than growing parallel ones.
+
+## Build order: the walking skeleton and its waves
+
+The direction is built as independently landable slices, ordered so one
+thread through the whole vision exists as early as possible. **The walking
+skeleton rule: declare one external agent → the runtime drives it under a
+trivial harness → every update lands in the journal → beam attaches to the
+screen.** Everything after that deepens the thread; nothing before it is
+allowed to gold-plate.
+
+**Wave 1 — substrate** (parallelizable):
+
+- **Agent registry.** Declared agents as CRUD resources following the
+  existing registry idioms (backends, models, MCP servers): name, kind
+  (`external-stdio` command/args/env first; `endpoint` and `native-chain` as
+  declared kinds that may land later), default harness reference. Verified
+  through `apitests` like every other registry.
+- **Session journal.** The virtual screen as storage: an append-only
+  per-session record of every `session/update`, permission event, and
+  tool-call event, with a retention policy and a replay iterator. The design
+  constraint: replay fidelity is load-bearing, so the journal stores
+  wire-shaped frames — what came in is what replays out — never a lossy
+  projection. Verified by replay-equals-input tests.
+- **Harness compiler.** A harness declaration (workspace roots, fs mode,
+  terminals on/off, MCP server references, permission route:
+  `forward` | `rule` | `queue`) compiles into a `libacp.Client`
+  implementation: the fs and terminal handlers, the permission answerer,
+  and the `mcpServers` / `additionalDirectories` payload for `session/new`.
+  Verified by loopback tests showing different declarations produce
+  observably different capability advertisements and callback behavior.
+
+**Wave 2 — the driver** (the keystone, after wave 1):
+
+- **Session supervisor.** The runtime component that owns downward
+  connections: spawns or dials the declared agent, runs
+  `ClientSideConnection`, applies the compiled harness, journals everything,
+  tracks live sessions, and closes the journal cleanly on agent-process
+  death. This is "the runtime is always the driver" as code; the
+  supervision idioms in `libroutine`/`liblease` are the reuse candidates.
+- **Upward attach surface.** `acpsvc` lists driven sessions in
+  `session/list` (agent attribution via `_meta`) and serves `session/load`
+  by replaying the journal, then tailing live to N attached viewers.
+  Attaching mid-run must be indistinguishable from having watched live —
+  that is the acceptance bar, proven with a loopback viewer plus the
+  reference test agent as the driven side.
+
+**Wave 3 — visible product:**
+
+- **Beam fleet MVP.** Registry views (agents, harnesses, sessions) from
+  REST; attach is the existing beam ACP client calling `session/load` — per
+  [`../beam/beam-on-acp.md`](../beam/beam-on-acp.md) the chat surface gains
+  no private API, only the registry endpoints are new. Includes the
+  pending-permission inbox for `queue`-routed harnesses.
+
+**Wave 4 — headless closes the loop:**
+
+- **Rules and triggers.** The `rule` permission route (allow/deny/match
+  patterns) and triggers (cron or bus event → supervisor starts a session
+  with agent + harness + prompt). The test of the earlier slices' shape is
+  that this wave adds no new machinery: a headless run is a trigger, the
+  same driver, the same journal, and a viewer that may never come.
+
+Decisions owned by the operator of this plan, to be settled before wave 1:
+
+1. **Journal storage** — append-only in the durable SQL store versus the
+   kv store. Retention, replay scans, and the journal doubling as the audit
+   trail all argue for the durable store.
+2. **Harness spec shape** — a harness as its own declared resource
+   referenced by agents (reusable across agents; the lean of this
+   document), versus embedded per-agent configuration.
+3. **Skeleton target agent** — which external agent the walking skeleton
+   demos against: the reference test agent is the hermetic default; a real
+   coding agent is the better demo at the cost of auth and model
+   configuration entering the story.

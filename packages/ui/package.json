@@ -9,6 +9,7 @@
     "build": "tsup src/index.ts --format cjs,esm --dts --external react,react-dom,clsx,tailwind-merge,lucide-react,tailwindcss,react-markdown --tsconfig tsconfig.json && npm run build:css",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
+    "test": "vitest run",
     "prettier:check": "prettier --check \"**/*.{ts,tsx,js,json,md}\"",
     "prettier": "prettier --write \"**/*.{ts,tsx,js,json,md}\""
   },
@@ -65,6 +66,7 @@
     "tailwindcss": "^4.0.0",
     "tsup": "^8.4.0",
     "typescript": "^5.9.3",
-    "vite": "^8.0.13"
+    "vite": "^8.0.13",
+    "vitest": "^3.2.7"
   }
 }

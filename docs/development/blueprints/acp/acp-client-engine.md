@@ -131,29 +131,27 @@ policy gated the sub-agent's last action.
 
 ## The shared prerequisite: a client-side connection core in `libacp`
 
-Neither shape has anywhere to live until this exists. Today `libacp` — the
-runtime's own ACP implementation — only speaks the agent side:
-`AgentSideConnection` (`libacp/conn.go`) and the `Agent` / `AgentFactory`
-contract it drives (`libacp/agent.go`), which is exactly what `acpsvc` wraps
-(`acpsvc.New(deps) libacp.AgentFactory`, `runtime/acpsvc/transport.go:145`).
-There is no `ClientSideConnection` anywhere in the repository — the client
-direction has never been built.
+Both shapes live on this core. `libacp` — the runtime's own ACP
+implementation — speaks both sides: `AgentSideConnection` (`libacp/conn.go`)
+and the `Agent` / `AgentFactory` contract it drives (`libacp/agent.go`),
+which is exactly what `acpsvc` wraps (`acpsvc.New(deps) libacp.AgentFactory`,
+`runtime/acpsvc/transport.go`), and `ClientSideConnection`
+(`libacp/clientconn.go`) with the `Client` / `ClientFactory` contract
+(`libacp/client.go`) — session lifecycle (new/load/resume/prompt/cancel), the
+pending-request map, and the permission callback, shared machinery the two
+shapes sit on top of as thin adapters.
 
-Evidence that this gap is already costing duplicated work: `runtime/vscodeagent`
-hand-rolls its own pending-request bookkeeping
+Why one shared core matters: `runtime/vscodeagent` hand-rolls its own
+pending-request bookkeeping
 (`clientReqPending map[string]chan clientResponse`,
 `runtime/vscodeagent/server.go:42`) to answer reverse calls on its own bespoke
 stdio bridge protocol — the same shape (a request-id-keyed map, resolved when
-the peer's response arrives) that a reusable client core needs for
+the peer's response arrives) that the client core provides for
 `session/request_permission`, `fs/read_text_file`, and `terminal/create`.
-Solving it a
-second time for real external ACP agents, bespoke and non-reusable again,
-repeats the mistake. `libacp` should absorb this once: session lifecycle
-(new/load/resume/prompt/cancel), the pending-request map, and the permission
-callback — shared machinery that shape (a) and shape (b) both sit on top of as
-thin adapters, and that a future `/acp` outbound WebSocket dial (mirroring the
-inbound transport `acp-chat-workspace.md` specifies) reuses without a third
-implementation.
+Solving it again for real external ACP agents, bespoke and non-reusable,
+would repeat that mistake; a future `/acp` outbound WebSocket dial (mirroring
+the inbound transport `acp-chat-workspace.md` specifies) likewise reuses the
+core rather than adding a third implementation.
 
 Symmetry worth noting: `acpsvc`'s own `local_shell` handling already expects
 capable peers to run commands on the peer's own machine — it routes through

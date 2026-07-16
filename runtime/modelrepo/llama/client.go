@@ -266,20 +266,55 @@ func (c *client) Prompt(ctx context.Context, systemInstruction string, temperatu
 
 func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (<-chan *modelrepo.StreamParcel, error) {
 	cfg := applyChatArgs(args)
+
+	// Mirror Chat's tool-protocol setup so tool-bearing chats can still stream
+	// their visible tokens. The daemon renders tool definitions and parses
+	// tool-call output the same way; the decode stream already surfaces
+	// assembled tool calls via StreamChunk.ToolCalls (see session.Decode), which
+	// we forward on a terminal parcel below.
+	var toolsJSON string
+	parseToolCalls := false
+	structuredToolCalls := false
 	if len(cfg.Tools) > 0 {
-		return nil, NewUnsupportedFeatureError("tool calls")
+		if c.toolProtocol == "" {
+			return nil, NewUnsupportedFeatureError("tool calls (model declares no tool_calls.protocol)")
+		}
+		if !toolCallProtocolKnown(c.toolProtocol) {
+			return nil, fmt.Errorf("%w: tool protocol %q", ErrUnsupportedFeature, c.toolProtocol)
+		}
+		structuredToolCalls = c.toolProtocol == toolProtocolJSONSchemaToolCalls
+		parseToolCalls = !structuredToolCalls
+		var err error
+		if toolsJSON, err = serializeToolDefs(cfg.Tools); err != nil {
+			return nil, err
+		}
 	}
+
 	dc, showThinking, enableThinking, reasoningEffort, err := c.decodeOptions(cfg)
 	if err != nil {
 		return nil, err
 	}
+	if parseToolCalls {
+		dc.ParserProtocols = append(dc.ParserProtocols, toolParserProtocolCommonChat)
+	}
+	if structuredToolCalls {
+		payload, err := toolCallsJSONSchema(cfg.Tools)
+		if err != nil {
+			return nil, err
+		}
+		dc.StructuredOutput = transport.StructuredOutputConfig{
+			Protocol: toolProtocolJSONSchemaToolCalls,
+			Payload:  payload,
+		}
+	}
+
 	cs, err := c.acquire()
 	if err != nil {
 		return nil, err
 	}
 
 	cs.Turn.Lock()
-	if err := c.prime(ctx, cs, messages, "", enableThinking, reasoningEffort); err != nil {
+	if err := c.prime(ctx, cs, messages, toolsJSON, enableThinking, reasoningEffort); err != nil {
 		cs.Turn.Unlock()
 		if fatalSessionError(err) {
 			warm.Drop(cs)
@@ -299,6 +334,7 @@ func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args 
 	go func() {
 		defer close(out)
 		defer cs.Turn.Unlock()
+		var toolCalls []modelrepo.ToolCall
 		for chunk := range chunks {
 			if chunk.Error != nil {
 				out <- &modelrepo.StreamParcel{Error: c.explainOverflow(chunk.Error)}
@@ -313,6 +349,13 @@ func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args 
 			if showThinking && chunk.Thinking != "" {
 				out <- &modelrepo.StreamParcel{Thinking: chunk.Thinking}
 			}
+			toolCalls = appendToolCalls(toolCalls, chunk.ToolCalls)
+		}
+		// Emit assembled tool calls once, on a terminal parcel — they are decode
+		// output, not conversation tokens, so they carry no Data/Thinking and must
+		// not be published to the user as prose.
+		if len(toolCalls) > 0 {
+			out <- &modelrepo.StreamParcel{ToolCalls: toolCalls}
 		}
 	}()
 	return out, nil

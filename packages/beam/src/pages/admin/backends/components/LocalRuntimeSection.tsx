@@ -1,7 +1,9 @@
 import {
   Badge,
   Button,
+  formatCompactNumber,
   GridLayout,
+  LabelWithHelp,
   LoadingState,
   Panel,
   Section,
@@ -10,14 +12,15 @@ import {
   Table,
   TableCell,
   TableRow,
+  Tooltip,
 } from '@contenox/ui';
 import { Play, Power, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { formatBytes } from '../../../../lib/format';
 import type {
   ModeldAdapterInfo,
-  ModeldCapacityResponse,
   ModeldCapacityDevice,
+  ModeldCapacityResponse,
   ModeldLocalModel,
   ModeldRuntimeConfig,
   ModeldSlotStatus,
@@ -39,6 +42,7 @@ type LocalRuntimeSectionProps = {
   capacityLoading: boolean;
   capacityFetching: boolean;
   capacityErrorMessage?: string;
+  onLoadCapacity: () => void;
   onLoad: (model: string, generation?: number) => void;
   isLoadingModel: boolean;
   loadErrorMessage?: string;
@@ -53,6 +57,8 @@ type BadgeVariant = 'default' | 'success' | 'error' | 'warning' | 'secondary' | 
 type DetailRow = {
   label: string;
   value: string | number | boolean | number[] | undefined;
+  /** Exact value shown as a native tooltip, for rows whose display value is compacted/rounded. */
+  title?: string;
 };
 
 const missingValue = '-';
@@ -88,6 +94,13 @@ const formatAdapters = (adapters: ModeldAdapterInfo[] | undefined): string | und
     .join(', ');
 };
 
+/** A token/context-count row: shown compact (e.g. "128K"), exact value as a hover tooltip. */
+const tokenRow = (label: string, value: number | undefined, locale?: string): DetailRow => ({
+  label,
+  value: value === undefined ? undefined : formatCompactNumber(value, locale),
+  title: value === undefined ? undefined : String(value),
+});
+
 const formatDevices = (devices: ModeldCapacityDevice[] | undefined): string | undefined => {
   if (!devices || devices.length === 0) return undefined;
   return devices
@@ -111,7 +124,7 @@ function DetailTable({ rows }: { rows: DetailRow[] }) {
           <TableCell className="text-text-muted dark:text-dark-text-muted w-64">
             {row.label}
           </TableCell>
-          <TableCell className="font-mono text-xs break-all">
+          <TableCell className="font-mono text-xs break-all" title={row.title}>
             {detailValue(row.value, t('common.yes'), t('common.no'))}
           </TableCell>
         </TableRow>
@@ -131,6 +144,7 @@ function CapacityDetails({
   capacityLoading,
   capacityFetching,
   capacityErrorMessage,
+  onLoadCapacity,
 }: {
   models: ModeldLocalModel[];
   modelsLoading: boolean;
@@ -142,9 +156,11 @@ function CapacityDetails({
   capacityLoading: boolean;
   capacityFetching: boolean;
   capacityErrorMessage?: string;
+  onLoadCapacity: () => void;
 }) {
-  const { t } = useTranslation();
-  const labelForModel = (model: ModeldLocalModel): string => `${model.model} (${model.backendType})`;
+  const { t, i18n } = useTranslation();
+  const labelForModel = (model: ModeldLocalModel): string =>
+    `${model.model} (${model.backendType})`;
   const activeModel = models.find(model => model.id === activeModelId);
   const selectedModel = models.find(model => model.id === selectedModelId);
   const options = models.map(model => ({
@@ -161,17 +177,19 @@ function CapacityDetails({
   const info = capacity?.info;
   const rows = info
     ? presentRows([
-        { label: t('state.local_runtime_capacity_model_max'), value: info.modelMaxContext },
-        { label: t('state.local_runtime_capacity_effective'), value: info.effectiveContext },
-        {
-          label: t('state.local_runtime_capacity_memory_context'),
-          value: info.memoryContextTokens,
-        },
-        { label: t('state.local_runtime_cfg_hot_context'), value: info.hotContextTokens },
-        {
-          label: t('state.local_runtime_cfg_planner_context'),
-          value: info.plannerEffectiveContext,
-        },
+        tokenRow(t('state.local_runtime_capacity_model_max'), info.modelMaxContext, i18n.language),
+        tokenRow(t('state.local_runtime_capacity_effective'), info.effectiveContext, i18n.language),
+        tokenRow(
+          t('state.local_runtime_capacity_memory_context'),
+          info.memoryContextTokens,
+          i18n.language,
+        ),
+        tokenRow(t('state.local_runtime_cfg_hot_context'), info.hotContextTokens, i18n.language),
+        tokenRow(
+          t('state.local_runtime_cfg_planner_context'),
+          info.plannerEffectiveContext,
+          i18n.language,
+        ),
         {
           label: t('state.local_runtime_capacity_kv_bytes'),
           value: formatBytes(info.kvBytesPerToken),
@@ -249,7 +267,9 @@ function CapacityDetails({
     : [];
 
   return (
-    <Section title={t('state.local_runtime_capacity_title')}>
+    <Section
+      title={t('state.local_runtime_capacity_title')}
+      description={t('state.local_runtime_capacity_help')}>
       <div className="space-y-4">
         {modelsErrorMessage && <Panel variant="error">{modelsErrorMessage}</Panel>}
         {models.length > 0 ? (
@@ -285,6 +305,21 @@ function CapacityDetails({
           </Panel>
         )}
 
+        {selectedModelId && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={onLoadCapacity}
+            isLoading={capacityFetching}
+            className="gap-2">
+            <RefreshCw className="h-4 w-4" aria-hidden="true" />
+            {rows.length > 0
+              ? t('state.local_runtime_capacity_refresh_estimate')
+              : t('state.local_runtime_capacity_load_estimate')}
+          </Button>
+        )}
+
         {capacityErrorMessage && <Panel variant="error">{capacityErrorMessage}</Panel>}
         {capacityLoading && selectedModelId && <LoadingState />}
         {!capacityLoading && rows.length > 0 && <DetailTable rows={rows} />}
@@ -311,7 +346,9 @@ function SlotDetails({ slot }: { slot: ModeldSlotStatus }) {
 
   return (
     <div className="space-y-4">
-      <Section title={t('state.local_runtime_slot_title')}>
+      <Section
+        title={t('state.local_runtime_slot_title')}
+        description={t('state.local_runtime_slot_help')}>
         {slotRows.length > 0 ? (
           <DetailTable rows={slotRows} />
         ) : (
@@ -326,14 +363,15 @@ function SlotDetails({ slot }: { slot: ModeldSlotStatus }) {
 }
 
 function ActiveConfigDetails({ config }: { config: ModeldRuntimeConfig }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const rows = presentRows([
-    { label: t('state.local_runtime_cfg_num_ctx'), value: config.numCtx },
-    { label: t('state.local_runtime_cfg_hot_context'), value: config.hotContextTokens },
-    {
-      label: t('state.local_runtime_cfg_planner_context'),
-      value: config.plannerEffectiveContext,
-    },
+    tokenRow(t('state.local_runtime_cfg_num_ctx'), config.numCtx, i18n.language),
+    tokenRow(t('state.local_runtime_cfg_hot_context'), config.hotContextTokens, i18n.language),
+    tokenRow(
+      t('state.local_runtime_cfg_planner_context'),
+      config.plannerEffectiveContext,
+      i18n.language,
+    ),
     { label: t('state.local_runtime_cfg_batch'), value: config.numBatch },
     { label: t('state.local_runtime_cfg_threads'), value: config.numThreads },
     { label: t('state.local_runtime_cfg_gpu_layers'), value: config.numGpuLayers },
@@ -373,6 +411,7 @@ export default function LocalRuntimeSection({
   capacityLoading,
   capacityFetching,
   capacityErrorMessage,
+  onLoadCapacity,
   onLoad,
   isLoadingModel,
   loadErrorMessage,
@@ -406,30 +445,34 @@ export default function LocalRuntimeSection({
     <div className="space-y-6">
       <Section title={t('state.local_runtime_title')} description={t('state.local_runtime_intro')}>
         <div className="flex justify-end gap-2">
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            onClick={() => onLoad(selectedModelId, activeGeneration)}
-            isLoading={isLoadingModel}
-            disabled={!canLoad}
-            className="gap-2">
-            <Play className="h-4 w-4" aria-hidden="true" />
-            {t('state.local_runtime_load')}
-          </Button>
-          <Button
-            type="button"
-            variant="danger"
-            size="sm"
-            onClick={() => {
-              if (activeGeneration !== undefined) onUnload(activeGeneration);
-            }}
-            isLoading={isUnloading}
-            disabled={activeGeneration === undefined || isUnloading}
-            className="gap-2">
-            <Power className="h-4 w-4" aria-hidden="true" />
-            {t('state.local_runtime_unload')}
-          </Button>
+          <Tooltip content={t('state.local_runtime_load_help')}>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={() => onLoad(selectedModelId, activeGeneration)}
+              isLoading={isLoadingModel}
+              disabled={!canLoad}
+              className="gap-2">
+              <Play className="h-4 w-4" aria-hidden="true" />
+              {t('state.local_runtime_load')}
+            </Button>
+          </Tooltip>
+          <Tooltip content={t('state.local_runtime_unload_help')}>
+            <Button
+              type="button"
+              variant="danger"
+              size="sm"
+              onClick={() => {
+                if (activeGeneration !== undefined) onUnload(activeGeneration);
+              }}
+              isLoading={isUnloading}
+              disabled={activeGeneration === undefined || isUnloading}
+              className="gap-2">
+              <Power className="h-4 w-4" aria-hidden="true" />
+              {t('state.local_runtime_unload')}
+            </Button>
+          </Tooltip>
           <Button
             type="button"
             variant="secondary"
@@ -464,9 +507,10 @@ export default function LocalRuntimeSection({
               </Badge>
             </Panel>
             <Panel variant="bordered" className="space-y-2">
-              <Span variant="muted" className="block text-xs">
-                {t('state.local_runtime_daemon_state')}
-              </Span>
+              <LabelWithHelp
+                label={t('state.local_runtime_daemon_state')}
+                tooltip={t('state.local_runtime_state_help')}
+              />
               <Span className="font-mono text-sm">{data.state || missingValue}</Span>
             </Panel>
             <Panel variant="bordered" className="space-y-2">
@@ -492,7 +536,9 @@ export default function LocalRuntimeSection({
           {data.slot ? (
             <SlotDetails slot={data.slot} />
           ) : (
-            <Section title={t('state.local_runtime_slot_title')}>
+            <Section
+              title={t('state.local_runtime_slot_title')}
+              description={t('state.local_runtime_slot_help')}>
               <Panel variant="empty" className="text-text-muted dark:text-dark-text-muted text-sm">
                 {t('state.local_runtime_no_slot_desc')}
               </Panel>
@@ -510,6 +556,7 @@ export default function LocalRuntimeSection({
             capacityLoading={capacityLoading}
             capacityFetching={capacityFetching}
             capacityErrorMessage={capacityErrorMessage}
+            onLoadCapacity={onLoadCapacity}
           />
         </>
       )}

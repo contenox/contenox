@@ -4,6 +4,8 @@ import {
   createAcpClient,
   JSON_RPC_ERROR_CODES,
   textContent,
+  workspaceConfigOptionsFromInit,
+  type SessionConfigOption,
   type SessionConfigOptionValue,
   type SessionEventHandlers,
   type SessionId,
@@ -62,13 +64,34 @@ export interface AcpWorkspaceController {
   /** Subscribes to `id` BEFORE issuing `session/load` (replay arrives before the response resolves — see client.ts), then closes whichever session was previously open. */
   openSession(id: SessionId): Promise<void>;
   deleteSession(id: SessionId): Promise<void>;
-  /** No-ops while disposed, disconnected, no session is open, or a prior prompt is still in flight. Slash-command text passes through verbatim. */
+  /**
+   * Client-side only: unsubscribes from and (fire-and-forget) closes the
+   * currently-open session, resets the session reducer, and clears
+   * `activeSessionId` — WITHOUT deleting the session or creating a new one.
+   * No-op if no session is open. Intended for the "new session" affordances
+   * (header/sidebar/not-found buttons): they call this and navigate to bare
+   * `/chat` so the composer comes up empty and the next submit's lazy
+   * `newSession()` call (D5) mints a genuinely new session instead of
+   * reusing whatever was active.
+   */
+  clearActiveSession(): void;
+  /** No-ops while disposed, disconnected, no session is open, or the OPEN session already has a prompt in flight (an old session's still-settling turn never blocks a newly-opened session). Slash-command text passes through verbatim. */
   sendPrompt(text: string): void;
   /** Resolves the in-flight `session/request_permission`, if any, for the open session. */
   respondPermission(optionId: string): void;
   /** Fire-and-forget `session/cancel` for the open session. */
   cancel(): void;
   setConfigOption(configId: string, value: SessionConfigOptionValue): Promise<void>;
+  /**
+   * Applies a batch of config options to the currently-open session,
+   * sequentially (awaiting each `set_config_option` round trip). Used to flush
+   * the empty-chat's staged choices right after `newSession()` so they win over
+   * the server's per-session defaults for the very first turn — the turn that
+   * fails when the configured default model is broken. No-ops with no open
+   * session. On failure it surfaces the error via the session error banner
+   * (like a failed prompt) and rejects, so the caller can hold the turn back.
+   */
+  applyConfigOptions(options: Array<{ configId: string; value: SessionConfigOptionValue }>): Promise<void>;
   /**
    * Manual reconnect: cancels any pending automatic backoff timer and
    * immediately runs the same fresh-transport+initialize+resume path the
@@ -138,7 +161,15 @@ export function createAcpWorkspaceController(
 
   let activeSessionId: SessionId | null = null;
   let unsubscribeActive: (() => void) | null = null;
-  let promptInFlight = false;
+  /**
+   * Which session has a `session/prompt` call in flight, or null. Tracked BY
+   * SESSION (not a single boolean) so that switching away mid-turn — e.g.
+   * clearActiveSession() + lazy newSession() — doesn't leave the new
+   * session's first prompt silently blocked behind the old session's still-
+   * settling turn. Only re-prompting the SAME session while its turn is in
+   * flight is a no-op.
+   */
+  let promptSessionId: SessionId | null = null;
   /** Fallback grouping id for a live turn's chunks that arrive with no server-assigned `messageId`. */
   let currentTurnId = '';
 
@@ -212,12 +243,27 @@ export function createAcpWorkspaceController(
   // ---------------------------------------------------------------------
 
   /** Builds a fresh transport+client and runs `initialize()`; closes the transport on failure. Never mutates controller state — callers decide whether/how to adopt the result. */
-  async function establishConnection(): Promise<{ client: AcpClient; transport: Transport; agentName: string | null }> {
+  async function establishConnection(): Promise<{
+    client: AcpClient;
+    transport: Transport;
+    agentName: string | null;
+    workspaceConfigOptions: SessionConfigOption[];
+  }> {
     const transport = deps.createTransport();
     const c = buildClient(transport);
     try {
       const init = await c.initialize();
-      return { client: c, transport, agentName: init.agentInfo?.name ?? null };
+      return {
+        client: c,
+        transport,
+        agentName: init.agentInfo?.name ?? null,
+        // Workspace-level (session-less) config options advertised in the
+        // initialize `_meta` — empty for agents that don't speak the extension.
+        // Drives the empty-chat controls before any session exists (see
+        // AcpChatPage). Refreshed on every reconnect too, since runtime state
+        // (available models) may have changed while disconnected.
+        workspaceConfigOptions: workspaceConfigOptionsFromInit(init),
+      };
     } catch (err) {
       transport.close();
       throw err;
@@ -260,7 +306,11 @@ export function createAcpWorkspaceController(
         return;
       }
       adoptClient(established.client, established.transport);
-      workspaceDispatch({ type: 'ready', agentName: established.agentName });
+      workspaceDispatch({
+        type: 'ready',
+        agentName: established.agentName,
+        workspaceConfigOptions: established.workspaceConfigOptions,
+      });
       await refreshSessionsInternal(established.client);
     } catch (err) {
       if (disposed) return;
@@ -318,7 +368,11 @@ export function createAcpWorkspaceController(
         return;
       }
       adoptClient(established.client, established.transport);
-      workspaceDispatch({ type: 'ready', agentName: established.agentName });
+      workspaceDispatch({
+        type: 'ready',
+        agentName: established.agentName,
+        workspaceConfigOptions: established.workspaceConfigOptions,
+      });
       await restoreActiveSession(established.client);
       if (disposed) return;
       await refreshSessionsInternal(established.client);
@@ -374,7 +428,20 @@ export function createAcpWorkspaceController(
 
     // session/new mints the id server-side, so (unlike session/load) we
     // cannot subscribe until the response carries it.
-    const result = await runGuarded(() => c.newSession(cwd));
+    const result = await runGuarded(() => c.newSession(cwd)).catch(err => {
+      // Auth failures are already surfaced as `setup_required` by
+      // guardAuthRequired (inside runGuarded) — that swaps the whole page to
+      // SetupRequiredState, so there's no composer left to show an inline
+      // error in. Anything else (e.g. a transient RPC failure) needs to
+      // reach the UI some other way: reuse the same inline error banner a
+      // failed prompt turn shows (`prompt_error`, see acpSessionState.ts)
+      // since this failure happens on the current page before any session
+      // exists yet to attach it to.
+      if (!isAuthRequired(err)) {
+        sessionDispatch({ type: 'prompt_error', message: errMessage(err) });
+      }
+      throw err;
+    });
     const sid = result.sessionId;
 
     sessionDispatch({ type: 'session_reset', sessionId: sid });
@@ -485,12 +552,30 @@ export function createAcpWorkspaceController(
     workspaceDispatch({ type: 'session_removed', sessionId: id });
   }
 
+  function clearActiveSession(): void {
+    if (disposed) return;
+    rejectPendingPermission();
+    const previousId = activeSessionId;
+    const previousUnsubscribe = unsubscribeActive;
+    unsubscribeActive = null;
+    activeSessionId = null;
+    currentTurnId = '';
+    sessionDispatch({ type: 'session_reset', sessionId: null });
+    workspaceDispatch({ type: 'active_session_changed', sessionId: null });
+    if (previousId) {
+      previousUnsubscribe?.();
+      // Fire-and-forget — see the equivalent comment in newSession(). The
+      // session itself is NOT deleted, just released connection-side.
+      if (client) void client.closeSession(previousId).catch(() => {});
+    }
+  }
+
   // ---------------------------------------------------------------------
   // Turn + permission + config actions on the open session
   // ---------------------------------------------------------------------
 
   function sendPrompt(text: string): void {
-    if (disposed || !client || !activeSessionId || promptInFlight || !text.trim()) return;
+    if (disposed || !client || !activeSessionId || promptSessionId === activeSessionId || !text.trim()) return;
     const c = client;
     const sid = activeSessionId;
     // Fallback grouping key for chunks that arrive without a `messageId` — one
@@ -501,21 +586,31 @@ export function createAcpWorkspaceController(
     // parses `/name args` itself; this layer never inspects it.
     sessionDispatch({ type: 'user_message_chunk', id: nextId('user'), text });
     sessionDispatch({ type: 'prompt_start' });
-    promptInFlight = true;
+    promptSessionId = sid;
 
     // No per-turn handlers: the session's standing subscription (set up in
     // newSession()/openSession()) already routes every session/update and
     // session/request_permission for sid — see the module doc comment.
+    //
+    // The settle handlers below are gated on `activeSessionId === sid`, NOT
+    // on `disposed`: the terminal dispatch is a pure reducer update whose
+    // entire purpose is ending the turn (clearing `isPrompting` and every
+    // message's `streaming` flag — see acpSessionState.ts's `endStreaming`),
+    // so it must run even after dispose() — but it must NOT run once the
+    // session reducer represents a DIFFERENT session (the user switched or
+    // cleared mid-turn; `session_reset` already put that state in a clean
+    // not-prompting shape), or the old turn's failure banner / stopReason
+    // would bleed into the freshly-opened session.
     c.prompt(sid, [textContent(text)])
       .then(({ stopReason }) => {
-        promptInFlight = false;
-        if (disposed) return;
+        if (promptSessionId === sid) promptSessionId = null;
+        if (activeSessionId !== sid) return;
         sessionDispatch({ type: 'prompt_end', stopReason });
       })
       .catch((err: unknown) => {
-        promptInFlight = false;
-        if (disposed) return;
-        guardAuthRequired(err);
+        if (promptSessionId === sid) promptSessionId = null;
+        if (!disposed) guardAuthRequired(err);
+        if (activeSessionId !== sid) return;
         sessionDispatch({ type: 'prompt_error', message: errMessage(err) });
       });
   }
@@ -538,6 +633,29 @@ export function createAcpWorkspaceController(
     if (disposed || !client || !activeSessionId) return;
     const result = await runGuarded(() => client!.setConfigOption(activeSessionId!, configId, value));
     sessionDispatch({ type: 'config_options', configOptions: result.configOptions });
+  }
+
+  async function applyConfigOptions(
+    options: Array<{ configId: string; value: SessionConfigOptionValue }>,
+  ): Promise<void> {
+    if (disposed || !client || !activeSessionId || options.length === 0) return;
+    try {
+      // Sequential, not parallel: each set_config_option's response carries the
+      // full recomputed option set (see acpsvc SetSessionConfigOption), and a
+      // later option (e.g. token-limit clamped to the model cap) can depend on
+      // an earlier one (model). Applying in order keeps the server's view and
+      // the reducer's `session.configOptions` consistent.
+      for (const { configId, value } of options) {
+        await setConfigOption(configId, value);
+      }
+    } catch (err) {
+      // Non-auth failures (auth already became setup_required via
+      // guardAuthRequired inside setConfigOption) surface on the same inline
+      // banner a failed prompt uses — the session exists by now, so there's a
+      // surface to attach it to. Rethrow so the caller holds the prompt back.
+      if (activeSessionId) sessionDispatch({ type: 'prompt_error', message: errMessage(err) });
+      throw err;
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -563,10 +681,12 @@ export function createAcpWorkspaceController(
     newSession,
     openSession,
     deleteSession,
+    clearActiveSession,
     sendPrompt,
     respondPermission,
     cancel,
     setConfigOption,
+    applyConfigOptions,
     reconnect,
     dispose,
   };

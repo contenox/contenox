@@ -1,6 +1,7 @@
 import { Button, FormField, H2, InlineNotice, Input, P, Panel, Select } from '@contenox/ui';
 import { FormEvent, useContext, useEffect, useId, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useCLIConfig } from '../../../hooks/useCLIConfig';
 import { usePutCLIConfig } from '../../../hooks/usePutCLIConfig';
 import { useSetupStatus } from '../../../hooks/useSetupStatus';
 import { AuthContext } from '../../../lib/authContext';
@@ -15,17 +16,29 @@ export function GlobalSettingsSection() {
   const { t } = useTranslation();
   const { user } = useContext(AuthContext);
   const { data } = useSetupStatus(!!user);
+  // useSetupStatus only carries the model/provider subset relevant to
+  // onboarding readiness checks; the alt-model/alt-provider defaults live in
+  // the full CLI config snapshot instead (see hooks/useCLIConfig.ts).
+  const { data: cliConfig } = useCLIConfig(!!user);
   const putConfig = usePutCLIConfig();
   const formId = useId();
 
   const [model, setModel] = useState('');
   const [provider, setProvider] = useState('');
+  const [altModel, setAltModel] = useState('');
+  const [altProvider, setAltProvider] = useState('');
 
   useEffect(() => {
     if (!data) return;
     setModel(data.defaultModel || '');
     setProvider(data.defaultProvider || '');
   }, [data]);
+
+  useEffect(() => {
+    if (!cliConfig) return;
+    setAltModel(cliConfig.defaultAltModel || '');
+    setAltProvider(cliConfig.defaultAltProvider || '');
+  }, [cliConfig]);
 
   useEffect(() => {
     if (!putConfig.isSuccess) return;
@@ -49,6 +62,28 @@ export function GlobalSettingsSection() {
     return values.map(value => ({ value, label: value }));
   }, [data?.backendChecks, provider]);
 
+  const altModelOptions = useMemo(() => {
+    const values = uniqueSorted(
+      (data?.backendChecks ?? []).flatMap(backend => backend.chatModels ?? []),
+    );
+    const current = altModel.trim();
+    if (current && !values.includes(current)) values.unshift(current);
+    return [
+      { value: '', label: t('settingsAdvanced.not_set') },
+      ...values.map(value => ({ value, label: value })),
+    ];
+  }, [altModel, data?.backendChecks, t]);
+
+  const altProviderOptions = useMemo(() => {
+    const values = uniqueSorted((data?.backendChecks ?? []).map(backend => backend.type));
+    const current = altProvider.trim();
+    if (current && !values.includes(current)) values.unshift(current);
+    return [
+      { value: '', label: t('settingsAdvanced.not_set') },
+      ...values.map(value => ({ value, label: value })),
+    ];
+  }, [altProvider, data?.backendChecks, t]);
+
   const selectedProviderChecks = useMemo(
     () => (data?.backendChecks ?? []).filter(backend => backend.type === provider),
     [data?.backendChecks, provider],
@@ -66,7 +101,10 @@ export function GlobalSettingsSection() {
     const body: CLIConfigUpdateRequest = {};
     if (model.trim()) body['default-model'] = model.trim();
     if (provider.trim()) body['default-provider'] = provider.trim();
-    if (!Object.keys(body).length) return;
+    // Alt model/provider are genuinely optional — always send them (even
+    // empty) so clearing the field in the UI actually clears the stored value.
+    body['default-alt-model'] = altModel.trim();
+    body['default-alt-provider'] = altProvider.trim();
     putConfig.mutate(body);
   };
 
@@ -80,6 +118,10 @@ export function GlobalSettingsSection() {
           </P>
         </div>
         <form id={formId} onSubmit={onSubmit} className="grid max-w-xl gap-4">
+          <InlineNotice variant="info" className="rounded-lg">
+            {t('settingsAdvanced.restart_notice')}
+          </InlineNotice>
+
           {!selectedProviderHasModel && (
             <InlineNotice variant="warning" className="rounded-lg">
               {t(
@@ -89,7 +131,9 @@ export function GlobalSettingsSection() {
             </InlineNotice>
           )}
 
-          <FormField label={t('settings.default_model_label')}>
+          <FormField
+            label={t('settings.default_model_label')}
+            tooltip={t('settingsAdvanced.default_model_tooltip')}>
             {modelOptions.length > 0 ? (
               <Select
                 name="default-model"
@@ -110,7 +154,9 @@ export function GlobalSettingsSection() {
             )}
           </FormField>
 
-          <FormField label={t('settings.default_provider_label')}>
+          <FormField
+            label={t('settings.default_provider_label')}
+            tooltip={t('settingsAdvanced.default_provider_tooltip')}>
             {providerOptions.length > 0 ? (
               <Select
                 name="default-provider"
@@ -130,6 +176,39 @@ export function GlobalSettingsSection() {
               />
             )}
           </FormField>
+
+          <div className="border-surface-200 dark:border-dark-surface-400 space-y-4 border-t pt-4">
+            <div className="space-y-1">
+              <P className="text-sm font-medium">{t('settingsAdvanced.routing_section_title')}</P>
+              <P variant="muted" className="text-xs">
+                {t('settingsAdvanced.routing_section_description')}
+              </P>
+            </div>
+
+            <FormField
+              label={t('settingsAdvanced.alt_model_label')}
+              tooltip={t('settingsAdvanced.alt_model_tooltip')}>
+              <Select
+                name="default-alt-model"
+                className="w-full"
+                value={altModel}
+                onChange={e => setAltModel(e.target.value)}
+                options={altModelOptions}
+              />
+            </FormField>
+
+            <FormField
+              label={t('settingsAdvanced.alt_provider_label')}
+              tooltip={t('settingsAdvanced.alt_provider_tooltip')}>
+              <Select
+                name="default-alt-provider"
+                className="w-full"
+                value={altProvider}
+                onChange={e => setAltProvider(e.target.value)}
+                options={altProviderOptions}
+              />
+            </FormField>
+          </div>
 
           {putConfig.isError && <P className="text-error text-sm">{putConfig.error.message}</P>}
           {putConfig.isSuccess && <P className="text-text-muted text-sm">{t('settings.saved')}</P>}

@@ -13,6 +13,7 @@ import (
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/chatservice"
 	"github.com/contenox/runtime/runtime/enginesvc"
+	"github.com/contenox/runtime/runtime/messagestore"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/stretchr/testify/assert"
@@ -430,6 +431,52 @@ func TestUnit_Initialize_AdvertisesBrowserSetup(t *testing.T) {
 	require.NoError(t, err, "authenticate must accept the advertised browser method")
 }
 
+// TestUnit_Initialize_AdvertisesWorkspaceConfigOptions pins the session-less
+// config surface: a configured agent (engine present) must advertise the
+// workspace-level model/think/HITL/token-limit options in the initialize
+// response's _meta, so a client can render the empty-chat controls before any
+// session exists (sessions are minted lazily on first prompt).
+func TestUnit_Initialize_AdvertisesWorkspaceConfigOptions(t *testing.T) {
+	tr := &Transport{
+		deps:            Deps{Engine: &enginesvc.Engine{}},
+		sessions:        make(map[libacp.SessionID]*sessionEntry),
+		contenoxToACPID: make(map[string]libacp.SessionID),
+		defaultProvider: "openai",
+		defaultModel:    "gpt-5-mini",
+		defaultThink:    "medium",
+	}
+	resp, err := tr.Initialize(context.Background(), libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
+	require.NoError(t, err)
+	require.NotNil(t, resp.Meta, "configured agent must advertise workspace config options")
+
+	var meta map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(resp.Meta, &meta))
+	raw, ok := meta[WorkspaceConfigOptionsMetaKey]
+	require.True(t, ok, "initialize _meta must carry %q", WorkspaceConfigOptionsMetaKey)
+
+	var options []libacp.SessionConfigOption
+	require.NoError(t, json.Unmarshal(raw, &options))
+	require.Len(t, options, 4)
+	require.Equal(t, "openai/gpt-5-mini", optionByID(t, options, configIDModel).CurrentValue)
+	require.Equal(t, "medium", optionByID(t, options, configIDThink).CurrentValue)
+}
+
+// TestUnit_Initialize_OmitsWorkspaceConfigOptions_InSetupOnlyMode pins the
+// degrade path: an unconfigured agent (no engine) advertises no workspace
+// config options — it has no models to list and drives the client to setup.
+func TestUnit_Initialize_OmitsWorkspaceConfigOptions_InSetupOnlyMode(t *testing.T) {
+	tr := transportWithMeta("")
+	resp, err := tr.Initialize(context.Background(), libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
+	require.NoError(t, err)
+	if resp.Meta == nil {
+		return
+	}
+	var meta map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(resp.Meta, &meta))
+	_, ok := meta[WorkspaceConfigOptionsMetaKey]
+	require.False(t, ok, "setup-only agent must not advertise workspace config options")
+}
+
 func TestUnit_Authenticate_EnvMethod(t *testing.T) {
 	completed := 0
 	tr := &Transport{
@@ -460,6 +507,85 @@ func TestUnit_Authenticate_EnvMethod(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorAs(t, err, &e)
 	assert.Equal(t, libacp.ErrInvalidParams, e.Code)
+}
+
+// TestE2E_Wire_SessionListOrder pins freshest-first ordering through the real
+// sqlite storage path: session/list must sort by last message activity
+// descending — NOT by internal id, which is a random UUID — with
+// never-messaged sessions after all sessions that have activity, and each
+// listed session must carry a parseable UpdatedAt. This broke silently once:
+// the sqlite driver stores time.Time in Go's String() format, which the
+// list's timestamp parser did not handle, so every row lost its UpdatedAt and
+// the order collapsed to UUID shuffle.
+func TestE2E_Wire_SessionListOrder(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	db, err := libdb.NewSQLiteDBManager(ctx, filepath.Join(t.TempDir(), "wire-order.db"), runtimetypes.SchemaSQLite)
+	require.NoError(t, err)
+	defer db.Close()
+
+	agentR, clientW := io.Pipe()
+	clientR, agentW := io.Pipe()
+	agentSide := &wirePipe{r: agentR, w: agentW}
+	clientSide := &wirePipe{r: clientR, w: clientW}
+	factory := New(Deps{Engine: &enginesvc.Engine{}, DB: db, WorkspaceID: "order-ws"})
+	conn := libacp.NewAgentSideConnection(agentSide, func(c *libacp.AgentSideConnection) libacp.Agent { return factory(c) })
+	go func() { _ = conn.Run(ctx) }()
+	defer clientSide.Close()
+
+	client := &wireClient{t: t, rw: clientSide}
+	resp, _ := client.call(libacp.MethodInitialize, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
+	require.Nil(t, resp.Error)
+
+	var sids []libacp.SessionID
+	for i := 0; i < 4; i++ {
+		resp, _ := client.call(libacp.MethodSessionNew, libacp.NewSessionRequest{Cwd: "/tmp/order", McpServers: []libacp.McpServer{}})
+		require.Nil(t, resp.Error)
+		var nr libacp.NewSessionResponse
+		require.NoError(t, json.Unmarshal(resp.Result, &nr))
+		sids = append(sids, nr.SessionID)
+		client.drainNotifications(1) // available_commands_update
+	}
+
+	// Backdate message activity deliberately out of creation order; the last
+	// session stays empty and must sort behind every messaged one. Writing
+	// through messagestore binds time.Time via the sqlite driver — the exact
+	// production path whose stored format the list must parse back.
+	store := messagestore.New(db.WithoutTransaction(), "order-ws")
+	base := time.Date(2026, 7, 16, 10, 0, 0, 0, time.UTC)
+	activity := map[int]time.Time{
+		0: base.Add(1 * time.Hour), // middle
+		1: base,                    // oldest
+		2: base.Add(2 * time.Hour), // freshest
+	}
+	for i, at := range activity {
+		info, err := store.GetSessionByName(ctx, "acp-client", string(sids[i]))
+		require.NoError(t, err)
+		require.NoError(t, store.AppendMessages(ctx, &messagestore.Message{
+			ID:      string(sids[i]) + "-m1",
+			IDX:     info.ID,
+			Payload: []byte(`{"role":"user","content":"hello"}`),
+			AddedAt: at,
+		}))
+	}
+
+	resp, _ = client.call(libacp.MethodSessionList, libacp.ListSessionsRequest{})
+	require.Nil(t, resp.Error)
+	var list libacp.ListSessionsResponse
+	require.NoError(t, json.Unmarshal(resp.Result, &list))
+	require.Len(t, list.Sessions, 4)
+
+	var got []libacp.SessionID
+	for _, s := range list.Sessions {
+		got = append(got, s.SessionID)
+	}
+	assert.Equal(t, []libacp.SessionID{sids[2], sids[0], sids[1], sids[3]}, got,
+		"freshest activity first, never-messaged session last")
+	for _, s := range list.Sessions[:3] {
+		_, err := time.Parse(time.RFC3339, s.UpdatedAt)
+		assert.NoError(t, err, "messaged session %s must carry a parseable UpdatedAt (got %q)", s.SessionID, s.UpdatedAt)
+	}
 }
 
 // TestUnit_ToolCallWireID_DisambiguatesRepeatedInvocations pins the fix for

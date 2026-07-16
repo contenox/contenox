@@ -262,18 +262,33 @@ export type CLIConfigUpdateResponse = {
   defaultProvider: string;
   defaultAltModel?: string;
   defaultAltProvider?: string;
+  defaultAutocompleteModel?: string;
+  defaultAutocompleteProvider?: string;
+  defaultMaxTokens?: string;
+  defaultThink?: string;
   defaultChain: string;
   hitlPolicyName: string;
+  telemetryEnabled?: string;
+  updateCheck?: string;
   resolvedFrom?: ConfigResolvedFrom;
 };
+
+/** Full CLI config snapshot — GET /api/cli-config, same shape PUT returns. */
+export type CLIConfig = CLIConfigUpdateResponse;
 
 export type CLIConfigUpdateRequest = {
   'default-model'?: string;
   'default-provider'?: string;
   'default-alt-model'?: string;
   'default-alt-provider'?: string;
+  'default-autocomplete-model'?: string;
+  'default-autocomplete-provider'?: string;
+  'default-max-tokens'?: string;
+  'default-think'?: string;
   'default-chain'?: string;
   'hitl-policy-name'?: string;
+  'telemetry-enabled'?: string;
+  'update-check'?: string;
 };
 
 export type HITLCondition = {

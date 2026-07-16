@@ -12,7 +12,7 @@ contenox drive agents of its own.
 | Doc | Status | What it covers |
 | --- | --- | --- |
 | [acp-client-engine.md](acp-client-engine.md) | direction | Contenox as an ACP client: the models/tools/agents ladder, ACP-as-taskengine-step and ACP-as-modelprovider, the provider honesty rule, the permission-routing invariant, the shared `libacp` client-core prerequisite, and the agent registry pattern |
-| [declared-agents-and-harnesses.md](declared-agents-and-harnesses.md) | direction | Agents and harnesses as declared resources: the trust stance (equip, don't govern), the harness-is-the-client-role contract, beam as fleet manager (one ACP connection per agent, no aggregate agent), headless agents, and the manager → harnesses → headless ramp |
+| [declared-agents-and-harnesses.md](declared-agents-and-harnesses.md) | direction | Agents and harnesses as declared resources: the trust stance (equip, don't govern), the harness-is-the-client-role contract, server-resident sessions with journal-backed virtual screens beam attaches to, headless agents, and the walking-skeleton build order (registry/journal/harness → driver → fleet MVP → rules and triggers) |
 | [zed-registry.md](zed-registry.md) | plan | Listing contenox on the Zed/ACP registry so an install yields a working, model-wired agent |
 | [registry-submission/](registry-submission/README.md) | artifacts | The `agent.json` + icon to copy into an `agentclientprotocol/registry` fork, with validation steps |
 | [openide-integration.md](openide-integration.md) | research | OpenIDE (IntelliJ Platform) integration via a native plugin over the existing runtime and stdio bridge |

@@ -170,6 +170,50 @@ func TestUnit_SetSessionConfigOptionRejectsUnknownValue(t *testing.T) {
 	require.Equal(t, "gpt-5-mini", tr.model())
 }
 
+// TestUnit_WorkspaceConfigOptionsMirrorFreshSession pins the session-less
+// snapshot advertised at initialize time: it must carry the same four options
+// (model/HITL/think/token-limit), seeded from the transport defaults, that a
+// freshly-minted session carries — so the empty-chat controls a client renders
+// from _meta match what the first session/new returns.
+func TestUnit_WorkspaceConfigOptionsMirrorFreshSession(t *testing.T) {
+	ctx, db := setupConfigOptionsDB(t)
+
+	tr := &Transport{
+		deps: Deps{
+			DB:                    db,
+			KnownPolicies:         []string{"strict", "dev"},
+			HITLDefaultPolicyName: "strict",
+		},
+		defaultProvider:    "openai",
+		defaultModel:       "gpt-5-mini",
+		defaultAltProvider: "anthropic",
+		defaultAltModel:    "claude-sonnet-4",
+		defaultThink:       "medium",
+	}
+
+	options := tr.workspaceConfigOptions(ctx)
+	require.Len(t, options, 4)
+
+	model := optionByID(t, options, configIDModel)
+	require.Equal(t, "openai/gpt-5-mini", model.CurrentValue)
+	require.True(t, configOptionHasValue(model, "openai/gpt-5-mini"))
+	require.True(t, configOptionHasValue(model, "anthropic/claude-sonnet-4"))
+
+	think := optionByID(t, options, configIDThink)
+	require.Equal(t, "medium", think.CurrentValue, "workspace think must reflect thinkDefault(), not the bare accessor fallback")
+
+	policy := optionByID(t, options, configIDHITLPolicy)
+	require.True(t, configOptionHasValue(policy, hitlPolicyDefaultValue))
+
+	limit := optionByID(t, options, configIDTokenLimit)
+	require.Equal(t, "0", limit.CurrentValue)
+
+	// Byte-identical to what the first session (seeded from the same defaults)
+	// carries — the single source of truth for the option shapes.
+	sess := &sessionEntry{Provider: tr.provider(), Model: tr.model(), Think: tr.thinkDefault()}
+	require.Equal(t, tr.sessionConfigOptions(ctx, sess), options)
+}
+
 func optionByID(t *testing.T, options []libacp.SessionConfigOption, id string) libacp.SessionConfigOption {
 	t.Helper()
 	for _, option := range options {

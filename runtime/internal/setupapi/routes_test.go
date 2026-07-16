@@ -106,3 +106,71 @@ func TestPutCLIConfigAllowsExplicitEmptyWorkspaceValues(t *testing.T) {
 	require.Equal(t, "default-chain.json", got.DefaultChain)
 	require.Equal(t, "global", got.ResolvedFrom["defaultChain"])
 }
+
+func TestPutCLIConfigAcceptsTelemetryAndUpdateCheck(t *testing.T) {
+	svc := &fakeStateService{
+		setSnapshot: stateservice.CLIConfigSnapshot{
+			TelemetryEnabled: "true",
+			UpdateCheck:      "false",
+		},
+	}
+	mux := http.NewServeMux()
+	AddSetupRoutes(mux, svc, nil)
+
+	req := httptest.NewRequest(http.MethodPut, "/cli-config", strings.NewReader(`{"telemetry-enabled":"true","update-check":"false"}`))
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.True(t, svc.setCalled)
+	require.NotNil(t, svc.setPatch.TelemetryEnabled)
+	require.NotNil(t, svc.setPatch.UpdateCheck)
+	require.Equal(t, "true", *svc.setPatch.TelemetryEnabled)
+	require.Equal(t, "false", *svc.setPatch.UpdateCheck)
+
+	var got putCLIConfigResponse
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&got))
+	require.Equal(t, "true", got.TelemetryEnabled)
+	require.Equal(t, "false", got.UpdateCheck)
+}
+
+func TestGetCLIConfigReturnsFullSnapshot(t *testing.T) {
+	svc := &fakeStateService{
+		setSnapshot: stateservice.CLIConfigSnapshot{
+			DefaultModel:                "qwen2.5:7b",
+			DefaultProvider:             "ollama",
+			DefaultAltModel:             "qwen2.5:0.5b",
+			DefaultAltProvider:          "ollama",
+			DefaultAutocompleteModel:    "qwen2.5-coder:7b",
+			DefaultAutocompleteProvider: "ollama",
+			DefaultMaxTokens:            "8192",
+			DefaultThink:                "medium",
+			DefaultChain:                "default-chain.json",
+			HITLPolicyName:              "hitl-policy-default.json",
+			TelemetryEnabled:            "true",
+			UpdateCheck:                 "true",
+			ResolvedFrom: map[string]string{
+				"defaultChain":   "global",
+				"hitlPolicyName": "global",
+			},
+		},
+	}
+	mux := http.NewServeMux()
+	AddSetupRoutes(mux, svc, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/cli-config", nil)
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var got putCLIConfigResponse
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&got))
+	require.Equal(t, "qwen2.5:7b", got.DefaultModel)
+	require.Equal(t, "qwen2.5:0.5b", got.DefaultAltModel)
+	require.Equal(t, "qwen2.5-coder:7b", got.DefaultAutocompleteModel)
+	require.Equal(t, "8192", got.DefaultMaxTokens)
+	require.Equal(t, "medium", got.DefaultThink)
+	require.Equal(t, "true", got.TelemetryEnabled)
+	require.Equal(t, "true", got.UpdateCheck)
+}

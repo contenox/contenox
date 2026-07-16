@@ -1256,29 +1256,72 @@ func (exe *SimpleExec) executeLLM(
 		Tracker:       exe.tracker,
 	}
 
-	if exe.eventSink.Enabled() && len(tools) == 0 {
+	// Stream whenever an event sink is listening — including tool-bearing chats.
+	// The model streams visible content/thinking tokens as they are produced;
+	// tool calls (if any) arrive assembled on a terminal parcel and are finalized
+	// exactly like the non-streaming path once generation completes. This keeps
+	// slow local inference from reading as silence while preserving tool dispatch.
+	if exe.eventSink.Enabled() {
 		stream, meta, err := exe.repo.Stream(ctx, req, messagesC, chatArgs...)
 		if err == nil {
 			var streamedContent strings.Builder
 			var streamedThinking strings.Builder
+			var streamedToolCalls []libmodelprovider.ToolCall
 			for parcel := range stream {
 				if parcel.Error != nil {
 					return nil, DataTypeAny, "", fmt.Errorf("chat stream failed: %w", parcel.Error)
 				}
 				streamedContent.WriteString(parcel.Data)
 				streamedThinking.WriteString(parcel.Thinking)
+				// Tool calls are assembled provider-side and delivered on a terminal
+				// parcel; accumulate them but only stream visible content/thinking.
+				streamedToolCalls = append(streamedToolCalls, parcel.ToolCalls...)
+				// The terminal tool-call parcel carries empty Data/Thinking, so this
+				// no-ops for it — no tool-call payload leaks into the transcript.
 				exe.publishStepChunk(ctx, meta, parcel.Data, parcel.Thinking)
 			}
+
+			callTools := make([]ToolCall, len(streamedToolCalls))
+			for i, tc := range streamedToolCalls {
+				callTools[i] = ToolCall{
+					ID: ensureUniqueToolCallID(tc.ID),
+					Function: FunctionCall{
+						Name:      tc.Function.Name,
+						Arguments: tc.Function.Arguments,
+					},
+					Type:         tc.Type,
+					ProviderMeta: tc.ProviderMeta,
+				}
+			}
+
+			content := streamedContent.String()
 			input.Messages = append(input.Messages, Message{
 				ID:        uuid.NewString(),
 				Role:      "assistant",
-				Content:   streamedContent.String(),
+				Content:   content,
 				Thinking:  streamedThinking.String(),
+				CallTools: callTools,
 				Timestamp: time.Now().UTC(),
 			})
-			// Streaming is gated on len(tools)==0, so this branch can only ever be
-			// the finished-turn / no-tool-call outcome — emit the same transition
-			// eval as the non-streaming path so branching is identical either way.
+			// Content already streamed incrementally above; do NOT re-publish the
+			// full message here or ACP clients would render the reply twice.
+
+			// Count output tokens (content only, not tool calls) to match the
+			// non-streaming path so usage indicators and follow-up budgeting stay
+			// consistent across the two code paths.
+			if len(content) != 0 {
+				outputTokensCount, err := exe.repo.CountTokens(ctx, meta.ModelName, content)
+				if err != nil {
+					err = fmt.Errorf("tokenizer failed: %w", err)
+					reportErr(err)
+					return nil, DataTypeAny, "", err
+				}
+				input.OutputTokens = outputTokensCount
+			}
+
+			if len(callTools) > 0 {
+				return input, DataTypeChatHistory, TransitionToolCall, nil
+			}
 			return input, DataTypeChatHistory, TransitionExecuted, nil
 		}
 	}

@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import {
-  useModeldCapacity,
   useLoadModeld,
+  useModeldCapacity,
   useModeldModels,
   useModeldStatus,
   useUnloadModeld,
@@ -77,7 +77,10 @@ export default function BackendsPage() {
           capacityLoading={modeldCapacity.isLoading}
           capacityFetching={modeldCapacity.isFetching}
           capacityErrorMessage={modeldCapacity.error?.message}
-          onLoad={(model, generation) => loadModeld.mutate({ model, expectedGeneration: generation })}
+          onLoadCapacity={() => void modeldCapacity.refetch()}
+          onLoad={(model, generation) =>
+            loadModeld.mutate({ model, expectedGeneration: generation })
+          }
           isLoadingModel={loadModeld.isPending}
           loadErrorMessage={loadModeld.error?.message}
           onUnload={generation => unloadModeld.mutate(generation)}

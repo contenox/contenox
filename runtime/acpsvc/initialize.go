@@ -9,7 +9,7 @@ import (
 	"github.com/contenox/runtime/runtime/version"
 )
 
-func (t *Transport) Initialize(_ context.Context, req libacp.InitializeRequest) (libacp.InitializeResponse, error) {
+func (t *Transport) Initialize(ctx context.Context, req libacp.InitializeRequest) (libacp.InitializeResponse, error) {
 	t.initMu.Lock()
 	t.clientInfo = req.ClientInfo
 	t.clientCaps = req.ClientCapabilities
@@ -64,7 +64,7 @@ func (t *Transport) Initialize(_ context.Context, req libacp.InitializeRequest) 
 		})
 	}
 
-	return libacp.InitializeResponse{
+	resp := libacp.InitializeResponse{
 		ProtocolVersion: negotiateProtocolVersion(req.ProtocolVersion),
 		AgentInfo: &libacp.Implementation{
 			Name:    "contenox",
@@ -87,10 +87,32 @@ func (t *Transport) Initialize(_ context.Context, req libacp.InitializeRequest) 
 				Resume: &struct{}{},
 				Close:  &struct{}{},
 				Delete: &struct{}{},
+				// AdditionalDirectories is intentionally left unset: NewSession,
+				// LoadSession, and ResumeSession (session.go) never read
+				// NewSessionRequest/LoadSessionRequest.AdditionalDirectories — there
+				// is no extra-workspace-root support behind this capability yet.
+				// Advertising it would promise a client behavior contenox does not
+				// implement; see TestUnit_Initialize_DoesNotAdvertiseAdditionalDirectories.
 			},
 		},
 		AuthMethods: authMethods,
-	}, nil
+	}
+
+	// contenox extension (WorkspaceConfigOptionsMetaKey): advertise the
+	// workspace-level config options so a client can render the
+	// model/think/HITL/token-limit controls on an empty chat, before any
+	// session exists. Only when configured (engine present) — a setup-required
+	// agent has no models to list and drives the client to its setup UI
+	// instead. Conformant clients that don't recognize the key ignore _meta.
+	if t.deps.Engine != nil {
+		if opts := t.workspaceConfigOptions(ctx); len(opts) > 0 {
+			resp.Meta = mustJSON(map[string]any{
+				WorkspaceConfigOptionsMetaKey: opts,
+			})
+		}
+	}
+
+	return resp, nil
 }
 
 func negotiateProtocolVersion(client int) int {

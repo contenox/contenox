@@ -11,6 +11,7 @@ describe('acpSessionReducer: unified timeline (D4)', () => {
   it('orders interleaved live messages and tool calls by first arrival, not by kind', () => {
     const state = run(
       { type: 'session_reset', sessionId: 'sess-1' },
+      { type: 'prompt_start' },
       { type: 'user_message_chunk', id: 'u1', text: 'run ls' },
       { type: 'tool_call', event: { updateKind: 'tool_call', toolCallId: 'tc-1', title: 'ls', status: 'pending' } },
       { type: 'message_chunk', id: 'a1', text: 'Running ' },
@@ -33,6 +34,7 @@ describe('acpSessionReducer: unified timeline (D4)', () => {
   it('attaches thought chunks to their message by messageId as collapsible data, not a separate timeline item', () => {
     const state = run(
       { type: 'session_reset', sessionId: 'sess-1' },
+      { type: 'prompt_start' },
       { type: 'thought_chunk', id: 'a1', text: 'Let me check ' },
       { type: 'thought_chunk', id: 'a1', text: 'the docs.' },
       { type: 'message_chunk', id: 'a1', text: 'Sure, here you go.' },
@@ -53,9 +55,9 @@ describe('acpSessionReducer: unified timeline (D4)', () => {
   it('prompt_end/prompt_error clear streaming flags on every message, including thinking', () => {
     const streaming = run(
       { type: 'session_reset', sessionId: 'sess-1' },
+      { type: 'prompt_start' },
       { type: 'thought_chunk', id: 'a1', text: 'hmm' },
       { type: 'message_chunk', id: 'a1', text: 'ok' },
-      { type: 'prompt_start' },
     );
     expect(streaming.messages['a1']).toMatchObject({ streaming: true, thinkingStreaming: true });
 
@@ -67,6 +69,100 @@ describe('acpSessionReducer: unified timeline (D4)', () => {
     const erroredState = acpSessionReducer(streaming, { type: 'prompt_error', message: 'boom' });
     expect(erroredState.messages['a1']).toMatchObject({ streaming: false, thinkingStreaming: false });
     expect(erroredState.error).toBe('boom');
+  });
+});
+
+describe('acpSessionReducer: stable message identity within one turn', () => {
+  // Root cause: `acpWorkspaceController.ts`'s `buildSessionHandlers` groups
+  // `message_chunk`/`thought_chunk`s by `id ?? currentTurnId` — if the
+  // agent's chunks switch between carrying a real `messageId` and falling
+  // back to the turn-id alias (or a thought chunk disagrees with the text
+  // chunk's id) mid-turn, keying the reducer purely off `action.id` would
+  // split one message into two timeline items, orphaning open/closed state.
+  // Per the documented one-assistant-message-per-turn contract, all of these
+  // must resolve onto a single item.
+
+  it('no-id-then-id: a turn-id-fallback chunk followed by a real messageId chunk yields ONE item', () => {
+    const state = run(
+      { type: 'session_reset', sessionId: 's1' },
+      { type: 'prompt_start' },
+      // No server messageId yet — the controller falls back to its turn id.
+      { type: 'message_chunk', id: 'assistant-1', text: 'Hello' },
+      // The agent starts tagging chunks with a real messageId mid-turn.
+      { type: 'message_chunk', id: 'msg-42', text: ' world' },
+    );
+
+    expect(state.items).toEqual([{ kind: 'message', id: 'assistant-1' }]);
+    expect(Object.keys(state.messages)).toEqual(['assistant-1']);
+    expect(state.messages['assistant-1']).toMatchObject({ role: 'assistant', text: 'Hello world', streaming: true });
+  });
+
+  it('id-then-no-id: a real messageId chunk followed by a turn-id-fallback chunk yields ONE item', () => {
+    const state = run(
+      { type: 'session_reset', sessionId: 's1' },
+      { type: 'prompt_start' },
+      { type: 'message_chunk', id: 'msg-42', text: 'Hello' },
+      // The agent stops sending a messageId partway through the same turn.
+      { type: 'message_chunk', id: 'assistant-1', text: ' world' },
+    );
+
+    expect(state.items).toEqual([{ kind: 'message', id: 'msg-42' }]);
+    expect(Object.keys(state.messages)).toEqual(['msg-42']);
+    expect(state.messages['msg-42']).toMatchObject({ role: 'assistant', text: 'Hello world', streaming: true });
+  });
+
+  it('thought-chunk-then-text-chunk with disagreeing ids yields ONE item with both thinking and text', () => {
+    const state = run(
+      { type: 'session_reset', sessionId: 's1' },
+      { type: 'prompt_start' },
+      { type: 'thought_chunk', id: 'assistant-1', text: 'Let me think…' },
+      { type: 'message_chunk', id: 'msg-42', text: 'Here you go.' },
+    );
+
+    expect(state.items).toEqual([{ kind: 'message', id: 'assistant-1' }]);
+    expect(Object.keys(state.messages)).toEqual(['assistant-1']);
+    expect(state.messages['assistant-1']).toMatchObject({
+      role: 'assistant',
+      text: 'Here you go.',
+      thinking: 'Let me think…',
+      streaming: true,
+      thinkingStreaming: true,
+    });
+  });
+
+  it('a NEW turn does not inherit the previous turn canonical id (no cross-turn bleed)', () => {
+    const first = run(
+      { type: 'session_reset', sessionId: 's1' },
+      { type: 'prompt_start' },
+      { type: 'message_chunk', id: 'assistant-1', text: 'first turn' },
+      { type: 'prompt_end', stopReason: 'end_turn' },
+    );
+    const second = acpSessionReducer(
+      acpSessionReducer(first, { type: 'prompt_start' }),
+      { type: 'message_chunk', id: 'assistant-2', text: 'second turn' },
+    );
+
+    expect(second.items).toEqual([
+      { kind: 'message', id: 'assistant-1' },
+      { kind: 'message', id: 'assistant-2' },
+    ]);
+    expect(second.messages['assistant-1']).toMatchObject({ text: 'first turn' });
+    expect(second.messages['assistant-2']).toMatchObject({ text: 'second turn' });
+  });
+
+  it('out-of-turn (no active prompt) chunks are never merged, even with differing ids', () => {
+    // No prompt_start dispatched — mirrors session/load replay, where each
+    // historical message legitimately keeps its own id (see the replay
+    // ordering suite below).
+    const state = run(
+      { type: 'session_reset', sessionId: 's1' },
+      { type: 'message_chunk', id: 'replay-a', text: 'one' },
+      { type: 'message_chunk', id: 'replay-b', text: 'two' },
+    );
+    expect(state.items).toEqual([
+      { kind: 'message', id: 'replay-a' },
+      { kind: 'message', id: 'replay-b' },
+    ]);
   });
 });
 
@@ -96,6 +192,12 @@ describe('acpSessionReducer: session/load replay ordering', () => {
       text: 'Hello!',
       thinking: 'thinking about it',
     });
+    // BUG 4c: replay lands with no prompt turn in flight — nothing will ever
+    // call endStreaming() for these chunks, so they must render as already
+    // complete, not stuck mid-typing-indicator.
+    expect(state.messages['replay-0'].streaming).toBeFalsy();
+    expect(state.messages['replay-1'].streaming).toBeFalsy();
+    expect(state.messages['replay-1'].thinkingStreaming).toBeFalsy();
   });
 
   it('session_reset clears the previous session entirely before a new replay lands', () => {
@@ -108,6 +210,31 @@ describe('acpSessionReducer: session/load replay ordering', () => {
 
     const after = acpSessionReducer(before, { type: 'session_reset', sessionId: 'sess-b' });
     expect(after).toEqual({ ...initialAcpSessionState, sessionId: 'sess-b' });
+  });
+
+  it('session_reset clears error, plan, usage, and configOptions specifically — a fresh session shows no leftover banner/plan/meter/config header', () => {
+    const dirty = run(
+      { type: 'session_reset', sessionId: 'sess-a' },
+      { type: 'plan', entries: [{ content: 'route it', priority: 'high', status: 'completed' }] },
+      { type: 'usage', usage: { used: 135, size: 26603 } },
+      {
+        type: 'config_options',
+        configOptions: [{ id: 'model', name: 'Model', type: 'string', currentValue: 'x', options: [] }],
+      },
+      { type: 'prompt_start' },
+      { type: 'prompt_error', message: 'chain execution failed' },
+    );
+    expect(dirty.error).toBe('chain execution failed');
+    expect(dirty.plan).toHaveLength(1);
+    expect(dirty.usage).not.toBeNull();
+    expect(dirty.configOptions).toHaveLength(1);
+
+    const fresh = acpSessionReducer(dirty, { type: 'session_reset', sessionId: null });
+    expect(fresh.error).toBeNull();
+    expect(fresh.plan).toEqual([]);
+    expect(fresh.usage).toBeNull();
+    expect(fresh.configOptions).toEqual([]);
+    expect(fresh.items).toEqual([]);
   });
 });
 
@@ -176,6 +303,27 @@ describe('acpSessionReducer: connection banner', () => {
     expect(dropped.pendingPermission).toBeNull();
   });
 
+  it('connection_lost clears per-message streaming flags too (BUG 4b), not just isPrompting', () => {
+    const prompting = run(
+      { type: 'session_reset', sessionId: 's1' },
+      { type: 'prompt_start' },
+      { type: 'thought_chunk', id: 'a1', text: 'hmm' },
+      { type: 'message_chunk', id: 'a1', text: 'partial' },
+    );
+    expect(prompting.messages['a1']).toMatchObject({ streaming: true, thinkingStreaming: true });
+
+    const dropped = acpSessionReducer(prompting, { type: 'connection_lost' });
+    // No prompt_end/prompt_error is ever coming for a dropped connection —
+    // without this, the message would show a stuck "..." typing indicator
+    // forever (see acpWorkspaceController.ts's handleTransportClose).
+    expect(dropped.messages['a1']).toMatchObject({
+      streaming: false,
+      thinkingStreaming: false,
+      text: 'partial',
+      thinking: 'hmm',
+    });
+  });
+
   it('connection_resumed sets the resumed banner without touching timeline state', () => {
     const state = run(
       { type: 'session_reset', sessionId: 's1' },
@@ -185,5 +333,40 @@ describe('acpSessionReducer: connection banner', () => {
     );
     expect(state.connectionBanner).toBe('resumed');
     expect(state.messages['a1']).toMatchObject({ text: 'hello' });
+  });
+});
+
+describe('acpSessionReducer: streaming only marked during an active prompt turn (BUG 4c)', () => {
+  it('does not mark a chunk as streaming when no prompt is in flight', () => {
+    const state = run(
+      { type: 'session_reset', sessionId: 's1' },
+      { type: 'message_chunk', id: 'orphan', text: 'nobody asked' },
+    );
+    expect(state.messages['orphan']).toMatchObject({ text: 'nobody asked', streaming: false });
+  });
+
+  it('a late chunk arriving after prompt_end does not resurrect the typing indicator', () => {
+    const state = run(
+      { type: 'session_reset', sessionId: 's1' },
+      { type: 'prompt_start' },
+      { type: 'message_chunk', id: 'a1', text: 'hi' },
+      { type: 'prompt_end', stopReason: 'end_turn' },
+      // Out-of-turn: the standing subscription still routes it (see
+      // acpWorkspaceController.ts's buildSessionHandlers), but isPrompting
+      // is already false again by now.
+      { type: 'message_chunk', id: 'a1', text: ' again' },
+    );
+    expect(state.messages['a1']).toMatchObject({ text: 'hi again', streaming: false });
+  });
+
+  it('replayed history (session/load, no active turn) still renders as completed text, not stuck streaming', () => {
+    const state = run(
+      { type: 'session_reset', sessionId: 'sess-replay' },
+      { type: 'user_message_chunk', id: 'replay-0', text: 'hi there' },
+      { type: 'thought_chunk', id: 'replay-1', text: 'thinking' },
+      { type: 'message_chunk', id: 'replay-1', text: 'Hello!' },
+    );
+    expect(state.messages['replay-0']).toMatchObject({ text: 'hi there', streaming: false });
+    expect(state.messages['replay-1']).toMatchObject({ text: 'Hello!', thinking: 'thinking', streaming: false, thinkingStreaming: false });
   });
 });

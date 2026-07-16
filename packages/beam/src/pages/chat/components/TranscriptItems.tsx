@@ -1,14 +1,25 @@
 import {
   ChatMessage,
-  ChatTypingIndicator,
+  ChatStreamingCaret,
+  ChatStreamThinkingBox,
+  ChatTranscriptStreamingPlaceholder,
+  chatTranscriptMarkdownComponents,
+  cn,
   Collapsible,
   DiffView,
   diffLinesFromTexts,
   ToolCallCard,
   type ToolCallCardProps,
 } from '@contenox/ui';
+import type { ReactNode } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useTranslation } from 'react-i18next';
+import logoMarkDarkUrl from '../../../assets/logo-mark.svg?url';
+import logoMarkLightUrl from '../../../assets/logo-mark-light.svg?url';
 import type { AcpChatMessage, AcpSessionState, AcpToolCallState } from '../../../hooks/acpSessionState';
+import { useTheme } from '../../../lib/ThemeProvider';
+import { shouldShowStreamingCaret, shouldShowStreamingPlaceholder } from '../lib/streamingPresentation';
 
 function toolCallCardStatus(status?: AcpToolCallState['status']): NonNullable<ToolCallCardProps['status']> {
   switch (status) {
@@ -24,6 +35,37 @@ function toolCallCardStatus(status?: AcpToolCallState['status']): NonNullable<To
   }
 }
 
+/** Content-identity key for a diff entry — stable across a `tool_call_update` that replaces the whole `content` array wholesale, so React doesn't remount (and lose UI state on) an unchanged diff just because its array position shifted. Falls back to the positional index only when the path itself repeats within one call. */
+function diffKey(path: string | undefined, indexOfKind: number): string {
+  return `diff-${path ?? 'unnamed'}-${indexOfKind}`;
+}
+
+function locationKey(path: string | undefined, line: number | undefined, indexOfKind: number): string {
+  return `loc-${path ?? 'unnamed'}-${line ?? ''}-${indexOfKind}`;
+}
+
+/**
+ * The contenox agent's avatar mark, theme-paired exactly like `Layout.tsx`'s
+ * header logo. Agent-name-gated (case-insensitive `contenox` match) so a
+ * differently-named/fleet ACP agent still falls back to `ChatMessage`'s
+ * default letter avatar instead of showing a mark that isn't its own.
+ */
+function useAssistantAvatar(agentName: string | null): ReactNode {
+  const { theme } = useTheme();
+  if (!agentName || !/contenox/i.test(agentName)) return undefined;
+  const logoUrl = theme === 'dark' ? logoMarkDarkUrl : logoMarkLightUrl;
+  return <img src={logoUrl} alt="" aria-hidden className="h-5 w-5" />;
+}
+
+function ThinkingHeader({ streaming }: { streaming: boolean | undefined }) {
+  const { t } = useTranslation();
+  return (
+    <span className={cn('inline-flex items-center gap-1.5', streaming && 'animate-pulse')}>
+      <span>{streaming ? t('acp_chat.thinking_streaming_label') : t('acp_chat.thinking_done_label')}</span>
+    </span>
+  );
+}
+
 function TranscriptMessage({
   message,
   agentName,
@@ -36,30 +78,38 @@ function TranscriptMessage({
   const { t } = useTranslation();
   const isUser = message.role === 'user';
   const roleLabel = isUser ? t('acp_chat.role_user') : (agentName ?? t('acp_chat.role_agent'));
+  const avatar = useAssistantAvatar(isUser ? null : agentName);
 
   return (
     <ChatMessage
       role={message.role}
       roleLabel={roleLabel}
+      avatar={avatar}
       isLatest={isLatest}
       latestLabel={t('acp_chat.latest_label')}
+      // Zed-style transcripts don't collapse plain messages — only thought
+      // blocks and tool detail collapse (see the Collapsible below and
+      // ToolCallCard's own detail toggle).
+      collapsible={false}
       copyText={message.text || undefined}
       copyLabel={t('acp_chat.copy')}
       copiedLabel={t('acp_chat.copied')}
     >
       {message.thinking && (
-        <Collapsible defaultOpen={false} title={t('acp_chat.thinking_label')} className="mb-2">
-          <p className="text-text-muted dark:text-dark-text-muted mt-1 text-xs whitespace-pre-wrap">
-            {message.thinking}
-          </p>
+        <Collapsible defaultOpen={false} title={<ThinkingHeader streaming={message.thinkingStreaming} />} className="mb-2">
+          <ChatStreamThinkingBox className="mt-1">{message.thinking}</ChatStreamThinkingBox>
         </Collapsible>
       )}
       {message.text ? (
-        <p className="whitespace-pre-wrap">{message.text}</p>
-      ) : message.streaming ? (
-        <ChatTypingIndicator aria-label={t('acp_chat.typing_label')} />
+        <>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={chatTranscriptMarkdownComponents}>
+            {message.text}
+          </ReactMarkdown>
+          {shouldShowStreamingCaret(message) && <ChatStreamingCaret />}
+        </>
+      ) : shouldShowStreamingPlaceholder(message) ? (
+        <ChatTranscriptStreamingPlaceholder>{t('acp_chat.typing_label')}</ChatTranscriptStreamingPlaceholder>
       ) : null}
-      {message.text && message.streaming && <ChatTypingIndicator aria-label={t('acp_chat.typing_label')} className="mt-1 px-0" />}
     </ChatMessage>
   );
 }
@@ -73,12 +123,12 @@ function ToolCallDetail({ toolCall }: { toolCall: AcpToolCallState }) {
   return (
     <div className="space-y-3">
       {diffs.map((d, i) => (
-        <DiffView key={i} filePath={d.path ?? ''} lines={diffLinesFromTexts(d.oldText ?? '', d.newText ?? '')} />
+        <DiffView key={diffKey(d.path, i)} filePath={d.path ?? ''} lines={diffLinesFromTexts(d.oldText ?? '', d.newText ?? '')} />
       ))}
       {toolCall.locations && toolCall.locations.length > 0 && (
         <ul className="text-text-muted dark:text-dark-text-muted space-y-0.5">
           {toolCall.locations.map((loc, i) => (
-            <li key={i}>
+            <li key={locationKey(loc.path, loc.line, i)}>
               {loc.path}
               {loc.line ? `:${loc.line}` : ''}
             </li>
@@ -97,6 +147,7 @@ function ToolCallDetail({ toolCall }: { toolCall: AcpToolCallState }) {
 }
 
 function TranscriptToolCall({ toolCall }: { toolCall: AcpToolCallState }) {
+  const { t } = useTranslation();
   const diffs = (toolCall.content ?? []).filter(c => c.type === 'diff');
   const other = (toolCall.content ?? []).filter(c => c.type !== 'diff');
   const hasDetail =
@@ -111,6 +162,13 @@ function TranscriptToolCall({ toolCall }: { toolCall: AcpToolCallState }) {
       tool={toolCall.kind ?? 'tool'}
       title={toolCall.title ?? toolCall.toolCallId}
       status={toolCallCardStatus(toolCall.status)}
+      statusLabels={{
+        pending: t('acp_chat.tool_status_pending'),
+        running: t('acp_chat.tool_status_running'),
+        success: t('acp_chat.tool_status_success'),
+        error: t('acp_chat.tool_status_error'),
+      }}
+      toggleDetailLabel={t('acp_chat.tool_toggle_detail')}
       detail={hasDetail ? <ToolCallDetail toolCall={toolCall} /> : undefined}
     />
   );

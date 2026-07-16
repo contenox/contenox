@@ -1,25 +1,22 @@
 import { Button, LoadingState, Panel, SidebarToggle } from '@contenox/ui';
 import React, { useContext, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import logoMarkLightUrl from '../assets/logo-mark-light.svg?url';
 import logoMarkDarkUrl from '../assets/logo-mark.svg?url';
 import { useSetupStatus } from '../hooks/useSetupStatus';
+import { useWizardDismissal } from '../hooks/useWizardDismissal';
 import { AuthContext } from '../lib/authContext';
 import { useTheme } from '../lib/ThemeProvider';
 import { cn } from '../lib/utils';
+import {
+  clearWizardDismissal,
+  computeSetupFingerprint,
+  dismissWizard,
+} from '../lib/wizardDismissal';
 import { ControlPlaneDropdown } from './ControlPlaneDropdown';
 import { OnboardingWizard } from './setup/OnboardingWizard';
 import { Sidebar } from './sidebar/Sidebar';
-
-const ONBOARDING_KEY = 'beam_onboarding_dismissed';
-
-function isDismissed(): boolean {
-  try {
-    return localStorage.getItem(ONBOARDING_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
 
 function isDesktopViewport(): boolean {
   if (typeof window === 'undefined') return true;
@@ -46,8 +43,9 @@ export function Layout({ defaultOpen = true, mainContent, sidebarContent, classN
   const isOnLoginPage = location.pathname === '/login';
   const sidebarDisabled = !user;
 
-  const [wizardDismissed, setWizardDismissed] = useState(isDismissed);
+  const { t } = useTranslation();
   const { data: setupData, isLoading: setupLoading } = useSetupStatus(!!user);
+  const { record: dismissalRecord, manualOpen: wizardManuallyOpened } = useWizardDismissal();
 
   const setupComplete = useMemo(() => {
     if (!setupData) return false;
@@ -55,7 +53,31 @@ export function Layout({ defaultOpen = true, mainContent, sidebarContent, classN
     return !hasErrors && setupData.reachableBackendCount > 0;
   }, [setupData]);
 
-  const showWizard = !!user && !wizardDismissed && !setupLoading && !setupComplete;
+  // Completing setup clears a stale dismissal record — otherwise, if setup
+  // later regresses, the wizard would compare against a fingerprint that was
+  // never meant to survive completion.
+  useEffect(() => {
+    if (setupComplete && dismissalRecord !== null) {
+      clearWizardDismissal();
+    }
+  }, [setupComplete, dismissalRecord]);
+
+  // Dismissed only "for the state it was dismissed under": if setup regresses
+  // to a different set of error issues, or backends go unreachable again, the
+  // fingerprint no longer matches and the wizard re-arms automatically.
+  const isDismissedForCurrentState =
+    dismissalRecord !== null && dismissalRecord.fingerprint === computeSetupFingerprint(setupData);
+
+  // manualOpen (Settings' "Run setup wizard") forces the wizard open even when
+  // setup is already complete — the wizard is also a reconfiguration flow, not
+  // just a recovery-from-broken one.
+  const showWizard =
+    !!user &&
+    !setupLoading &&
+    (wizardManuallyOpened || (!setupComplete && !isDismissedForCurrentState));
+  // Persistent escape hatch: setup is still incomplete but the wizard is
+  // dismissed for this exact state — surface a slim banner instead of nothing.
+  const showIncompleteBanner = !!user && !setupLoading && !setupComplete && !showWizard;
   const logoUrl = theme === 'dark' ? logoMarkDarkUrl : logoMarkLightUrl;
   const renderedSidebarContent =
     typeof sidebarContent === 'function'
@@ -69,13 +91,8 @@ export function Layout({ defaultOpen = true, mainContent, sidebarContent, classN
     return 'Contenox Chat';
   }, [location.pathname]);
 
-  const dismissWizard = () => {
-    try {
-      localStorage.setItem(ONBOARDING_KEY, '1');
-    } catch {
-      /* best-effort: localStorage may be unavailable (private mode) */
-    }
-    setWizardDismissed(true);
+  const handleDismissWizard = () => {
+    dismissWizard(setupData);
   };
 
   useEffect(() => {
@@ -95,7 +112,10 @@ export function Layout({ defaultOpen = true, mainContent, sidebarContent, classN
       variant="bordered"
       className="flex h-16 shrink-0 items-center justify-between gap-4 bg-inherit px-4 text-inherit">
       <div className="flex items-center gap-4">
-        {!sidebarDisabled ? (
+        {/* The wizard replaces the whole main area (see showWizard below) and
+            never renders <Sidebar>, so toggling it here would do nothing
+            visible — hide it instead of shipping a dead button. */}
+        {!sidebarDisabled && !showWizard ? (
           <SidebarToggle isOpen={isSidebarOpen} onToggle={() => setSidebarIsOpen(!isSidebarOpen)} />
         ) : (
           <div className="w-9" />
@@ -144,7 +164,7 @@ export function Layout({ defaultOpen = true, mainContent, sidebarContent, classN
         )}>
         {navbar}
         <div className="min-h-0 flex-1 overflow-hidden">
-          <OnboardingWizard data={setupData} onDismiss={dismissWizard} />
+          <OnboardingWizard data={setupData} onDismiss={handleDismissWizard} />
         </div>
       </div>
     );
@@ -157,6 +177,16 @@ export function Layout({ defaultOpen = true, mainContent, sidebarContent, classN
         className,
       )}>
       {navbar}
+      {showIncompleteBanner && (
+        <Panel
+          variant="warning"
+          className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-none border-x-0 border-t-0 text-sm">
+          <span>{t('setup.incomplete_banner_title')}</span>
+          <Button variant="secondary" size="sm" onClick={clearWizardDismissal}>
+            {t('setup.incomplete_banner_action')}
+          </Button>
+        </Panel>
+      )}
       <div className="flex h-full min-h-0 flex-1 overflow-hidden">
         <Sidebar
           disabled={sidebarDisabled}

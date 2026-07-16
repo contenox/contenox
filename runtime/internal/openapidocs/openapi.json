@@ -1027,6 +1027,12 @@
           },
           "hitl-policy-name": {
             "type": "string"
+          },
+          "telemetry-enabled": {
+            "type": "string"
+          },
+          "update-check": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -1068,6 +1074,12 @@
               "type": "string"
             },
             "type": "object"
+          },
+          "telemetryEnabled": {
+            "type": "string"
+          },
+          "updateCheck": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -2070,6 +2082,35 @@
       }
     },
     "/cli-config": {
+      "get": {
+        "operationId": "setup_getCLIConfig",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/setupapi_putCLIConfigResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /cli-config",
+        "tags": [
+          "setup"
+        ]
+      },
       "put": {
         "operationId": "setup_putCLIConfig",
         "requestBody": {

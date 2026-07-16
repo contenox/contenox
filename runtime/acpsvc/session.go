@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -741,72 +743,134 @@ func (t *Transport) resolveSessionWorkspace(ctx context.Context, name string) (s
 // exercise paging without minting hundreds of sessions.
 var listSessionsPageSize = 100
 
+// sessionListRow is one session/list candidate before pagination: the
+// internal index id, the ACP session name, and the freshest message time
+// (hasTime=false when the session has no messages yet).
+type sessionListRow struct {
+	internalID string
+	name       string
+	updatedAt  time.Time
+	hasTime    bool
+}
+
+// sessionListRowLess is the freshest-first total order session/list returns:
+// rows with a message time sort by it descending, rows without one sort after
+// all rows that have one, and every tie falls back to internal id — the order
+// must be total or the pagination cursor is ambiguous.
+func sessionListRowLess(a, b sessionListRow) bool {
+	if a.hasTime != b.hasTime {
+		return a.hasTime
+	}
+	if a.hasTime && !a.updatedAt.Equal(b.updatedAt) {
+		return a.updatedAt.After(b.updatedAt)
+	}
+	return a.internalID > b.internalID
+}
+
+// listSessionsCursor encodes a page boundary as the sort key of the last row
+// the page returned: "<unixnano>|<internal id>", with an empty time part for
+// rows that have no messages. Opaque to clients. Encoding the full sort key —
+// not just the id — lets listSessionsResume position strictly after the
+// boundary even when that row gained a fresher timestamp or was deleted
+// between pages.
+func listSessionsCursor(r sessionListRow) string {
+	ts := ""
+	if r.hasTime {
+		ts = strconv.FormatInt(r.updatedAt.UnixNano(), 10)
+	}
+	return ts + "|" + r.internalID
+}
+
+// listSessionsResume returns the index of the first row sorting strictly
+// after the cursor's boundary key, i.e. where the next page starts. A cursor
+// that decodes to a key no longer present still positions correctly; a
+// malformed cursor degrades to comparing by internal id alone.
+func listSessionsResume(rows []sessionListRow, cursor string) int {
+	tsPart, id, found := strings.Cut(cursor, "|")
+	boundary := sessionListRow{internalID: id}
+	if !found {
+		boundary.internalID = cursor
+	} else if tsPart != "" {
+		if ns, err := strconv.ParseInt(tsPart, 10, 64); err == nil {
+			boundary.updatedAt = time.Unix(0, ns)
+			boundary.hasTime = true
+		}
+	}
+	for i, r := range rows {
+		if sessionListRowLess(boundary, r) {
+			return i
+		}
+	}
+	return len(rows)
+}
+
 func (t *Transport) ListSessions(ctx context.Context, req libacp.ListSessionsRequest) (libacp.ListSessionsResponse, error) {
 	exec := t.deps.DB.WithoutTransaction()
 
 	// The ACP session id is the message-index NAME (session/new mints it and
 	// agentservice resolves loads by name); mi.id is contenox-internal. Rows
 	// without a name predate ACP naming and cannot be loaded, so they are not
-	// listed. The cursor is the mi.id of the last row the previous page
-	// scanned (opaque to clients); scanning one row past the page size tells
-	// us whether a next page exists. The cwd filter applies after the scan, so
-	// a filtered page may carry fewer items but the cursor still advances.
+	// listed. Ordering and pagination happen in Go, not SQL: the roster must
+	// come back freshest-first over MAX(added_at), but mi.id is a random UUID
+	// (useless for ORDER BY) and the two schema dialects disagree on timestamp
+	// representation, so a portable SQL keyset is not worth it. The
+	// per-workspace roster is small; only the returned page pays the
+	// title/cwd lookups. The cwd filter applies after pagination, so a
+	// filtered page may carry fewer items but the cursor still advances.
 	rows, err := exec.QueryContext(ctx, `
 		SELECT mi.id, mi.name,
 		       (SELECT MAX(m.added_at) FROM messages m WHERE m.idx_id = mi.id)
 		FROM message_indices mi
 		WHERE mi.workspace_id = $1
 		  AND mi.identity = 'acp-client'
-		  AND mi.name IS NOT NULL AND mi.name != ''
-		  AND ($2 = '' OR mi.id < $2)
-		ORDER BY mi.id DESC
-		LIMIT $3`, t.workspaceID(), req.Cursor, listSessionsPageSize+1)
+		  AND mi.name IS NOT NULL AND mi.name != ''`, t.workspaceID())
 	if err != nil {
 		return libacp.ListSessionsResponse{}, fmt.Errorf("acpsvc: list sessions: %w", err)
 	}
 	defer rows.Close()
 
-	store := runtimetypes.New(exec)
-	chatMgr := chatservice.NewManager(t.workspaceID())
-	var sessions []libacp.SessionInfo
-	var lastScannedID string
-	scanned := 0
-	hasMore := false
+	var all []sessionListRow
 	for rows.Next() {
-		var internalID, name string
+		var row sessionListRow
 		var updatedAt any
-		if err := rows.Scan(&internalID, &name, &updatedAt); err != nil {
+		if err := rows.Scan(&row.internalID, &row.name, &updatedAt); err != nil {
 			return libacp.ListSessionsResponse{}, fmt.Errorf("acpsvc: scan session: %w", err)
 		}
-		scanned++
-		if scanned > listSessionsPageSize {
-			hasMore = true
-			break
-		}
-		lastScannedID = internalID
-
-		info := libacp.SessionInfo{
-			SessionID: libacp.SessionID(name),
-			Title:     t.sessionListTitle(ctx, chatMgr, exec, internalID, name),
-			Cwd:       t.sessionCwd(ctx, store, libacp.SessionID(name)),
-		}
-		if ts, ok := parseDBTime(updatedAt); ok {
-			info.UpdatedAt = ts.UTC().Format(time.RFC3339)
-		}
-
-		if req.Cwd != "" && info.Cwd != "" && info.Cwd != req.Cwd {
-			continue
-		}
-
-		sessions = append(sessions, info)
+		row.updatedAt, row.hasTime = parseDBTime(updatedAt)
+		all = append(all, row)
 	}
 	if err := rows.Err(); err != nil {
 		return libacp.ListSessionsResponse{}, fmt.Errorf("acpsvc: rows: %w", err)
 	}
+	sort.Slice(all, func(i, j int) bool { return sessionListRowLess(all[i], all[j]) })
+
+	start := 0
+	if req.Cursor != "" {
+		start = listSessionsResume(all, req.Cursor)
+	}
+	end := min(start+listSessionsPageSize, len(all))
+
+	store := runtimetypes.New(exec)
+	chatMgr := chatservice.NewManager(t.workspaceID())
+	var sessions []libacp.SessionInfo
+	for _, row := range all[start:end] {
+		info := libacp.SessionInfo{
+			SessionID: libacp.SessionID(row.name),
+			Title:     t.sessionListTitle(ctx, chatMgr, exec, row.internalID, row.name),
+			Cwd:       t.sessionCwd(ctx, store, libacp.SessionID(row.name)),
+		}
+		if row.hasTime {
+			info.UpdatedAt = row.updatedAt.UTC().Format(time.RFC3339)
+		}
+		if req.Cwd != "" && info.Cwd != "" && info.Cwd != req.Cwd {
+			continue
+		}
+		sessions = append(sessions, info)
+	}
 
 	resp := libacp.ListSessionsResponse{Sessions: sessions}
-	if hasMore {
-		resp.NextCursor = lastScannedID
+	if end < len(all) {
+		resp.NextCursor = listSessionsCursor(all[end-1])
 	}
 	return resp, nil
 }
@@ -895,6 +959,12 @@ func parseDBTimeString(s string) (time.Time, bool) {
 	for _, layout := range []string{
 		time.RFC3339Nano,
 		"2006-01-02 15:04:05.999999999-07:00",
+		// time.Time.String() — what the sqlite driver stores when a time.Time
+		// is bound to a TIMESTAMP column. Until this layout was handled, every
+		// session/list row lost its updatedAt and the sidebar sort collapsed
+		// to random-UUID order.
+		"2006-01-02 15:04:05.999999999 -0700 MST",
+		"2006-01-02 15:04:05.999999999 -0700",
 		"2006-01-02 15:04:05.999999999",
 		"2006-01-02 15:04:05",
 	} {

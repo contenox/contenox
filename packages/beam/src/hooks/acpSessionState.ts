@@ -91,6 +91,30 @@ export interface AcpSessionState {
   /** Set on a `prompt_error`; cleared on the next `session_reset`/`prompt_start`. */
   error: string | null;
   connectionBanner: AcpSessionConnectionBanner;
+  /**
+   * The canonical `messages` key for the CURRENTLY ACTIVE turn's assistant
+   * message, or null before its first chunk has arrived. Exists to fix a
+   * stable-identity bug: `acpWorkspaceController.ts`'s `buildSessionHandlers`
+   * groups `message_chunk`/`thought_chunk`s by `id ?? currentTurnId`, but
+   * `currentTurnId` is only used for chunks that arrive with NO
+   * server-assigned `messageId` — if the agent's chunks switch between
+   * carrying a real id and not (or a thought chunk arrives under one id and
+   * the text chunk under another) mid-turn, naively keying by `action.id`
+   * would create a SECOND timeline item, orphaning that item's open/closed
+   * toggle state and visually splitting one message in two. Per the
+   * documented contract there is exactly one assistant message per turn
+   * (see `sendPrompt`'s doc comment), so instead: the FIRST message/thought
+   * chunk of an active turn establishes this field as that turn's canonical
+   * id, and every subsequent message/thought chunk in the SAME turn is
+   * resolved onto it regardless of what id it individually carries. Reset to
+   * null on every `prompt_start` (a fresh turn starts with no canonical yet)
+   * and implicitly by `session_reset` (full state reset). Deliberately NOT
+   * consulted while no turn is active (`isPrompting` false) — replayed
+   * history (`session/load`) legitimately contains many distinct messages
+   * that must stay distinct, see the reducer's `session/load replay
+   * ordering` tests.
+   */
+  activeTurnMessageId: string | null;
 }
 
 export const initialAcpSessionState: AcpSessionState = {
@@ -107,6 +131,7 @@ export const initialAcpSessionState: AcpSessionState = {
   stopReason: null,
   error: null,
   connectionBanner: null,
+  activeTurnMessageId: null,
 };
 
 export type AcpSessionAction =
@@ -135,21 +160,34 @@ function ensureItem(items: AcpTimelineItem[], kind: AcpTimelineItemKind, id: str
   return [...items, { kind, id }];
 }
 
+/**
+ * `activeTurn` gates `streaming`/`thinkingStreaming`: chunks that arrive
+ * while a prompt turn is in flight (`state.isPrompting`) mark the message as
+ * still-streaming so the typing indicator shows; chunks arriving with no
+ * turn in flight — session/load replay of history, or a late/out-of-turn
+ * chunk after `prompt_end`/`prompt_error` already ran — render as an already-
+ * complete message instead, since nothing will ever call `endStreaming` for
+ * them (there's no turn to end). See the module doc comment's D4 note and
+ * `acpWorkspaceController.ts`'s `buildSessionHandlers` (the standing
+ * subscription routes both live and replayed chunks through these same
+ * actions).
+ */
 function upsertMessage(
   messages: Record<string, AcpChatMessage>,
   id: string,
   role: 'user' | 'assistant',
   patch: { text?: string; thinking?: string },
+  activeTurn: boolean,
 ): Record<string, AcpChatMessage> {
   const existing = messages[id];
   const next: AcpChatMessage = existing ? { ...existing } : { id, role, text: '' };
   if (patch.text !== undefined) {
     next.text = next.text + patch.text;
-    next.streaming = true;
+    next.streaming = activeTurn;
   }
   if (patch.thinking !== undefined) {
     next.thinking = (next.thinking ?? '') + patch.thinking;
-    next.thinkingStreaming = true;
+    next.thinkingStreaming = activeTurn;
   }
   return { ...messages, [id]: next };
 }
@@ -178,22 +216,32 @@ export function acpSessionReducer(state: AcpSessionState, action: AcpSessionActi
       return {
         ...state,
         items: ensureItem(state.items, 'message', action.id),
-        messages: upsertMessage(state.messages, action.id, 'user', { text: action.text }),
+        messages: upsertMessage(state.messages, action.id, 'user', { text: action.text }, state.isPrompting),
       };
 
-    case 'message_chunk':
+    case 'message_chunk': {
+      // See `activeTurnMessageId`'s doc comment: while a turn is active, every
+      // message/thought chunk resolves onto the turn's single canonical id
+      // (established by whichever chunk arrived first), not onto whatever id
+      // this particular chunk happens to carry.
+      const id = state.isPrompting ? (state.activeTurnMessageId ?? action.id) : action.id;
       return {
         ...state,
-        items: ensureItem(state.items, 'message', action.id),
-        messages: upsertMessage(state.messages, action.id, 'assistant', { text: action.text }),
+        items: ensureItem(state.items, 'message', id),
+        messages: upsertMessage(state.messages, id, 'assistant', { text: action.text }, state.isPrompting),
+        activeTurnMessageId: state.isPrompting ? id : state.activeTurnMessageId,
       };
+    }
 
-    case 'thought_chunk':
+    case 'thought_chunk': {
+      const id = state.isPrompting ? (state.activeTurnMessageId ?? action.id) : action.id;
       return {
         ...state,
-        items: ensureItem(state.items, 'message', action.id),
-        messages: upsertMessage(state.messages, action.id, 'assistant', { thinking: action.text }),
+        items: ensureItem(state.items, 'message', id),
+        messages: upsertMessage(state.messages, id, 'assistant', { thinking: action.text }, state.isPrompting),
+        activeTurnMessageId: state.isPrompting ? id : state.activeTurnMessageId,
       };
+    }
 
     case 'tool_call': {
       const { event } = action;
@@ -234,7 +282,11 @@ export function acpSessionReducer(state: AcpSessionState, action: AcpSessionActi
       return { ...state, pendingPermission: null };
 
     case 'prompt_start':
-      return { ...state, isPrompting: true, error: null };
+      // Fresh turn, fresh canonical-id slot — see `activeTurnMessageId`'s doc
+      // comment. Without this reset a second turn's first chunk would
+      // silently alias onto the PREVIOUS turn's assistant message instead of
+      // starting a new one.
+      return { ...state, isPrompting: true, error: null, activeTurnMessageId: null };
 
     case 'prompt_end':
       return { ...state, isPrompting: false, stopReason: action.stopReason, messages: endStreaming(state.messages) };
@@ -248,7 +300,17 @@ export function acpSessionReducer(state: AcpSessionState, action: AcpSessionActi
       };
 
     case 'connection_lost':
-      return { ...state, connectionBanner: 'disconnected', pendingPermission: null, isPrompting: false };
+      // Clears per-message `streaming`/`thinkingStreaming` too (not just
+      // `isPrompting`) — a drop mid-turn means no `prompt_end`/`prompt_error`
+      // is coming to call `endStreaming` for whatever was in flight, so the
+      // "..." indicator would otherwise be stuck forever.
+      return {
+        ...state,
+        connectionBanner: 'disconnected',
+        pendingPermission: null,
+        isPrompting: false,
+        messages: endStreaming(state.messages),
+      };
 
     case 'connection_resumed':
       return { ...state, connectionBanner: 'resumed' };

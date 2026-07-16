@@ -28,7 +28,39 @@ const (
 	configTypeSelect = "select"
 
 	hitlPolicyDefaultValue = "__contenox_default__"
+
+	// WorkspaceConfigOptionsMetaKey is the initialize-response `_meta` key under
+	// which contenox advertises the workspace-level (session-less) config
+	// options. Sessions are minted lazily (on first prompt — see AcpChatPage's
+	// handleSubmit), so a fresh chat has no session and therefore none of the
+	// per-session config options that normally arrive with session/new. This
+	// extension lets a client render the model/think/HITL/token-limit controls
+	// on the empty chat, stage the user's choices, and re-apply them via
+	// set_config_option right after session/new — crucial when the configured
+	// default model is broken and the user must pick a working one BEFORE the
+	// first (failing) turn. It is a contenox extension living in the spec's
+	// reserved `_meta` namespace: conformant clients that don't recognize the
+	// key ignore it entirely and simply wait for the per-session options.
+	WorkspaceConfigOptionsMetaKey = "contenox.workspaceConfigOptions"
 )
+
+// workspaceConfigOptions builds the session-less config options advertised at
+// initialize time. The values mirror exactly what a freshly-minted session
+// will carry: it seeds a throwaway sessionEntry from the same transport
+// defaults session.go's NewSession/LoadSession seed a real entry with, then
+// reuses the per-session builders so there is a single source of truth for the
+// option shapes. All sessionEntry accessors used downstream are nil-safe, but
+// seeding explicitly keeps the workspace snapshot byte-identical to the first
+// session's initial options (in particular Think, which defaults to
+// thinkDefault() rather than the accessor's bare "high" fallback).
+func (t *Transport) workspaceConfigOptions(ctx context.Context) []libacp.SessionConfigOption {
+	seed := &sessionEntry{
+		Provider: t.provider(),
+		Model:    t.model(),
+		Think:    t.thinkDefault(),
+	}
+	return t.sessionConfigOptions(ctx, seed)
+}
 
 func (t *Transport) sessionConfigOptions(ctx context.Context, sess *sessionEntry) []libacp.SessionConfigOption {
 	return []libacp.SessionConfigOption{
@@ -339,6 +371,13 @@ func (t *Transport) runtimeStates(ctx context.Context) []statetype.BackendRuntim
 	if t.deps.Engine == nil || t.deps.Engine.State == nil {
 		return nil
 	}
+	// The runtime reconciles backends at startup and on explicit refresh only;
+	// without this, a backend that comes up after startup (most commonly a
+	// (re)started modeld) stays invisible to the ACP model dropdown until some
+	// other read path (e.g. GET /state) happens to trigger a reconcile first.
+	// Debounced (see ReconcileIfStale), so this is cheap even on a hot config
+	// options read. Best-effort: serve the existing snapshot even if it fails.
+	_ = t.deps.Engine.State.ReconcileIfStale(ctx)
 	states := t.deps.Engine.State.Get(ctx)
 	out := make([]statetype.BackendRuntimeState, 0, len(states))
 	for _, state := range states {

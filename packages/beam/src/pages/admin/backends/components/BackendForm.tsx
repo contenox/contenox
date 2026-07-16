@@ -68,7 +68,7 @@ export default function BackendForm({
             )}
           </div>
         }>
-        <FormField label={t('common.name')} required>
+        <FormField label={t('common.name')} required tooltip={t('backends.tooltip_name')}>
           <Input
             value={name}
             onChange={e => setName(e.target.value)}
@@ -77,7 +77,7 @@ export default function BackendForm({
           />
         </FormField>
 
-        <FormField label={t('backends.form_url')} required>
+        <FormField label={t('backends.form_url')} required tooltip={t('backends.tooltip_url')}>
           <Input
             value={baseURL}
             onChange={e => setBaseURL(e.target.value)}
@@ -96,7 +96,7 @@ export default function BackendForm({
           />
         </FormField>
 
-        <FormField label={t('backends.form_type')} required>
+        <FormField label={t('backends.form_type')} required tooltip={t('backends.tooltip_type')}>
           <Select
             value={configType}
             onChange={e => setConfigType(e.target.value)}

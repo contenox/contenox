@@ -1,4 +1,5 @@
 import { useCallback, useEffect } from 'react';
+import type { SessionConfigOptionValue } from '../lib/acp';
 import { useAcpWorkspaceContext } from '../lib/acp/AcpWorkspaceProvider';
 import type { AcpSessionState } from './acpSessionState';
 import type { AcpWorkspaceState } from './acpWorkspaceState';
@@ -15,11 +16,15 @@ export interface UseAcpWorkspaceResult {
   /** Switches the open session (closing whichever was open). */
   openSession: (id: string) => void;
   deleteSession: (id: string) => void;
+  /** Client-side reset of "which session is open" — no server-side deletion. Call before navigating to bare `/chat` from any "new session" affordance so the next lazy `newSession()` call mints a genuinely new session. See acpWorkspaceController.ts's doc comment. */
+  clearActiveSession: () => void;
   /** No-ops with no active session — call `newSession()` first if `workspace.activeSessionId` is null. */
   sendPrompt: (text: string) => void;
   respondPermission: (optionId: string) => void;
   cancel: () => void;
   setConfigOption: (configId: string, value: string | boolean) => void;
+  /** Flushes the empty-chat's staged config choices to the just-created session, awaiting each, so they win over server defaults for the first turn. See `acpWorkspaceController.ts`'s `applyConfigOptions()`. */
+  applyConfigOptions: (options: Array<{ configId: string; value: SessionConfigOptionValue }>) => Promise<void>;
   /** Manual reconnect — cancels any pending automatic backoff and retries immediately. See `acpWorkspaceController.ts`'s `reconnect()` doc comment. */
   reconnect: () => void;
 }
@@ -64,6 +69,10 @@ export function useAcpWorkspace(): UseAcpWorkspaceResult {
     [controller],
   );
 
+  const clearActiveSession = useCallback(() => {
+    controller.clearActiveSession();
+  }, [controller]);
+
   const sendPrompt = useCallback(
     (text: string) => {
       controller.sendPrompt(text);
@@ -89,6 +98,12 @@ export function useAcpWorkspace(): UseAcpWorkspaceResult {
     [controller],
   );
 
+  const applyConfigOptions = useCallback(
+    (options: Array<{ configId: string; value: SessionConfigOptionValue }>) =>
+      controller.applyConfigOptions(options),
+    [controller],
+  );
+
   const reconnect = useCallback(() => {
     void controller.reconnect();
   }, [controller]);
@@ -100,10 +115,12 @@ export function useAcpWorkspace(): UseAcpWorkspaceResult {
     newSession,
     openSession,
     deleteSession,
+    clearActiveSession,
     sendPrompt,
     respondPermission,
     cancel,
     setConfigOption,
+    applyConfigOptions,
     reconnect,
   };
 }

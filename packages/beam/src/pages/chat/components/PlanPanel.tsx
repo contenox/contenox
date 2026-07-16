@@ -39,7 +39,12 @@ export function PlanPanel({ entries }: { entries: PlanEntry[] }) {
       >
         <ol className="mt-2 space-y-1.5 text-sm">
           {entries.map((entry, i) => (
-            <li key={i} className="flex items-start gap-2">
+            // Keyed by content + arrival index (not just `i`): `plan` replaces
+            // the whole entries array wholesale on every update, and content
+            // is the one stable identity a step has (no server-issued id) —
+            // keying by it alone would collide on duplicate step text, so the
+            // index is a tiebreaker, not the primary identity.
+            <li key={`${entry.content}-${i}`} className="flex items-start gap-2">
               <Badge size="sm" variant={statusVariant(entry.status)} className="mt-0.5 shrink-0">
                 {t(`acp_chat.plan_status_${entry.status}`)}
               </Badge>

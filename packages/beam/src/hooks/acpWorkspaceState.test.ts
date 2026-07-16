@@ -10,7 +10,7 @@ describe('acpWorkspaceReducer: connection status', () => {
     let state = run({ type: 'connecting' });
     expect(state.status).toBe('connecting');
 
-    state = acpWorkspaceReducer(state, { type: 'ready', agentName: 'contenox' });
+    state = acpWorkspaceReducer(state, { type: 'ready', agentName: 'contenox', workspaceConfigOptions: [] });
     expect(state.status).toBe('ready');
     expect(state.agentName).toBe('contenox');
     expect(state.error).toBeNull();
@@ -36,6 +36,21 @@ describe('acpWorkspaceReducer: connection status', () => {
     const errored = run({ type: 'error', message: 'boom' });
     const reconnected = acpWorkspaceReducer(errored, { type: 'connecting' });
     expect(reconnected.error).toBeNull();
+  });
+
+  it('ready carries the workspace-level config options and a later ready replaces them (reconnect refresh)', () => {
+    const first = [{ id: 'model', name: 'Model', type: 'select', currentValue: 'openai/gpt-5-mini', options: [] }];
+    let state = acpWorkspaceReducer(initialAcpWorkspaceState, {
+      type: 'ready',
+      agentName: 'contenox',
+      workspaceConfigOptions: first,
+    });
+    expect(state.workspaceConfigOptions).toEqual(first);
+
+    // A reconnect re-reads them (runtime model list may have changed).
+    const second = [{ id: 'model', name: 'Model', type: 'select', currentValue: 'anthropic/claude', options: [] }];
+    state = acpWorkspaceReducer(state, { type: 'ready', agentName: 'contenox', workspaceConfigOptions: second });
+    expect(state.workspaceConfigOptions).toEqual(second);
   });
 });
 

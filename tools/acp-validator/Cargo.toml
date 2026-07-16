@@ -1,0 +1,21 @@
+[package]
+name = "acp-validator"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88.0"
+publish = false
+description = "Conformance-checking ACP client used to validate ACP Agent implementations"
+
+[[bin]]
+name = "acp-validator"
+path = "src/main.rs"
+
+[dependencies]
+agent-client-protocol = { path = "../rust-sdk/src/agent-client-protocol", version = "1.2.0", default-features = false }
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
+tokio = { version = "1.52", default-features = false, features = ["macros", "rt-multi-thread", "time", "sync"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

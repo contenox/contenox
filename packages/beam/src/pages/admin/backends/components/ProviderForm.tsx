@@ -1,4 +1,4 @@
-import { Button, Form, FormField, Input, P, Panel, Textarea } from '@contenox/ui';
+import { Button, Form, FormField, Input, LabelWithHelp, P, Panel, Textarea } from '@contenox/ui';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConfigureProvider, useProviderStatus } from '../../../../hooks/useProviders';
@@ -36,6 +36,14 @@ export default function ProviderForm({ provider, setup: setupProp }: ProviderFor
   const secretFieldIsMultiline =
     setup.secretKind === 'service-account-json' || setup.secretKind === 'aws-credentials-json';
   const supportsEnvSecret = setup.secretKind === 'api-key';
+  const secretTooltip =
+    setup.secretKind === 'api-key'
+      ? t('cloud_providers.tooltip_secret_api_key')
+      : setup.secretKind === 'service-account-json'
+        ? t('cloud_providers.tooltip_secret_service_account')
+        : setup.secretKind === 'aws-credentials-json'
+          ? t('cloud_providers.tooltip_secret_aws_credentials')
+          : undefined;
 
   const statusText = useMemo(() => {
     if (!status) return '';
@@ -105,7 +113,8 @@ export default function ProviderForm({ provider, setup: setupProp }: ProviderFor
       {setup.secretKind !== 'none' && (
         <FormField
           label={setup.secretLabelKey ? t(setup.secretLabelKey) : ''}
-          required={secretIsNeeded}>
+          required={secretIsNeeded}
+          tooltip={secretTooltip}>
           {secretFieldIsMultiline ? (
             <Textarea
               value={secret}
@@ -125,7 +134,9 @@ export default function ProviderForm({ provider, setup: setupProp }: ProviderFor
       )}
 
       {supportsEnvSecret && (
-        <FormField label={t('cloud_providers.api_key_env')}>
+        <FormField
+          label={t('cloud_providers.api_key_env')}
+          tooltip={t('cloud_providers.tooltip_api_key_env')}>
           <Input
             type="text"
             value={apiKeyEnv}
@@ -138,7 +149,9 @@ export default function ProviderForm({ provider, setup: setupProp }: ProviderFor
       <Panel variant="flat">{t('cloud_providers.auto_backend_note')}</Panel>
 
       {status && (
-        <Panel variant="flat">{statusText}</Panel>
+        <Panel variant="flat">
+          <LabelWithHelp label={statusText} tooltip={t('cloud_providers.tooltip_status')} />
+        </Panel>
       )}
     </Form>
   );

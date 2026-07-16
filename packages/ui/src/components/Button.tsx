@@ -37,29 +37,29 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         "text-text-inverted dark:text-dark-text-inverted",
         variant !== "text" && "bg-primary dark:bg-dark-primary",
         "hover:bg-primary-600 dark:hover:bg-dark-primary-600",
-        "focus:ring-primary-300 dark:focus:ring-dark-primary-300",
+        "focus-visible:ring-primary-300 dark:focus-visible:ring-dark-primary-300",
       ),
       secondary: cn(
         "text-text-inverted dark:text-dark-text",
         variant !== "text" && "bg-secondary dark:bg-dark-secondary",
         "hover:bg-secondary-600 dark:hover:bg-dark-secondary-600",
-        "focus:ring-secondary-300 dark:focus:ring-dark-secondary-300",
+        "focus-visible:ring-secondary-300 dark:focus-visible:ring-dark-secondary-300",
       ),
       accent: cn(
         "text-text-inverted dark:text-dark-text",
         variant !== "text" && "bg-accent dark:bg-dark-accent",
         "hover:bg-accent-600 dark:hover:bg-dark-accent-600",
-        "focus:ring-accent-300 dark:focus:ring-dark-accent-300",
+        "focus-visible:ring-accent-300 dark:focus-visible:ring-dark-accent-300",
       ),
       neutral: cn(
         "text-text dark:text-dark-text",
         "hover:bg-surface-100 dark:hover:bg-dark-surface-100",
-        "focus:ring-surface-300 dark:focus:ring-dark-surface-300",
+        "focus-visible:ring-surface-300 dark:focus-visible:ring-dark-surface-300",
       ),
       light: cn(
         "text-primary dark:text-dark-primary",
         "hover:bg-surface-50 dark:hover:bg-dark-surface-50",
-        "focus:ring-primary-100 dark:focus:ring-dark-primary-100",
+        "focus-visible:ring-primary-100 dark:focus-visible:ring-dark-primary-100",
       ),
     };
 
@@ -73,14 +73,14 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       "bg-transparent",
       "text-error dark:text-dark-error",
       "hover:bg-error/10 dark:hover:bg-dark-error/10",
-      "focus:ring-error-300 dark:focus:ring-dark-error-300",
+      "focus-visible:ring-error-300 dark:focus-visible:ring-dark-error-300",
     );
 
     const successStyles = cn(
       "bg-transparent",
       "text-success dark:text-dark-success",
       "hover:bg-success/10 dark:hover:bg-dark-success/10",
-      "focus:ring-success-300 dark:focus:ring-dark-success-300",
+      "focus-visible:ring-success-300 dark:focus-visible:ring-dark-success-300",
     );
 
     return (
@@ -88,7 +88,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         className={cn(
           "inline-flex flex-row items-center justify-center",
-          "ease-fluid rounded-lg transition-all focus:ring-2 focus:ring-offset-2 focus:outline-none",
+          "ease-fluid rounded-lg transition-all focus-visible:ring-2 focus-visible:ring-offset-2 focus:outline-none",
           "disabled:cursor-not-allowed disabled:opacity-50",
           {
             "h-7 px-2 text-xs": size === "xs",
