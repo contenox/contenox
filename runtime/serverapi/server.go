@@ -12,8 +12,10 @@ import (
 	"github.com/contenox/runtime/apiframework/middleware"
 	libbus "github.com/contenox/runtime/libbus"
 	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/agentservice"
 	"github.com/contenox/runtime/runtime/backendservice"
+	"github.com/contenox/runtime/runtime/hitlservice"
 	"github.com/contenox/runtime/runtime/internal/backendapi"
 	"github.com/contenox/runtime/runtime/internal/hitlpolicyapi"
 	"github.com/contenox/runtime/runtime/internal/localfileapi"
@@ -86,6 +88,46 @@ type Dependencies struct {
 	Defaults        stateservice.RuntimeDefaults
 	TerminalService terminalservice.Service
 	TerminalEnabled bool
+	// HITLPolicySource and HITLDefaultPolicyName feed the /files `agent` view
+	// filter: verdicts are computed by the same HITL policy engine the live agent
+	// uses. When HITLPolicySource is nil the filter is unavailable (the raw tree
+	// still serves). HITLDefaultPolicyName is the fallback policy when a request
+	// omits `policy`; empty means the service's built-in default.
+	HITLPolicySource      hitlservice.PolicySource
+	HITLDefaultPolicyName string
+}
+
+// emptyKVReader is a KVReader whose lookups always miss, forcing a hitlservice
+// to use its constructor fallback policy rather than the active-policy KV key.
+// It is how the /files `agent` filter pins evaluation to an explicitly requested
+// policy name.
+type emptyKVReader struct{}
+
+func (emptyKVReader) GetKV(context.Context, string, interface{}) error {
+	return fmt.Errorf("serverapi: no active policy override")
+}
+
+// workspaceHITLFactory builds the PolicyEvaluatorFactory the /files `agent`
+// filter uses, mirroring how serve constructs its HITL service (same
+// PolicySource, tenant, and KV store) so the API and the runtime agree. An empty
+// requested policy name defers to the runtime's default resolution (reads the
+// active-policy KV key, then HITLDefaultPolicyName); a named policy is pinned via
+// emptyKVReader so it is evaluated verbatim. Returns nil when no PolicySource or
+// DB is configured, which disables the filter.
+func workspaceHITLFactory(deps Dependencies) localfileapi.PolicyEvaluatorFactory {
+	if deps.HITLPolicySource == nil || deps.DB == nil {
+		return nil
+	}
+	src := deps.HITLPolicySource
+	defaultPolicy := deps.HITLDefaultPolicyName
+	dbm := deps.DB
+	return func(policyName string) hitlservice.Service {
+		store := runtimetypes.New(dbm.WithoutTransaction())
+		if strings.TrimSpace(policyName) == "" {
+			return hitlservice.NewWithDefaultPolicy(src, runtimetypes.LocalTenantID, store, libtracker.NoopTracker{}, defaultPolicy)
+		}
+		return hitlservice.NewWithDefaultPolicy(src, runtimetypes.LocalTenantID, emptyKVReader{}, libtracker.NoopTracker{}, policyName)
+	}
 }
 
 // New registers the spine routes (not-found shape, health, version) on mux and,
@@ -143,7 +185,7 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 	// no allowlist is configured, it stays rooted at the single fixed ProjectRoot
 	// (unchanged legacy behavior).
 	if deps.WorkspaceRoots != nil {
-		if err := localfileapi.AddWorkspaceRoutes(mux, deps.WorkspaceRoots); err != nil {
+		if err := localfileapi.AddWorkspaceRoutes(mux, deps.WorkspaceRoots, workspaceHITLFactory(deps)); err != nil {
 			return fmt.Errorf("workspace files: %w", err)
 		}
 	} else if deps.ProjectRoot != "" {

@@ -1,4 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  acpSessionsReducer,
+  initialAcpSessionsState,
+  selectFocusedSession,
+  selectOpenSessionIds,
+} from '../../hooks/acpWorkspaceState';
 import { createDeferredDisposer } from './AcpWorkspaceProvider';
 
 /**
@@ -65,5 +71,38 @@ describe('createDeferredDisposer (AcpWorkspaceProvider StrictMode safety, BUG 3)
 
     await vi.runAllTimersAsync();
     expect(dispose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('AcpWorkspaceProvider context-value composition (multiplexing wiring)', () => {
+  // The provider derives its context value from the multiplexed sessions
+  // reducer: `session` = selectFocusedSession(sessions) (the single-view
+  // accessor consumers like AcpChatPage read), while `sessions` exposes every
+  // open slice for Slice 2. @testing-library/react isn't a dependency (see the
+  // doc comment above), so this exercises that derivation directly rather than
+  // mounting the provider — it's the one piece of state wiring the provider
+  // adds on top of the (separately-tested) reducers.
+  it('exposes the focused slice as `session` while keeping every open slice reachable', () => {
+    let sessions = initialAcpSessionsState;
+    const dispatch = (action: Parameters<typeof acpSessionsReducer>[1]) => {
+      sessions = acpSessionsReducer(sessions, action);
+    };
+
+    // Two sessions open concurrently, sess-b focused.
+    dispatch({ type: 'session_dispatch', key: 'sess-a', action: { type: 'session_reset', sessionId: 'sess-a' } });
+    dispatch({ type: 'session_dispatch', key: 'sess-b', action: { type: 'session_reset', sessionId: 'sess-b' } });
+    dispatch({ type: 'session_dispatch', key: 'sess-a', action: { type: 'message_chunk', id: 'ma', text: 'A background' } });
+    dispatch({ type: 'session_focused', key: 'sess-b' });
+
+    // `session` (single-view) is the focused slice...
+    expect(selectFocusedSession(sessions).sessionId).toBe('sess-b');
+    // ...but the backgrounded session's state is still reachable via `sessions`.
+    expect(selectOpenSessionIds(sessions).sort()).toEqual(['sess-a', 'sess-b']);
+    expect(sessions.slices['sess-a'].messages['ma']).toMatchObject({ text: 'A background' });
+
+    // Re-focusing swaps what `session` renders without touching the slices.
+    dispatch({ type: 'session_focused', key: 'sess-a' });
+    expect(selectFocusedSession(sessions).sessionId).toBe('sess-a');
+    expect(selectFocusedSession(sessions).messages['ma']).toMatchObject({ text: 'A background' });
   });
 });

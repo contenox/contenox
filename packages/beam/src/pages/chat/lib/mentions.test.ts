@@ -8,6 +8,7 @@ import {
   filterMentionFiles,
   mentionCandidatesForScope,
   mentionMenuKeyFromEvent,
+  mentionPreviewPath,
   mentionToken,
   promptBlocksFromDraft,
   splitMentionQuery,
@@ -232,6 +233,23 @@ describe('mentionCandidatesForScope', () => {
 
   it('returns nothing when the leaf matches neither files nor dirs', () => {
     expect(mentionCandidatesForScope(entries, 'zzz')).toEqual([]);
+  });
+});
+
+describe('mentionPreviewPath', () => {
+  const entries: MentionCandidate[] = [
+    { path: 'src', name: 'src', isDirectory: true },
+    { path: 'README.md', name: 'README.md', isDirectory: false },
+  ];
+  it('returns the highlighted file path', () => {
+    expect(mentionPreviewPath(entries, 1)).toBe('README.md');
+  });
+  it('returns null when the highlighted entry is a directory', () => {
+    expect(mentionPreviewPath(entries, 0)).toBeNull();
+  });
+  it('returns null when the index is out of range', () => {
+    expect(mentionPreviewPath(entries, 5)).toBeNull();
+    expect(mentionPreviewPath([], 0)).toBeNull();
   });
 });
 

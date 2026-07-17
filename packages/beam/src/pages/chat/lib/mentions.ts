@@ -193,6 +193,18 @@ export function mentionMenuKeyFromEvent(key: string): MentionMenuKeyAction | nul
 }
 
 /**
+ * The path that should be live-previewed while browsing the `@`-menu: the
+ * highlighted candidate's path when it is a FILE, otherwise `null` (directories
+ * are navigation, not content, so they get no preview). Pure selector so the
+ * "should preview + which path" decision is testable without React.
+ */
+export function mentionPreviewPath(entries: MentionCandidate[], activeIndex: number): string | null {
+  const entry = entries[activeIndex];
+  if (!entry || entry.isDirectory) return null;
+  return entry.path;
+}
+
+/**
  * Case-insensitive filter of the workspace file list by the query, matched
  * against both the display name and the full path. An empty query returns the
  * list unchanged. Name-prefix matches are ranked ahead of looser matches.

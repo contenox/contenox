@@ -26,7 +26,7 @@ func TestUnit_WorkspaceRoutes_PerRootAndAllowlist(t *testing.T) {
 	require.NoError(t, err)
 
 	mux := http.NewServeMux()
-	require.NoError(t, localfileapi.AddWorkspaceRoutes(mux, factory))
+	require.NoError(t, localfileapi.AddWorkspaceRoutes(mux, factory, nil))
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 

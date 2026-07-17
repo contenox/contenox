@@ -1,14 +1,20 @@
+import { acpSessionReducer, initialAcpSessionState, type AcpSessionAction, type AcpSessionState } from './acpSessionState';
 import type { SessionConfigOption, SessionInfo } from '../lib/acp';
 
 /**
  * Pure, framework-free workspace-level state: reducer + types only, no React,
  * no WebSocket. This is the multi-session layer sitting above
- * `acpSessionState.ts` (which holds only the one currently-open session's
- * live timeline) — it tracks connection lifecycle and the `session/list`
- * roster. `useAcpWorkspace.ts` wires this reducer into `useReducer`;
- * `acpWorkspaceController.ts` dispatches actions in response to `AcpClient`
- * events. Kept separate so both can be unit-tested without mounting a
- * component (see `acpWorkspaceState.test.ts`).
+ * `acpSessionState.ts` (which holds one session's live timeline) — it tracks
+ * connection lifecycle and the `session/list` roster. `useAcpWorkspace.ts`
+ * wires this reducer into `useReducer`; `acpWorkspaceController.ts` dispatches
+ * actions in response to `AcpClient` events. Kept separate so both can be
+ * unit-tested without mounting a component (see `acpWorkspaceState.test.ts`).
+ *
+ * This file ALSO owns the multiplexing layer (`acpSessionsReducer`, below):
+ * one `AcpSessionState` slice PER open session, keyed by sessionId, so several
+ * sessions can be subscribed and accumulating their `session/update` traffic
+ * concurrently (see the workspace-tabs blueprint's "Multiplexing finding").
+ * The single-view UI renders whichever slice is focused (`selectFocusedSession`).
  */
 
 export type AcpWorkspaceStatus =
@@ -174,4 +180,86 @@ export function acpWorkspaceReducer(state: AcpWorkspaceState, action: AcpWorkspa
     default:
       return state;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Multiplexing layer: one live-state slice per open session
+// ---------------------------------------------------------------------------
+
+/**
+ * Reserved slice key for the "no session open" / empty-chat view. It cannot
+ * collide with a real sessionId (the server never mints an empty-string id),
+ * and it is where a failed lazy `newSession()` surfaces its error before any
+ * session exists — preserving the pre-multiplexing behavior where the single
+ * session reducer showed such errors even with `activeSessionId === null`. It
+ * is NOT an open session; `selectOpenSessionIds` filters it out.
+ */
+export const EMPTY_SESSION_KEY = '';
+
+/**
+ * The multiplexed session state: an `AcpSessionState` slice per open session
+ * (keyed by sessionId, plus the reserved `EMPTY_SESSION_KEY` empty-chat
+ * slice), and the key of the slice the single-view UI renders. Each slice
+ * accumulates ITS OWN session's `session/update` traffic independently, so a
+ * background (non-focused) session keeps streaming while another is shown —
+ * the whole point of holding several `client.subscribe()` subscriptions at
+ * once (see the controller's per-session `buildSessionHandlers`).
+ */
+export interface AcpSessionsState {
+  /** Live-timeline slice per open session, keyed by sessionId (`EMPTY_SESSION_KEY` for the empty-chat slice). */
+  slices: Record<string, AcpSessionState>;
+  /** Storage key of the slice the single-view UI renders — a sessionId, or `EMPTY_SESSION_KEY`. */
+  focusedKey: string;
+}
+
+export const initialAcpSessionsState: AcpSessionsState = {
+  slices: {},
+  focusedKey: EMPTY_SESSION_KEY,
+};
+
+export type AcpSessionsAction =
+  /** Apply a single-session action to `key`'s slice, creating it from `initialAcpSessionState` if absent. */
+  | { type: 'session_dispatch'; key: string; action: AcpSessionAction }
+  /** Drop `key`'s slice entirely (a closed/deleted session). Never changes `focusedKey` — the controller re-points focus explicitly. */
+  | { type: 'session_closed'; key: string }
+  /** Re-point which slice the single-view UI renders. */
+  | { type: 'session_focused'; key: string };
+
+export function acpSessionsReducer(state: AcpSessionsState, action: AcpSessionsAction): AcpSessionsState {
+  switch (action.type) {
+    case 'session_dispatch': {
+      const prev = state.slices[action.key] ?? initialAcpSessionState;
+      const next = acpSessionReducer(prev, action.action);
+      if (next === prev) return state;
+      return { ...state, slices: { ...state.slices, [action.key]: next } };
+    }
+
+    case 'session_closed': {
+      if (!(action.key in state.slices)) return state;
+      const slices = { ...state.slices };
+      delete slices[action.key];
+      return { ...state, slices };
+    }
+
+    case 'session_focused':
+      return state.focusedKey === action.key ? state : { ...state, focusedKey: action.key };
+
+    default:
+      return state;
+  }
+}
+
+/**
+ * The focused session's slice — what the single-view UI renders. Returns the
+ * shared `initialAcpSessionState` when the focused key has no slice yet (e.g.
+ * the empty-chat view before anything has been dispatched to it), so the
+ * reference is stable across unrelated background-session updates.
+ */
+export function selectFocusedSession(state: AcpSessionsState): AcpSessionState {
+  return state.slices[state.focusedKey] ?? initialAcpSessionState;
+}
+
+/** The ids of all open sessions (every slice key except the reserved empty-chat one). */
+export function selectOpenSessionIds(state: AcpSessionsState): string[] {
+  return Object.keys(state.slices).filter(key => key !== EMPTY_SESSION_KEY);
 }

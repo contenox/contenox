@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/contenox/runtime/modeld/capacity"
@@ -246,6 +247,106 @@ func TestUnit_ServiceRefusesSubFloorAcceleratorFitInsteadOfSilentCPUFallback(t *
 	}
 }
 
+// TestUnit_ServiceAutoFullOffloadWithRoomTakesAllLayers is the happy no-spill
+// case: an accelerator with ample memory, auto mode (no explicit cap, no num_ctx).
+// modeld offloads every layer and serves a real auto context — it does NOT walk
+// layers down, so ResolvedGpuLayers is the full model depth (blocks + output).
+func TestUnit_ServiceAutoFullOffloadWithRoomTakesAllLayers(t *testing.T) {
+	params := ggufParams{ContextLength: 32768, BlockCount: 2, HeadCountKV: 1, HeadCount: 2, KeyLength: 128}
+	path := writeTestModelProfile(t, params)
+	svc := NewService(
+		WithMemorySource(staticSnapshot{snap: capacity.DeviceSnapshot{
+			Kind:       "gpu",
+			DeviceID:   "test-gpu",
+			TotalBytes: 16 << 30,
+			FreeBytes:  16 << 30,
+		}}),
+		WithHostMemorySource(staticMemory(0)),
+		WithCapacityPolicy(capacity.Policy{HeadroomFrac: 0.1}),
+	)
+
+	info, err := svc.Describe(t.Context(), transport.OpenSessionRequest{
+		Type:   "llama",
+		Path:   path,
+		Config: transport.Config{KVCacheType: "f16"},
+	})
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if info.ResolvedGpuLayers != params.BlockCount+1 {
+		t.Fatalf("ResolvedGpuLayers = %d, want full offload %d (all layers, no walk-down)", info.ResolvedGpuLayers, params.BlockCount+1)
+	}
+	if info.EffectiveContext <= 0 {
+		t.Fatalf("EffectiveContext = %d, want a positive auto window at full offload", info.EffectiveContext)
+	}
+	cfg, err := svc.resolveConfig(transport.OpenSessionRequest{
+		Type:   "llama",
+		Path:   path,
+		Config: transport.Config{KVCacheType: "f16"},
+	})
+	if err != nil {
+		t.Fatalf("resolveConfig: %v", err)
+	}
+	if cfg.NumGpuLayers != params.BlockCount+1 {
+		t.Fatalf("cfg.NumGpuLayers = %d, want full offload %d", cfg.NumGpuLayers, params.BlockCount+1)
+	}
+	if cfg.NumCtx < DefaultMinHotContextTokens {
+		t.Fatalf("auto NumCtx = %d, want a sensible window >= floor %d", cfg.NumCtx, DefaultMinHotContextTokens)
+	}
+}
+
+// TestUnit_ServiceAutoRefusesModelTooBigForFullOffloadInsteadOfPartialSpill is the
+// core no-spill guard: a model whose weights do not fit even at full offload must
+// be REFUSED with the budget arithmetic — not partial-offloaded (weights + KV split
+// onto the CPU). It asserts the placement modeld reports is full offload (all
+// layers), i.e. it never fell back to a partial-CPU spill to make the model "fit".
+func TestUnit_ServiceAutoRefusesModelTooBigForFullOffloadInsteadOfPartialSpill(t *testing.T) {
+	t.Setenv("CONTENOX_LLAMA_GPU_COMPUTE_RESERVE", "1MiB")
+	params := ggufParams{ContextLength: 32768, BlockCount: 2, HeadCountKV: 1, HeadCount: 2, KeyLength: 128}
+	path := writeTestModelProfile(t, params)
+	if err := os.Truncate(path, 200<<20); err != nil { // weights far exceed the device budget
+		t.Fatalf("pad GGUF: %v", err)
+	}
+	svc := NewService(
+		WithMemorySource(staticSnapshot{snap: capacity.DeviceSnapshot{
+			Kind:       "gpu",
+			DeviceID:   "test-gpu",
+			TotalBytes: 256 << 20,
+			FreeBytes:  100 << 20,
+		}}),
+		WithHostMemorySource(staticMemory(0)),
+		WithCapacityPolicy(capacity.Policy{HeadroomFrac: 0.1}),
+	)
+
+	info, err := svc.Describe(t.Context(), transport.OpenSessionRequest{
+		Type:   "llama",
+		Path:   path,
+		Config: transport.Config{KVCacheType: "f16"},
+	})
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if info.ResolvedGpuLayers != params.BlockCount+1 {
+		t.Fatalf("ResolvedGpuLayers = %d, want full offload %d (no partial-CPU spill)", info.ResolvedGpuLayers, params.BlockCount+1)
+	}
+	if info.EffectiveContext > 0 {
+		t.Fatalf("EffectiveContext = %d, want ~0 (does not fit) so the caller refuses", info.EffectiveContext)
+	}
+	_, err = svc.resolveConfig(transport.OpenSessionRequest{
+		Type:   "llama",
+		Path:   path,
+		Config: transport.Config{KVCacheType: "f16"},
+	})
+	if !errors.Is(err, transport.ErrContextOverflow) {
+		t.Fatalf("resolveConfig = %v, want ErrContextOverflow (refuse, not spill)", err)
+	}
+	for _, want := range []string{"needs", "weights", "usable"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("refusal %q missing arithmetic term %q", err.Error(), want)
+		}
+	}
+}
+
 func TestUnit_ServiceResolveConfigAppliesDaemonEnvOverrides(t *testing.T) {
 	t.Setenv("CONTENOX_LLAMA_GPU_LAYERS", "999")
 	t.Setenv("CONTENOX_LLAMA_CTX", "16384")
@@ -423,12 +524,18 @@ func TestUnit_ServiceResolveConfigClampsDaemonGpuLayersToMemoryBudget(t *testing
 	}
 }
 
-func TestUnit_ResolveGPULayersForBudgetHonorsMinHotContextInAutoMode(t *testing.T) {
+// TestUnit_ResolveGPULayersForBudgetShedsForMinHotContextUnderExplicitCap is the
+// regression guard that the operator's explicit GPU-layer cap still re-enables the
+// walk-down: with an explicit cap of 5 and an auto (unpinned) context window, the
+// resolver sheds layers to reach the min-hot floor exactly as before. Shedding is a
+// deliberate operator choice, not the auto default.
+func TestUnit_ResolveGPULayersForBudgetShedsForMinHotContextUnderExplicitCap(t *testing.T) {
 	params := ggufParams{ContextLength: 10000, BlockCount: 4}
 	st := capacity.DeviceSnapshot{Kind: "gpu", FreeBytes: 1000}
 	policy := capacity.Policy{MinHotContextTokens: 600, HeadroomFrac: 0.000001}
 
 	got := resolveGPULayersForBudget(
+		5, // explicit operator cap → walk-down reachable
 		transport.Config{NumGpuLayers: 5},
 		params,
 		capacity.LayerKVProfile{},
@@ -443,12 +550,39 @@ func TestUnit_ResolveGPULayersForBudgetHonorsMinHotContextInAutoMode(t *testing.
 	}
 }
 
+// TestUnit_ResolveGPULayersForBudgetNeverShedsInAutoMode proves the no-spill rule:
+// with neither an explicit GPU-layer cap (explicitGpuLayers <= 0) nor an explicit
+// num_ctx, modeld stays at full offload even though shedding to 3 layers would buy
+// the 600-token min-hot window. Same tight budget as the explicit-cap case above;
+// only the auto-vs-explicit distinction changes the outcome.
+func TestUnit_ResolveGPULayersForBudgetNeverShedsInAutoMode(t *testing.T) {
+	params := ggufParams{ContextLength: 10000, BlockCount: 4}
+	st := capacity.DeviceSnapshot{Kind: "gpu", FreeBytes: 1000}
+	policy := capacity.Policy{MinHotContextTokens: 600, HeadroomFrac: 0.000001}
+
+	got := resolveGPULayersForBudget(
+		0, // auto: no explicit cap
+		transport.Config{NumGpuLayers: allGpuLayers}, // ceiling modeld aims for in auto mode
+		params,
+		capacity.LayerKVProfile{},
+		500,
+		1,
+		0,
+		st,
+		policy,
+	)
+	if got != params.BlockCount+1 {
+		t.Fatalf("gpu layers = %d, want full offload %d (no walk-down in auto mode)", got, params.BlockCount+1)
+	}
+}
+
 func TestUnit_ResolveGPULayersForBudgetIgnoresMinHotContextForExplicitNumCtx(t *testing.T) {
 	params := ggufParams{ContextLength: 10000, BlockCount: 4}
 	st := capacity.DeviceSnapshot{Kind: "gpu", FreeBytes: 1000}
 	policy := capacity.Policy{MinHotContextTokens: 600, HeadroomFrac: 0.000001}
 
 	got := resolveGPULayersForBudget(
+		5,
 		transport.Config{NumCtx: 400, NumGpuLayers: 5},
 		params,
 		capacity.LayerKVProfile{},

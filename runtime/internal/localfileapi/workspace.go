@@ -17,13 +17,21 @@ import (
 // to the default root, matching the session cwd compat rule. Requests for a
 // non-allowlisted root are rejected — a browser can browse any allowlisted root
 // but nothing outside the allowlist.
-func AddWorkspaceRoutes(mux *http.ServeMux, factory *vfs.Factory) error {
+//
+// hitlFor, when non-nil, enables the `agent` view filter on GET /files: it builds
+// a HITL service bound to the requested (or default) policy so per-entry access
+// verdicts are computed by the agent's real policy engine. When nil, requesting
+// filter=agent returns an unprocessable-entity error (the filter is not available
+// on that deployment) while the unfiltered tree is unchanged.
+func AddWorkspaceRoutes(mux *http.ServeMux, factory *vfs.Factory, hitlFor PolicyEvaluatorFactory) error {
 	if factory == nil {
 		return fmt.Errorf("localfileapi: workspace factory is nil")
 	}
 	wh := &workspaceHandler{
 		factory:  factory,
 		services: map[string]localfileservice.Service{},
+		filters:  defaultFilters(),
+		hitlFor:  hitlFor,
 	}
 	// Warm the cache and fail fast if any allowlisted root cannot be served.
 	for _, root := range factory.Roots() {
@@ -47,6 +55,12 @@ func AddWorkspaceRoutes(mux *http.ServeMux, factory *vfs.Factory) error {
 
 type workspaceHandler struct {
 	factory *vfs.Factory
+
+	// filters is the shared filter registry; hitlFor builds the policy engine a
+	// filter needs. Both are shared across roots; the per-root view is bound in
+	// wrap.
+	filters map[string]FileFilter
+	hitlFor PolicyEvaluatorFactory
 
 	mu       sync.Mutex
 	services map[string]localfileservice.Service
@@ -85,6 +99,10 @@ func (wh *workspaceHandler) wrap(fn func(*handler, http.ResponseWriter, *http.Re
 			_ = apiframework.Error(w, r, err, apiframework.ListOperation)
 			return
 		}
-		fn(&handler{service: svc}, w, r)
+		// Bind a root-scoped view for the agent-view filter (reachability gate).
+		// A resolution failure leaves view nil; filter=agent then reports itself
+		// unavailable rather than serving wrong verdicts.
+		view, _ := vfs.OpenView(svc.Root())
+		fn(&handler{service: svc, view: view, filters: wh.filters, hitlFor: wh.hitlFor}, w, r)
 	}
 }

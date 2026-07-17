@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	apiframework "github.com/contenox/runtime/apiframework"
+	"github.com/contenox/runtime/runtime/agentview"
 	"github.com/contenox/runtime/runtime/localfileservice"
+	"github.com/contenox/runtime/runtime/vfs"
 )
 
 func AddRoutes(mux *http.ServeMux, service localfileservice.Service) {
@@ -26,6 +29,12 @@ func AddRoutes(mux *http.ServeMux, service localfileservice.Service) {
 
 type handler struct {
 	service localfileservice.Service
+	// view, filters, and hitlFor are set only by the workspace (per-root) mount
+	// and power the GET /files `filter` param. They are nil on the legacy
+	// single-root AddRoutes mount, where filters are unavailable.
+	view    *vfs.View
+	filters map[string]FileFilter
+	hitlFor PolicyEvaluatorFactory
 }
 
 type writeFileRequest struct {
@@ -58,7 +67,45 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 		_ = apiframework.Error(w, r, err, apiframework.ListOperation)
 		return
 	}
-	_ = apiframework.Encode(w, r, http.StatusOK, entries) // @response []localfileservice.Entry
+
+	// filter selects a server-side view of the tree. Absent or "full" returns
+	// today's raw listing byte-identically (backward compatible). "agent" (and
+	// any future token) is looked up in the registry and applied.
+	filterName := strings.TrimSpace(apiframework.GetQueryParam(r, "filter", "", "Tree view to apply: 'full' (default, raw tree) or 'agent' (the tree as the agent sees it, with per-path access verdicts)."))
+	if filterName == "" || filterName == "full" {
+		_ = apiframework.Encode(w, r, http.StatusOK, entries) // @response []localfileservice.Entry
+		return
+	}
+
+	filter, ok := h.filters[filterName]
+	if !ok {
+		_ = apiframework.Error(w, r,
+			fmt.Errorf("%w: unknown filter %q", apiframework.ErrUnprocessableEntity, filterName),
+			apiframework.ListOperation)
+		return
+	}
+	if h.view == nil || h.hitlFor == nil {
+		_ = apiframework.Error(w, r,
+			fmt.Errorf("%w: filter %q is not available on this endpoint", apiframework.ErrUnprocessableEntity, filterName),
+			apiframework.ListOperation)
+		return
+	}
+
+	// policy names the session's active HITL policy; omitted -> the runtime's
+	// default resolution (matching the live agent).
+	policyName := strings.TrimSpace(apiframework.GetQueryParam(r, "policy", "", "HITL policy name to evaluate the agent view against; omitted uses the configured default."))
+	ev := agentview.NewEvaluator(h.view, h.hitlFor(policyName), policyName)
+
+	annotated := make([]Entry, len(entries))
+	for i, e := range entries {
+		annotated[i] = Entry{Entry: e}
+	}
+	result, err := filter.Apply(r.Context(), annotated, ev)
+	if err != nil {
+		_ = apiframework.Error(w, r, err, apiframework.ListOperation)
+		return
+	}
+	_ = apiframework.Encode(w, r, http.StatusOK, result) // @response []localfileapi.Entry
 }
 
 func (h *handler) stat(w http.ResponseWriter, r *http.Request) {

@@ -1204,9 +1204,15 @@ const resources = {
         panel_title: 'Terminal',
         show_terminal: 'Terminal',
         toggle_label: 'Toggle terminal panel',
+        open_in_canvas: 'Open the terminal beside the chat',
         collapse: 'Collapse terminal',
         empty: 'No terminal output yet. Type ! followed by a command to run it here.',
         card_label: 'Terminal output',
+      },
+      // The secondary working area beside the chat (terminal today; files/diffs
+      // later) — surfaces open as canvas tabs.
+      canvas: {
+        close_tab: 'Close {{name}}',
       },
       backends: {
         section_title: 'Backends',
@@ -1682,6 +1688,8 @@ const resources = {
       acp_chat: {
         title: 'Chat',
         new_session: 'New session',
+        new_tab_label: 'New chat',
+        tab_close_label: 'Close tab: {{name}}',
         role_user: 'You',
         role_agent: 'Agent',
         latest_label: 'Latest',
@@ -1782,6 +1790,7 @@ const resources = {
         lines: 'lines',
         mention_menu_label: 'Workspace files',
         mention_loading: 'Loading…',
+        mention_preview_label: 'File preview',
       },
     },
   },
@@ -2589,9 +2598,13 @@ const resources = {
         panel_title: 'Terminal',
         show_terminal: 'Terminal',
         toggle_label: 'Terminal-Bereich umschalten',
+        open_in_canvas: 'Terminal neben dem Chat öffnen',
         collapse: 'Terminal einklappen',
         empty: 'Noch keine Terminal-Ausgabe. Geben Sie ! gefolgt von einem Befehl ein, um ihn hier auszuführen.',
         card_label: 'Terminal-Ausgabe',
+      },
+      canvas: {
+        close_tab: '{{name}} schließen',
       },
       backends: {
         section_title: 'Backends',
@@ -3077,6 +3090,8 @@ const resources = {
       acp_chat: {
         title: 'Chat',
         new_session: 'Neue Sitzung',
+        new_tab_label: 'Neuer Chat',
+        tab_close_label: 'Tab schließen: {{name}}',
         role_user: 'Du',
         role_agent: 'Agent',
         latest_label: 'Neueste',
@@ -3170,6 +3185,7 @@ const resources = {
         lines: 'Zeilen',
         mention_menu_label: 'Arbeitsbereich-Dateien',
         mention_loading: 'Wird geladen…',
+        mention_preview_label: 'Dateivorschau',
       },
     },
   },

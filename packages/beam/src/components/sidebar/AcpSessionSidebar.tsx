@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, useMatch, useNavigate } from 'react-router-dom';
 import { useAcpWorkspace } from '../../hooks/useAcpWorkspace';
 import type { SessionInfo } from '../../lib/acp';
+import { meaningfulTitle } from '../../pages/chat/lib/sessionLabel';
 
 /**
  * App-shell rail for the ACP workspace (Stage 4 replaced the console/REST
@@ -11,23 +12,13 @@ import type { SessionInfo } from '../../lib/acp';
  * mounts both this and `pages/chat/AcpChatPage.tsx` under the same hoisted
  * `AcpWorkspaceProvider` so they share one connection and roster). The old
  * rail and the console/legacy chat pages were deleted in Stage 5.
+ *
+ * Workspace-tabs Slice 2: clicking a session no longer just navigates a
+ * single-view page — the `/chat/:sessionId` route now opens/focuses that
+ * session's TAB (the tab-model reconciles the param; see `WorkspaceTabs`), so
+ * the rail keeps driving via `<Link to="/chat/:id">` and several sessions stay
+ * open at once.
  */
-
-/**
- * `session/list` currently reports `Title` as a copy of the session id
- * itself (see `acpsvc/session.go`'s `ListSessions` — ACP sessions have no
- * distinct display name yet), so a title that merely echoes the id carries no
- * information; fall back to a short-id label in that case exactly as if no
- * title had been sent at all. Forward-compatible: a future backend that sends
- * a real friendly title will just work. Returns `null` when there is no
- * meaningful title — the caller renders the i18n'd short-id fallback itself
- * (kept out of this function so it stays free of the `t()` dependency).
- */
-function meaningfulTitle(session: SessionInfo): string | null {
-  const title = session.title?.trim();
-  if (title && title !== session.sessionId) return title;
-  return null;
-}
 
 function relativeTimeLabel(updatedAt: string | undefined, locale: string, justNowLabel: string): string | null {
   if (!updatedAt) return null;
@@ -53,12 +44,14 @@ export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =>
   const navigate = useNavigate();
   const match = useMatch('/chat/:sessionId');
   const activeSessionId = match?.params.sessionId;
-  const { workspace, deleteSession, clearActiveSession } = useAcpWorkspace();
+  const { workspace, deleteSession } = useAcpWorkspace();
 
   const handleNewSession = () => {
-    // Clear at CLICK time, before navigating — see
-    // acpWorkspaceController.ts's clearActiveSession() doc comment (BUG 1).
-    clearActiveSession();
+    // Just navigate to bare /chat — the tab-model's param sync opens a fresh
+    // empty tab via `focusEmptyTab` (which, unlike the old `clearActiveSession`,
+    // does NOT tear the focused session down), so opening a new chat leaves any
+    // already-open session tabs live in the background. The next lazy
+    // `newSession()` still mints a genuinely new session (focus is null).
     navigate('/chat');
     setIsOpen(false);
   };

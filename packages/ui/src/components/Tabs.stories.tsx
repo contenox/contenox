@@ -157,6 +157,36 @@ export const WithDisabledTab: Story = {
   },
 };
 
+export const Closable: Story = {
+  render: () => {
+    const [tabs, setTabs] = useState<Tab[]>([
+      { id: "one", label: "Session 1a2b", closable: true, closeLabel: "Close Session 1a2b" },
+      { id: "two", label: "Session 3c4d", closable: true, closeLabel: "Close Session 3c4d" },
+      { id: "three", label: "Session 5e6f", closable: true, closeLabel: "Close Session 5e6f" },
+    ]);
+    const [active, setActive] = useState<string>("one");
+    const close = (id: string) => {
+      setTabs((prev) => {
+        const next = prev.filter((t) => t.id !== id);
+        if (id === active && next.length > 0) setActive(next[0].id);
+        return next;
+      });
+    };
+    return (
+      <div className="flex flex-col gap-4">
+        <Tabs tabs={tabs} activeTab={active} onTabChange={setActive} onClose={close} />
+        <TabPanels>
+          {tabs.map((t) => (
+            <TabPanel key={t.id} tabId={t.id} activeTab={active}>
+              <P>Content for {String(t.label)}. Click the ✕ to close it without switching.</P>
+            </TabPanel>
+          ))}
+        </TabPanels>
+      </div>
+    );
+  },
+};
+
 export const LazyPanels: Story = {
   render: () => {
     const [active, setActive] = useState<string>("a");

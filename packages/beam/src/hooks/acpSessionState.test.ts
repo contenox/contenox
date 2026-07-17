@@ -410,3 +410,26 @@ describe('acpSessionReducer: streaming only marked during an active prompt turn 
     expect(state.messages['replay-1']).toMatchObject({ text: 'Hello!', thinking: 'thinking', streaming: false, thinkingStreaming: false });
   });
 });
+
+describe('acpSessionReducer: purity underpins per-session multiplexing', () => {
+  // The multiplexing layer (acpWorkspaceState.ts's acpSessionsReducer) keeps one
+  // independent state value per open session and feeds each session's traffic
+  // through THIS reducer against its own value. That only stays isolated because
+  // the reducer is pure — it never mutates the input state — so a chunk for
+  // session A can never leak into session B's separately-held value.
+  it('does not mutate the input state (each dispatch returns a fresh value, leaving prior slices intact)', () => {
+    const a0 = run({ type: 'session_reset', sessionId: 'sess-a' });
+    const b0 = run({ type: 'session_reset', sessionId: 'sess-b' });
+
+    const a1 = acpSessionReducer(a0, { type: 'message_chunk', id: 'm-a', text: 'for A' });
+
+    // The two sessions' values are wholly independent: advancing A left B's
+    // held value — and A's own prior snapshot — untouched.
+    expect(a1).not.toBe(a0);
+    expect(a0.messages['m-a']).toBeUndefined(); // prior A snapshot not mutated
+    expect(b0.messages['m-a']).toBeUndefined(); // B never saw A's chunk
+    expect(a1.messages['m-a']).toMatchObject({ text: 'for A' });
+    expect(a1.sessionId).toBe('sess-a');
+    expect(b0.sessionId).toBe('sess-b');
+  });
+});

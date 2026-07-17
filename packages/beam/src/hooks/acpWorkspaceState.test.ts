@@ -1,8 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { acpWorkspaceReducer, initialAcpWorkspaceState, type AcpWorkspaceState } from './acpWorkspaceState';
+import {
+  acpSessionsReducer,
+  acpWorkspaceReducer,
+  EMPTY_SESSION_KEY,
+  initialAcpSessionsState,
+  initialAcpWorkspaceState,
+  selectFocusedSession,
+  selectOpenSessionIds,
+  type AcpSessionsState,
+  type AcpWorkspaceState,
+} from './acpWorkspaceState';
 
 function run(...actions: Parameters<typeof acpWorkspaceReducer>[1][]): AcpWorkspaceState {
   return actions.reduce(acpWorkspaceReducer, initialAcpWorkspaceState);
+}
+
+function runSessions(...actions: Parameters<typeof acpSessionsReducer>[1][]): AcpSessionsState {
+  return actions.reduce(acpSessionsReducer, initialAcpSessionsState);
 }
 
 describe('acpWorkspaceReducer: connection status', () => {
@@ -120,5 +134,77 @@ describe('acpWorkspaceReducer: active session', () => {
     expect(state.activeSessionId).toBe('sess-1');
     state = acpWorkspaceReducer(state, { type: 'active_session_changed', sessionId: null });
     expect(state.activeSessionId).toBeNull();
+  });
+});
+
+describe('acpSessionsReducer: multiplexed per-session slices', () => {
+  it('routes each session_dispatch into its OWN slice, keyed by session id', () => {
+    const state = runSessions(
+      { type: 'session_dispatch', key: 'sess-a', action: { type: 'session_reset', sessionId: 'sess-a' } },
+      { type: 'session_dispatch', key: 'sess-b', action: { type: 'session_reset', sessionId: 'sess-b' } },
+      { type: 'session_dispatch', key: 'sess-a', action: { type: 'user_message_chunk', id: 'ua', text: 'to A' } },
+      { type: 'session_dispatch', key: 'sess-b', action: { type: 'user_message_chunk', id: 'ub', text: 'to B' } },
+    );
+
+    expect(state.slices['sess-a'].messages['ua']).toMatchObject({ text: 'to A' });
+    expect(state.slices['sess-b'].messages['ub']).toMatchObject({ text: 'to B' });
+    // Isolation: neither slice sees the other's message.
+    expect(state.slices['sess-a'].messages['ub']).toBeUndefined();
+    expect(state.slices['sess-b'].messages['ua']).toBeUndefined();
+  });
+
+  it('auto-creates a slice from the initial session state on first dispatch to an unknown key', () => {
+    const state = runSessions({ type: 'session_dispatch', key: 'sess-a', action: { type: 'plan', entries: [] } });
+    expect(state.slices['sess-a']).toBeDefined();
+    expect(state.slices['sess-a'].sessionId).toBeNull(); // no session_reset yet
+  });
+
+  it('session_closed drops exactly one slice and leaves the others intact', () => {
+    let state = runSessions(
+      { type: 'session_dispatch', key: 'sess-a', action: { type: 'session_reset', sessionId: 'sess-a' } },
+      { type: 'session_dispatch', key: 'sess-b', action: { type: 'session_reset', sessionId: 'sess-b' } },
+    );
+    state = acpSessionsReducer(state, { type: 'session_closed', key: 'sess-a' });
+    expect(state.slices['sess-a']).toBeUndefined();
+    expect(state.slices['sess-b']).toBeDefined();
+  });
+
+  it('session_closed for an unknown key is a no-op (returns the same reference)', () => {
+    const state = runSessions({ type: 'session_dispatch', key: 'sess-a', action: { type: 'session_reset', sessionId: 'sess-a' } });
+    expect(acpSessionsReducer(state, { type: 'session_closed', key: 'nope' })).toBe(state);
+  });
+
+  it('session_focused re-points which slice selectFocusedSession returns', () => {
+    let state = runSessions(
+      { type: 'session_dispatch', key: 'sess-a', action: { type: 'session_reset', sessionId: 'sess-a' } },
+      { type: 'session_dispatch', key: 'sess-b', action: { type: 'session_reset', sessionId: 'sess-b' } },
+      { type: 'session_focused', key: 'sess-a' },
+    );
+    expect(selectFocusedSession(state).sessionId).toBe('sess-a');
+    state = acpSessionsReducer(state, { type: 'session_focused', key: 'sess-b' });
+    expect(selectFocusedSession(state).sessionId).toBe('sess-b');
+  });
+
+  it('selectFocusedSession returns the shared initial state (session-less) for the empty-chat key with no slice', () => {
+    const focused = selectFocusedSession(initialAcpSessionsState);
+    expect(initialAcpSessionsState.focusedKey).toBe(EMPTY_SESSION_KEY);
+    expect(focused.sessionId).toBeNull();
+    // A failed lazy newSession() surfaces its error on the empty-chat slice,
+    // which the empty-chat view (focused on EMPTY_SESSION_KEY) then renders.
+    const withError = acpSessionsReducer(initialAcpSessionsState, {
+      type: 'session_dispatch',
+      key: EMPTY_SESSION_KEY,
+      action: { type: 'prompt_error', message: 'model is broken' },
+    });
+    expect(selectFocusedSession(withError).error).toBe('model is broken');
+  });
+
+  it('selectOpenSessionIds lists open sessions and excludes the reserved empty-chat key', () => {
+    const state = runSessions(
+      { type: 'session_dispatch', key: 'sess-a', action: { type: 'session_reset', sessionId: 'sess-a' } },
+      { type: 'session_dispatch', key: EMPTY_SESSION_KEY, action: { type: 'prompt_error', message: 'x' } },
+      { type: 'session_dispatch', key: 'sess-b', action: { type: 'session_reset', sessionId: 'sess-b' } },
+    );
+    expect(selectOpenSessionIds(state).sort()).toEqual(['sess-a', 'sess-b']);
   });
 });

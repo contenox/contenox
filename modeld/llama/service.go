@@ -151,8 +151,8 @@ func (s *Service) resolveSession(req transport.OpenSessionRequest) (sessionPlan,
 	cfg := plan.config
 	info := plan.info
 	if info.EffectiveContext <= 0 && info.Reason != "" {
-		return sessionPlan{}, fmt.Errorf("%w: model %q cannot fit in the selected %s memory budget (%s)",
-			transport.ErrContextOverflow, req.ModelName, info.DeviceKind, info.Reason)
+		return sessionPlan{}, fmt.Errorf("%w: model %q %s — use a smaller model or quant, or free device memory (%s)",
+			transport.ErrContextOverflow, req.ModelName, budgetShortfall(info), info.Reason)
 	}
 	// Fail only when an accelerator is present but cannot fit even one layer.
 	// With no accelerator (e.g. a universal binary on a CPU-only host) GPU layers
@@ -162,14 +162,17 @@ func (s *Service) resolveSession(req transport.OpenSessionRequest) (sessionPlan,
 			transport.ErrContextOverflow, info.RequestedGpuLayers, info.DeviceKind, info.Reason)
 	}
 	if cfg.NumCtx <= 0 {
-		// Auto mode: modeld owns the window. describe() already shed GPU layers to
-		// reach the usable-context floor when it could; if the best achievable hot
-		// window is still below the floor, refuse loudly instead of opening a session
-		// too small to hold a prompt (which degrades into incoherent output).
+		// Auto mode: modeld owns the window at full offload (it never sheds weights
+		// to host RAM to buy context). If the window that fits alongside the weights
+		// is below the usable floor, refuse loudly instead of opening a session too
+		// small to hold a prompt (which degrades into incoherent output) or spilling
+		// layers to the CPU (which melts a box modeld is meant to run 24/7 on).
 		floor := effectiveMinHotContext(s.policy.MinHotContextTokens, info.ModelMaxContext)
 		if info.HotContextTokens < floor {
-			return sessionPlan{}, fmt.Errorf("%w: model %q fits only %d usable context tokens on the %s device after weights — below the %d-token minimum for a usable session; free device memory, use a smaller model, or lower CONTENOX_MODELD_MIN_HOT_CONTEXT",
-				transport.ErrContextOverflow, req.ModelName, info.HotContextTokens, info.DeviceKind, floor)
+			return sessionPlan{}, fmt.Errorf("%w: model %q fits only %d usable context tokens on the %s device (weights %s + overhead %s leave %s of a %s usable budget for KV) — below the %d-token minimum for a usable session; use a smaller model or quant, free device memory, or lower CONTENOX_MODELD_MIN_HOT_CONTEXT",
+				transport.ErrContextOverflow, req.ModelName, info.HotContextTokens, info.DeviceKind,
+				humanBytes(info.WeightsBytes), humanBytes(info.OverheadBytes),
+				humanBytes(kvRoomBytes(info)), humanBytes(info.UsableBytes), floor)
 		}
 		cfg.NumCtx = info.HotContextTokens
 		cfg.HotContextTokens = info.HotContextTokens
@@ -185,6 +188,49 @@ func (s *Service) resolveSession(req transport.OpenSessionRequest) (sessionPlan,
 	cfg.PlannerEffectiveContext = transport.ResolvePlannerEffectiveContext(cfg.PlannerEffectiveContext, cfg.NumCtx, info)
 	plan.config = cfg
 	return plan, nil
+}
+
+// budgetShortfall renders the memory arithmetic behind a no-spill refusal in
+// operator units: what the model needs on the device (weights + KV + runtime
+// overhead) versus the honest budget modeld will use after its device reserve.
+// modeld refuses rather than shedding weights to host RAM, so the caller pairs
+// this with the action that actually resolves it.
+func budgetShortfall(info transport.ModelInfo) string {
+	requiredKV := clampNonNegative(info.RequiredBytes - info.WeightsBytes - info.OverheadBytes)
+	return fmt.Sprintf("needs ~%s on the %s device (weights %s + KV %s + overhead %s) but only %s is usable there",
+		humanBytes(info.RequiredBytes), info.DeviceKind,
+		humanBytes(info.WeightsBytes), humanBytes(requiredKV), humanBytes(info.OverheadBytes),
+		humanBytes(info.UsableBytes))
+}
+
+// kvRoomBytes is how much of the usable device budget is left for KV cache once
+// weights and runtime overhead are placed. Never negative.
+func kvRoomBytes(info transport.ModelInfo) int64 {
+	return clampNonNegative(info.UsableBytes - info.WeightsBytes - info.OverheadBytes)
+}
+
+func clampNonNegative(n int64) int64 {
+	if n < 0 {
+		return 0
+	}
+	return n
+}
+
+// humanBytes formats a byte count in binary units for operator-facing messages.
+func humanBytes(n int64) string {
+	if n < 0 {
+		n = 0
+	}
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%dB", n)
+	}
+	div, exp := int64(unit), 0
+	for m := n / unit; m >= unit; m /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f%ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
 func applyDaemonEnvOverrides(cfg transport.Config) transport.Config {
@@ -271,10 +317,12 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 	if err != nil {
 		return transport.ModelInfo{}, err
 	}
-	// Guarantee a usable auto window: resolveGPULayersForBudget sheds GPU layers to
-	// keep at least this many hot tokens instead of spending all VRAM on weights and
-	// leaving a sub-usable KV window. Capped by the model's trained ceiling; an
-	// explicit negative policy disables the floor for operator diagnostics.
+	// The usable-context floor an auto session must clear: resolveSession refuses
+	// loudly when full offload cannot hold at least this many hot tokens, rather
+	// than opening a window too small to hold a prompt. Capped by the model's
+	// trained ceiling; an explicit negative policy disables the floor for operator
+	// diagnostics. (Under an explicit GPU-layer cap the floor also drives the
+	// walk-down in resolveGPULayersForBudget; auto mode never sheds.)
 	policy.MinHotContextTokens = effectiveMinHotContext(policy.MinHotContextTokens, params.ContextLength)
 	weights := fileSize(req.Path)
 	layerKV := llamaLayerKVProfile(params, cfg.KVCacheType)
@@ -290,7 +338,7 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 	if isAcceleratorSnapshot(st) {
 		cfg.NumGpuLayers = autoGpuLayerCeiling(explicitGpuLayers)
 		overhead = llamaGPUComputeReserveBytes(cfg)
-		resolvedGpuLayers = resolveGPULayersForBudget(cfg, params, layerKV, weights, kvBytes, overhead, st, policy)
+		resolvedGpuLayers = resolveGPULayersForBudget(explicitGpuLayers, cfg, params, layerKV, weights, kvBytes, overhead, st, policy)
 		cfg.NumGpuLayers = resolvedGpuLayers
 		weights = estimateLlamaGPUWeights(weights, params.BlockCount, cfg.NumGpuLayers)
 	} else {
@@ -480,7 +528,21 @@ func autoGpuLayerCeiling(explicit int) int {
 	return allGpuLayers
 }
 
-func resolveGPULayersForBudget(cfg transport.Config, params ggufParams, layerKV capacity.LayerKVProfile, weights, kvBytes, overhead int64, st capacity.DeviceSnapshot, policy capacity.Policy) int {
+// resolveGPULayersForBudget decides how many layers modeld offloads to the
+// accelerator. explicitGpuLayers is the operator's own cap (model profile or
+// CONTENOX_LLAMA_GPU_LAYERS), 0 when unset; cfg.NumGpuLayers carries the ceiling
+// modeld aims for (that cap, or the all-layers sentinel in auto mode).
+//
+// No-spill auto placement: when the operator pinned neither the GPU-layer count
+// (explicitGpuLayers <= 0) nor the context window (cfg.NumCtx <= 0), modeld
+// evaluates at FULL offload only and serves whatever context fits there. It does
+// NOT walk layers down to buy a bigger KV window, because that puts weights AND
+// their KV in host RAM — hybrid CPU inference that pegs the box modeld is meant to
+// be safe to run 24/7 on. If full offload cannot hold a usable window, the caller
+// refuses (see resolveSession) rather than degrading. Shedding layers to trade
+// speed for context stays available only as a deliberate operator override: an
+// explicit cap or an explicit num_ctx re-enables the walk-down below.
+func resolveGPULayersForBudget(explicitGpuLayers int, cfg transport.Config, params ggufParams, layerKV capacity.LayerKVProfile, weights, kvBytes, overhead int64, st capacity.DeviceSnapshot, policy capacity.Policy) int {
 	if cfg.NumGpuLayers <= 0 {
 		return 0
 	}
@@ -492,6 +554,13 @@ func resolveGPULayersForBudget(cfg transport.Config, params ggufParams, layerKV 
 		maxSlots = params.BlockCount + 1 // output layer
 	}
 	requestedSlots := min(cfg.NumGpuLayers, maxSlots)
+	if explicitGpuLayers <= 0 && cfg.NumCtx <= 0 {
+		// Auto mode: full offload, no walk-down. Report all layers that fit the
+		// model even when the resulting context resolves to ~0 — the full-offload
+		// placement is the truthful one, and the caller turns a ~0 window into an
+		// honest refusal instead of a partial-CPU spill.
+		return requestedSlots
+	}
 	fallbackSlots := 0
 	for slots := requestedSlots; slots >= 1; slots-- {
 		modelBytes := estimateLlamaGPUWeights(weights, params.BlockCount, slots)

@@ -3,19 +3,31 @@ import type { SessionConfigOptionValue } from '../lib/acp';
 import type { WorkspaceFileRef } from '../pages/chat/lib/mentions';
 import { useAcpWorkspaceContext } from '../lib/acp/AcpWorkspaceProvider';
 import type { AcpSessionState } from './acpSessionState';
-import type { AcpWorkspaceState } from './acpWorkspaceState';
+import { selectOpenSessionIds, type AcpSessionsState, type AcpWorkspaceState } from './acpWorkspaceState';
 
 export interface UseAcpWorkspaceResult {
   /** Connection status + `session/list` roster — see `acpWorkspaceState.ts`. */
   workspace: AcpWorkspaceState;
-  /** The currently-open session's live timeline — see `acpSessionState.ts`. Reset whenever `workspace.activeSessionId` changes. */
+  /** The FOCUSED session's live timeline — see `acpSessionState.ts`. Follows `workspace.activeSessionId`. */
   session: AcpSessionState;
+  /** The full multiplexed sessions store: a live slice per open session + the focused pointer (workspace-tabs Slice 1). Slice 2's tab UI reads open sessions/slices from here. */
+  sessions: AcpSessionsState;
+  /** Ids of all currently-open (subscribed, live) sessions — several can be open at once (Slice 2). */
+  openSessionIds: string[];
   /** Pages `session/list` to completion and replaces the roster. */
   refreshSessions: () => void;
   /** Lazy-creation primitive (D5): creates a session, subscribes to it, and makes it active. Call this on first prompt submit, not on mount — see acpWorkspaceController.ts. `cwd` sets the session's workspace root (the user's pre-session pick). */
   newSession: (cwd?: string) => Promise<string>;
-  /** Switches the open session (closing whichever was open). */
+  /** Single-view switch: opens `id` and closes whichever session was focused. */
   openSession: (id: string) => void;
+  /** Multi-session (Slice 2): opens/focuses `id` as a tab WITHOUT closing others — several sessions stay open and live. See `acpWorkspaceController.ts`'s `openSessionTab()`. */
+  openSessionTab: (id: string) => Promise<void>;
+  /** Multi-session (Slice 2): closes `id`'s tab (`session/close`, not delete) and drops its slice; other tabs stay live. See `closeSessionTab()`. */
+  closeSessionTab: (id: string) => void;
+  /** Multi-session (Slice 2): re-points the rendered session to an already-open `id`, no wire traffic. See `focusSession()`. */
+  focusSession: (id: string) => void;
+  /** Multi-session (Slice 2): re-points focus to the empty/new-chat surface WITHOUT closing any open session. See `focusEmptyTab()`. */
+  focusEmptyTab: () => void;
   deleteSession: (id: string) => void;
   /** Client-side reset of "which session is open" — no server-side deletion. Call before navigating to bare `/chat` from any "new session" affordance so the next lazy `newSession()` call mints a genuinely new session. See acpWorkspaceController.ts's doc comment. */
   clearActiveSession: () => void;
@@ -46,11 +58,13 @@ export interface UseAcpWorkspaceResult {
  * `components/ProtectedRoute.tsx`.
  */
 export function useAcpWorkspace(): UseAcpWorkspaceResult {
-  const { workspace, session, controller } = useAcpWorkspaceContext();
+  const { workspace, session, sessions, controller } = useAcpWorkspaceContext();
 
   useEffect(() => {
     void controller.connect();
   }, [controller]);
+
+  const openSessionIds = selectOpenSessionIds(sessions);
 
   const refreshSessions = useCallback(() => {
     void controller.refreshSessions();
@@ -64,6 +78,26 @@ export function useAcpWorkspace(): UseAcpWorkspaceResult {
     },
     [controller],
   );
+
+  const openSessionTab = useCallback((id: string) => controller.openSessionTab(id), [controller]);
+
+  const closeSessionTab = useCallback(
+    (id: string) => {
+      controller.closeSessionTab(id);
+    },
+    [controller],
+  );
+
+  const focusSession = useCallback(
+    (id: string) => {
+      controller.focusSession(id);
+    },
+    [controller],
+  );
+
+  const focusEmptyTab = useCallback(() => {
+    controller.focusEmptyTab();
+  }, [controller]);
 
   const deleteSession = useCallback(
     (id: string) => {
@@ -119,9 +153,15 @@ export function useAcpWorkspace(): UseAcpWorkspaceResult {
   return {
     workspace,
     session,
+    sessions,
+    openSessionIds,
     refreshSessions,
     newSession,
     openSession,
+    openSessionTab,
+    closeSessionTab,
+    focusSession,
+    focusEmptyTab,
     deleteSession,
     clearActiveSession,
     sendPrompt,

@@ -18,7 +18,9 @@ import {
   type WorkspaceFileRef,
 } from '../lib/mentions';
 import type { DirCache } from '../lib/workspaceTree';
+import type { FilePreviewState } from '../lib/filePreview';
 import { clampIndex } from '../lib/slashMenuState';
+import { MentionFilePreview } from './MentionFilePreview';
 
 /** Candidates shown per scope are capped for render/perf; the leaf filter narrows this in practice. */
 const MAX_ENTRIES = 50;
@@ -168,62 +170,75 @@ export interface MentionMenuProps {
   activeIndex: number;
   onPick: (entry: MentionCandidate) => void;
   onHoverIndex?: (index: number) => void;
+  /** Live preview of the highlighted FILE, rendered as the popover's top section (hidden for directories). */
+  preview: FilePreviewState;
 }
 
 /**
  * The `@`-mention browser popover — pure presentation, anchored by the caller
- * (`position: relative` wrapper) above the composer. Folders carry a folder
- * glyph and a drill chevron; files carry a file glyph. A breadcrumb header
- * shows the current directory when browsing below the root.
+ * (`position: relative` wrapper) above the composer. It is an
+ * absolutely-positioned overlay (`bottom-full`), so everything it holds floats
+ * ABOVE the composer without affecting page layout: the live file preview lives
+ * as the popover's TOP section (stacked above the list) precisely so navigating
+ * files never reflows the transcript/composer. The whole popover is capped
+ * (`max-h-[60vh]`) and each region (preview, list) scrolls internally, so it can
+ * never exceed the viewport or push the composer off-screen. Folders carry a
+ * folder glyph and a drill chevron; files carry a file glyph. A breadcrumb
+ * header shows the current directory when browsing below the root.
  */
-export function MentionMenu({ entries, scope, loading, activeIndex, onPick, onHoverIndex }: MentionMenuProps) {
+export function MentionMenu({ entries, scope, loading, activeIndex, onPick, onHoverIndex, preview }: MentionMenuProps) {
   const { t } = useTranslation();
 
   return (
     <div
-      role="listbox"
-      aria-label={t('workspace.mention_menu_label')}
-      className="border-surface-200 bg-surface-50 dark:border-dark-surface-600 dark:bg-dark-surface-100 absolute bottom-full left-0 z-20 mb-2 max-h-64 w-full overflow-auto rounded-lg border shadow-lg sm:w-96"
+      className="border-surface-200 bg-surface-50 dark:border-dark-surface-600 dark:bg-dark-surface-100 absolute bottom-full left-0 z-20 mb-2 flex max-h-[60vh] w-full min-h-0 flex-col overflow-hidden rounded-lg border shadow-lg sm:w-96"
     >
-      {scope !== '' && (
-        <div className="border-surface-200 dark:border-dark-surface-600 text-text-muted dark:text-dark-text-muted sticky top-0 border-b bg-inherit px-3 py-1.5 font-mono text-xs">
-          {scope}/
-        </div>
-      )}
-      {loading && entries.length === 0 ? (
-        <div className="text-text-muted dark:text-dark-text-muted px-3 py-2 text-xs">{t('workspace.mention_loading')}</div>
-      ) : (
-        entries.map((entry, i) => (
-          <button
-            key={entry.path}
-            type="button"
-            role="option"
-            aria-selected={i === activeIndex}
-            onMouseEnter={() => onHoverIndex?.(i)}
-            // mousedown (not click) + preventDefault so the textarea never
-            // blurs before the pick registers.
-            onMouseDown={e => {
-              e.preventDefault();
-              onPick(entry);
-            }}
-            className={cn(
-              'flex w-full items-center gap-2 px-3 py-2 text-left text-sm',
-              i === activeIndex ? 'bg-primary-50 dark:bg-dark-primary-900' : 'hover:bg-surface-100 dark:hover:bg-dark-surface-300',
-            )}
-          >
-            {entry.isDirectory ? (
-              <Folder className="text-primary-500 dark:text-dark-primary h-3.5 w-3.5 shrink-0" aria-hidden />
-            ) : (
-              <FileIcon className="text-text-muted dark:text-dark-text-muted h-3.5 w-3.5 shrink-0" aria-hidden />
-            )}
-            <span className="text-text dark:text-dark-text min-w-0 flex-1 truncate font-mono text-xs font-medium">
-              {entry.name}
-              {entry.isDirectory && '/'}
-            </span>
-            {entry.isDirectory && <ChevronRight className="text-text-muted dark:text-dark-text-muted h-3.5 w-3.5 shrink-0" aria-hidden />}
-          </button>
-        ))
-      )}
+      <MentionFilePreview state={preview} />
+      <div
+        role="listbox"
+        aria-label={t('workspace.mention_menu_label')}
+        className="min-h-0 flex-1 overflow-auto"
+      >
+        {scope !== '' && (
+          <div className="border-surface-200 dark:border-dark-surface-600 text-text-muted dark:text-dark-text-muted sticky top-0 border-b bg-inherit px-3 py-1.5 font-mono text-xs">
+            {scope}/
+          </div>
+        )}
+        {loading && entries.length === 0 ? (
+          <div className="text-text-muted dark:text-dark-text-muted px-3 py-2 text-xs">{t('workspace.mention_loading')}</div>
+        ) : (
+          entries.map((entry, i) => (
+            <button
+              key={entry.path}
+              type="button"
+              role="option"
+              aria-selected={i === activeIndex}
+              onMouseEnter={() => onHoverIndex?.(i)}
+              // mousedown (not click) + preventDefault so the textarea never
+              // blurs before the pick registers.
+              onMouseDown={e => {
+                e.preventDefault();
+                onPick(entry);
+              }}
+              className={cn(
+                'flex w-full items-center gap-2 px-3 py-2 text-left text-sm',
+                i === activeIndex ? 'bg-primary-50 dark:bg-dark-primary-900' : 'hover:bg-surface-100 dark:hover:bg-dark-surface-300',
+              )}
+            >
+              {entry.isDirectory ? (
+                <Folder className="text-primary-500 dark:text-dark-primary h-3.5 w-3.5 shrink-0" aria-hidden />
+              ) : (
+                <FileIcon className="text-text-muted dark:text-dark-text-muted h-3.5 w-3.5 shrink-0" aria-hidden />
+              )}
+              <span className="text-text dark:text-dark-text min-w-0 flex-1 truncate font-mono text-xs font-medium">
+                {entry.name}
+                {entry.isDirectory && '/'}
+              </span>
+              {entry.isDirectory && <ChevronRight className="text-text-muted dark:text-dark-text-muted h-3.5 w-3.5 shrink-0" aria-hidden />}
+            </button>
+          ))
+        )}
+      </div>
     </div>
   );
 }

@@ -331,6 +331,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 		ProjectRoot:          workspaceRoot,
 		ContenoxDir:          contenoxDir,
 		WorkspaceRoots:       workspaceFactory,
+		// Feed the /files `agent` view filter the same HITL policy source serve
+		// uses so its verdicts match the live agent's gates. Fallback policy is ""
+		// (the service's built-in default), mirroring hitlSvc above.
+		HITLPolicySource:      hitlSource,
+		HITLDefaultPolicyName: "",
 		Defaults: stateservice.RuntimeDefaults{
 			ChainRef:    firstNonEmptyStr(opts.EffectiveChain, "default-chain.json"),
 			Model:       opts.EffectiveDefaultModel,
