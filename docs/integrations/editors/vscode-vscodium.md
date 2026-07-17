@@ -99,21 +99,19 @@ Open a trusted workspace, then run these commands from the Command Palette:
 
 ```text
 Contenox: Run Setup
-Contenox: Restart Bridge
+Contenox: Restart Runtime
 Contenox: Show Status
 Contenox: Open Chat
 ```
 
 The setup command configures the local Contenox state and model defaults. The
-bridge command restarts the bundled `contenox vscode-agent --stdio` process. The
+restart command restarts the bundled `contenox vscode-agent --stdio` process. The
 status command confirms whether the runtime sees a provider and model.
 
-You can also use the native chat participant:
-
-```text
-@contenox /doctor
-@contenox hello
-```
+Contenox also registers as a `contenox` vendor in VS Code's native language model
+chat provider picker, so it appears alongside other model vendors when you switch
+models in Copilot Chat. To check runtime health from the Command Palette, run
+`Contenox: Doctor`.
 
 ---
 

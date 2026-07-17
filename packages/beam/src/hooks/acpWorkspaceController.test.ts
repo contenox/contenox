@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Transport } from '../lib/acp';
 import type { AcpSessionAction, AcpSessionState } from './acpSessionState';
-import { createAcpWorkspaceController, type AcpWorkspaceController } from './acpWorkspaceController';
+import {
+  createAcpWorkspaceController,
+  PROMPT_STALL_TIMEOUT_MS,
+  type AcpWorkspaceController,
+} from './acpWorkspaceController';
 import {
   acpSessionsReducer,
   acpWorkspaceReducer,
@@ -741,6 +745,69 @@ describe('acpWorkspaceController: sendPrompt()', () => {
   });
 });
 
+describe('acpWorkspaceController: dead-turn watchdog (never end silently-dead)', () => {
+  it('surfaces a turn that dies with NO terminal event (no stopReason, no error, no close) as a failed turn', async () => {
+    const h = setup();
+    await connectReady(h);
+    await createSession(h, 'sess-a');
+    vi.useFakeTimers();
+
+    h.controller.sendPrompt('go');
+    expect(h.sessStore.state.isPrompting).toBe(true);
+
+    // The server never responds and the socket never closes — a silent stall.
+    await vi.advanceTimersByTimeAsync(PROMPT_STALL_TIMEOUT_MS);
+
+    expect(h.sessStore.state.isPrompting).toBe(false);
+    expect(h.sessStore.state.error).toContain('stopped responding');
+    // Anchored in the transcript, not just the transient banner.
+    expect(h.sessStore.state.items.some(it => it.kind === 'error')).toBe(true);
+  });
+
+  it('a slow-but-alive turn keeps resetting the watchdog — streamed activity prevents a false stall', async () => {
+    const h = setup();
+    await connectReady(h);
+    await createSession(h, 'sess-a');
+    vi.useFakeTimers();
+
+    h.controller.sendPrompt('go');
+    const req = h.transports[0].sent.filter(f => f.method === 'session/prompt').at(-1)!;
+
+    // Two activity bursts, each just under the timeout — total elapsed exceeds
+    // one window, but the turn never goes silent for a whole window.
+    await vi.advanceTimersByTimeAsync(PROMPT_STALL_TIMEOUT_MS - 1000);
+    feedAgentChunk(h.transports[0], 'sess-a', 'm1', 'still working');
+    await vi.advanceTimersByTimeAsync(PROMPT_STALL_TIMEOUT_MS - 1000);
+    expect(h.sessStore.state.isPrompting).toBe(true);
+    expect(h.sessStore.state.error).toBeNull();
+
+    // A real terminal event still settles it cleanly (and disarms the watchdog).
+    h.transports[0].feed({ jsonrpc: '2.0', id: req.id, result: { stopReason: 'end_turn' } });
+    await vi.advanceTimersByTimeAsync(PROMPT_STALL_TIMEOUT_MS);
+    expect(h.sessStore.state.isPrompting).toBe(false);
+    expect(h.sessStore.state.stopReason).toBe('end_turn');
+    expect(h.sessStore.state.error).toBeNull();
+  });
+
+  it('a normal settle disarms the watchdog — it never fires afterwards', async () => {
+    const h = setup();
+    await connectReady(h);
+    await createSession(h, 'sess-a');
+    vi.useFakeTimers();
+
+    h.controller.sendPrompt('go');
+    const req = h.transports[0].sent.filter(f => f.method === 'session/prompt').at(-1)!;
+    h.transports[0].feed({ jsonrpc: '2.0', id: req.id, result: { stopReason: 'end_turn' } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.sessStore.state.stopReason).toBe('end_turn');
+
+    // Long after settling, no spurious stall error appears.
+    await vi.advanceTimersByTimeAsync(PROMPT_STALL_TIMEOUT_MS * 2);
+    expect(h.sessStore.state.error).toBeNull();
+    expect(h.sessStore.state.items.some(it => it.kind === 'error')).toBe(false);
+  });
+});
+
 describe('acpWorkspaceController: refreshSessions()', () => {
   it('re-pages session/list to completion and replaces the roster', async () => {
     const h = setup();
@@ -1292,5 +1359,87 @@ describe('acpWorkspaceController: multiplexing (workspace-tabs Slice 1)', () => 
     expect(h.sliceOf('sess-a')!.messages['a2']).toMatchObject({ text: 'A after' });
     expect(h.sliceOf('sess-b')!.messages['b2']).toMatchObject({ text: 'B after' });
     expect(h.sliceOf('sess-a')!.messages['b2']).toBeUndefined(); // still isolated
+  });
+});
+
+describe('acpWorkspaceController: session_info_update-derived title (tab-strip/sidebar pinning)', () => {
+  // Pins the exact data both `AcpSessionSidebar` and `WorkspaceTabs`'s
+  // `sessionLabelFor` read: `workspace.sessions` — see acpWorkspaceState.ts's
+  // `session_upserted` merge and sessionLabel.ts's `meaningfulTitle`. Both
+  // consumers derive their label from this SAME roster entry, so pinning the
+  // roster's post-push shape pins their displayed label too.
+  it('a title pushed via session_info_update lands on the roster entry for that session (not the raw-id fallback)', async () => {
+    const h = setup();
+    await connectReady(h);
+    await createSession(h, 'sess-a');
+
+    h.transports[0].feed({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess-a',
+        update: { sessionUpdate: 'session_info_update', title: 'Read README.md, then update its title' },
+      },
+    });
+    await flushMicrotasks();
+
+    const entry = h.wsStore.state.sessions.find(s => s.sessionId === 'sess-a');
+    expect(entry?.title).toBe('Read README.md, then update its title');
+    // The derivation both the sidebar and the tab strip apply
+    // (`meaningfulTitle`): a title distinct from the raw id IS meaningful, so
+    // neither ever falls back to rendering the short id.
+    expect(entry?.title).not.toBe(entry?.sessionId);
+  });
+
+  it('a roster refresh (session/list, e.g. after a reconnect) does not regress an already-known title back to titleless', async () => {
+    const h = setup();
+    await connectReady(h);
+    await createSession(h, 'sess-a');
+
+    h.transports[0].feed({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess-a',
+        update: { sessionUpdate: 'session_info_update', title: 'Read README.md, then update its title' },
+      },
+    });
+    await flushMicrotasks();
+    expect(h.wsStore.state.sessions.find(s => s.sessionId === 'sess-a')?.title).toBe(
+      'Read README.md, then update its title',
+    );
+
+    // `refreshSessions()` (called automatically after every reconnect, see
+    // attemptReconnect()) re-pages session/list to completion and replaces the
+    // roster. The server's OWN listing index can lag behind the title we
+    // already learned live — its row for this session still has none.
+    const p = h.controller.refreshSessions();
+    await flushMicrotasks();
+    const req = h.transports[0].lastSent();
+    h.transports[0].feed({ jsonrpc: '2.0', id: req.id, result: { sessions: [{ sessionId: 'sess-a' }] } });
+    await p;
+
+    // A same-membership refresh must not undo a title already known fresher —
+    // see acpWorkspaceState.ts's `sessions_replaced` merge (mirrors
+    // `session_upserted`'s `incoming ?? existing` rule instead of a bare replace).
+    expect(h.wsStore.state.sessions.find(s => s.sessionId === 'sess-a')?.title).toBe(
+      'Read README.md, then update its title',
+    );
+  });
+
+  it('a roster refresh still drops a session genuinely absent from the new session/list snapshot', async () => {
+    const h = setup();
+    await connectReady(h);
+    await createSession(h, 'sess-a');
+
+    const p = h.controller.refreshSessions();
+    await flushMicrotasks();
+    const req = h.transports[0].lastSent();
+    h.transports[0].feed({ jsonrpc: '2.0', id: req.id, result: { sessions: [] } });
+    await p;
+
+    // Membership still comes from the server: merging fields must not resurrect
+    // a session the server no longer lists.
+    expect(h.wsStore.state.sessions.find(s => s.sessionId === 'sess-a')).toBeUndefined();
   });
 });

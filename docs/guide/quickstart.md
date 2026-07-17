@@ -37,7 +37,7 @@ Run this once in the project directory you want Contenox to work in:
 contenox init
 ```
 
-This creates the workspace marker, writes the default chain and HITL policy presets, and ensures the built-in `local` backend exists.
+This creates the workspace marker, writes the default chain and HITL policy presets, and registers the local `llama` and `openvino` inference backends (both served by the `modeld` daemon).
 
 ---
 
@@ -63,7 +63,7 @@ unload the resident model:
 
 ![Beam's modeld console: pick a local model, load it into the GPU slot, watch it go resident, unload it](/modeld-console.gif)
 
-On a fresh install, the first pulled model becomes `default-model`, and `contenox init` sets `default-provider` to `local` when no provider was already configured.
+On a fresh install, the first pulled model becomes `default-model`, and `contenox init` sets `default-provider` to `llama` when no provider was already configured.
 
 Run your first prompt:
 
@@ -73,7 +73,8 @@ contenox "hello, what can you do?"
 
 ![contenox backend list showing local and hosted providers, then a first chat on a local model](/quickstart.gif)
 
-For a persistent chat session:
+Chat is always session-backed — history persists across invocations automatically.
+Pass `-e` to compose your message in `$EDITOR` instead of on the command line:
 
 ```bash
 contenox chat -e

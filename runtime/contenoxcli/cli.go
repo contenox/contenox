@@ -348,6 +348,10 @@ Use --force to overwrite existing files, or --update to refresh unchanged defaul
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print the contenox CLI version",
+	Long: `Print the contenox CLI version string.
+
+This is the subcommand form of 'contenox --version' and exists so that typing
+'contenox version' is not mistaken for chat input by the default run command.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("%s version %s\n", cmd.Root().Name(), cmd.Root().Version)
 	},

@@ -185,7 +185,10 @@ Examples:
 var mcpListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all registered MCP servers.",
-	Args:  cobra.NoArgs,
+	Long: `List every registered MCP server as a table of name, transport, and target.
+The target column shows the command for stdio servers and the URL for sse/http
+servers. If none are registered, prints a hint to run 'contenox mcp add'.`,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := libtracker.WithNewRequestID(context.Background())
 		db, svc, err := openMCPService(cmd)
@@ -220,7 +223,10 @@ var mcpListCmd = &cobra.Command{
 var mcpShowCmd = &cobra.Command{
 	Use:   "show <name>",
 	Short: "Show details for an MCP server.",
-	Args:  cobra.ExactArgs(1),
+	Long: `Look up an MCP server by name and print its full record as indented JSON.
+Secret values are never shown: the auth token is redacted, and header and
+injected-param values are masked while their keys remain visible.`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := libtracker.WithNewRequestID(context.Background())
 		name := args[0]
@@ -265,7 +271,10 @@ var mcpRemoveCmd = &cobra.Command{
 	Use:     "remove <name>",
 	Aliases: []string{"rm"},
 	Short:   "Remove a registered MCP server.",
-	Args:    cobra.ExactArgs(1),
+	Long: `Delete an MCP server by name from the local database. This removes only the
+local registration and its stored credentials; it does not affect the remote
+server or any local process it would have spawned.`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := libtracker.WithNewRequestID(context.Background())
 		name := args[0]
@@ -304,7 +313,11 @@ func openMCPService(cmd *cobra.Command) (libdb.DBManager, mcpserverservice.Servi
 var mcpUpdateCmd = &cobra.Command{
 	Use:   "update <name>",
 	Short: "Update an existing MCP server registration.",
-	Args:  cobra.ExactArgs(1),
+	Long: `Modify a registered MCP server's timeout, auth, headers, or injected params.
+Only flags you explicitly pass are changed; all other fields are left as-is.
+The --header and --inject flags replace the entire existing set for that field
+rather than merging into it.`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := libtracker.WithNewRequestID(context.Background())
 		name := args[0]

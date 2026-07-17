@@ -111,22 +111,33 @@ Examples:
 var toolsListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all registered remote tool providers.",
-	Args:  cobra.NoArgs,
-	RunE:  runToolsList,
+	Long: `List every registered remote tool provider as a table of name, endpoint URL,
+and request timeout. If none are registered, prints a hint to run
+'contenox tools add'.`,
+	Args: cobra.NoArgs,
+	RunE: runToolsList,
 }
 
 var toolsShowCmd = &cobra.Command{
 	Use:   "show <name>",
 	Short: "Show details and available tools for a remote tool provider.",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runToolsShow,
+	Long: `Print a provider's stored configuration — URL, spec source, timeout, TLS and
+auth settings, and the keys (not values) of any headers or injected params —
+then probe the live endpoint and list the tools it currently exposes. Header
+and inject values are never shown. If the endpoint is unreachable, the tool
+list is reported as unavailable.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runToolsShow,
 }
 
 var toolsRemoveCmd = &cobra.Command{
 	Use:   "remove <name>",
 	Short: "Remove a registered remote tool provider.",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runToolsRemove,
+	Long: `Delete a remote tool provider by name from the local database. This removes
+only the local registration; it does not affect the external service. Chains
+referencing the provider will no longer resolve its tools.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runToolsRemove,
 }
 
 var toolsUpdateCmd = &cobra.Command{

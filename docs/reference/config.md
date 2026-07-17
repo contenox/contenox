@@ -11,7 +11,7 @@ Contenox has two layers of state:
 - **Global runtime files** — `~/.contenox/` also stores pulled GGUF models and the shipped default chain/HITL policy presets.
 - **Workspace state** — one `.contenox/` directory per project, containing a `workspace.id` file (a UUID written on `contenox init`) and optional workspace chain overrides. Each workspace scopes its own messages and workspace-specific config overrides inside the single global database.
 
-Running `contenox init` in a project directory creates a `.contenox/` folder with a fresh `workspace.id`, ensures the default runtime files exist under `~/.contenox/`, and registers the built-in `local` backend. The same project always resolves to the same workspace regardless of where you invoke `contenox` from, as long as you're inside the directory tree.
+Running `contenox init` in a project directory creates a `.contenox/` folder with a fresh `workspace.id`, ensures the default runtime files exist under `~/.contenox/`, and registers the local `llama` and `openvino` inference backends (both served by the `modeld` daemon). The same project always resolves to the same workspace regardless of where you invoke `contenox` from, as long as you're inside the directory tree.
 
 Backends and global defaults survive across every workspace. A workspace's sessions and workspace-scoped overrides are invisible to other workspaces.
 
@@ -25,7 +25,7 @@ contenox model pull granite-3.2-2b
 contenox doctor
 ```
 
-`contenox init` creates the `local` backend. `contenox model pull` stores the file under `~/.contenox/models/<name>/model.gguf` and sets `default-model` on a fresh install.
+`contenox init` registers the `llama` and `openvino` backends. `contenox model pull` stores GGUF files under `~/.contenox/models/llama/<name>/model.gguf` (OpenVINO IR models land under `~/.contenox/models/openvino/<name>/`) and sets `default-model` on a fresh install.
 
 ## Register cloud or external backends
 
@@ -55,8 +55,9 @@ contenox backend add bedrock --type bedrock --url https://bedrock-runtime.us-eas
 # Self-hosted vLLM or compatible endpoint
 contenox backend add myvllm --type vllm --url http://gpu-host:8000
 
-# Manual local backend repair, if it was removed
-contenox backend add local --type local --url ~/.contenox/models/
+# Manual local backend repair, if one was removed (normally created by `contenox init`)
+contenox backend add llama    --type llama    --url ~/.contenox/models/llama/
+contenox backend add openvino --type openvino --url ~/.contenox/models/openvino/
 
 # Vertex AI — --url is required (include project and region)
 # Option A: service account JSON (works everywhere)
@@ -77,7 +78,7 @@ Backends are **global** — they live in `~/.contenox/local.db` and are visible 
 ## Set persistent defaults
 
 ```bash
-contenox config set default-provider local
+contenox config set default-provider llama
 contenox config set default-model    granite-3.2-2b
 contenox config set default-alt-model gemini-2.5-flash
 contenox config set default-alt-provider gemini
@@ -120,7 +121,9 @@ contenox backend remove myvllm
 
 | `--type` | Notes                                                                                                     |
 | -------- | --------------------------------------------------------------------------------------------------------- |
-| `local`  | Embedded llama.cpp inference compiled into the Contenox binary. No external server. Normally created by `contenox init`; `--url` should point at the models directory, usually `~/.contenox/models/`. |
+| `llama`  | Local GGUF inference served by the `modeld` daemon (not compiled into the binary). Normally created by `contenox init`; `--url` points at the models directory, `~/.contenox/models/llama/`. The legacy alias `--type local` canonicalizes to `llama`. |
+| `openvino` | Local OpenVINO IR inference, also served by `modeld`. Normally created by `contenox init`; `--url` points at `~/.contenox/models/openvino/`. |
+| `modeld` | A `modeld` node registered by host:port — used for a remote inference daemon rather than the local one. |
 | `ollama` | Local: run `ollama serve` first. Hosted: use `--url https://ollama.com/api --api-key-env OLLAMA_API_KEY`. |
 | `openai` | Use `--api-key-env OPENAI_API_KEY`. Base URL inferred.                                                    |
 | `openrouter` | Use `--api-key-env OPENROUTER_API_KEY`. Base URL inferred as `https://openrouter.ai/api/v1`. |

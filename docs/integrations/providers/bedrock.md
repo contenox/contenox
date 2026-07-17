@@ -29,7 +29,7 @@ export AWS_SECRET_ACCESS_KEY=...
 contenox backend add bedrock --type bedrock \
   --url "https://bedrock-runtime.us-east-1.amazonaws.com"          # the region lives in the URL
 
-contenox model list                                                 # curated Converse-capable model ids
+contenox model list                                                 # live: Converse-capable models in your account/region
 contenox config set default-model anthropic.claude-3-5-sonnet-20241022-v2:0   # example — use an enabled id
 contenox config set default-provider bedrock
 ```
@@ -41,7 +41,7 @@ The `--url` carries the region (`bedrock-runtime.<region>.amazonaws.com`); a bar
 To pin specific credentials, store a JSON blob in an env var and pass `--api-key-env`:
 
 ```bash
-export AWS_BEDROCK_CREDS='{"AccessKeyID":"AKIA...","SecretAccessKey":"...","SessionToken":""}'
+export AWS_BEDROCK_CREDS='{"access_key_id":"AKIA...","secret_access_key":"...","session_token":""}'
 
 contenox backend add bedrock --type bedrock \
   --url "https://bedrock-runtime.us-east-1.amazonaws.com" --api-key-env AWS_BEDROCK_CREDS
@@ -49,7 +49,7 @@ contenox backend add bedrock --type bedrock \
 
 ## Model ids and inference profiles
 
-`contenox model list` shows a curated set of common Converse model ids (e.g. `anthropic.claude-3-5-sonnet-20241022-v2:0`), but **any** Bedrock model id works as `default-model`.
+`contenox model list` queries Bedrock live (`ListFoundationModels`) and shows the Converse-capable model ids available in your account and region (e.g. `anthropic.claude-3-5-sonnet-20241022-v2:0`) — it is not a fixed curated list. **Any** Bedrock model id your account can invoke works as `default-model`, whether or not it appears in the listing.
 
 Most current Claude/Llama models can't be invoked on-demand by their bare foundation id — they require a **regional inference profile**. If a call fails with `ValidationException: ... on-demand throughput isn't supported ... use an inference profile`, prefix the id with your region group — `us.`, `eu.`, or `apac.`:
 

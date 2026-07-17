@@ -38,7 +38,7 @@ import { TranscriptItems } from './TranscriptItems';
 import { WorkspacePanel } from './WorkspacePanel';
 import { CanvasRegion } from './CanvasRegion';
 import { useCanvasTabs } from '../../../hooks/useCanvasTabs';
-import { TERMINAL_CANVAS_TAB } from '../lib/canvasTabs';
+import { approvalCanvasTab, APPROVAL_CANVAS_TAB_PREFIX, fileCanvasTab, TERMINAL_CANVAS_TAB } from '../lib/canvasTabs';
 
 // Shared workspace-wide UI preference (localStorage key). The file panel toggle
 // is workspace-scoped, not per-session, so every open tab reads/writes one
@@ -153,7 +153,48 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
   const canvas = useCanvasTabs();
   const { open: openCanvasTab } = canvas;
   const openTerminal = useCallback(() => openCanvasTab(TERMINAL_CANVAS_TAB), [openCanvasTab]);
-  const terminalOpen = canvas.tabs.some(tab => tab.id === TERMINAL_CANVAS_TAB.id);
+  // Clicking a file in the workspace sidebar opens it as a read-only canvas tab
+  // (dedup by path), rather than previewing inline in the sidebar.
+  const openFile = useCallback((path: string) => openCanvasTab(fileCanvasTab(path)), [openCanvasTab]);
+  const activeFileTab = canvas.tabs.find(tab => tab.id === canvas.activeId && tab.kind === 'file');
+  const selectedFilePath = activeFileTab?.path ?? null;
+
+  // Maximize-to-tab for the permission gate: `maximizedApprovalId` is the
+  // tool-call id whose gate is currently demoted to a full-size canvas tab. The
+  // modal is suppressed (see `gatePermission`) ONLY while that id still matches
+  // the live pending request — so a new request pops the modal normally, and a
+  // resolution un-suppresses whatever is next. The pending request itself is
+  // never touched by maximizing; it stays live until answered.
+  const [maximizedApprovalId, setMaximizedApprovalId] = useState<string | null>(null);
+  const pendingToolCallId = session.pendingPermission?.toolCall.toolCallId ?? null;
+  const isApprovalMaximized = maximizedApprovalId != null && maximizedApprovalId === pendingToolCallId;
+
+  const handleMaximizeApproval = useCallback(() => {
+    const pending = session.pendingPermission;
+    if (!pending) return;
+    openCanvasTab(approvalCanvasTab(pending));
+    setMaximizedApprovalId(pending.toolCall.toolCallId);
+  }, [session.pendingPermission, openCanvasTab]);
+
+  // The gate must never be lost: whenever the maximized approval tab is closed by
+  // ANY route (its ✕, the restore pill, or a neighbor-close), drop the modal
+  // suppression. If the request is still pending the modal snaps back; if it was
+  // already answered this is a harmless no-op (pending is null either way).
+  useEffect(() => {
+    if (maximizedApprovalId == null) return;
+    const tabId = `${APPROVAL_CANVAS_TAB_PREFIX}${maximizedApprovalId}`;
+    if (!canvas.tabs.some(tab => tab.id === tabId)) setMaximizedApprovalId(null);
+  }, [maximizedApprovalId, canvas.tabs]);
+
+  // The restore affordance: collapse the maximized tab back to the modal.
+  const restoreApproval = useCallback(() => {
+    if (maximizedApprovalId == null) return;
+    canvas.close(`${APPROVAL_CANVAS_TAB_PREFIX}${maximizedApprovalId}`);
+  }, [maximizedApprovalId, canvas]);
+
+  // While maximized-and-still-pending, hide the modal (the tab owns the gate) but
+  // keep the request live for a genuinely-new request to still surface normally.
+  const gatePermission = isApprovalMaximized ? null : session.pendingPermission;
 
   // Surface the terminal canvas tab automatically the first time THIS session
   // produces shell output. The canvas is per-session, so the `!`-passthrough on
@@ -345,8 +386,6 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
         hasWorkspaceRoot={!!workspaceRoot}
         filesPanelOpen={panelOpen}
         onToggleFilesPanel={togglePanel}
-        terminalOpen={terminalOpen}
-        onOpenTerminal={openTerminal}
         usage={session.usage}
         configOptions={headerConfigOptions}
         onConfigChange={handleConfigChange}
@@ -366,11 +405,31 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
       <div className="flex min-h-0 flex-1">
         {panelOpen && workspaceRoot && (
           <div className="hidden sm:flex">
-            <WorkspacePanel root={workspaceRoot} files={files} onClose={togglePanel} />
+            <WorkspacePanel
+              root={workspaceRoot}
+              files={files}
+              onOpenFile={openFile}
+              selectedFilePath={selectedFilePath}
+            />
           </div>
         )}
-        <CanvasRegion sessionId={sessionId} canvas={canvas} className="flex-1">
+        <CanvasRegion
+          sessionId={sessionId}
+          canvas={canvas}
+          readFile={files.readFile}
+          pendingPermission={session.pendingPermission}
+          onRespondPermission={respondPermission}
+          className="flex-1">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {isApprovalMaximized && (
+            <button
+              type="button"
+              onClick={restoreApproval}
+              className="border-warning-200 bg-warning-50 text-warning-900 dark:border-dark-surface-500 dark:bg-dark-surface-300 dark:text-dark-text mx-3 mt-2 flex shrink-0 items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-left text-xs">
+              <span className="truncate">{t('acp_chat.approval_pending_pill')}</span>
+              <span className="shrink-0 font-medium underline">{t('acp_chat.approval_restore')}</span>
+            </button>
+          )}
           {!hasContent ? (
             <div className="m-auto">
               <EmptyState title={t('acp_chat.empty_title')} description={t('acp_chat.empty_description')} />
@@ -426,7 +485,7 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
         </CanvasRegion>
       </div>
 
-      <PermissionGate permission={session.pendingPermission} onRespond={respondPermission} />
+      <PermissionGate permission={gatePermission} onRespond={respondPermission} onMaximize={handleMaximizeApproval} />
     </div>
   );
 }

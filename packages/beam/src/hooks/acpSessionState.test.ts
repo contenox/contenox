@@ -70,6 +70,38 @@ describe('acpSessionReducer: unified timeline (D4)', () => {
     expect(erroredState.messages['a1']).toMatchObject({ streaming: false, thinkingStreaming: false });
     expect(erroredState.error).toBe('boom');
   });
+
+  it('prompt_error anchors the failure as its own transcript item (not only the top banner) so the chat never just goes quiet', () => {
+    const state = run(
+      { type: 'session_reset', sessionId: 'sess-1' },
+      { type: 'user_message_chunk', id: 'u1', text: 'do the thing' },
+      { type: 'prompt_start' },
+      { type: 'prompt_error', message: 'chain execution failed: model unavailable' },
+    );
+    const errorItems = state.items.filter(it => it.kind === 'error');
+    expect(errorItems).toHaveLength(1);
+    // Ordered after the user message it failed to answer.
+    expect(state.items.at(-1)).toEqual(errorItems[0]);
+    expect(state.errorCards[errorItems[0].id]).toEqual({
+      id: errorItems[0].id,
+      message: 'chain execution failed: model unavailable',
+    });
+    // Still drives the existing top recovery banner too.
+    expect(state.error).toBe('chain execution failed: model unavailable');
+    expect(state.isPrompting).toBe(false);
+  });
+
+  it('each failed turn keeps its own card — the transcript retains every failure, not just the latest', () => {
+    const state = run(
+      { type: 'session_reset', sessionId: 'sess-1' },
+      { type: 'prompt_start' },
+      { type: 'prompt_error', message: 'first failure' },
+      { type: 'prompt_start' },
+      { type: 'prompt_error', message: 'second failure' },
+    );
+    const errorCards = state.items.filter(it => it.kind === 'error').map(it => state.errorCards[it.id].message);
+    expect(errorCards).toEqual(['first failure', 'second failure']);
+  });
 });
 
 describe('acpSessionReducer: stable message identity within one turn', () => {

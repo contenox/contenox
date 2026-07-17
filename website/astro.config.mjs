@@ -7,9 +7,9 @@ export default defineConfig({
   output: "static",
   integrations: [
     sitemap({
-      // Blueprints are public design records, not maintained documentation:
-      // browsable and searchable on-site, but not part of the SEO surface.
-      filter: (page) => !page.includes('/docs/development/blueprints/'),
+      // Development docs (contributor docs and blueprint design records) stay
+      // browsable and searchable on-site, but are kept out of the SEO surface.
+      filter: (page) => !page.includes('/docs/development/'),
     }),
   ],
   markdown: {

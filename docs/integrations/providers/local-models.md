@@ -6,31 +6,42 @@ See the dedicated [modeld page](/docs/integrations/providers/modeld/) for archit
 
 For a deeper technical look at the lease system, capacity planner, slot model, and residency, read the [modeld Architecture page](/docs/integrations/providers/modeld-architecture/).
 
-Contenox can download GGUF model files directly from HuggingFace and serve them via the built-in llama.cpp backend (powered by modeld).
+Contenox can download GGUF model files directly from HuggingFace and serve them via the `llama` backend (GGUF) or the `openvino` backend (OpenVINO IR) — both run in the `modeld` daemon, not in the `contenox` binary itself.
 
 ## Curated models
 
-Run `contenox model registry-list` to see all available models with sizes. The table below lists the curated set; approximate VRAM figures assume Q4\_K\_M quantization.
+Run `contenox model registry-list` to see all available models with sizes, use cases, and best-effort local fit. The table below lists the curated **GGUF** set (served by the `llama` backend); the "advisory VRAM" column is the recommended minimum GPU tier at Q4\_K\_M quantization.
 
-| Name             | Description                   | ~VRAM  |
-| ---------------- | ----------------------------- | ------ |
-| `tiny`           | FastThink 0.5B (testing only) | ~1 GB  |
-| `llama3.2-1b`    | Llama 3.2 1B                  | ~1 GB  |
-| `qwen2.5-1.5b`   | Qwen 2.5 1.5B                 | ~1 GB  |
-| `granite-3.2-2b` | IBM Granite 3.2 2B            | ~1 GB  |
-| `qwen3-4b`       | Qwen 3 4B                     | ~3 GB  |
-| `gemma4-e2b`     | Gemma 4 E2B                   | ~3 GB  |
-| `phi-4-mini`     | Microsoft Phi-4 Mini          | ~3 GB  |
-| `gemma4-e4b`     | Gemma 4 E4B                   | ~5 GB  |
-| `granite-3.2-8b` | IBM Granite 3.2 8B            | ~5 GB  |
-| `qwen2.5-7b`     | Qwen 2.5 7B                   | ~5 GB  |
-| `qwen3-14b`      | Qwen 3 14B                    | ~9 GB  |
-| `qwen3-30b`      | Qwen 3 30B (MoE, fast)        | ~19 GB |
-| `kimi-linear`    | Kimi Linear 48B (MoE)         | ~30 GB |
-| `llama4-scout`   | Llama 4 Scout 17Bx16E         | ~68 GB |
+| Name | Model | Use case | Advisory VRAM |
+| ---- | ----- | -------- | ------------- |
+| `granite-3.2-2b` | IBM Granite 3.2 2B | chat | ~6 GB |
+| `phi-4-mini` | Phi-4 Mini | chat | ~6 GB |
+| `qwen3-4b` | Qwen 3 4B | chat | ~6 GB |
+| `qwen2.5-coder-0.5b` | Qwen 2.5 Coder 0.5B | coding (smoke) | ~6 GB |
+| `qwen2.5-coder-1.5b` | Qwen 2.5 Coder 1.5B | coding | ~6 GB |
+| `qwen2.5-coder-3b` | Qwen 2.5 Coder 3B | coding | ~6 GB |
+| `gemma4-e2b` | Gemma 4 E2B | chat | ~8 GB |
+| `gemma4-e4b` | Gemma 4 E4B | chat | ~8 GB |
+| `granite-3.2-8b` | IBM Granite 3.2 8B | chat | ~8 GB |
+| `qwen3-8b` | Qwen 3 8B | chat | ~8 GB |
+| `qwen2.5-coder-7b` | Qwen 2.5 Coder 7B | coding (default) | ~8 GB |
+| `starcoder2-7b-instruct` | StarCoder2 7B Instruct | coding (FIM) | ~8 GB |
+| `deepseek-r1-0528-qwen3-8b` | DeepSeek R1 0528 (Qwen3 8B distill) | reasoning | ~8 GB |
+| `deepseek-r1-distill-qwen-7b` | DeepSeek R1 Distill Qwen 7B | reasoning | ~8 GB |
+| `qwen3-14b` | Qwen 3 14B | chat | ~16 GB |
+| `qwen2.5-coder-14b` | Qwen 2.5 Coder 14B | coding | ~16 GB |
+| `gemma4-12b` | Gemma 4 12B | chat | ~16 GB |
+| `gpt-oss-20b` | GPT-OSS 20B | chat | ~24 GB |
+| `deepseek-coder-v2-lite` | DeepSeek Coder V2 Lite (MoE) | coding | ~24 GB |
+| `codestral-22b` | Codestral 22B | coding (FIM) | ~24 GB |
+| `devstral-small-2507` | Devstral Small 2507 | agentic coding | ~24 GB |
+| `qwen3-30b` | Qwen 3 30B-A3B (MoE) | reasoning | ~32 GB |
+| `qwen3-coder-30b-a3b` | Qwen 3 Coder 30B-A3B (MoE) | coding | ~32 GB |
+| `qwen2.5-coder-32b` | Qwen 2.5 Coder 32B | coding | ~32 GB |
+| `gemma4-26b-a4b` | Gemma 4 26B-A4B (MoE) | chat | ~32 GB |
 
 > [!NOTE]
-> Multi-GPU models (`llama4-scout`) require several GPUs or unified memory. MoE models (`qwen3-30b`, `kimi-linear`) use far less active VRAM than their parameter count suggests.
+> Most curated GGUF models also ship an **OpenVINO IR** counterpart for the `openvino` backend — same name with an `-ov` suffix (e.g. `qwen3-4b-ov`, `qwen2.5-coder-7b-ov`, `gpt-oss-20b-ov`). MoE models (`qwen3-30b`, `qwen3-coder-30b-a3b`, `gemma4-26b-a4b`) use far less active VRAM than their total parameter count suggests. Run `contenox model registry-list` for the authoritative, always-current list including the OpenVINO entries.
 
 ---
 
@@ -42,7 +53,7 @@ Initialize the workspace first if you have not already:
 contenox init
 ```
 
-Then pick a model from the table and pull it. The file is stored at `~/.contenox/models/<name>/model.gguf`.
+Then pick a model from the table and pull it. GGUF files are stored at `~/.contenox/models/llama/<name>/model.gguf`; OpenVINO IR models (curated names ending in `-ov`) are fetched into `~/.contenox/models/openvino/<name>/`.
 
 ```bash
 contenox model pull qwen3-4b
@@ -54,9 +65,9 @@ Progress is printed in-line. The download is resumable — if interrupted, re-ru
 
 ## 2. What gets configured
 
-`contenox init` creates the built-in `local` backend automatically. `contenox model pull` adds the model to the local registry and, on a fresh install, sets the first pulled model as `default-model`.
+`contenox init` registers the `llama` and `openvino` backends automatically. `contenox model pull` adds the model to the local registry and, on a fresh install, sets the first pulled model as `default-model`.
 
-Contenox scans `~/.contenox/models/` and exposes every `*/model.gguf` it finds as a model name on the `local` provider.
+Contenox scans `~/.contenox/models/llama/` and exposes every `*/model.gguf` it finds as a model name on the `llama` provider (and `~/.contenox/models/openvino/` for the `openvino` provider).
 
 ---
 
@@ -70,7 +81,7 @@ contenox "hello, what can you do?"
 If you are switching back to local models after using a cloud provider, set the defaults explicitly:
 
 ```bash
-contenox config set default-provider local
+contenox config set default-provider llama
 contenox config set default-model qwen3-4b
 ```
 
@@ -86,7 +97,7 @@ contenox model pull my-model --url https://huggingface.co/org/repo/resolve/main/
 
 Use `/resolve/main/` (not `/blob/main/`) in the URL so HuggingFace serves the raw file.
 
-After the download completes, the model is automatically registered in the local registry and available from the `local` backend.
+After the download completes, the model is automatically registered in the local registry and available from the `llama` backend.
 
 ---
 
@@ -103,7 +114,7 @@ contenox model show my-model          # print registry details as JSON
 contenox model remove my-model        # remove a user-added entry
 ```
 
-Curated entries (`tiny`, `qwen3-4b`, etc.) cannot be removed — they are embedded in the binary.
+Curated entries (`qwen3-4b`, `granite-3.2-2b`, etc.) cannot be removed — they are embedded in the binary.
 
 ---
 

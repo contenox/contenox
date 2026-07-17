@@ -342,48 +342,6 @@ func TestE2E_Wire_SessionListPagination(t *testing.T) {
 	}
 }
 
-// TestUnit_PlanTracker pins the chain→plan translation: every chain task is an
-// entry, step events advance statuses, chain end prunes never-taken branches,
-// and trivial chains produce no plan at all.
-func TestUnit_PlanTracker(t *testing.T) {
-	chain := &taskengine.TaskChainDefinition{
-		ID: "c",
-		Tasks: []taskengine.TaskDefinition{
-			{ID: "route", Description: "Route the request"},
-			{ID: "respond"},
-			{ID: "never_taken", Description: "Alternate branch"},
-		},
-	}
-	p := newPlanTracker(chain)
-	require.NotNil(t, p)
-	entries := p.snapshot()
-	require.Len(t, entries, 3)
-	assert.Equal(t, "Route the request", entries[0].Content)
-	assert.Equal(t, "respond", entries[1].Content, "tasks without a description fall back to their id")
-	assert.Equal(t, libacp.PlanStatusPending, entries[0].Status)
-
-	assert.True(t, p.apply(taskengine.TaskEvent{Kind: taskengine.TaskEventStepStarted, TaskID: "route"}))
-	assert.Equal(t, libacp.PlanStatusInProgress, p.snapshot()[0].Status)
-	assert.False(t, p.apply(taskengine.TaskEvent{Kind: taskengine.TaskEventStepStarted, TaskID: "route"}), "no-op transitions must not re-send the plan")
-	assert.True(t, p.apply(taskengine.TaskEvent{Kind: taskengine.TaskEventStepCompleted, TaskID: "route"}))
-	assert.True(t, p.apply(taskengine.TaskEvent{Kind: taskengine.TaskEventStepStarted, TaskID: "respond"}))
-	assert.True(t, p.apply(taskengine.TaskEvent{Kind: taskengine.TaskEventStepFailed, TaskID: "respond"}))
-	assert.False(t, p.apply(taskengine.TaskEvent{Kind: taskengine.TaskEventStepChunk, TaskID: "respond"}), "chunks don't change the plan")
-	assert.False(t, p.apply(taskengine.TaskEvent{Kind: taskengine.TaskEventStepStarted, TaskID: "unknown-task"}), "events for tasks outside the chain are ignored")
-
-	assert.True(t, p.apply(taskengine.TaskEvent{Kind: taskengine.TaskEventChainCompleted}))
-	final := p.snapshot()
-	require.Len(t, final, 2, "never-started branches are pruned from the final plan")
-	for _, e := range final {
-		assert.Equal(t, libacp.PlanStatusCompleted, e.Status)
-	}
-
-	assert.Nil(t, newPlanTracker(&taskengine.TaskChainDefinition{Tasks: []taskengine.TaskDefinition{{ID: "only"}}}), "single-task chains produce no plan")
-	assert.Nil(t, newPlanTracker(nil))
-	var nilPlan *planTracker
-	assert.False(t, nilPlan.apply(taskengine.TaskEvent{Kind: taskengine.TaskEventStepStarted, TaskID: "x"}), "nil tracker is inert")
-}
-
 // TestUnit_Initialize_AdvertisesEnvVarAuth_InSetupOnlyMode pins the env-based
 // setup route: with no engine and an EnvSetup spec, initialize must offer the
 // env_var auth method with its variable contract.

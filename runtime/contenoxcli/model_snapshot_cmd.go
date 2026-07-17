@@ -40,7 +40,12 @@ Examples:
 var modelSnapshotSaveCmd = &cobra.Command{
 	Use:   "save <model>",
 	Short: "Open a modeld session, prefill text, and write a snapshot file.",
-	Args:  cobra.ExactArgs(1),
+	Long: `Open a local modeld session for a model, prefill the required --prefix (and
+optional --suffix), then capture the session and write it to the --out file.
+The model is resolved from the backend inventory unless --path is given, and
+--type selects the llama or openvino backend. A save report (or --json) is
+printed on success.`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := libtracker.WithNewRequestID(commandContext(cmd))
 		opts, err := snapshotOptionsFromFlags(cmd, args[0], "")
@@ -123,7 +128,12 @@ var modelSnapshotSaveCmd = &cobra.Command{
 var modelSnapshotRestoreCmd = &cobra.Command{
 	Use:   "restore [model]",
 	Short: "Restore a modeld session from a snapshot file.",
-	Args:  cobra.MaximumNArgs(1),
+	Long: `Read a snapshot from the --in file and restore it into a fresh modeld session.
+The model defaults to the one recorded in the snapshot but can be overridden by
+a positional argument. The snapshot's backend, digest, and context are validated
+against the current model before restoring; pass --expect-reused N to fail unless
+prefix verification reuses at least N tokens.`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := libtracker.WithNewRequestID(commandContext(cmd))
 		inPath, _ := cmd.Flags().GetString("in")

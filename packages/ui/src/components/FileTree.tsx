@@ -2,6 +2,14 @@ import { forwardRef, useCallback, useState } from "react";
 import { ChevronRight, File, Folder, FolderOpen } from "lucide-react";
 import { cn } from "../utils";
 
+/**
+ * Optional per-node access status, rendered as a small colored dot before the
+ * name. Consumer-defined semantics; the workspace file panel uses it to overlay
+ * an agent-view policy verdict (`allow`/`approve`/`deny`) or an `unreachable`
+ * boundary marker, which also dims the row. Absent = no dot, full opacity.
+ */
+export type FileTreeNodeStatus = "allow" | "approve" | "deny" | "unreachable";
+
 export interface FileTreeNode {
   /** Unique id for this node. */
   id: string;
@@ -13,6 +21,30 @@ export interface FileTreeNode {
   isDirectory?: boolean;
   /** Nested children (only for directories). */
   children?: FileTreeNode[];
+  /** Optional access-status dot (see {@link FileTreeNodeStatus}); `unreachable` also dims the row. */
+  status?: FileTreeNodeStatus;
+  /** Optional row tooltip (e.g. the policy reason behind {@link status}). */
+  title?: string;
+}
+
+/** Tailwind class for each status dot; kept optional so unstatused trees are untouched. */
+const STATUS_DOT_CLASS: Record<FileTreeNodeStatus, string> = {
+  allow: "bg-success-500 dark:bg-dark-success-500",
+  approve: "bg-warning-500 dark:bg-dark-warning-500",
+  deny: "bg-error-500 dark:bg-dark-error-500",
+  unreachable: "bg-text-muted dark:bg-dark-text-muted",
+};
+
+function StatusDot({ status }: { status: FileTreeNodeStatus }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "h-2 w-2 shrink-0 rounded-full",
+        status === "allow" ? "ring-1 ring-inset ring-success-500/60 bg-transparent dark:ring-dark-success-500/60" : STATUS_DOT_CLASS[status],
+      )}
+    />
+  );
 }
 
 export interface FileTreeProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -141,6 +173,7 @@ function FileTreeItem({
     "flex w-full items-center gap-1.5 rounded px-2 py-1 text-left",
     "text-text dark:text-dark-text",
     "hover:bg-surface-100 dark:hover:bg-dark-surface-200",
+    node.status === "unreachable" && "opacity-50",
     isSelected &&
       "bg-primary-50/50 text-primary-700 dark:bg-dark-primary-900/30 dark:text-dark-primary-400",
   );
@@ -148,7 +181,7 @@ function FileTreeItem({
   return (
     <div role="treeitem" aria-expanded={node.isDirectory ? expanded : undefined}>
       {node.isDirectory && directoryClickMode === "navigate" ? (
-        <div className={rowShellClass} style={{ paddingLeft: depth * indent + 8 }}>
+        <div className={rowShellClass} style={{ paddingLeft: depth * indent + 8 }} title={node.title}>
           <button
             type="button"
             className="text-text-muted dark:text-dark-text-muted hover:bg-surface-200 dark:hover:bg-dark-surface-300 inline-flex shrink-0 items-center justify-center rounded p-0.5"
@@ -174,6 +207,7 @@ function FileTreeItem({
               <Folder className="h-4 w-4 shrink-0 text-warning dark:text-dark-warning" />
             )}
             <span className="truncate font-mono text-xs">{node.name}</span>
+            {node.status && <StatusDot status={node.status} />}
           </button>
         </div>
       ) : (
@@ -183,6 +217,7 @@ function FileTreeItem({
           onKeyDown={handleKeyDown}
           className={rowShellClass}
           style={{ paddingLeft: depth * indent + 8 }}
+          title={node.title}
         >
           {node.isDirectory ? (
             <>
@@ -206,6 +241,7 @@ function FileTreeItem({
             </>
           )}
           <span className="truncate font-mono text-xs">{node.name}</span>
+          {node.status && <StatusDot status={node.status} />}
         </button>
       )}
 

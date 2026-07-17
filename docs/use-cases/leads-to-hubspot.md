@@ -365,5 +365,5 @@ The new companies appear at the top with descriptions matching the `Summary:` li
   {"tools": "hubspot", "tool": "createCompany", "action": "approve"}
   ```
 
-- **One lead per chat invocation.** Each lead gets a fresh agent round budget. Batching all leads into one prompt also works for small batches but hits the chain's default 10-round cap around lead 3.
+- **One lead per chat invocation.** Each lead gets a fresh agent round budget. Batching all leads into one prompt also works for small batches but hits the chat chain's tool-call budget around lead 3 (the default chat chain caps its loops at 12 main / 8 recovery rounds; the one-shot `contenox run` chain caps at 10).
 - **Token storage.** Your `HUBSPOT_TOKEN` ends up in contenox's local SQLite (`~/.contenox/local.db`) inside the `remote_tools` row's headers. Same machine, same posture as any locally-stored credential — rotate as you would any other token. Tavily OAuth tokens are stored the same way under the MCP server's row.

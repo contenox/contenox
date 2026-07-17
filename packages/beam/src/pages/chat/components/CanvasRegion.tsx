@@ -1,15 +1,21 @@
 /**
  * i18n keys referenced in this file (namespace `canvas`/`terminal`; see i18n.ts):
- *   terminal.panel_title  = "Terminal"          (canvas terminal-tab label)
- *   canvas.close_tab      = "Close {{name}}"     (canvas tab ✕ aria-label)
+ *   terminal.panel_title    = "Terminal"          (canvas terminal-tab label)
+ *   terminal.open_in_canvas = "Open the terminal…" (open-terminal affordance)
+ *   canvas.close_tab        = "Close {{name}}"     (canvas tab ✕ aria-label)
  */
-import { cn, ResizablePanel, ResizablePanelGroup, ResizablePanelHandle, Tabs, TabPanel, TabPanels, type Tab } from '@contenox/ui';
-import type { ReactNode } from 'react';
+import { Button, cn, ResizablePanel, ResizablePanelGroup, ResizablePanelHandle, Tabs, TabPanel, TabPanels, type Tab } from '@contenox/ui';
+import { Terminal } from 'lucide-react';
+import { useCallback, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMediaQuery } from '../../../hooks/useMediaQuery';
-import type { CanvasTab } from '../lib/canvasTabs';
+import type { WorkspaceFilePeek } from '../../../hooks/useWorkspaceFiles';
+import { TERMINAL_CANVAS_TAB, type CanvasTab } from '../lib/canvasTabs';
 import type { UseCanvasTabsResult } from '../../../hooks/useCanvasTabs';
+import type { RequestPermissionRequest } from '../../../lib/acp';
 import { TerminalTab } from './TerminalTab';
+import { FileViewTab } from './FileViewTab';
+import { ApprovalViewTab } from './ApprovalViewTab';
 
 /** The canvas becomes a side-by-side split at/above this width; below it, a full-width takeover. */
 const SIDE_BY_SIDE_QUERY = '(min-width: 1024px)';
@@ -19,6 +25,12 @@ export interface CanvasRegionProps {
   sessionId: string | null;
   /** The canvas tab-model (open list, active id, open/close/focus). */
   canvas: UseCanvasTabsResult;
+  /** Reads a file's content — threaded to the read-only `file` canvas tabs. */
+  readFile: (path: string) => Promise<WorkspaceFilePeek>;
+  /** The session's live pending permission (or null) — threaded to `approval` canvas tabs so they know when they've gone stale. */
+  pendingPermission: RequestPermissionRequest | null;
+  /** The same responder the permission gate uses — threaded to `approval` canvas tabs. */
+  onRespondPermission: (optionId: string) => void;
   /** The primary (chat) body — rendered beside the canvas when open, full-width when the canvas is empty. */
   children: ReactNode;
   className?: string;
@@ -43,19 +55,56 @@ export interface CanvasRegionProps {
  * responsive class can't override — so the two layouts are distinct subtrees, and
  * `children` renders in exactly one of them at a time (single mount).
  */
-export function CanvasRegion({ sessionId, canvas, children, className }: CanvasRegionProps) {
+export function CanvasRegion({
+  sessionId,
+  canvas,
+  readFile,
+  pendingPermission,
+  onRespondPermission,
+  children,
+  className,
+}: CanvasRegionProps) {
   const { t } = useTranslation();
   const sideBySide = useMediaQuery(SIDE_BY_SIDE_QUERY);
+  const { open } = canvas;
 
-  // Collapsed: no canvas tab open — the chat body takes the full width.
+  // The single affordance for opening the terminal as a canvas tab (dedups to a
+  // focus if already open) — replaces the old chat-toolbar toggle.
+  const openTerminal = useCallback(() => open(TERMINAL_CANVAS_TAB), [open]);
+
+  const openTerminalButton = (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      aria-label={t('terminal.open_in_canvas')}
+      title={t('terminal.open_in_canvas')}
+      onClick={openTerminal}>
+      <Terminal className="h-4 w-4" />
+    </Button>
+  );
+
+  // Collapsed: no canvas tab open — the chat body takes the full width, with a
+  // slim rail carrying the always-available "open terminal" affordance.
   if (canvas.tabs.length === 0) {
-    return <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col', className)}>{children}</div>;
+    return (
+      <div className={cn('flex min-h-0 min-w-0 flex-1', className)}>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+        <div className="border-surface-200 dark:border-dark-surface-600 flex shrink-0 flex-col items-center gap-1 border-l px-1 py-2">
+          {openTerminalButton}
+        </div>
+      </div>
+    );
   }
 
   const tabLabel = (tab: CanvasTab): string => {
     switch (tab.kind) {
       case 'terminal':
         return t('terminal.panel_title');
+      case 'file':
+        return tab.title ?? tab.path ?? tab.id;
+      case 'approval':
+        return tab.title ?? t('acp_chat.permission_title');
       default:
         return tab.id;
     }
@@ -69,7 +118,7 @@ export function CanvasRegion({ sessionId, canvas, children, className }: CanvasR
 
   const surface = (
     <div className="bg-surface dark:bg-dark-surface flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="border-surface-200 dark:border-dark-surface-600 flex shrink-0 items-center border-b px-2">
+      <div className="border-surface-200 dark:border-dark-surface-600 flex shrink-0 items-center gap-1 border-b px-2">
         <Tabs
           tabs={stripTabs}
           activeTab={activeId}
@@ -77,11 +126,22 @@ export function CanvasRegion({ sessionId, canvas, children, className }: CanvasR
           onClose={canvas.close}
           className="min-w-0 flex-1 flex-nowrap"
         />
+        <span className="shrink-0">{openTerminalButton}</span>
       </div>
       <TabPanels>
         {canvas.tabs.map(tab => (
-          <TabPanel key={tab.id} tabId={tab.id} activeTab={activeId} className="p-2">
+          <TabPanel key={tab.id} tabId={tab.id} activeTab={activeId} className="flex min-h-0 flex-col p-2">
             {tab.kind === 'terminal' && <TerminalTab sessionId={sessionId} />}
+            {tab.kind === 'file' && tab.path && <FileViewTab path={tab.path} readFile={readFile} />}
+            {tab.kind === 'approval' && tab.approval && (
+              <ApprovalViewTab
+                permission={tab.approval}
+                pendingPermission={pendingPermission}
+                active={tab.id === activeId}
+                onRespond={onRespondPermission}
+                onClose={() => canvas.close(tab.id)}
+              />
+            )}
           </TabPanel>
         ))}
       </TabPanels>

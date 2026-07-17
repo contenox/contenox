@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/google/uuid"
 )
 
 type GeminiStreamClient struct {
@@ -86,6 +87,11 @@ func (c *GeminiStreamClient) Stream(ctx context.Context, messages []modelrepo.Me
 			return
 		}
 
+		var (
+			toolCalls     []modelrepo.ToolCall
+			lastSignature string
+		)
+
 		sc := bufio.NewScanner(resp.Body)
 		for sc.Scan() {
 			line := sc.Text()
@@ -117,6 +123,34 @@ func (c *GeminiStreamClient) Stream(ctx context.Context, messages []modelrepo.Me
 						thinkingText += part.Text
 					case part.Text != "":
 						outText += part.Text
+					case part.FunctionCall != nil:
+						argsJSON, err := json.Marshal(part.FunctionCall.Args)
+						if err != nil {
+							continue
+						}
+						tc := modelrepo.ToolCall{
+							ID:   uuid.NewString(),
+							Type: "function",
+							Function: struct {
+								Name      string `json:"name"`
+								Arguments string `json:"arguments"`
+							}{
+								Name:      part.FunctionCall.Name,
+								Arguments: string(argsJSON),
+							},
+						}
+						sig := part.ThoughtSignature
+						if sig == "" {
+							sig = part.FunctionCall.ThoughtSignature
+						}
+						if sig == "" {
+							sig = lastSignature
+						}
+						if sig != "" {
+							lastSignature = sig
+							tc.ProviderMeta = map[string]string{"thought_signature": sig}
+						}
+						toolCalls = append(toolCalls, tc)
 					}
 				}
 				if outText != "" || thinkingText != "" {
@@ -137,6 +171,17 @@ func (c *GeminiStreamClient) Stream(ctx context.Context, messages []modelrepo.Me
 			reportErr(err)
 			select {
 			case parcels <- &modelrepo.StreamParcel{Error: err}:
+			case <-ctx.Done():
+			}
+			return
+		}
+
+		// Tool calls are assembled from the streamed functionCall parts and
+		// delivered on a terminal parcel (empty Data/Thinking) so the executor's
+		// stream path can finalize them exactly like the non-streaming chat path.
+		if len(toolCalls) > 0 {
+			select {
+			case parcels <- &modelrepo.StreamParcel{ToolCalls: toolCalls}:
 			case <-ctx.Done():
 			}
 		}

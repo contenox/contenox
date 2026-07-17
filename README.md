@@ -199,7 +199,7 @@ contenox config set default-provider  llama
 
 ```
 
-> **Note on Local Inference:** The native `llama` and `openvino` backends are driven by `modeld`, Contenox's local inference engine. While `contenox init` registers them, standard pre-compiled binary distributions do not yet bundle `modeld` out of the box. Using local `modeld` engines currently requires compiling from source: see the [modeld Source Build Guide](https://www.google.com/search?q=docs/development/modeld-source-build.md).
+> **Note on Local Inference:** The native `llama` and `openvino` backends are driven by `modeld`, Contenox's local inference engine. While `contenox init` registers them, standard pre-compiled binary distributions do not yet bundle `modeld` out of the box. Using local `modeld` engines currently requires compiling from source: see the [modeld Source Build Guide](docs/development/modeld-source-build.md).
 
 ---
 
@@ -213,13 +213,13 @@ Rather than treating context as an expensive prompt resent on every single turn,
 
 * **Dedicated Compute Allocation:** Device memory and KV budgets focus entirely on running a single model deep and fast, bypassing multi-tenant multiplexing penalties.
 * **Warm-Reuse Sessions:** Stably prefixed KV states are kept hot in memory. Only newly altered trailing suffixes are re-prefilled, radically dropping execution costs on massive repositories.
-* **Durable Snapshot & Restore:** Session graphs are branchable and persist across process Restarts, letting code context outlive terminal sessions.
-* **Zero-Configuration Acceleration:** Automatical detection of hardware capability at runtime ensures optimal offloading ratios and context window bounds with zero manual tuning.
+* **Durable Snapshot & Restore:** Session graphs are branchable and persist across process restarts, letting code context outlive terminal sessions.
+* **Zero-Configuration Acceleration:** Automatic detection of hardware capability at runtime ensures optimal offloading ratios and context window bounds with zero manual tuning.
 
 ### Architecture Deep-Dives
 
-* [Effective-Context Runtime Strategy](https://www.google.com/search?q=docs/development/blueprints/modeld/effective-context/README.md)
-* [modeld Local Inference Landscape](https://www.google.com/search?q=docs/development/modeld-local-inference-landscape.md)
+* [Effective-Context Runtime Strategy](docs/development/blueprints/modeld/effective-context/README.md)
+* [modeld Local Inference Landscape](docs/development/modeld-local-inference-landscape.md)
 
 ---
 

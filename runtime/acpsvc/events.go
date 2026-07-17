@@ -9,36 +9,23 @@ import (
 	"github.com/contenox/runtime/runtime/taskengine"
 )
 
-func (t *Transport) translateEvents(ctx context.Context, sid libacp.SessionID, ch <-chan []byte, plan *planTracker) {
+func (t *Transport) translateEvents(ctx context.Context, sid libacp.SessionID, ch <-chan []byte) {
 	for payload := range ch {
-		t.publishEvent(ctx, sid, payload, plan)
+		t.publishEvent(ctx, sid, payload)
 	}
 }
 
-func (t *Transport) sendPlanUpdate(ctx context.Context, sid libacp.SessionID, plan *planTracker) {
-	t.sendUpdate(ctx, libacp.SessionNotification{
-		SessionID: sid,
-		Update: libacp.SessionUpdate{
-			SessionUpdate: libacp.SessionUpdatePlan,
-			Entries:       plan.snapshot(),
-		},
-	})
-}
-
-func (t *Transport) publishEvent(ctx context.Context, sid libacp.SessionID, payload []byte, plan *planTracker) {
+func (t *Transport) publishEvent(ctx context.Context, sid libacp.SessionID, payload []byte) {
 	var ev taskengine.TaskEvent
 	if err := json.Unmarshal(payload, &ev); err != nil {
 		return
-	}
-	if plan.apply(ev) {
-		t.sendPlanUpdate(ctx, sid, plan)
 	}
 	switch ev.Kind {
 	case taskengine.TaskEventStepChunk:
 		// A route task's streamed output is its routing decision ("general",
 		// "coding_change", ...) — control flow, not assistant prose. It used to
-		// leak into the reply text as a prefix; progress is visible via plan
-		// updates instead.
+		// leak into the reply text as a prefix; progress is visible via the
+		// tool-call cards and streamed chunks instead.
 		if isRoutingHandler(ev.TaskHandler) {
 			return
 		}

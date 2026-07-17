@@ -179,7 +179,7 @@ The model calls `fetch_url`, receives the current HTML, and returns a clean summ
 
 All three example chains use the same simple structure:
 
-```json v-pre
+```json
 {
   "tasks": [{
     "handler": "chat_completion",
@@ -193,7 +193,7 @@ All three example chains use the same simple structure:
 ```
 
 - `tools` is the allowlist of MCP servers the model can access as tools. Use `["*"]` to include all registered servers, or `["*", "!name"]` to exclude one.  
-- <span v-pre>`{{toolservice:list}}`</span> injects the live tool manifest into the system prompt — filtered to only the tools the task allows.  
+- `{{toolservice:list}}` injects the live tool manifest into the system prompt — filtered to only the tools the task allows.  
 - The task engine automatically handles the full tool-call loop — no manual branching required.
 
 > [!TIP]

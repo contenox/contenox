@@ -4,7 +4,7 @@ Learning by example is the fastest way to understand task chains.
 
 ## 1. The Default Chain (Tool Use)
 
-This is the chain used for **interactive chat** when you run `contenox chat "hello"` (or rely on the configured default chain) without an explicit `--chain` flag. It defines a loop between the model and the tools. A bare `contenox "hello"` uses **`default-run-chain.json`** via the injected `run` command instead — see the [CLI reference](/docs/reference/contenox-cli).
+This is the chain used for **interactive chat** — both `contenox chat "hello"` and a bare `contenox "hello"` (a bare prompt is session-backed chat, injected as `chat`) resolve `default-chain.json` when no `--chain` is given. It defines a loop between the model and the tools. Only `contenox run` uses `default-run-chain.json` — see the [CLI reference](/docs/reference/contenox-cli). The example below is simplified for clarity; the `default-chain.json` that ships with `contenox init` (`chain-contenox.json`) is a fuller ~10-task chain with a router, a coding loop, and a recovery loop.
 
 ```jsonc
 {
@@ -16,8 +16,8 @@ This is the chain used for **interactive chat** when you run `contenox chat "hel
       "id": "chat",
       "handler": "chat_completion",
       "execute_config": {
-        "model": "<span v-pre>{{var:model}}</span>",
-        "provider": "<span v-pre>{{var:provider}}</span>",
+        "model": "{{var:model}}",
+        "provider": "{{var:provider}}",
         "tools": ["local_shell", "local_fs"]
       },
       "transition": {
@@ -58,10 +58,10 @@ This chain replaces the local shell tools with a remote API tools (the US Nation
     {
       "id": "nws_chat",
       "handler": "chat_completion",
-      "system_instruction": "You are a weather assistant with access to the US National Weather Service API. Use the tools to answer weather questions. Summarise results concisely — do NOT dump raw JSON or lists of hundreds of items. For forecasts you may need two calls: first the 'point' tool with latitude and longitude, then 'gridpoint_forecast' with the returned grid reference. For alerts, use 'alerts_active_area' with the two-letter state code. Today is <span v-pre>{{now:2006-01-02}}</span>.",
+      "system_instruction": "You are a weather assistant with access to the US National Weather Service API. Use the tools to answer weather questions. Summarise results concisely — do NOT dump raw JSON or lists of hundreds of items. For forecasts you may need two calls: first the 'point' tool with latitude and longitude, then 'gridpoint_forecast' with the returned grid reference. For alerts, use 'alerts_active_area' with the two-letter state code. Today is {{now:2006-01-02}}.",
       "execute_config": {
-        "model": "<span v-pre>{{var:model}}</span>",
-        "provider": "<span v-pre>{{var:provider}}</span>",
+        "model": "{{var:model}}",
+        "provider": "{{var:provider}}",
         "tools": ["nws"]
       },
       "transition": {
@@ -136,7 +136,7 @@ This chain calls an external API via `webtools`. `retry_policy` retries up to th
 
 A common pitfall in long agentic loops is letting the model drift: it keeps calling tools long past the point of usefulness because it doesn't know how much budget it has left. The old workaround was to split the loop in two — a main agent with a 10-round cap and a "recovery" agent that took over at round 10 with a fixed *"you've used 10 of 20"* warning. The warning was a lie after the first transition, the handoff blew context continuity, and tool calls hanging across the boundary needed a guard to survive.
 
-A single chat task with the <span v-pre>`{{edge_count:from->to}}`</span> macro replaces the whole split. The model sees the live counter on every turn and self-paces. When the hard ceiling fires, the chain routes to a tool-less terminal that produces a clean "here's what I tried, here's what's stuck" summary.
+A single chat task with the `{{edge_count:from->to}}` macro replaces the whole split. The model sees the live counter on every turn and self-paces. When the hard ceiling fires, the chain routes to a tool-less terminal that produces a clean "here's what I tried, here's what's stuck" summary.
 
 ```jsonc
 {
@@ -150,10 +150,10 @@ A single chat task with the <span v-pre>`{{edge_count:from->to}}`</span> macro r
       // The {{edge_count:...}} expands per step to the live traversal count of
       // the named edge. The model reads the budget growing on every turn and
       // paces itself instead of guessing.
-      "system_instruction": "You are a coding assistant.\n\nBUDGET: You have used <span v-pre>{{edge_count:chat->run_tools}}</span> of 20 tool-call rounds on this turn. Pace yourself — once the budget is spent you will be forced into a tool-less summary and cannot run any more tools. Prefer producing an answer once you have enough information; address root causes rather than retrying the same thing.",
+      "system_instruction": "You are a coding assistant.\n\nBUDGET: You have used {{edge_count:chat->run_tools}} of 20 tool-call rounds on this turn. Pace yourself — once the budget is spent you will be forced into a tool-less summary and cannot run any more tools. Prefer producing an answer once you have enough information; address root causes rather than retrying the same thing.",
       "execute_config": {
-        "model": "<span v-pre>{{var:model}}</span>",
-        "provider": "<span v-pre>{{var:provider}}</span>",
+        "model": "{{var:model}}",
+        "provider": "{{var:provider}}",
         "tools": ["*"]
       },
       "transition": {
@@ -185,8 +185,8 @@ A single chat task with the <span v-pre>`{{edge_count:from->to}}`</span> macro r
       // No tools — the model is forced to wrap up rather than start a new sub-quest.
       "system_instruction": "You've exhausted the tool-call budget for this turn. Tell the user what was attempted, what concrete steps were taken, where things got stuck, and what would unblock the work. Do not pretend the work is complete.",
       "execute_config": {
-        "model": "<span v-pre>{{var:model}}</span>",
-        "provider": "<span v-pre>{{var:provider}}</span>",
+        "model": "{{var:model}}",
+        "provider": "{{var:provider}}",
         "tools": [],
         "max_tokens": 16384
       },
@@ -219,8 +219,8 @@ A single chat task with the <span v-pre>`{{edge_count:from->to}}`</span> macro r
       "id": "edit",
       "handler": "chat_completion",
       "execute_config": {
-        "model": "<span v-pre>{{var:model}}</span>",
-        "provider": "<span v-pre>{{var:provider}}</span>",
+        "model": "{{var:model}}",
+        "provider": "{{var:provider}}",
         "tools": ["local_fs"]
       },
       "transition": {

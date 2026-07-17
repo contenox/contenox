@@ -27,7 +27,9 @@ If you haven't installed Contenox yet, do the [Quickstart](/docs/guide/quickstar
 ├── default-run-chain.json      ← the one-shot pipeline chain
 ├── hitl-policy-default.json    ← default HITL policy
 ├── hitl-policy-strict.json
-└── hitl-policy-dev.json
+├── hitl-policy-dev.json
+├── hitl-policy-acp.json        ← editor (ACP) sessions
+└── hitl-policy-acpx.json       ← headless / untrusted-driver (ACPX) sessions
 
 ./my-project/.contenox/         ← project-local workspace marker
 └── workspace.id                ← unique workspace ID
@@ -39,8 +41,8 @@ To make any directory a workspace, run `contenox init` inside it. Workspace-scop
 
 Look in `~/.contenox/`. You'll find two chains the engine ships with:
 
-- `default-chain.json` — the interactive chat loop (`contenox chat`)
-- `default-run-chain.json` — the one-shot pipeline loop (`contenox "..."` and `contenox run`)
+- `default-chain.json` — the interactive chat loop, used by `contenox chat` **and** by a bare `contenox "..."` (a bare prompt is session-backed chat, not a stateless run)
+- `default-run-chain.json` — the one-shot, stateless pipeline loop, used only by `contenox run`
 
 The second one is a real authored chain: a main agentic loop with a 10-round budget, a recovery loop with another 10 rounds, and a final `summarise_failure` task that runs when both budgets are exhausted. Tool allowlists, retry policies, edge-traversal counters — every decision is a JSON key.
 
@@ -236,7 +238,7 @@ That's it. You've written:
 - A tool policy with allowlists
 - A retry policy with backoff and jitter
 
-This file works against Ollama, OpenAI, Gemini, vLLM, or in-process llama.cpp by changing one config line. It works on your laptop today; the same artifact runs on Contenox Services tomorrow without modification.
+This file works against Ollama, OpenAI, Gemini, vLLM, or local GGUF/OpenVINO models (the `llama`/`openvino` backends served by the `modeld` daemon) by changing one config line. It works on your laptop today; the same artifact runs on Contenox Services tomorrow without modification.
 
 ## Next
 

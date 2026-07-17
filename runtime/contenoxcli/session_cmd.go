@@ -40,29 +40,42 @@ Each session maintains its own persistent conversation history.
 var sessionNewCmd = &cobra.Command{
 	Use:   "new [name]",
 	Short: "Create a new session and make it active.",
-	Args:  cobra.MaximumNArgs(1),
-	RunE:  runSessionNew,
+	Long: `Create a new chat session and immediately make it the active one.
+An optional name may be given; when omitted, the session is identified by a
+short prefix of its generated id.`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runSessionNew,
 }
 
 var sessionListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List sessions: active-scope by default, or whole-DB with --workspace/--namespace/--all.",
-	Args:  cobra.NoArgs,
-	RunE:  runSessionList,
+	Long: `List chat sessions with their message counts, marking the active one with '*'.
+By default only sessions in the active scope are shown. Pass --workspace,
+--namespace, or --all to scan the whole database for sessions in that
+workspace, namespace, or everywhere.`,
+	Args: cobra.NoArgs,
+	RunE: runSessionList,
 }
 
 var sessionSwitchCmd = &cobra.Command{
 	Use:   "switch <name>",
 	Short: "Switch the active session by name.",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runSessionSwitch,
+	Long: `Make the named session the active one, so subsequent chat and run commands
+use its conversation history. Run 'contenox session list' to see the names
+available to switch to.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runSessionSwitch,
 }
 
 var sessionDeleteCmd = &cobra.Command{
 	Use:   "delete <name>",
 	Short: "Delete a session and all its messages.",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runSessionDelete,
+	Long: `Permanently delete the named session and its entire message history.
+If the deleted session was the active one, no session is active afterward;
+create or switch to another before chatting again.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runSessionDelete,
 }
 
 var sessionShowCmd = &cobra.Command{

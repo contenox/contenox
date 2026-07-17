@@ -3,6 +3,7 @@ package acpsvc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -166,6 +167,27 @@ func TestUnit_Prompt_GenuineFailureStaysAnError(t *testing.T) {
 
 	require.Error(t, err, "a non-cancellation failure must not masquerade as cancelled")
 	require.Equal(t, libacp.StopReasonEndTurn, resp.StopReason)
+	var e *libacp.Error
+	require.ErrorAs(t, err, &e)
+	require.Equal(t, libacp.ErrInternalError, e.Code)
+	requireSpan(t, rt, 1, 0)
+}
+
+// A hard execution failure that surfaces as a timeout (e.g. modeld refusing to
+// load a model / waiting on a busy GPU slot until an inner LLM call deadlines)
+// must reach the client as a JSON-RPC error, NOT masquerade as a clean user
+// cancellation. agentservice.InferStopReason maps context.DeadlineExceeded to
+// StopCancelled, so this pins that the transport does not trust that alone and
+// keeps the failure visible instead of silently resolving the turn.
+func TestUnit_Prompt_DeadlineExceededFailureIsSurfacedNotSilentlyCancelled(t *testing.T) {
+	tr, sid, rt := transportWithFakeAgent(&fakeAgent{
+		resp: &agentservice.PromptResponse{StopReason: agentservice.StopCancelled},
+		err:  fmt.Errorf("chain execution failed: %w", context.DeadlineExceeded),
+	})
+
+	_, err := tr.Prompt(context.Background(), promptReq(sid))
+
+	require.Error(t, err, "a deadline/timeout failure must surface as a JSON-RPC error, not a silent cancel")
 	var e *libacp.Error
 	require.ErrorAs(t, err, &e)
 	require.Equal(t, libacp.ErrInternalError, e.Code)

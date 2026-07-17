@@ -15,6 +15,7 @@ import (
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/agentservice"
 	"github.com/contenox/runtime/runtime/approvalflow"
+	"github.com/contenox/runtime/runtime/chatservice"
 	"github.com/contenox/runtime/runtime/enginesvc"
 	"github.com/contenox/runtime/runtime/hitlservice"
 	"github.com/contenox/runtime/runtime/runtimetypes"
@@ -172,6 +173,7 @@ type loopbackHarness struct {
 	client *libacp.ClientSideConnection
 	lc     *loopbackClient
 	bus    *libbus.InMem
+	router *PermissionRouter
 }
 
 func newLoopbackHarness(t *testing.T) *loopbackHarness {
@@ -187,11 +189,17 @@ func newLoopbackHarness(t *testing.T) *loopbackHarness {
 	clientSide := &wirePipe{r: clientR, w: clientW}
 
 	bus := libbus.NewInMem()
+	// serve wires a shared PermissionRouter so a single engine can route HITL
+	// approvals to the owning WS connection; the harness mirrors that so the
+	// router path is exercised exactly as production does. It is inert for tests
+	// that never consult it.
+	router := NewPermissionRouter()
 	factory := New(Deps{
-		Engine:        &enginesvc.Engine{Bus: bus},
-		DB:            db,
-		ChainRegistry: &ChainRegistry{defaultChain: &taskengine.TaskChainDefinition{}},
-		WorkspaceID:   "loopback-ws",
+		Engine:           &enginesvc.Engine{Bus: bus},
+		DB:               db,
+		ChainRegistry:    &ChainRegistry{defaultChain: &taskengine.TaskChainDefinition{}},
+		WorkspaceID:      "loopback-ws",
+		PermissionRouter: router,
 	})
 
 	var tr *Transport
@@ -226,7 +234,7 @@ func newLoopbackHarness(t *testing.T) *loopbackHarness {
 		require.NoError(t, db.Close())
 	})
 
-	return &loopbackHarness{t: t, tr: tr, client: clientConn, lc: lc, bus: bus}
+	return &loopbackHarness{t: t, tr: tr, client: clientConn, lc: lc, bus: bus, router: router}
 }
 
 // swapAgent installs a into sid's live sessionEntry, replacing the real
@@ -356,6 +364,60 @@ func TestLoopback_Prompt_StreamsUpdatesThroughRealClient(t *testing.T) {
 	require.Equal(t, 4096, usage.Size)
 }
 
+// TestLoopback_Prompt_PushesDerivedTitleInSessionInfo pins the beam/ACP
+// regression fix: the post-turn session_info_update must carry a Title derived
+// from the session's first user message. A session created THIS connection
+// received no title in its session/new SessionInfo, so without the pushed title
+// the client's tab/sidebar label is stuck on the raw-id fallback ("Sitzung
+// acp-XXXX") until a full session/list re-list (only on reconnect). The push
+// reuses session/list's first-user-message heuristic, so the live label and a
+// later re-list agree.
+func TestLoopback_Prompt_PushesDerivedTitleInSessionInfo(t *testing.T) {
+	h := newLoopbackHarness(t)
+	ctx := context.Background()
+
+	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
+	require.NoError(t, err)
+
+	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: "/tmp/loopback-title", McpServers: []libacp.McpServer{}})
+	require.NoError(t, err)
+	h.lc.drain(t, 1) // deferred available_commands_update
+
+	// Persist the session's first user message against its internal id (mi.id),
+	// which is distinct from the ACP-level session id (mi.name) session/new
+	// returned — exactly what a real turn's persistHistory would have stored.
+	h.tr.sessionMu.Lock()
+	internalID := h.tr.sessions[newResp.SessionID].InternalSessionID
+	h.tr.sessionMu.Unlock()
+	require.NotEmpty(t, internalID)
+
+	const firstMessage = "   hey   how do you do?   "
+	require.NoError(t, chatservice.NewManager("loopback-ws").PersistDiff(ctx, h.tr.deps.DB.WithoutTransaction(), internalID, []taskengine.Message{
+		{Role: "user", Content: firstMessage, Timestamp: time.Now()},
+		{Role: "assistant", Content: "very well, thank you", Timestamp: time.Now().Add(time.Second)},
+	}))
+
+	fake := &loopbackAgent{promptFunc: func(context.Context, agentservice.PromptRequest) (*agentservice.PromptResponse, error) {
+		return &agentservice.PromptResponse{StopReason: agentservice.StopEndTurn}, nil
+	}}
+	h.swapAgent(newResp.SessionID, fake)
+
+	_, err = h.client.Prompt(ctx, libacp.PromptRequest{
+		SessionID: newResp.SessionID,
+		Prompt:    []libacp.ContentBlock{libacp.NewTextContent("hi again")},
+	})
+	require.NoError(t, err)
+
+	notes := h.lc.drain(t, 1)
+	info := notes[0].Update
+	require.Equal(t, libacp.SessionUpdateSessionInfo, info.SessionUpdate)
+	require.NotEmpty(t, info.UpdatedAt, "the freshness ping must still be present")
+	require.Equal(t, "hey how do you do?", info.Title,
+		"session_info_update must carry the first user message (whitespace-collapsed) as Title, not the raw session id")
+	require.NotEqual(t, string(newResp.SessionID), info.Title,
+		"the derived title must not echo the session id, or the client treats it as absent")
+}
+
 // TestLoopback_CancelPrompt_ResolvesStopReasonCancelled cancels a prompt
 // turn mid-flight through the real client's CancelPrompt and proves the
 // production agent side resolves it with stopReason "cancelled" and no
@@ -413,6 +475,115 @@ func TestLoopback_CancelPrompt_ResolvesStopReasonCancelled(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("prompt did not resolve after CancelPrompt")
 	}
+}
+
+// TestLoopback_ServerCancel_AbortsEngineCtxAndResolvesCancelled drives the
+// SERVER-owned cancellation path added to Transport.Cancel: a session/cancel
+// notification (what beam's Stopp button and any editor send) must abort the
+// in-flight turn's engine context and resolve the prompt with stopReason
+// "cancelled". Unlike the CancelPrompt test above — which also exercises
+// libacp's connection-level promptCtx substitution — this asserts the engine's
+// own ctx was cancelled (proving cancellation reached the chain/provider layer,
+// not just the wire) and drives the raw session/cancel notification directly.
+func TestLoopback_ServerCancel_AbortsEngineCtxAndResolvesCancelled(t *testing.T) {
+	h := newLoopbackHarness(t)
+	ctx := context.Background()
+
+	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
+	require.NoError(t, err)
+	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: "/tmp/loopback-server-cancel", McpServers: []libacp.McpServer{}})
+	require.NoError(t, err)
+	h.lc.drain(t, 1)
+
+	started := make(chan struct{})
+	var startOnce sync.Once
+	engineCtxCancelled := make(chan struct{})
+	fake := &loopbackAgent{promptFunc: func(ctx context.Context, _ agentservice.PromptRequest) (*agentservice.PromptResponse, error) {
+		startOnce.Do(func() { close(started) })
+		select {
+		case <-ctx.Done():
+			// The engine's own context observed the cancellation — the whole point:
+			// cancellation reached the chain-execution layer, not just the wire.
+			close(engineCtxCancelled)
+			return &agentservice.PromptResponse{StopReason: agentservice.StopCancelled}, ctx.Err()
+		case <-time.After(5 * time.Second):
+			return &agentservice.PromptResponse{StopReason: agentservice.StopEndTurn}, nil
+		}
+	}}
+	h.swapAgent(newResp.SessionID, fake)
+
+	type result struct {
+		resp libacp.PromptResponse
+		err  error
+	}
+	resultCh := make(chan result, 1)
+	go func() {
+		resp, err := h.client.Prompt(ctx, libacp.PromptRequest{
+			SessionID: newResp.SessionID,
+			Prompt:    []libacp.ContentBlock{libacp.NewTextContent("start a slow turn")},
+		})
+		resultCh <- result{resp, err}
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("prompt did not reach the fake agent")
+	}
+
+	// Send the raw session/cancel notification, exactly as beam/an editor does,
+	// so the server's Transport.Cancel owns the abort.
+	require.NoError(t, h.client.CancelSession(libacp.CancelNotification{SessionID: newResp.SessionID}))
+
+	select {
+	case <-engineCtxCancelled:
+	case <-time.After(3 * time.Second):
+		t.Fatal("engine ctx was not cancelled after session/cancel — the running turn kept executing")
+	}
+
+	select {
+	case r := <-resultCh:
+		require.NoError(t, r.err, "ACP spec: cancellation must not surface as a JSON-RPC error")
+		require.Equal(t, libacp.StopReasonCancelled, r.resp.StopReason)
+	case <-time.After(3 * time.Second):
+		t.Fatal("prompt did not resolve promptly after session/cancel")
+	}
+}
+
+// TestUnit_Cancel_NoInflightTurnIsCleanNoOp pins the invariant that a
+// session/cancel with no running turn (a client cancelling after the turn
+// already finished, or before any prompt) is a clean no-op: Cancel returns nil
+// and cancelInflightPrompt reports it cancelled nothing.
+func TestUnit_Cancel_NoInflightTurnIsCleanNoOp(t *testing.T) {
+	tr := &Transport{promptCancels: make(map[libacp.SessionID]*inflightPrompt)}
+	require.False(t, tr.cancelInflightPrompt("no-such-session"),
+		"cancelling a session with no in-flight turn must report it cancelled nothing")
+	require.NoError(t, tr.Cancel(context.Background(), libacp.CancelNotification{SessionID: "no-such-session"}),
+		"session/cancel with no in-flight turn is a clean no-op, never an error")
+}
+
+// TestUnit_PromptCancel_RegisterSupersedeUnregister pins the per-session
+// registry's lifecycle: a second registration supersedes and cancels the first
+// (one turn per session; nothing outlives its turn), and a stale unregister
+// never removes a newer turn's registration.
+func TestUnit_PromptCancel_RegisterSupersedeUnregister(t *testing.T) {
+	tr := &Transport{promptCancels: make(map[libacp.SessionID]*inflightPrompt)}
+	const sid = libacp.SessionID("sess-x")
+
+	firstCancelled := false
+	reg1 := tr.registerPromptCancel(sid, func() { firstCancelled = true })
+
+	secondCancelled := false
+	reg2 := tr.registerPromptCancel(sid, func() { secondCancelled = true })
+	require.True(t, firstCancelled, "a superseding registration must cancel the stale turn")
+
+	// The first turn's deferred unregister must not evict the second turn.
+	tr.unregisterPromptCancel(sid, reg1)
+	require.True(t, tr.cancelInflightPrompt(sid), "the current (second) turn must still be registered")
+	require.True(t, secondCancelled)
+
+	tr.unregisterPromptCancel(sid, reg2)
+	require.False(t, tr.cancelInflightPrompt(sid), "after the current turn unregisters, nothing remains")
 }
 
 // TestLoopback_Prompt_PermissionRoundTripThroughRealClient exercises the
@@ -475,6 +646,65 @@ func TestLoopback_Prompt_PermissionRoundTripThroughRealClient(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, approvalErr)
 	require.False(t, allowed, "client answered reject; AskApproval must resolve false")
+}
+
+// TestLoopback_PermissionRouter_RoutesToOwningTransport pins the serve HITL
+// bridge: serve runs many ACP WS connections behind ONE engine, so its single
+// AskApproval callback dispatches through a shared PermissionRouter keyed by the
+// contenox session id in ctx (exactly what the engine's HITL wrapper carries).
+// This proves (a) a gated tool call for a live session routes to the owning
+// transport's session/request_permission — reaching the real client — and
+// resolves the client's outcome; (b) an unknown session yields
+// ErrNoBoundSession so serve falls back to its approval-API path; and (c) after
+// the session is closed the router no longer routes it. Without the fix, serve
+// wired AskApproval straight to the approval-API path, so a beam gated tool call
+// hung forever as "Ausstehend" with no permission prompt.
+func TestLoopback_PermissionRouter_RoutesToOwningTransport(t *testing.T) {
+	h := newLoopbackHarness(t)
+	ctx := context.Background()
+
+	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
+	require.NoError(t, err)
+	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: "/tmp/loopback-router", McpServers: []libacp.McpServer{}})
+	require.NoError(t, err)
+	h.lc.drain(t, 1)
+
+	// The engine's HITL wrapper carries the INTERNAL contenox session id in ctx
+	// (agentservice stamps SessionIDContextKey from it) — the router's key.
+	h.tr.sessionMu.Lock()
+	internalID := h.tr.sessions[newResp.SessionID].InternalSessionID
+	h.tr.sessionMu.Unlock()
+	require.NotEmpty(t, internalID)
+
+	// (a) A live session routes to the owning transport; the client answers allow.
+	h.lc.setPermissionResponse(libacp.RequestPermissionResponse{
+		Outcome: libacp.RequestPermissionOutcome{Outcome: libacp.PermissionOutcomeSelected, OptionID: approvalflow.OptionAllow},
+	})
+	approveCtx := context.WithValue(ctx, runtimetypes.SessionIDContextKey, internalID)
+	allowed, err := h.router.AskApproval(approveCtx, hitlservice.ApprovalRequest{
+		ToolCallID: "router-call-1",
+		ToolName:   "local_fs.write_file",
+		Args:       map[string]any{"path": "/tmp/loopback-router/x.txt"},
+	})
+	require.NoError(t, err)
+	require.True(t, allowed, "router must bridge to the owning transport and resolve the client's allow")
+	req, ok := h.lc.lastPermissionRequest()
+	require.True(t, ok, "the real client must have received session/request_permission")
+	require.Equal(t, newResp.SessionID, req.SessionID)
+	require.Equal(t, "router-call-1", req.ToolCall.ToolCallID)
+
+	// (b) An unknown session is not routable: the caller must fall back.
+	_, err = h.router.AskApproval(
+		context.WithValue(ctx, runtimetypes.SessionIDContextKey, "no-such-session"),
+		hitlservice.ApprovalRequest{ToolCallID: "router-call-2", ToolName: "local_fs.write_file"},
+	)
+	require.ErrorIs(t, err, ErrNoBoundSession)
+
+	// (c) Closing the session deregisters it from the router.
+	_, err = h.client.CloseSession(ctx, libacp.CloseSessionRequest{SessionID: newResp.SessionID})
+	require.NoError(t, err)
+	_, err = h.router.AskApproval(approveCtx, hitlservice.ApprovalRequest{ToolCallID: "router-call-3", ToolName: "local_fs.write_file"})
+	require.ErrorIs(t, err, ErrNoBoundSession, "a closed session must no longer route")
 }
 
 // TestLoopback_Prompt_FSReadWriteThroughRealClient exercises the other

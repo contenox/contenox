@@ -23,7 +23,6 @@ The filesystem root is set when Contenox registers the local tool:
 | `read_file_range` | `path`, `start_line`, `end_line` | Read a specific line range. Satisfies targeted `sed` mutations, but not full-file `write_file` overwrites. |
 | `grep` | `path`, `pattern` | Find lines containing a string (returns `line_number: content`) |
 | `find_files` | `pattern`, `path` (optional) | Find paths by glob pattern under the allowed root. |
-| `search_repo` | `pattern`, `path` (optional), `glob` (optional), `regex` (optional) | Search file contents across the repo or a subtree. |
 | `sed` | `path`, `pattern`, `replacement` | Replace all occurrences of a string in a file. For existing files, requires a prior `read_file` or `read_file_range` of the same path in this session. |
 | `count_stats` | `path` | Count lines, words, and bytes (like `wc`) |
 | `stat_file` | `path` | Get file metadata: name, size, mod time, isDir |
@@ -52,7 +51,7 @@ Set per-task read/output limits and denied path substrings by adding a `tools_po
 | `_max_list_depth` | int | `6` | Cap on `list_dir(recursive=true)`. Hard-capped at 32 regardless of policy. |
 | `_max_grep_matches` | int | `5000` | Stops `grep` after this many matching lines and returns an error so the model narrows the pattern. Hard-capped at 500000. |
 | `_max_find_results` | int | `200` | Caps `find_files` path results. Hard-capped at 5000. |
-| `_skip_dir_names` | comma-sep | `.git,node_modules,.venv,__pycache__,.next,dist,.cache,vendor,target,.idea,.vscode` | Directory basenames omitted by recursive `list_dir`, `find_files`, and `search_repo`. Set to empty string to disable filtering. |
+| `_skip_dir_names` | comma-sep | `.git,node_modules,.venv,__pycache__,.next,dist,.cache,vendor,target,.idea,.vscode` | Directory basenames omitted by recursive `list_dir` and `find_files`. Set to empty string to disable filtering. |
 | `_list_extensions` | comma-sep | empty | Optional file extension filter for recursive `list_dir` output, e.g. `.go,.md,.json`. |
 | `_denied_path_substrings` | comma-sep | empty | Path substrings that always reject (e.g. `node_modules,.git/,dist/`). Matched against the path relative to the allowed root. |
 
@@ -90,7 +89,7 @@ Values are strings even when conceptually numeric — `tools_policies` is the ch
 Always available. Lets the model call any HTTP endpoint via per-verb tools. Unlike remote tools (which require an OpenAPI spec), `webtools` exposes six generic verb tools — the model picks the verb, URL, query params, headers, and body at call time.
 
 > [!CAUTION]
-> Because the model controls the destination URL, every request is gated by SSRF and size limits configured via `tools_policies.webtools` (see below). The defaults block link-local / loopback / cloud-metadata addresses and cap response size at 1 MiB. Mutating verbs (`web_post`, `web_put`, `web_patch`, `web_delete`) trigger a HITL approval prompt by default. Do not point chains at untrusted user input without tightening the policy further.
+> Because the model controls the destination URL, every request is subject to size limits and an *opt-in* host policy configured via `tools_policies.webtools` (see below). By default `_denied_hosts` is empty — no host, including link-local / loopback / cloud-metadata addresses, is blocked unless you set it. Response size is capped at 1 MiB by default. Mutating verbs (`web_post`, `web_put`, `web_patch`, `web_delete`) trigger a HITL approval prompt by default. Do not point chains at untrusted user input without setting `_denied_hosts` (or an equivalent HITL policy rule with `op:"host"`) yourself.
 
 ### Tools
 
@@ -117,7 +116,7 @@ Always available. Lets the model call any HTTP endpoint via per-verb tools. Unli
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `_allowed_hosts` | comma-sep | empty (any host) | When set, *only* listed hosts pass. |
-| `_denied_hosts` | comma-sep | `169.254.169.254,169.254.170.2,localhost,127.0.0.1,0.0.0.0,::1,metadata.google.internal,metadata.azure.com` | Empty string `""` opts out of the SSRF baseline. |
+| `_denied_hosts` | comma-sep | empty (no host denied) | Opt-in SSRF guard — set this yourself to block link-local / loopback / cloud-metadata hosts, e.g. `169.254.169.254,169.254.170.2,localhost,127.0.0.1,0.0.0.0,::1,metadata.google.internal,metadata.azure.com`. Only the `hitl-policy-acpx.json` HITL preset denies these hosts by default (via an `op:"host"` rule); `webtools` itself does not. |
 | `_allowed_schemes` | comma-sep | `http,https` | Block `file://`, `gopher://`, `ftp://`, etc. |
 | `_max_response_bytes` | int | `1048576` (1 MiB) | `0` or negative = unlimited. Truncated responses include a marker. |
 | `_max_request_body_bytes` | int | `262144` (256 KiB) | `0` or negative = unlimited. Oversized body blocks the call before sending. |

@@ -245,7 +245,12 @@ Examples:
 var backendListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all registered backends.",
-	Args:  cobra.NoArgs,
+	Long: `List every registered backend as a table of name, type, and URL.
+
+modeld backends are annotated as "modeld (local)" when they reach the local
+daemon via its lease, or "modeld (remote)" when they carry a host:port address.
+If no backends are registered, prints a hint to run 'contenox backend add'.`,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := libtracker.WithNewRequestID(context.Background())
 		db, svc, err := openBackendDB(cmd)
@@ -283,7 +288,9 @@ var backendListCmd = &cobra.Command{
 var backendShowCmd = &cobra.Command{
 	Use:   "show <name>",
 	Short: "Show details for a backend.",
-	Args:  cobra.ExactArgs(1),
+	Long: `Look up a backend by name and print its full record as indented JSON,
+including its id, type, and base URL.`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := libtracker.WithNewRequestID(context.Background())
 		db, _, err := openBackendDB(cmd)
@@ -307,7 +314,10 @@ var backendRemoveCmd = &cobra.Command{
 	Use:     "remove <name>",
 	Aliases: []string{"rm", "delete"},
 	Short:   "Remove a registered backend.",
-	Args:    cobra.ExactArgs(1),
+	Long: `Delete a backend by name from the local database and drop its cached model
+list so the next chat or run no longer sees it. This removes only the local
+registration; it does not affect the remote provider or endpoint.`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := libtracker.WithNewRequestID(context.Background())
 		db, svc, err := openBackendDB(cmd)

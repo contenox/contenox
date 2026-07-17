@@ -64,11 +64,14 @@ contenox backend add vertex --type vertex-google \
   --url "https://us-central1-aiplatform.googleapis.com/v1/projects/$GOOGLE_CLOUD_PROJECT/locations/us-central1" \
   --api-key-env VERTEX_SA_JSON
 
-contenox config set default-model gemini-flash-latest
+contenox config set default-model gemini-2.5-flash
 contenox config set default-provider vertex-google
 ```
 
 Contenox reads the JSON from the named env var at request time, so the key never lands in the config file on disk.
+
+> [!NOTE]
+> Use a concrete model id like `gemini-2.5-flash`, not an AI-Studio-style alias such as `gemini-flash-latest` — those `-latest` aliases exist on the Gemini API / AI Studio catalog but not on Vertex, and setting one as `default-model` here will fail. Run `contenox model list` after adding the backend to see what's actually available in your project/region.
 
 ## Auth method 2 — Application Default Credentials (CLI / dev only)
 
@@ -83,7 +86,7 @@ gcloud auth application-default set-quota-project YOUR_PROJECT_ID
 contenox backend add vertex --type vertex-google \
   --url "https://us-central1-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/us-central1"
 
-contenox config set default-model gemini-flash-latest
+contenox config set default-model gemini-2.5-flash
 contenox config set default-provider vertex-google
 ```
 

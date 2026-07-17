@@ -121,7 +121,7 @@ This exercises the same MCP client path used by real stdio servers without requi
 
 Reference them by name in `execute_config.tools`:
 
-```json v-pre
+```json
 {
   "id": "ask_with_memory",
   "handler": "chat_completion",

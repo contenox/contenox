@@ -137,7 +137,7 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 	}
 	t.sessionMu.Lock()
 	t.sessions[req.SessionID] = entry
-	t.contenoxToACPID[contenoxSessionID] = req.SessionID
+	t.bindContenoxSession(contenoxSessionID, req.SessionID)
 	t.sessionMu.Unlock()
 	t.persistSessionCwd(ctx, store, req.SessionID, sessionCwd)
 
@@ -386,7 +386,7 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 	}
 	t.sessionMu.Lock()
 	t.sessions[sessionID] = entry
-	t.contenoxToACPID[contenoxSessionID] = sessionID
+	t.bindContenoxSession(contenoxSessionID, sessionID)
 	t.sessionMu.Unlock()
 	t.persistSessionCwd(ctx, store, sessionID, sessionCwd)
 	t.clearToolCallState(sessionID)
@@ -482,7 +482,7 @@ func (t *Transport) ResumeSession(ctx context.Context, req libacp.ResumeSessionR
 	}
 	t.sessionMu.Lock()
 	t.sessions[req.SessionID] = entry
-	t.contenoxToACPID[contenoxSessionID] = req.SessionID
+	t.bindContenoxSession(contenoxSessionID, req.SessionID)
 	t.sessionMu.Unlock()
 	t.persistSessionCwd(ctx, store, req.SessionID, sessionCwd)
 	t.clearToolCallState(req.SessionID)
@@ -582,6 +582,11 @@ func (t *Transport) DeleteSession(ctx context.Context, req libacp.DeleteSessionR
 // dropSessionEntry removes a session from the in-memory maps and returns the
 // removed entry (nil if it was not open on this connection).
 func (t *Transport) dropSessionEntry(sid libacp.SessionID) *sessionEntry {
+	// Abort any in-flight turn before the session's connection-local state goes
+	// away: a Close/Delete that races a running prompt must stop the chain, not
+	// let it keep executing against a session that no longer exists here. A clean
+	// no-op when nothing is running.
+	t.cancelInflightPrompt(sid)
 	t.sessionMu.Lock()
 	defer t.sessionMu.Unlock()
 	entry, ok := t.sessions[sid]
@@ -589,7 +594,7 @@ func (t *Transport) dropSessionEntry(sid libacp.SessionID) *sessionEntry {
 		return nil
 	}
 	delete(t.sessions, sid)
-	delete(t.contenoxToACPID, entry.InternalSessionID)
+	t.unbindContenoxSession(entry.InternalSessionID)
 	return entry
 }
 
@@ -781,12 +786,24 @@ func (t *Transport) Close(ctx context.Context) error {
 
 	t.sessionMu.Lock()
 	entries := make([]*sessionEntry, 0, len(t.sessions))
-	for _, e := range t.sessions {
+	sids := make([]libacp.SessionID, 0, len(t.sessions))
+	for sid, e := range t.sessions {
 		entries = append(entries, e)
+		sids = append(sids, sid)
+		// Deregister from the shared permission router before dropping the map so
+		// a shared engine stops routing approvals to this closing connection.
+		t.deps.PermissionRouter.unbind(e.InternalSessionID, t)
 	}
 	t.sessions = make(map[libacp.SessionID]*sessionEntry)
 	t.contenoxToACPID = make(map[string]libacp.SessionID)
 	t.sessionMu.Unlock()
+
+	// A connection drop must stop any in-flight turns on this transport. libacp
+	// cancels the prompt contexts it substituted when its own Run loop ends, but
+	// the server owns cancellation here too, so it does not depend on that.
+	for _, sid := range sids {
+		t.cancelInflightPrompt(sid)
+	}
 
 	for _, e := range entries {
 		t.cleanupMcpServers(ctx, store, e.McpServerNames)
@@ -962,16 +979,43 @@ func (t *Transport) ListSessions(ctx context.Context, req libacp.ListSessionsReq
 // user message yet, or on read failure — session/list must never error out
 // over a title.
 func (t *Transport) sessionListTitle(ctx context.Context, mgr *chatservice.Manager, exec libdb.Exec, internalSessionID, fallback string) string {
+	if title := firstUserMessageTitle(ctx, mgr, exec, internalSessionID); title != "" {
+		return title
+	}
+	return fallback
+}
+
+// firstUserMessageTitle derives a humane session title from the session's
+// first non-empty user message, whitespace-collapsed and clipped to
+// sessionListTitleMaxLen. Returns "" when the session has no stored user
+// message yet or on read failure — the shared heuristic behind both the
+// session/list Title and the live post-turn session_info_update Title, so a
+// client's tab/sidebar label matches whether it learned the title from a
+// re-list or a live push.
+func firstUserMessageTitle(ctx context.Context, mgr *chatservice.Manager, exec libdb.Exec, internalSessionID string) string {
 	msgs, err := mgr.ListMessages(ctx, exec, internalSessionID)
 	if err != nil {
-		return fallback
+		return ""
 	}
 	for _, m := range msgs {
 		if m.Role == "user" && strings.TrimSpace(m.Content) != "" {
 			return truncateSessionListTitle(strings.TrimSpace(m.Content))
 		}
 	}
-	return fallback
+	return ""
+}
+
+// sessionInfoTitle derives the live Title pushed on a prompt turn's
+// session_info_update from the session's first user message, reusing the
+// session/list heuristic. Empty when the session has no user message yet (or
+// when there is no DB to read) — callers omit the Title in that case so the
+// notification stays a pure freshness (updatedAt) ping.
+func (t *Transport) sessionInfoTitle(ctx context.Context, internalSessionID string) string {
+	if t.deps.DB == nil || internalSessionID == "" {
+		return ""
+	}
+	mgr := chatservice.NewManager(t.workspaceID())
+	return firstUserMessageTitle(ctx, mgr, t.deps.DB.WithoutTransaction(), internalSessionID)
 }
 
 const acpSessionCwdKVPrefix = "acp:session_cwd:"

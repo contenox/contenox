@@ -1,11 +1,29 @@
 import { describe, expect, it } from 'vitest';
+import type { RequestPermissionRequest } from '../../../lib/acp';
 import {
+  approvalCanvasTab,
+  approvalResolutionForOption,
+  approvalTabStatus,
+  APPROVAL_CANVAS_TAB_PREFIX,
   canvasTabsReducer,
+  fileCanvasTab,
+  FILE_CANVAS_TAB_PREFIX,
   initialCanvasTabsState,
   TERMINAL_CANVAS_TAB,
   type CanvasTab,
   type CanvasTabsState,
 } from './canvasTabs';
+
+function permReq(toolCallId: string, title?: string): RequestPermissionRequest {
+  return {
+    sessionId: 'sess-1',
+    toolCall: { toolCallId, title },
+    options: [
+      { optionId: 'ok', name: 'Allow', kind: 'allow_once' },
+      { optionId: 'no', name: 'Deny', kind: 'reject_once' },
+    ],
+  };
+}
 
 const term: CanvasTab = TERMINAL_CANVAS_TAB;
 const a: CanvasTab = { id: 'a', kind: 'terminal' };
@@ -121,5 +139,112 @@ describe('canvasTabsReducer', () => {
       const opened = reduce(initialCanvasTabsState, { type: 'open', tab: a });
       expect(canvasTabsReducer(opened, { type: 'close', id: 'ghost' })).toBe(opened);
     });
+  });
+});
+
+describe('fileCanvasTab', () => {
+  it('derives a path-scoped id, the file kind, and the basename label', () => {
+    expect(fileCanvasTab('src/app.ts')).toEqual({
+      id: `${FILE_CANVAS_TAB_PREFIX}src/app.ts`,
+      kind: 'file',
+      path: 'src/app.ts',
+      title: 'app.ts',
+    });
+  });
+
+  it('never collides with the terminal singleton id', () => {
+    expect(fileCanvasTab('terminal').id).not.toBe(TERMINAL_CANVAS_TAB.id);
+  });
+});
+
+describe('file canvas tabs', () => {
+  it('opens a file beside the terminal and dedups on re-open of the same path', () => {
+    const term = TERMINAL_CANVAS_TAB;
+    const fileA = fileCanvasTab('src/a.ts');
+    const fileB = fileCanvasTab('src/b.ts');
+    const state = reduce(
+      initialCanvasTabsState,
+      { type: 'open', tab: term },
+      { type: 'open', tab: fileA },
+      { type: 'open', tab: fileB },
+      { type: 'open', tab: fileA }, // re-open A: focus, no duplicate/reorder
+    );
+    expect(state.tabs).toEqual([term, fileA, fileB]);
+    expect(state.activeId).toBe(fileA.id);
+  });
+});
+
+describe('approvalCanvasTab', () => {
+  it('derives a tool-call-scoped id, the approval kind, the title label, and snapshots the request', () => {
+    const req = permReq('call-42', 'Write file');
+    expect(approvalCanvasTab(req)).toEqual({
+      id: `${APPROVAL_CANVAS_TAB_PREFIX}call-42`,
+      kind: 'approval',
+      title: 'Write file',
+      approval: req,
+    });
+  });
+
+  it('falls back to the tool-call id as the label when the request has no title', () => {
+    expect(approvalCanvasTab(permReq('call-7')).title).toBe('call-7');
+  });
+
+  it('never collides with a file tab id for a like-named path', () => {
+    expect(approvalCanvasTab(permReq('a.ts')).id).not.toBe(fileCanvasTab('a.ts').id);
+  });
+});
+
+describe('approval canvas tabs', () => {
+  it('opens an approval beside the terminal/file and dedups on re-maximize of the same request', () => {
+    const term = TERMINAL_CANVAS_TAB;
+    const file = fileCanvasTab('src/a.ts');
+    const approval = approvalCanvasTab(permReq('call-1'));
+    const state = reduce(
+      initialCanvasTabsState,
+      { type: 'open', tab: term },
+      { type: 'open', tab: file },
+      { type: 'open', tab: approval },
+      { type: 'open', tab: approval }, // re-maximize: focus, no duplicate/reorder
+    );
+    expect(state.tabs).toEqual([term, file, approval]);
+    expect(state.activeId).toBe(approval.id);
+  });
+
+  it('keeps concurrent approvals as separate coexisting tabs, one per tool-call id', () => {
+    const a1 = approvalCanvasTab(permReq('call-1'));
+    const a2 = approvalCanvasTab(permReq('call-2'));
+    const state = reduce(
+      initialCanvasTabsState,
+      { type: 'open', tab: a1 },
+      { type: 'open', tab: a2 },
+    );
+    expect(state.tabs).toEqual([a1, a2]);
+    expect(state.tabs.map(t => t.id)).toEqual([`${APPROVAL_CANVAS_TAB_PREFIX}call-1`, `${APPROVAL_CANVAS_TAB_PREFIX}call-2`]);
+    expect(state.activeId).toBe(a2.id);
+  });
+});
+
+describe('approvalTabStatus (pending → resolved transitions)', () => {
+  it('is pending while the snapshotted request is still the live pending one and unanswered', () => {
+    expect(approvalTabStatus('call-1', 'call-1', null)).toEqual({ state: 'pending' });
+  });
+
+  it('resolves with the local outcome once answered in this tab, regardless of the live pending id', () => {
+    expect(approvalTabStatus('call-1', 'call-1', 'allowed')).toEqual({ state: 'resolved', resolution: 'allowed' });
+    expect(approvalTabStatus('call-1', null, 'denied')).toEqual({ state: 'resolved', resolution: 'denied' });
+  });
+
+  it('resolves with an unknown outcome when the request left the pending slot elsewhere (cancel / modal / new request)', () => {
+    expect(approvalTabStatus('call-1', null, null)).toEqual({ state: 'resolved', resolution: null });
+    expect(approvalTabStatus('call-1', 'call-2', null)).toEqual({ state: 'resolved', resolution: null });
+  });
+});
+
+describe('approvalResolutionForOption', () => {
+  it('maps allow_* kinds to allowed and reject_* kinds to denied', () => {
+    expect(approvalResolutionForOption('allow_once')).toBe('allowed');
+    expect(approvalResolutionForOption('allow_always')).toBe('allowed');
+    expect(approvalResolutionForOption('reject_once')).toBe('denied');
+    expect(approvalResolutionForOption('reject_always')).toBe('denied');
   });
 });

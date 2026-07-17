@@ -126,3 +126,6 @@ enterprise/
 .claude
 website/dist/
 website/.astro/
+tools/rust-sdk/
+tools/acp-validator/target/
+tools/acp-validator/Cargo.lock

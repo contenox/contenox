@@ -28,7 +28,7 @@ import type { ToolCallEvent, TerminalOutputPayload, UsageEvent } from '../lib/ac
  * collapsible block data, exactly like the text itself.
  */
 
-export type AcpTimelineItemKind = 'message' | 'tool_call' | 'terminal';
+export type AcpTimelineItemKind = 'message' | 'tool_call' | 'terminal' | 'error';
 
 /** One entry in `AcpSessionState.items`, in arrival order. Look the full record up in `messages`/`toolCalls` by `id`. */
 export interface AcpTimelineItem {
@@ -83,6 +83,20 @@ export interface AcpTerminalCard {
 }
 
 /**
+ * A failed turn recorded IN the transcript (arrival-ordered, like every other
+ * item), so a failure is anchored where it happened instead of only surfacing
+ * as the transient top-of-page recovery banner (`session.error`). Each failed
+ * turn gets its own card, so a session with several failures keeps all of them
+ * in history — the banner only ever shows the latest. `message` is the raw
+ * error text (English, from the runtime); the UI localizes the wrapper/headline
+ * (see TranscriptItems' `TranscriptError`).
+ */
+export interface AcpErrorCard {
+  id: string;
+  message: string;
+}
+
+/**
  * Transient banner state for the currently-open session, driven by the
  * workspace controller's reconnect supervisor: `'disconnected'` while the
  * transport is down and this session's live updates may be stale,
@@ -99,6 +113,8 @@ export interface AcpSessionState {
   toolCalls: Record<string, AcpToolCallState>;
   /** Compact `!` passthrough records, keyed by timeline item id. */
   terminals: Record<string, AcpTerminalCard>;
+  /** Failed-turn cards anchored in the transcript, keyed by timeline item id (see `AcpErrorCard`). */
+  errorCards: Record<string, AcpErrorCard>;
   /** Live shell scrollback for the terminal panel (null until first output). */
   terminal: AcpTerminalState | null;
   plan: PlanEntry[];
@@ -145,6 +161,7 @@ export const initialAcpSessionState: AcpSessionState = {
   messages: {},
   toolCalls: {},
   terminals: {},
+  errorCards: {},
   terminal: null,
   plan: [],
   usage: null,
@@ -332,13 +349,23 @@ export function acpSessionReducer(state: AcpSessionState, action: AcpSessionActi
     case 'prompt_end':
       return { ...state, isPrompting: false, stopReason: action.stopReason, messages: endStreaming(state.messages) };
 
-    case 'prompt_error':
+    case 'prompt_error': {
+      // Anchor the failure in the transcript as its own item (in arrival
+      // order), in addition to the transient top banner (`error`). This is what
+      // makes a hard turn failure VISIBLE where it happened instead of the chat
+      // just going quiet — and keeps every failed turn in history, not only the
+      // latest. The id is derived from the current item count, which only ever
+      // grows within a session, so it stays unique and the reducer stays pure.
+      const id = `error-${state.items.length}`;
       return {
         ...state,
         isPrompting: false,
         error: action.message,
+        items: ensureItem(state.items, 'error', id),
+        errorCards: { ...state.errorCards, [id]: { id, message: action.message } },
         messages: endStreaming(state.messages),
       };
+    }
 
     case 'connection_lost':
       // Clears per-message `streaming`/`thinkingStreaming` too (not just

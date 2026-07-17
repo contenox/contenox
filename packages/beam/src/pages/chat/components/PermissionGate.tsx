@@ -1,4 +1,5 @@
 import { Badge, Button, Collapsible, DiffView, diffLinesFromTexts, Span } from '@contenox/ui';
+import { Maximize2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
@@ -17,6 +18,13 @@ const FOCUSABLE_SELECTOR =
 export interface PermissionGateProps {
   permission: RequestPermissionRequest | null;
   onRespond: (optionId: string) => void;
+  /**
+   * When provided, renders a maximize affordance that demotes the modal to a
+   * full-size canvas tab (see ChatSessionTab). The request stays pending — the
+   * caller suppresses the modal (passes `permission={null}`) while maximized and
+   * shows a restore pill, so the gate is never silently lost.
+   */
+  onMaximize?: () => void;
 }
 
 /**
@@ -31,7 +39,7 @@ export interface PermissionGateProps {
  * desktop positioning on its outer wrapper with no responsive escape hatch —
  * but reimplements the same focus-trap / scroll-lock / Escape contract.
  */
-export function PermissionGate({ permission, onRespond }: PermissionGateProps) {
+export function PermissionGate({ permission, onRespond, onMaximize }: PermissionGateProps) {
   const { t } = useTranslation();
   const panelRef = useRef<HTMLDivElement>(null);
   const open = permission !== null;
@@ -116,13 +124,27 @@ export function PermissionGate({ permission, onRespond }: PermissionGateProps) {
         onClick={e => e.stopPropagation()}
         className="border-surface-200 bg-surface-50 dark:border-dark-surface-600 dark:bg-dark-surface-100 fixed inset-x-0 bottom-0 max-h-[85vh] overflow-auto rounded-t-2xl border-t p-4 shadow-xl focus:outline-none sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:max-h-[80vh] sm:w-[520px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border sm:p-6"
       >
-        <div className="mb-4">
-          <Span variant="status" className="text-text-muted dark:text-dark-text-muted">
-            {toolCall.kind ?? t('acp_chat.permission_default_kind')}
-          </Span>
-          <p className="text-text dark:text-dark-text mt-1 text-sm font-medium">
-            {toolCall.title ?? toolCall.toolCallId}
-          </p>
+        <div className="mb-4 flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <Span variant="status" className="text-text-muted dark:text-dark-text-muted">
+              {toolCall.kind ?? t('acp_chat.permission_default_kind')}
+            </Span>
+            <p className="text-text dark:text-dark-text mt-1 text-sm font-medium">
+              {toolCall.title ?? toolCall.toolCallId}
+            </p>
+          </div>
+          {onMaximize && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="shrink-0"
+              aria-label={t('acp_chat.permission_maximize')}
+              title={t('acp_chat.permission_maximize')}
+              onClick={onMaximize}>
+              <Maximize2 className="h-4 w-4" />
+            </Button>
+          )}
         </div>
 
         <div className="space-y-3">

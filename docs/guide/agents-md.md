@@ -63,18 +63,15 @@ The spec is open — any markdown — but useful sections include:
 
 ## Verifying it loaded
 
-After starting a session, the AGENTS.md content is the first message in the persisted history:
+After starting a session, the AGENTS.md content is the first message in the persisted history. Print the head of the active session to check:
 
 ```bash
-sqlite3 ~/.contenox/local.db \
-  "SELECT json_extract(payload,'\$.role'),
-          length(json_extract(payload,'\$.content'))
-   FROM messages
-   WHERE idx_id = (SELECT value FROM kv WHERE key='contenox.session.active' LIMIT 1)
-   ORDER BY added_at LIMIT 1"
+contenox session show --head 1
 ```
 
-The first row should have role `system` and a content length matching your `AGENTS.md` size plus the wrapper text.
+The first message should be a `system` message whose content is your `AGENTS.md` (plus a short wrapper). If it isn't there, the loader didn't find an `AGENTS.md` in the working tree — confirm the file exists at or above your current directory.
+
+(The active session id is stored per-workspace in the SQLite KV store as a JSON-quoted value, so a hand-written `sqlite3` join against the `messages` table is fiddly to get right — `contenox session show` resolves the active session for you.)
 
 ## Per-tool conventions
 

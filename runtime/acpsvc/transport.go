@@ -65,6 +65,14 @@ type Deps struct {
 	// authenticate with the env method calls Complete to finish setup
 	// non-interactively from the current environment. Nil disables the method.
 	EnvSetup *EnvSetupSpec
+
+	// PermissionRouter, when set, is a process-shared registry each transport
+	// records its live (contenox session -> this transport) bindings into, so a
+	// single shared engine can route a HITL approval back to the WS connection
+	// whose client raised it. serve sets it (it hosts many ACP WS connections
+	// behind one engine); the stdio ACP path leaves it nil — it has one
+	// transport, late-bound directly into the engine's AskApproval closure.
+	PermissionRouter *PermissionRouter
 }
 
 // EnvSetupSpec describes environment-variable-based setup (the non-interactive
@@ -136,6 +144,23 @@ type Transport struct {
 	// ACP session id; re-subscribing (on reload) cancels the prior one.
 	termSubMu sync.Mutex
 	termSubs  map[libacp.SessionID]func()
+
+	// promptCancelMu guards promptCancels, the per-session canceller for the
+	// in-flight prompt turn. Prompt registers its turn context's cancel here so
+	// session/cancel (Cancel), an explicit session Close/Delete, or a connection
+	// drop can abort the running chain — the server owning cancellation instead
+	// of relying solely on libacp's connection-level promptCtx substitution. One
+	// turn per session is the invariant; a superseding registration cancels the
+	// stale one so nothing outlives its turn.
+	promptCancelMu sync.Mutex
+	promptCancels  map[libacp.SessionID]*inflightPrompt
+}
+
+// inflightPrompt is a running turn's cancellation registration. The pointer is
+// the identity used for symmetric unregister so a turn that already ended never
+// removes a newer turn's registration.
+type inflightPrompt struct {
+	cancel context.CancelFunc
 }
 
 func permKey(sid libacp.SessionID, toolCallID string) string {
@@ -183,6 +208,7 @@ func New(deps Deps) libacp.AgentFactory {
 			defaultThink:       deps.DefaultThink,
 			pendingBanner:      deps.UpdateBanner,
 			termSubs:           make(map[libacp.SessionID]func()),
+			promptCancels:      make(map[libacp.SessionID]*inflightPrompt),
 		}
 		// The `!` shell passthrough and any future contenox-namespaced client
 		// requests arrive as ACP extension methods (see terminal.go). A conformant
@@ -375,7 +401,81 @@ func (t *Transport) acpSessionForContenoxID(contenoxSessionID string) (libacp.Se
 	return sid, ok
 }
 
-func (t *Transport) Cancel(_ context.Context, _ libacp.CancelNotification) error {
+// bindContenoxSession records the contenox<->ACP session mapping on this
+// connection and, when serve supplied a shared PermissionRouter, registers this
+// transport as the owner of the contenox session so the shared engine can route
+// HITL approvals here. Callers hold sessionMu; the router takes its own lock and
+// never calls back under it, so no lock-ordering hazard exists.
+func (t *Transport) bindContenoxSession(contenoxSessionID string, sid libacp.SessionID) {
+	t.contenoxToACPID[contenoxSessionID] = sid
+	t.deps.PermissionRouter.bind(contenoxSessionID, t)
+}
+
+// unbindContenoxSession is the inverse: it drops the mapping and deregisters
+// this transport from the router (only if it is still the registered owner).
+// Callers hold sessionMu.
+func (t *Transport) unbindContenoxSession(contenoxSessionID string) {
+	delete(t.contenoxToACPID, contenoxSessionID)
+	t.deps.PermissionRouter.unbind(contenoxSessionID, t)
+}
+
+// registerPromptCancel records cancel as the in-flight turn's canceller for
+// sid, superseding (and cancelling) any prior registration. One turn per
+// session is the invariant, but a stale registration must never outlive its
+// turn, so a second turn cancels the first. Returns the registration token for
+// a symmetric unregisterPromptCancel.
+func (t *Transport) registerPromptCancel(sid libacp.SessionID, cancel context.CancelFunc) *inflightPrompt {
+	reg := &inflightPrompt{cancel: cancel}
+	t.promptCancelMu.Lock()
+	if t.promptCancels == nil {
+		t.promptCancels = make(map[libacp.SessionID]*inflightPrompt)
+	}
+	prev := t.promptCancels[sid]
+	t.promptCancels[sid] = reg
+	t.promptCancelMu.Unlock()
+	if prev != nil {
+		prev.cancel()
+	}
+	return reg
+}
+
+// unregisterPromptCancel drops reg's registration if — and only if — it is
+// still the current one for sid (pointer identity), so a turn that already
+// ended never clears a newer turn's registration.
+func (t *Transport) unregisterPromptCancel(sid libacp.SessionID, reg *inflightPrompt) {
+	t.promptCancelMu.Lock()
+	if cur, ok := t.promptCancels[sid]; ok && cur == reg {
+		delete(t.promptCancels, sid)
+	}
+	t.promptCancelMu.Unlock()
+}
+
+// cancelInflightPrompt cancels the in-flight turn for sid, if one is running,
+// and reports whether it did. A cancel with no in-flight turn is a clean no-op
+// (returns false) — the spec allows session/cancel at any time. The
+// registration is left in place; the turn's deferred unregisterPromptCancel
+// removes it, and cancelling an already-cancelled context is harmless.
+func (t *Transport) cancelInflightPrompt(sid libacp.SessionID) bool {
+	t.promptCancelMu.Lock()
+	reg, ok := t.promptCancels[sid]
+	t.promptCancelMu.Unlock()
+	if !ok {
+		return false
+	}
+	reg.cancel()
+	return true
+}
+
+// Cancel handles session/cancel: it aborts the session's in-flight prompt turn
+// with context.Canceled semantics. Prompt's error path keys the silent-cancel
+// on errors.Is(err, context.Canceled) and resolves the prompt with stopReason
+// "cancelled" (never a JSON-RPC error), per the ACP contract. A cancel for a
+// session with no running turn is a clean no-op.
+func (t *Transport) Cancel(ctx context.Context, req libacp.CancelNotification) error {
+	_, reportChange, end := t.tracker().Start(ctx, "cancel", "acp_session", "session_id", string(req.SessionID))
+	defer end()
+	cancelled := t.cancelInflightPrompt(req.SessionID)
+	reportChange(string(req.SessionID), map[string]any{"cancelled_inflight": cancelled})
 	return nil
 }
 

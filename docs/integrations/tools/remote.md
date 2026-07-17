@@ -187,7 +187,7 @@ The following paths are automatically excluded from tool discovery:
 
 Add the tools's name to `execute_config.tools`:
 
-```json v-pre
+```json
 {
   "id": "weather_task",
   "handler": "chat_completion",
@@ -224,7 +224,7 @@ discovered operation on it. `output_template` is an optional Go template that
 reshapes the tool's JSON response before transitions are evaluated, so
 branch operators route on the extracted value rather than the raw body:
 
-```json v-pre
+```json
 {
   "id": "active_alert_count",
   "handler": "tools",

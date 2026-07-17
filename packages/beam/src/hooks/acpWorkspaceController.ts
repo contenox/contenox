@@ -166,6 +166,25 @@ const MAX_RECONNECT_ATTEMPTS = 8; // mirrors useTaskEvents.ts's MAX_RETRIES
 const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 30000;
 
+/**
+ * Safety-net timeout for a prompt turn that dies with NO terminal event —
+ * no `stopReason`, no error, and no transport close (a silent stall: the
+ * server stopped mid-turn, or the stream ended without a result). The
+ * watchdog is ARMED on prompt start and RE-armed on every live activity
+ * (chunks, tool calls, usage, terminal output), so a slow-but-alive turn keeps
+ * resetting it and only true silence for this whole window trips it. Paused
+ * while a permission request is pending (the turn is legitimately blocked on
+ * the user). Generous on purpose: local inference can be slow, and a false
+ * positive is worse than a late one. Exported so tests can drive it.
+ */
+export const PROMPT_STALL_TIMEOUT_MS = 120_000;
+/**
+ * Surfaced (as a normal `prompt_error`, i.e. the failed-turn transcript card +
+ * recovery banner) when the stall watchdog trips. English like every other raw
+ * runtime error string — the UI localizes only the wrapper/headline.
+ */
+const STALLED_TURN_MESSAGE = 'The agent stopped responding before the turn completed (no result received).';
+
 let idCounter = 0;
 /** Monotonic id local to this module — unique per browser tab, which is all a client-side message/turn id needs to be. */
 function nextId(prefix: string): string {
@@ -220,6 +239,15 @@ interface OpenSessionEntry {
   /** Resolver/rejector for THIS session's in-flight `session/request_permission`, if any. */
   permissionResolve: ((optionId: string) => void) | null;
   permissionReject: ((err: Error) => void) | null;
+  /** Dead-turn watchdog timer for THIS session's in-flight turn (see `PROMPT_STALL_TIMEOUT_MS`); null when disarmed. */
+  stallTimer: ReturnType<typeof setTimeout> | null;
+  /**
+   * True once THIS turn has reached a terminal outcome — a real settle
+   * (`prompt_end`/`prompt_error`) OR the stall watchdog firing. Whichever
+   * happens first sets it, so the other becomes a no-op: a late real settle
+   * after a stall (or vice-versa) never double-surfaces the turn.
+   */
+  turnSettled: boolean;
 }
 
 export function createAcpWorkspaceController(
@@ -281,6 +309,8 @@ export function createAcpWorkspaceController(
       promptInFlight: false,
       permissionResolve: null,
       permissionReject: null,
+      stallTimer: null,
+      turnSettled: true,
     };
     openSessions.set(sid, entry);
     entry.unsubscribe = c.subscribe(sid, buildSessionHandlers(sid));
@@ -291,6 +321,7 @@ export function createAcpWorkspaceController(
   function teardownSession(sid: SessionId, c: AcpClient | null): void {
     rejectPendingPermission(sid);
     const entry = openSessions.get(sid);
+    clearStallTimer(entry);
     entry?.unsubscribe();
     openSessions.delete(sid);
     removeSlice(sid);
@@ -329,6 +360,45 @@ export function createAcpWorkspaceController(
     for (const sid of openSessions.keys()) rejectPendingPermission(sid);
   }
 
+  // ---------------------------------------------------------------------
+  // Dead-turn watchdog: a turn must never end in a silently-dead state.
+  // ---------------------------------------------------------------------
+
+  function clearStallTimer(entry: OpenSessionEntry | undefined): void {
+    if (entry?.stallTimer) {
+      clearTimeout(entry.stallTimer);
+      entry.stallTimer = null;
+    }
+  }
+
+  /**
+   * (Re)arms `sid`'s dead-turn watchdog while its turn is in flight. If the
+   * window elapses with no activity and no settle, the turn is surfaced as a
+   * failure (`prompt_error`) rather than left hanging with a stuck typing
+   * indicator — covering the "stream ended without a stopReason / server went
+   * silent" case that no transport `close` ever signals. No-op once the turn
+   * has settled or is no longer in flight.
+   */
+  function armStallTimer(sid: SessionId): void {
+    const entry = openSessions.get(sid);
+    if (!entry || !entry.promptInFlight || entry.turnSettled) return;
+    clearStallTimer(entry);
+    entry.stallTimer = setTimeout(() => {
+      const e = openSessions.get(sid);
+      if (!e || e.turnSettled || !e.promptInFlight) return;
+      e.stallTimer = null;
+      e.turnSettled = true;
+      e.promptInFlight = false;
+      sessionDispatch(sid, { type: 'prompt_error', message: STALLED_TURN_MESSAGE });
+    }, PROMPT_STALL_TIMEOUT_MS);
+  }
+
+  /** Any live traffic for `sid` proves the turn is alive — reset its watchdog. */
+  function noteActivity(sid: SessionId): void {
+    const entry = openSessions.get(sid);
+    if (entry?.promptInFlight && !entry.turnSettled && entry.stallTimer) armStallTimer(sid);
+  }
+
   /**
    * Handlers routed to `sid`'s slice. Built once per `subscribe()` call (on
    * open/create/resume/reload) rather than per prompt — the standing
@@ -341,14 +411,20 @@ export function createAcpWorkspaceController(
     // Read the fallback turn id off the live entry each time (not captured):
     // it advances per turn via `sendPrompt`.
     const turnId = () => openSessions.get(sid)?.currentTurnId ?? '';
+    // Every streamed update proves the in-flight turn is still alive, so it
+    // resets the dead-turn watchdog (see armStallTimer/noteActivity).
+    const active = (fn: () => void) => {
+      noteActivity(sid);
+      fn();
+    };
     return {
-      onUserMessageChunk: (text, id) => sessionDispatch(sid, { type: 'user_message_chunk', id: id ?? nextId('user'), text }),
-      onMessageChunk: (text, id) => sessionDispatch(sid, { type: 'message_chunk', id: id ?? turnId(), text }),
-      onThoughtChunk: (text, id) => sessionDispatch(sid, { type: 'thought_chunk', id: id ?? turnId(), text }),
-      onToolCall: event => sessionDispatch(sid, { type: 'tool_call', event }),
-      onPlan: entries => sessionDispatch(sid, { type: 'plan', entries }),
-      onUsage: usage => sessionDispatch(sid, { type: 'usage', usage }),
-      onTerminalOutput: payload => sessionDispatch(sid, { type: 'terminal_output', payload }),
+      onUserMessageChunk: (text, id) => active(() => sessionDispatch(sid, { type: 'user_message_chunk', id: id ?? nextId('user'), text })),
+      onMessageChunk: (text, id) => active(() => sessionDispatch(sid, { type: 'message_chunk', id: id ?? turnId(), text })),
+      onThoughtChunk: (text, id) => active(() => sessionDispatch(sid, { type: 'thought_chunk', id: id ?? turnId(), text })),
+      onToolCall: event => active(() => sessionDispatch(sid, { type: 'tool_call', event })),
+      onPlan: entries => active(() => sessionDispatch(sid, { type: 'plan', entries })),
+      onUsage: usage => active(() => sessionDispatch(sid, { type: 'usage', usage })),
+      onTerminalOutput: payload => active(() => sessionDispatch(sid, { type: 'terminal_output', payload })),
       onAvailableCommands: commands => sessionDispatch(sid, { type: 'available_commands', commands }),
       onConfigOptions: configOptions => sessionDispatch(sid, { type: 'config_options', configOptions }),
       onSessionInfo: info =>
@@ -362,6 +438,9 @@ export function createAcpWorkspaceController(
           if (entry) {
             entry.permissionResolve = resolve;
             entry.permissionReject = reject;
+            // Pause the watchdog: the turn is legitimately blocked on the user,
+            // which can take arbitrarily long — respondPermission re-arms it.
+            clearStallTimer(entry);
           }
           sessionDispatch(sid, { type: 'permission_request', request });
         }),
@@ -546,8 +625,21 @@ export function createAcpWorkspaceController(
     if (disposed) return; // User-initiated (dispose()) — never reconnect.
     if (transport !== currentTransport) return; // Stale listener from a superseded transport.
     workspaceDispatch({ type: 'reconnecting' });
-    // Every open session's live updates are now stale — flag them all.
-    for (const sid of openSessions.keys()) sessionDispatch(sid, { type: 'connection_lost' });
+    // Every open session's live updates are now stale — flag them all. A drop
+    // is owned by the connection_lost UX (the reconnecting banner), NOT the
+    // failed-turn surface: settle any in-flight turn here and disarm its
+    // watchdog, so the client's imminent pending-call rejection ("transport
+    // closed") doesn't ALSO fire a prompt_error card/banner for what is really
+    // a transient reconnect.
+    for (const sid of openSessions.keys()) {
+      const entry = openSessions.get(sid);
+      if (entry) {
+        clearStallTimer(entry);
+        entry.turnSettled = true;
+        entry.promptInFlight = false;
+      }
+      sessionDispatch(sid, { type: 'connection_lost' });
+    }
     scheduleReconnectAttempt(0);
   }
 
@@ -755,6 +847,10 @@ export function createAcpWorkspaceController(
     sessionDispatch(sid, { type: 'user_message_chunk', id: nextId('user'), text });
     sessionDispatch(sid, { type: 'prompt_start' });
     entry.promptInFlight = true;
+    entry.turnSettled = false;
+    // Arm the dead-turn watchdog so a turn that dies with no terminal event
+    // (no stopReason, no error, no transport close) can't leave the UI stuck.
+    armStallTimer(sid);
 
     // No per-turn handlers: the session's standing subscription (set up in
     // newSession()/openSessionTab()) already routes every session/update and
@@ -774,14 +870,19 @@ export function createAcpWorkspaceController(
       .then(({ stopReason }) => {
         const e = openSessions.get(sid);
         if (!e) return; // Session closed mid-turn — drop the settle.
+        clearStallTimer(e);
+        if (e.turnSettled) return; // The watchdog already surfaced this turn as stalled.
+        e.turnSettled = true;
         e.promptInFlight = false;
         sessionDispatch(sid, { type: 'prompt_end', stopReason });
       })
       .catch((err: unknown) => {
         const e = openSessions.get(sid);
+        clearStallTimer(e);
         if (e) e.promptInFlight = false;
         if (!disposed) guardAuthRequired(err);
-        if (!e) return; // Session closed mid-turn — drop the settle.
+        if (!e || e.turnSettled) return; // Closed mid-turn, or already surfaced by the watchdog.
+        e.turnSettled = true;
         sessionDispatch(sid, { type: 'prompt_error', message: errMessage(err) });
       });
   }
@@ -809,6 +910,9 @@ export function createAcpWorkspaceController(
     if (!resolve) return;
     sessionDispatch(focusedSessionId, { type: 'permission_resolved' });
     resolve(optionId);
+    // The turn is unblocked and will resume streaming — re-arm the watchdog
+    // that onPermissionRequest paused.
+    armStallTimer(focusedSessionId);
   }
 
   function cancel(): void {
@@ -859,6 +963,9 @@ export function createAcpWorkspaceController(
       reconnectTimer = null;
     }
     rejectAllPendingPermissions();
+    // Disarm every dead-turn watchdog so none fires after teardown; the
+    // in-flight prompt's own settle handler still clears state (BUG 4a).
+    for (const entry of openSessions.values()) clearStallTimer(entry);
     // Deliberately leaves `openSessions` populated: an in-flight prompt's
     // settle handler still needs its entry to dispatch prompt_end (see
     // sendPrompt / BUG 4a) so the typing indicator can't get stuck.

@@ -231,6 +231,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 	hitlSource := hitlPolicySource(contenoxDir)
 	hitlSvc := hitlservice.NewWithDefaultPolicy(hitlSource, runtimetypes.LocalTenantID, store, tracker, "")
 
+	// serve runs many ACP WebSocket connections (each its own acpsvc.Transport)
+	// behind this SINGLE shared engine, so the engine's one AskApproval callback
+	// cannot close over a single transport the way the stdio ACP path does. The
+	// router is a stable shared object created BEFORE the engine (no late-binding
+	// gymnastics): the per-connection transports built later (acpsvc.New below)
+	// register their live sessions into it, and the AskApproval closure consults
+	// it per request. Nil out of the box until a transport binds a session.
+	permissionRouter := acpsvc.NewPermissionRouter()
+
 	engine, err := enginesvc.Build(ctx, db, enginesvc.Config{
 		DefaultModel:       opts.EffectiveDefaultModel,
 		DefaultProvider:    opts.EffectiveDefaultProvider,
@@ -240,7 +249,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 		NoDeleteModels:     opts.EffectiveNoDeleteModels,
 		LocalTools:         localTools,
 		EnableHITL:         true,
+		// Dispatch HITL approval per request: when the contenox session (from ctx)
+		// is bound to a live beam ACP WS transport, bridge to that connection's
+		// session/request_permission flow (beam's PermissionGate answers it).
+		// Otherwise fall back to the approval-API path for headless/API callers,
+		// which have no live ACP connection to prompt.
 		AskApproval: func(ctx context.Context, req hitlservice.ApprovalRequest) (bool, error) {
+			if allowed, err := permissionRouter.AskApproval(ctx, req); !errors.Is(err, acpsvc.ErrNoBoundSession) {
+				return allowed, err
+			}
 			return hitlSvc.RequestApproval(ctx, req, taskEventSink)
 		},
 		HITLService:      hitlSvc,
@@ -308,7 +325,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 			ContenoxDir:        contenoxDir,
 			WorkspaceRoots:     workspaceFactory,
 			ShellSessions:      shellSessions,
-			KnownPolicies:      embeddedPolicyNames(),
+			// Share the same router the engine's AskApproval consults, so each WS
+			// connection's transport registers its live sessions and gated tool
+			// calls route back to the client that raised them.
+			PermissionRouter: permissionRouter,
+			KnownPolicies:    embeddedPolicyNames(),
 			// serve passes no fallbackPolicy to hitlservice.NewWithDefaultPolicy
 			// above ("" = the service's own built-in default), so there is no
 			// named policy to report here either; HITLDefaultPolicyName is

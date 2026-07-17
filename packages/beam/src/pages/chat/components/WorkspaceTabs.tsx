@@ -1,5 +1,4 @@
-import { Button, Tabs, TabPanel, TabPanels, type Tab } from '@contenox/ui';
-import { Plus } from 'lucide-react';
+import { Tabs, TabPanel, TabPanels, type Tab } from '@contenox/ui';
 import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -126,6 +125,9 @@ export function WorkspaceTabs() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {/* No "new session" affordance here: the session sidebar owns the single
+          creation entry point (and the narrow-viewport chat toolbar mirrors it).
+          A second one in the tab strip was redundant. */}
       <div className="border-surface-200 dark:border-dark-surface-600 flex shrink-0 items-center gap-1 border-b px-2">
         <Tabs
           tabs={stripTabs}
@@ -134,17 +136,6 @@ export function WorkspaceTabs() {
           onClose={handleClose}
           className="min-w-0 flex-1 flex-nowrap"
         />
-        <Button
-          type="button"
-          variant={activeId === null ? 'primary' : 'ghost'}
-          palette="neutral"
-          size="sm"
-          className="shrink-0"
-          aria-label={t('acp_chat.new_tab_label')}
-          onClick={handleNewSession}>
-          <Plus className="h-4 w-4" />
-          <span className="ml-1 hidden sm:inline">{t('acp_sidebar.new_session')}</span>
-        </Button>
       </div>
 
       <TabPanels>

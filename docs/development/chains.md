@@ -1,3 +1,4 @@
+# Chains
 
 ## Why Chains?
 
@@ -17,7 +18,7 @@ act:
 In Contenox, a Chain is not a prompt pipeline. It is the reviewed execution
 contract around an agent loop.
 
-![A sudo command is refused because the chain's command policy denies it; the policy is plain JSON](website/public/chain-blocked.gif)
+![A sudo command is refused because the chain's command policy denies it; the policy is plain JSON](/chain-blocked.gif)
 
 ---
 

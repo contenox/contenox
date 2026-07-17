@@ -1,3 +1,8 @@
+---
+title: Core Concepts
+description: How chains, tasks, tools, transitions, and macros fit together in Contenox.
+---
+
 # Core Concepts
 
 ## Task Chains
@@ -109,10 +114,24 @@ Chain JSON supports runtime macros inside string fields:
 | `{{var:provider}}` | The active provider from config |
 | `{{var:alt_model}}` | Optional secondary model from config |
 | `{{var:alt_provider}}` | Optional secondary provider from config |
-| `{{var:autocomplete_model}}` | Optional autocomplete model from config |
-| `{{var:autocomplete_provider}}` | Optional autocomplete provider from config |
+| `{{var:autocomplete_model}}` | Autocomplete model from config — only populated on the VS Code autocomplete (FIM) path; empty elsewhere |
+| `{{var:autocomplete_provider}}` | Autocomplete provider from config — only populated on the VS Code autocomplete (FIM) path; empty elsewhere |
 | `{{var:max_tokens}}` | Optional response token cap from config or `--max-tokens` |
 | `{{now:2006-01-02}}` | Current date (Go time format) |
 | `{{toolservice:list}}` | JSON manifest of tools visible to the current task |
+
+> [!NOTE]
+> `{{var:autocomplete_model}}` and `{{var:autocomplete_provider}}` are only filled in when the chain runs on the VS Code inline-autocomplete path (the FIM chain). On chat/run and every other path they expand to empty, so use a fallback (below) if a general-purpose chain references them.
+
+### Fallbacks
+
+A `{{var:…}}` macro can supply a fallback for when the variable is missing or empty:
+
+| Form | Expands to |
+|------|-----------|
+| `{{var:name\|literal}}` | the variable's value, or the literal text `literal` when it is unset/empty |
+| `{{var:name\|var:other}}` | the variable's value, or another variable `other` when the first is unset/empty |
+
+For example, `{{var:autocomplete_model\|var:model}}` falls back to the chat model when no autocomplete model is configured.
 
 See [Transitions & Branching](/docs/specification/transitions) and [Handlers](/docs/specification/handlers) for the full reference.

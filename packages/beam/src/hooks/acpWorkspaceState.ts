@@ -145,8 +145,23 @@ export function acpWorkspaceReducer(state: AcpWorkspaceState, action: AcpWorkspa
     case 'error':
       return { ...state, status: 'error', error: action.message };
 
-    case 'sessions_replaced':
-      return { ...state, sessions: [...action.sessions].sort(compareByFreshness) };
+    case 'sessions_replaced': {
+      // `session/list` is authoritative for MEMBERSHIP (a session absent from
+      // this snapshot really is gone), but NOT for freshness of individual
+      // fields: it pages a possibly-lagging server-side index, so a session
+      // already open and live-pushing its derived title (`session_upserted`,
+      // below) can resolve a `session/list` page — issued moments earlier,
+      // e.g. the one every reconnect triggers via `refreshSessions()` — whose
+      // row for that same session still has no title. A bare replace would
+      // regress that session back to titleless in the roster the instant the
+      // page lands, undoing the push with no live event to fix it again. Merge
+      // onto whatever we already knew (same `incoming ?? existing` rule as
+      // `session_upserted`) so a field already known fresher survives a
+      // same-membership refresh.
+      const known = new Map(state.sessions.map(s => [s.sessionId, s] as const));
+      const sessions = action.sessions.map(incoming => mergeSessionInfo(known.get(incoming.sessionId), incoming));
+      return { ...state, sessions: sessions.sort(compareByFreshness) };
+    }
 
     case 'session_upserted': {
       const idx = state.sessions.findIndex(s => s.sessionId === action.session.sessionId);

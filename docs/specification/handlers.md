@@ -25,14 +25,15 @@ Sends the current input to the LLM and waits for a reply. If the model calls a t
 |-------|----------|-------------|
 | `system_instruction` | No | System prompt (supports macros) |
 | `execute_config.model` | Yes | Model name, e.g. `qwen2.5:7b` |
-| `execute_config.provider` | Yes | `ollama`, `openai`, `anthropic`, `mistral`, `vllm`, `gemini`, `bedrock`, `vertex-google` |
-| `execute_config.tools` | No | Tools allowlist: `[]`=none, `["*"]`=all, `["a","b"]`=named, `["*","!x"]`=all-except. Absent=all (backward compat). |
-| `execute_config.hide_tools` | No | Tools to suppress from the model |
+| `execute_config.provider` | Yes | `llama`, `openvino`, `modeld`, `ollama`, `openai`, `openrouter`, `anthropic`, `mistral`, `vllm`, `gemini`, `bedrock`, `vertex-google` |
+| `execute_config.tools` | No | Tools allowlist: `[]`=none, `["*"]`=all, `["a","b"]`=named, `["*","!x"]`=all-except. Absent/`null`=none — the task has no tools until this field explicitly grants some. |
+| `execute_config.hide_tools` | No | Tools to suppress (by namespaced name) from **both** the registry tools selected via `tools` and any client-passed tools |
+| `execute_config.tools_policies` | No | Per-tools-provider policy overrides, `{ "<tools_name>": { "<key>": "<value>" } }`. Injected before the tool runs, so the provider can enforce them (e.g. `local_shell: { "_allowed_commands": "git,go,ls", "_denied_commands": "sudo,rm" }`). |
+| `execute_config.pass_clients_tools` | No | Boolean. When true, tools supplied by the calling client (e.g. an ACP editor) are exposed to the model for this task, in addition to the registry `tools` allowlist. Default false. |
 | `execute_config.temperature` | No | Sampling temperature (0–1) |
-| `execute_config.think` | No | Reasoning effort level. `"low"`, `"medium"`, `"high"`, or `"false"`. Supported by Ollama (v0.17.5+), Gemini 2.5+, vLLM, and OpenAI o-series models. |
-| `execute_config.max_tokens` | No | Cap on the model's output tokens for this task. When unset, the engine falls back to the chain's `token_limit` so providers (notably Gemini thinking models) don't burn their entire output budget on hidden reasoning and emit empty content. |
+| `execute_config.think` | No | Reasoning effort level. One of `auto`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh` (plus boolean-style aliases like `"true"`/`"false"`). Empty = provider default. Supported by Ollama (v0.17.5+), Gemini 2.5+, vLLM, and OpenAI o-series models. |
+| `execute_config.max_tokens` | No | Cap on the model's output tokens for this task. When unset, **no** explicit output cap is sent and the provider default applies — the engine deliberately does **not** fall back to the chain's `token_limit` (that is the input+output context window, not an output cap, and conflating them trips per-model output limits, e.g. Vertex Gemini 2.5 Pro's 65536 cap). |
 | `execute_config.shift` | No | Boolean. If true, slides the context window by dropping old messages instead of erroring on token limits. |
-| `execute_config.truncate` | No | Boolean. If true, truncates the initial prompt instead of sliding the context window (Ollama-specific). |
 | `execute_config.models` | No | Array of fallback model IDs tried in order when the primary model is unavailable. |
 | `execute_config.providers` | No | Array of fallback provider types, paired index-for-index with `models`. |
 
@@ -66,10 +67,10 @@ Controls automatic retries on transient LLM errors and optional model swapping a
 {
   "id": "chat",
   "handler": "chat_completion",
-  "system_instruction": "You are a helpful assistant. Today is <span v-pre>{{now:2006-01-02}}</span>.",
+  "system_instruction": "You are a helpful assistant. Today is {{now:2006-01-02}}.",
   "execute_config": {
-    "model": "<span v-pre>{{var:model}}</span>",
-    "provider": "<span v-pre>{{var:provider}}</span>",
+    "model": "{{var:model}}",
+    "provider": "{{var:provider}}",
     "tools": ["nws"]
   },
   "transition": {
@@ -91,7 +92,7 @@ Executes the tool calls emitted by the previous `chat_completion` task, appends 
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `input_var` | Yes | ID of the `chat_completion` task whose output to use |
+| `input_var` | No | ID of the `chat_completion` task whose output to execute. Optional — when omitted, the immediately preceding task's output is used. Set it explicitly to run tool calls from a specific earlier task. |
 
 **Example:**
 ```json
@@ -117,10 +118,10 @@ Calls a specific tool on a named tool directly — no LLM involved. Use for dete
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `tools.name` | Yes | Registered tools name (e.g. `local_shell`) |
-| `tools.tool_name` | Yes | Tool/operation to call on that tool |
+| `tools.name` | Yes | Registered tools-provider name (the service/server, e.g. `local_fs`, `slack`). A `tools` task with no `tools` block errors. |
+| `tools.tool_name` | No | The specific tool/operation to invoke on that provider (e.g. `write_file`). Not validated at chain-load time; set it in practice (an unset/unknown value surfaces as a call-time error), but it may be omitted for a provider whose sole tool matches the provider name. |
 | `tools.args` | No | Static arguments passed to the tool |
-| `output_template` | No | Go `text/template` string rendered against the tools's JSON response. Variables are the response fields (e.g. <span v-pre>`{{.exit_code}}`</span>). Output stored as a string. |
+| `output_template` | No | Go `text/template` string rendered against the tools's JSON response. Variables are the response fields (e.g. `{{.exit_code}}`). Output stored as a string. |
 
 **Example:**
 ```json
@@ -141,7 +142,9 @@ Calls a specific tool on a named tool directly — no LLM involved. Use for dete
 
 Asks the LLM to classify the input into exactly one of the labels declared by this task's own `equals` transition branches, then routes to the matching task. The routes are the branch `when` values — there is no separate schema; the chain you can read *is* the route set.
 
-`route` is **routing-only**: the task's input passes through to the next task unchanged. It produces a control-flow decision, never transformed data — so a router can never silently reshape what a downstream task sees. If the model's answer matches no declared label, the `default` branch is taken.
+`route` is **routing-only**: the task's input passes through to the next task unchanged. It produces a control-flow decision, never transformed data — so a router can never silently reshape what a downstream task sees.
+
+The model's answer is normalized before routing: the engine first looks for a **case-insensitive exact** match against a declared label, then a **case-insensitive substring** match (a label contained anywhere in the answer). Only if neither matches is the `default` branch taken. This substring fallback means a model that replies `"I think this is urgent"` still routes to the `urgent` label — but it also means overlapping labels (e.g. `normal` vs `abnormal`) can collide, so keep route labels distinct.
 
 **Key fields:**
 
@@ -153,14 +156,27 @@ Asks the LLM to classify the input into exactly one of the labels declared by th
 
 ---
 
+## Common task fields
+
+These fields are valid on **any** task, regardless of handler:
+
+| Field | Description |
+|-------|-------------|
+| `input_var` | Read this task's input from the named earlier task's output instead of the immediately preceding task. |
+| `prompt_template` | Go `text/template` text sent to the LLM as the prompt. When set it overrides the resolved input as the prompt. Supports variables from previous task outputs (e.g. `{{.input}}`, `{{.some_task_id}}`). |
+| `print` | Go `text/template` string formatted and emitted as a print event (display/logging) when the task completes — it does **not** change the task's output. Supports the same template variables (e.g. `"Validation result: {{.validate_input}}"`). |
+| `input_max_bytes` | Caps oversized string / chat-history input before this task runs. Intended for recovery or summarization tasks that should explain a failure without re-feeding the same huge input that caused it. |
+| `timeout` | Per-task execution timeout, e.g. `"30s"`, `"2m"`, `"1h"`. |
+| `retry_on_failure` | Integer count of times to retry this task on failure (default `0`). Applies to all handlers, including `tools`. |
+
 ## Template functions
 
 The Go `text/template` fields — `prompt_template` and `output_template` — are rendered with the [Sprig](https://masterminds.github.io/sprig/) function library available in addition to the built-ins. This is what turns a structured task output into clean prompt input instead of Go's default struct formatting:
 
 ```text
-<span v-pre>{{ .scan_result | toJson }}</span>            serialize a JSON/struct value as clean JSON
-<span v-pre>{{ .page_text | trunc 4000 }}</span>            cap an oversized tool output
-<span v-pre>{{ (last .history.Messages).Content }}</span>   pull a single field out
+{{ .scan_result | toJson }}            serialize a JSON/struct value as clean JSON
+{{ .page_text | trunc 4000 }}            cap an oversized tool output
+{{ (last .history.Messages).Content }}   pull a single field out
 ```
 
 Without it, injecting a non-string task output (a tool's JSON result, a chat history) into a template renders Go syntax like `map[...]` or `{[{...}]}` that the model cannot reliably parse — which is why transforming or evaluating tool output used to mean shelling out. `toJson`, `trunc`, and the rest of Sprig remove that step.

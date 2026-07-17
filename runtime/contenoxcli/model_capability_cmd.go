@@ -66,7 +66,10 @@ level for one invocation.`,
 var modelCapabilityShowCmd = &cobra.Command{
 	Use:   "show <provider> <model>",
 	Short: "Show a manual capability override.",
-	Args:  cobra.ExactArgs(2),
+	Long: `Print the manual capability override recorded for a provider/model pair.
+Currently reports the think (reasoning controls) setting. If no override is
+recorded for the pair, prints that none exists.`,
+	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := libtracker.WithNewRequestID(context.Background())
 		db, svc, err := openModelCapabilityService(cmd)
@@ -95,7 +98,10 @@ var modelCapabilityShowCmd = &cobra.Command{
 var modelCapabilityUnsetCmd = &cobra.Command{
 	Use:   "unset <provider> <model>",
 	Short: "Remove a manual capability override.",
-	Args:  cobra.ExactArgs(2),
+	Long: `Remove the manual capability override for a provider/model pair, reverting to
+whatever the provider catalog advertises. Reports whether an override was
+actually present to remove.`,
+	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := libtracker.WithNewRequestID(context.Background())
 		db, svc, err := openModelCapabilityService(cmd)

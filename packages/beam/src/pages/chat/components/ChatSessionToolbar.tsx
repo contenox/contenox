@@ -1,5 +1,5 @@
 import { Button } from '@contenox/ui';
-import { PanelLeft, PanelLeftClose, SquareTerminal } from 'lucide-react';
+import { PanelLeft, PanelLeftClose } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { AcpUsageState } from '../../../hooks/acpSessionState';
 import type { SessionConfigOption, SessionConfigOptionValue } from '../../../lib/acp';
@@ -12,10 +12,6 @@ export interface ChatSessionToolbarProps {
   /** Workspace file panel open state + toggle (shared workspace preference). */
   filesPanelOpen: boolean;
   onToggleFilesPanel: () => void;
-  /** Whether the terminal canvas tab is currently open (drives the action's pressed styling). */
-  terminalOpen: boolean;
-  /** Opens (or focuses) the terminal as a canvas tab beside the chat. */
-  onOpenTerminal: () => void;
   /** Context-window usage meter data (hidden by the meter until the agent reports usage). */
   usage: AcpUsageState | null;
   /** Per-session (or staged, on the empty chat) config controls. */
@@ -27,19 +23,17 @@ export interface ChatSessionToolbarProps {
 }
 
 /**
- * The per-session chat header strip: the file-panel toggle, the "open terminal
- * in the canvas" action, the usage meter, the config controls, and the
- * narrow-viewport "new session" affordance. Purely presentational — extracted
- * from `ChatSessionTab` so the
- * tab body stays focused on the transcript/composer flow and this reusable
- * toolbar can be reasoned about (and restyled) on its own.
+ * The per-session chat header strip: the file-panel toggle, the usage meter, the
+ * config controls, and the narrow-viewport "new session" affordance. Purely
+ * presentational — extracted from `ChatSessionTab` so the tab body stays focused
+ * on the transcript/composer flow and this reusable toolbar can be reasoned
+ * about (and restyled) on its own. Opening the terminal is NOT here — it is a
+ * canvas-tab affordance owned by `CanvasRegion`, not a toolbar toggle.
  */
 export function ChatSessionToolbar({
   hasWorkspaceRoot,
   filesPanelOpen,
   onToggleFilesPanel,
-  terminalOpen,
-  onOpenTerminal,
   usage,
   configOptions,
   onConfigChange,
@@ -50,7 +44,18 @@ export function ChatSessionToolbar({
 
   return (
     <div className="border-surface-200 dark:border-dark-surface-600 flex shrink-0 flex-wrap items-center justify-end gap-3 border-b px-3 py-2 sm:px-4">
+      <UsageMeter usage={usage} />
+      <ConfigOptionControls configOptions={configOptions} onChange={onConfigChange} />
+      {showNewSession && (
+        // Narrow-viewport "new session" affordance (the sidebar's is canonical
+        // at sm+); opens a fresh empty tab. Only shown below sm, where the Files
+        // toggle is hidden — so it stays right-most in the narrow layout.
+        <Button type="button" variant="outline" palette="neutral" size="sm" className="sm:hidden" onClick={onNewSession}>
+          {t('acp_chat.new_session')}
+        </Button>
+      )}
       {hasWorkspaceRoot && (
+        // Right-most toolbar element (wide layout only — hidden below sm).
         <Button
           type="button"
           variant={filesPanelOpen ? 'primary' : 'outline'}
@@ -62,27 +67,6 @@ export function ChatSessionToolbar({
           onClick={onToggleFilesPanel}>
           {filesPanelOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
           <span className="ml-1.5">{t('workspace.show_files')}</span>
-        </Button>
-      )}
-      <Button
-        type="button"
-        variant={terminalOpen ? 'primary' : 'outline'}
-        palette="neutral"
-        size="sm"
-        className="hidden sm:inline-flex"
-        aria-pressed={terminalOpen}
-        aria-label={t('terminal.open_in_canvas')}
-        onClick={onOpenTerminal}>
-        <SquareTerminal className="h-4 w-4" />
-        <span className="ml-1.5">{t('terminal.show_terminal')}</span>
-      </Button>
-      <UsageMeter usage={usage} />
-      <ConfigOptionControls configOptions={configOptions} onChange={onConfigChange} />
-      {showNewSession && (
-        // Narrow-viewport "new session" affordance (the sidebar's is canonical
-        // at sm+); opens a fresh empty tab.
-        <Button type="button" variant="outline" palette="neutral" size="sm" className="sm:hidden" onClick={onNewSession}>
-          {t('acp_chat.new_session')}
         </Button>
       )}
     </div>

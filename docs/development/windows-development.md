@@ -16,7 +16,7 @@ The codebase is primarily developed on Linux. Windows support exists for:
 | **Native Windows (PowerShell/cmd + Git Bash)** | Verifying Windows-specific behavior (paths, `local_shell`, PowerShell/cmd.exe execution), acting as a `modeld` Windows dependency producer | Tooling for native C/C++ (llama.cpp, OpenVINO) is more involved than on Linux. `make` is often unavailable or partial. |
 | **Remote SSH / VS Code Remote** | Offloading heavy work (gopls, builds) to a Linux box while editing on Windows; or driving a Windows worker headlessly | See the SSH section below for bundle production. |
 
-For most contributors: install WSL2 and do the normal Linux flow inside it (see [CONTRIBUTING.md](../CONTRIBUTING.md) and `docs/development/modeld-source-build.md`). Drop to a native Windows checkout only when you need Windows-specific verification or when you are the designated Windows modeld builder.
+For most contributors: install WSL2 and do the normal Linux flow inside it (see [CONTRIBUTING.md](../../CONTRIBUTING.md) and `docs/development/modeld-source-build.md`). Drop to a native Windows checkout only when you need Windows-specific verification or when you are the designated Windows modeld builder.
 
 ## WSL2 setup (fast path)
 
@@ -240,7 +240,7 @@ If you are also hand-assembling the final package directly on the Windows box (n
 
 ## See also
 
-- [CONTRIBUTING.md](../CONTRIBUTING.md) — main local development instructions
+- [CONTRIBUTING.md](../../CONTRIBUTING.md) — main local development instructions
 - `docs/development/modeld-source-build.md` — modeld build/packaging details
 - `docs/development/modeld-release-runbook.md` — release process and platform matrix
 - `scripts/modeld-deps-bundle-windows.sh` — the bundler script and its required environment variables

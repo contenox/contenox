@@ -1,14 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch } from '../lib/fetch';
-import { flattenFiles, ROOT_DIR, type DirCache, type WorkspaceEntry } from '../pages/chat/lib/workspaceTree';
+import {
+  flattenFiles,
+  ROOT_DIR,
+  type DirCache,
+  type WorkspaceAccess,
+  type WorkspaceEntry,
+} from '../pages/chat/lib/workspaceTree';
 import type { WorkspaceFileRef } from '../pages/chat/lib/mentions';
 
-/** One entry from the `/files` list endpoint (localfileservice.Entry). */
+/** One entry from the `/files` list endpoint (localfileservice.Entry + optional agent-view `access`). */
 interface FilesListEntry {
   path: string;
   name: string;
   isDirectory: boolean;
   size: number;
+  /** Present only when the listing was fetched with `filter=agent`. */
+  access?: WorkspaceAccess;
 }
 
 /** The `/files/content` response (localfileapi.fileContentResponse). */
@@ -44,10 +52,18 @@ export interface UseWorkspaceFilesResult {
   refresh: () => void;
   /** Reads a file's content for peek. */
   readFile: (path: string) => Promise<WorkspaceFilePeek>;
+  /** Whether the agent-view policy filter is active (listings carry an `access` verdict). */
+  agentView: boolean;
+  /** Toggles the agent-view filter; re-fetches the tree under the new view. */
+  setAgentView: (on: boolean) => void;
 }
 
-function filesUrl(path: string, root: string): string {
+function filesUrl(path: string, root: string, agentView: boolean): string {
   const params = new URLSearchParams({ path: path === ROOT_DIR ? '.' : path, root });
+  // `filter=agent` makes the server annotate each entry with a policy verdict
+  // (`access`); `policy` is intentionally omitted so the server default-resolves
+  // the configured `hitl-policy-name` — the same policy a live agent runs under.
+  if (agentView) params.set('filter', 'agent');
   return `/api/files?${params.toString()}`;
 }
 
@@ -68,6 +84,9 @@ export function useWorkspaceFiles(root: string | null): UseWorkspaceFilesResult 
   const [cache, setCache] = useState<DirCache>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
+  // Agent-view policy overlay. OFF by default so the raw filesystem tree (today's
+  // behavior, byte-identical response) renders until the user opts in.
+  const [agentView, setAgentView] = useState(false);
   // Guards against setState after the root changed (or unmount) mid-fetch.
   const rootRef = useRef(root);
   rootRef.current = root;
@@ -81,12 +100,13 @@ export function useWorkspaceFiles(root: string | null): UseWorkspaceFilesResult 
       requestedRef.current.add(dir);
       setLoading(prev => ({ ...prev, [dir]: true }));
       try {
-        const entries = await apiFetch<FilesListEntry[]>(filesUrl(dir, root));
+        const entries = await apiFetch<FilesListEntry[]>(filesUrl(dir, root, agentView));
         if (rootRef.current !== root) return;
         const mapped: WorkspaceEntry[] = entries.map(e => ({
           path: e.path,
           name: e.name,
           isDirectory: e.isDirectory,
+          ...(e.access ? { access: e.access } : {}),
         }));
         setCache(prev => ({ ...prev, [dir]: mapped }));
         setError(null);
@@ -97,10 +117,11 @@ export function useWorkspaceFiles(root: string | null): UseWorkspaceFilesResult 
         if (rootRef.current === root) setLoading(prev => ({ ...prev, [dir]: false }));
       }
     },
-    [root],
+    [root, agentView],
   );
 
-  // (Re)load the root whenever the workspace root changes.
+  // (Re)load the root whenever the workspace root changes — or the agent-view
+  // toggle flips, which reidentifies `load` (it now fetches under a new filter).
   useEffect(() => {
     requestedRef.current = new Set();
     setCache({});
@@ -149,5 +170,7 @@ export function useWorkspaceFiles(root: string | null): UseWorkspaceFilesResult 
     ensureLoaded,
     refresh,
     readFile,
+    agentView,
+    setAgentView,
   };
 }

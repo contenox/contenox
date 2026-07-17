@@ -1,9 +1,8 @@
 # contenox.com
 
 Static site for contenox.com, built with Astro. The site owns no content:
-every page under `/docs/`, `/cookbook/`, and `/stories/` renders markdown from
-this repo's `docs/` tree (see `src/content.config.ts`). Editing a doc there is
-editing the website.
+every page under `/docs/` renders markdown from this repo's `docs/` tree
+(see `src/content.config.ts`). Editing a doc there is editing the website.
 
 ```bash
 make deps-website      # npm ci
@@ -12,11 +11,11 @@ make build-website     # static output -> website/dist
 make preview-website   # build + serve the built output
 ```
 
-`docs/` is the site's whole content source: `guide/`, `chains/`, `tools/`,
-`reference/`, `cookbook/`, `stories/` publish today; `development/` (contributor
-docs) and `development/blueprints/` (design records) are public and can join the publish
-set by extending the collection patterns. Internal working notes never live in
-`docs/` — they go to the gitignored `.notes/` at the repo root.
+`docs/` is the site's whole content source: `guide/`, `specification/`,
+`integrations/`, `reference/`, and `use-cases/` publish today; `development/`
+(contributor docs and, under `development/blueprints/`, design records) is also
+published but kept out of the SEO/sitemap surface. Internal working notes never
+live in `docs/` — they go to the gitignored `.notes/` at the repo root.
 
 Conventions:
 

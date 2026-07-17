@@ -10,7 +10,7 @@ The wider point: the **OAuth-with-pre-issued-credentials** path also works for S
 
 ## Prerequisites
 
-- contenox **vX.Y.Z+** *(the release containing `--oauth-client-id` / `--oauth-client-secret-env` support on `mcp add`)*
+- contenox **v0.35.0+** *(the release containing `--oauth-client-id` / `--oauth-client-secret-env` support on `mcp add`)*
 - A configured LLM backend with tool calling
 - A HubSpot CRM portal you have admin access to
 - A HubSpot developer account (free, same login as your CRM)
@@ -131,7 +131,7 @@ The supported objects: contacts, companies, deals, tickets, line items, products
 
 ## Customize
 
-- **Change the callback port.** If port 49152 is already in use on your machine, set `OAuthCallbackPort` in your contenox config to anything else and **re-register the same port in HubSpot's MCP Auth App** — they have to match exactly.
+- **Callback port is fixed.** The OAuth redirect listener always binds `127.0.0.1:49152` — there is no config key to change it. Make sure the port is free before starting the flow, and register `http://127.0.0.1:49152/callback` exactly in HubSpot's MCP Auth App.
 - **Different OAuth-only MCP.** Same flags work for any vendor whose MCP requires a manually-registered OAuth app (Salesforce, Microsoft Graph). Create the app in their UI, register the redirect URL `http://127.0.0.1:49152/callback`, then `contenox mcp add <name> --auth-type oauth --oauth-client-id ... --oauth-client-secret-env ...`.
 
 ---

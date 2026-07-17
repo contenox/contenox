@@ -32,7 +32,11 @@ To disable automatic update notifications set the opt-out flag:
 var updateCheckCmd = &cobra.Command{
 	Use:   "check",
 	Short: "Check if a newer version is available without installing.",
-	RunE:  runUpdateCheck,
+	Long: `Compare the current version against the latest GitHub release and report
+whether an update is available, without downloading or installing anything.
+Does nothing if update checks have been disabled via 'contenox config set
+update-check false'.`,
+	RunE: runUpdateCheck,
 }
 
 func init() {

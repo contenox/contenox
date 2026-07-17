@@ -43,9 +43,18 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 	promptCtx := libtracker.WithNewRequestID(ctx)
 	reqID, _ := promptCtx.Value(libtracker.ContextKeyRequestID).(string)
 
-	// The chain is the turn's plan: surface it as ACP plan entries that the
-	// event translator advances as steps run. Nil for single-task chains.
-	plan := newPlanTracker(t.deps.ChainRegistry.Default())
+	// Make this turn cancellable and register it so session/cancel (Transport.Cancel),
+	// a session Close/Delete, or a connection drop can abort the running chain.
+	// promptCtx already inherits libacp's connection-level prompt context, but the
+	// server owns cancellation here rather than relying solely on that. The
+	// deferred unregister+cancel cleans up on turn end; cancelling produces
+	// context.Canceled, which the error path below resolves as StopReasonCancelled.
+	promptCtx, cancelPrompt := context.WithCancel(promptCtx)
+	promptReg := t.registerPromptCancel(req.SessionID, cancelPrompt)
+	defer func() {
+		t.unregisterPromptCancel(req.SessionID, promptReg)
+		cancelPrompt()
+	}()
 
 	rawCh := make(chan []byte, 64)
 	bus := t.deps.Engine.Bus
@@ -58,13 +67,10 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 			subErr(err)
 			subEnd()
 		} else {
-			if plan != nil {
-				t.sendPlanUpdate(promptCtx, req.SessionID, plan)
-			}
 			translateDone := make(chan struct{})
 			go func() {
 				defer close(translateDone)
-				t.translateEvents(promptCtx, req.SessionID, rawCh, plan)
+				t.translateEvents(promptCtx, req.SessionID, rawCh)
 			}()
 			defer func() {
 				_ = sub.Unsubscribe()
@@ -129,9 +135,20 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 		ContextLength:  contextLen,
 	})
 	if err != nil {
-		cancelled := (resp != nil && resp.StopReason == agentservice.StopCancelled) ||
-			promptCtx.Err() != nil ||
-			errors.Is(err, context.Canceled)
+		// Distinguish a genuine user cancellation from an execution failure that
+		// merely SURFACED as a timeout. Only context.Canceled is a cancellation
+		// (the client sent session/cancel, or the connection/parent context was
+		// torn down). context.DeadlineExceeded — e.g. modeld refusing to load a
+		// model, or waiting on a busy single GPU slot until an inner LLM call
+		// deadlines — is a FAILURE the client must SEE, not a silent clean stop.
+		// agentservice.InferStopReason maps BOTH to StopCancelled, so trusting
+		// resp.StopReason (or a bare promptCtx.Err()) here would let a hard
+		// failure masquerade as a cancel and vanish from the UI: the client
+		// resolves the prompt with no error, drops its "prompting" state, and
+		// shows nothing. Key the silent-cancel path on context.Canceled only.
+		cancelled := errors.Is(err, context.Canceled) ||
+			errors.Is(promptCtx.Err(), context.Canceled) ||
+			errors.Is(ctx.Err(), context.Canceled)
 		if cancelled {
 			reportChange(string(req.SessionID), map[string]any{
 				"stop_reason":           string(libacp.StopReasonCancelled),
@@ -151,18 +168,30 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 	// the engine absorbed the cancellation and handed back a "successful"
 	// partial result (e.g. via a recovery task) — the client sent
 	// session/cancel or $/cancel_request and judges conformance by this field.
-	if promptCtx.Err() != nil {
+	// Keyed on context.Canceled specifically (not any ctx error): a deadline
+	// that fired against a salvaged result is a timeout, not a user cancel.
+	if errors.Is(promptCtx.Err(), context.Canceled) {
 		stopReason = libacp.StopReasonCancelled
 	}
 	// Session pickers key freshness off updatedAt; push it after the turn so
-	// clients don't need to re-list to notice activity.
+	// clients don't need to re-list to notice activity. Push the derived title
+	// alongside it: a session created this connection carried NO title in its
+	// session/new SessionInfo, so without this the client's tab/sidebar label
+	// is stuck on the raw-id fallback ("Sitzung acp-XXXX") until a full
+	// session/list re-list (only on reconnect). Deriving from the first user
+	// message here mirrors session/list's sessionListTitle, so the live push
+	// and the re-list agree.
 	libacp.AfterResponse(ctx, func() {
+		update := libacp.SessionUpdate{
+			SessionUpdate: libacp.SessionUpdateSessionInfo,
+			UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+		}
+		if title := t.sessionInfoTitle(ctx, sess.InternalSessionID); title != "" {
+			update.Title = title
+		}
 		t.sendUpdate(ctx, libacp.SessionNotification{
 			SessionID: req.SessionID,
-			Update: libacp.SessionUpdate{
-				SessionUpdate: libacp.SessionUpdateSessionInfo,
-				UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
-			},
+			Update:    update,
 		})
 	})
 	reportChange(string(req.SessionID), map[string]any{

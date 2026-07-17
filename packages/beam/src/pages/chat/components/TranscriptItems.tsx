@@ -9,6 +9,8 @@ import {
   DiffView,
   diffLinesFromTexts,
   InlineAttachments,
+  InlineNotice,
+  Span,
   ToolCallCard,
   type ToolCallCardProps,
 } from '@contenox/ui';
@@ -18,7 +20,8 @@ import remarkGfm from 'remark-gfm';
 import { useTranslation } from 'react-i18next';
 import logoMarkDarkUrl from '../../../assets/logo-mark.svg?url';
 import logoMarkLightUrl from '../../../assets/logo-mark-light.svg?url';
-import type { AcpChatMessage, AcpSessionState, AcpTerminalCard, AcpToolCallState } from '../../../hooks/acpSessionState';
+import type { AcpChatMessage, AcpErrorCard, AcpSessionState, AcpTerminalCard, AcpToolCallState } from '../../../hooks/acpSessionState';
+import { classifyAcpExecutionError } from '../../../lib/acpFailureKind';
 import { useTheme } from '../../../lib/ThemeProvider';
 import { shouldShowStreamingCaret, shouldShowStreamingPlaceholder } from '../lib/streamingPresentation';
 
@@ -190,6 +193,37 @@ function TranscriptTerminal({ card }: { card: AcpTerminalCard }) {
   );
 }
 
+/**
+ * A failed turn, rendered inline in the transcript where it happened. Reuses
+ * the same `classifyAcpExecutionError` taxonomy as the top recovery banner (see
+ * SessionBanners' `ExecutionErrorBanner`) so a backend-unreachable /
+ * model-not-servable / generic failure each gets a matching localized headline,
+ * with the raw runtime error kept behind a collapsed disclosure. This is what
+ * replaces the old silent dead-state: the chat can no longer just go quiet.
+ */
+function TranscriptError({ card }: { card: AcpErrorCard }) {
+  const { t } = useTranslation();
+  const kind = classifyAcpExecutionError(card.message);
+  const headline =
+    kind === 'backend_unreachable'
+      ? t('acp_recovery.backend_unreachable_title')
+      : kind === 'model_unavailable'
+        ? t('acp_recovery.model_unavailable_title')
+        : t('acp_chat.turn_failed_label');
+  return (
+    <InlineNotice variant="error">
+      <div className="flex flex-col gap-1">
+        <Span className="font-medium">{headline}</Span>
+        {card.message && (
+          <Collapsible defaultOpen={false} title={t('acp_chat.error_details_toggle')}>
+            <p className="mt-1 text-xs whitespace-pre-wrap">{card.message}</p>
+          </Collapsible>
+        )}
+      </div>
+    </InlineNotice>
+  );
+}
+
 export interface TranscriptItemsProps {
   session: AcpSessionState;
   agentName: string | null;
@@ -214,6 +248,11 @@ export function TranscriptItems({ session, agentName }: TranscriptItemsProps) {
           const card = session.terminals[item.id];
           if (!card) return null;
           return <TranscriptTerminal key={`x-${item.id}`} card={card} />;
+        }
+        if (item.kind === 'error') {
+          const card = session.errorCards[item.id];
+          if (!card) return null;
+          return <TranscriptError key={`e-${item.id}`} card={card} />;
         }
         const toolCall = session.toolCalls[item.id];
         if (!toolCall) return null;

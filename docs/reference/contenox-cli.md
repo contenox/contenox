@@ -17,7 +17,7 @@ Persistent flags on the root command (also shown under **Global Flags** on subco
 | `--timeout`                      | Max execution time per invocation (default `5m`)                                                                                  |
 | `--context`                      | Context length hint for the tokenizer                                                                                             |
 | `--ollama`                       | Ollama base URL (default `http://127.0.0.1:11434`)                                                                                |
-| `--no-delete-models`             | Do not delete undeclared Ollama models (default **true** for CLI)                                                                 |
+| `--no-delete-models`             | Legacy compatibility flag; a no-op in the OSS runtime (model deletion is disabled). Defaults to **true**.                          |
 | `--chain <path>`                 | Chain JSON for injected `run` / chat when applicable                                                                              |
 | `--input <value>`                | Input string or `@file` (chat / bare run paths)                                                                                   |
 | `--trace`                        | Structured operation telemetry on stderr                                                                                          |
@@ -88,8 +88,12 @@ contenox session show <id>              # show any session by id (any workspace)
 contenox session show --tail 10         # show last 10 messages
 contenox session show --head 5          # show first 5 messages
 contenox session show default --tail 6  # tail a non-active session
+contenox session fork [name]            # copy the active session to a new one (becomes active)
+contenox session fork --summary         # compact older history into a summary, then fork and continue
 contenox session delete <name>          # delete session and all messages
 ```
+
+`session fork` branches the current conversation into a new session so you can explore an alternate direction without losing the original. `--summary` first compacts the older turns into a summary (via `chain-compact.json`) before forking, which trims a long history while preserving context.
 
 Inspect the whole database, not just the active workspace/identity:
 
@@ -112,7 +116,7 @@ contenox run --chain .contenox/my-chain.json --shell "refactor main.go"
 ```
 
 - `--chain <path>`: Optional if `<resolved .contenox>/default-run-chain.json` exists; otherwise required.
-- `--input-type <type>`: `string` (default), `chat`, `json`, `int`, `float`, `bool` — see `contenox run --help`.
+- `--input-type <type>`: `string` (default), `chat`, `json`, `int` — see `contenox run --help`.
 - `--shell`: Enable shell execution for this invocation (use only in trusted environments).
 - `--auto`: Disable HITL approval prompts for non-interactive runs. Default is HITL on.
 - `--think` / `--trace` / `--steps`: Global flags (see table above).
@@ -146,14 +150,14 @@ contenox model registry-list
 
 #### `contenox model pull`
 
-Download a curated or custom GGUF model to `~/.contenox/models/<name>/model.gguf`.
+Download a curated or custom GGUF model to `~/.contenox/models/llama/<name>/model.gguf` (OpenVINO IR models, curated names ending in `-ov`, land under `~/.contenox/models/openvino/<name>/`).
 
 ```bash
 contenox model pull qwen3-4b                                         # curated model
 contenox model pull my-model --url https://huggingface.co/org/repo/resolve/main/model.gguf
 ```
 
-After downloading, the model is ready for the built-in `local` backend. `contenox init` creates that backend, and the first pulled model becomes `default-model` on a fresh install.
+After downloading, the model is ready for the `llama` backend (or `openvino` for `-ov` models). `contenox init` registers those backends, and the first pulled model becomes `default-model` on a fresh install. Local inference is served by the `modeld` daemon, which must be running in the matching backend mode.
 
 | Flag    | Description                                          |
 | ------- | ---------------------------------------------------- |
@@ -210,6 +214,42 @@ contenox model set-context gemini-3.1-pro-preview --context 1m
 | Flag        | Description                                                      |
 | ----------- | ---------------------------------------------------------------- |
 | `--context` | Context window size: bare integer or shorthand (`12k`, `128k`, `1m`). Required. |
+
+#### `contenox model local`
+
+List installed local model artifacts on disk (under `~/.contenox/models/`), independent of any running backend.
+
+```bash
+contenox model local
+```
+
+#### `contenox model push`
+
+Push a local model artifact to a `modeld` backend (the local daemon or a remote node), so that node can load and serve it.
+
+```bash
+contenox model push qwen3-4b                 # push to the local modeld
+contenox model push qwen3-4b --backend <name> # push to a specific modeld node
+```
+
+#### `contenox model capability`
+
+Manage manual provider/model capability overrides — currently the reasoning (`think`) capability the runtime assumes for a given provider/model when the catalog doesn't declare it.
+
+```bash
+contenox model capability set   <provider> <model> --think   # mark the model as supporting reasoning
+contenox model capability show  <provider> <model>           # show the current override
+contenox model capability unset <provider> <model>           # remove the override (revert to catalog)
+```
+
+#### `contenox model snapshot`
+
+Capture and restore local `modeld` session snapshots — the KV-cache / prefill state of a warmed model — for faster resumption.
+
+```bash
+contenox model snapshot save    <model> --out snap.bin   # warm a session, prefill, write the snapshot
+contenox model snapshot restore [model] --in  snap.bin   # restore a session from a snapshot file
+```
 
 ### `contenox modeld`
 
@@ -274,7 +314,7 @@ Register and manage LLM backend endpoints.
 ```bash
 contenox backend add ollama       --type ollama
 contenox backend add ollama-cloud --type ollama --url https://ollama.com/api --api-key-env OLLAMA_API_KEY
-contenox backend add embedded     --type local --url ~/.contenox/models/
+contenox backend add llama        --type llama --url ~/.contenox/models/llama/
 contenox backend add openai       --type openai  --api-key-env OPENAI_API_KEY
 contenox backend add openrouter   --type openrouter --api-key-env OPENROUTER_API_KEY
 contenox backend add anthropic    --type anthropic --api-key-env ANTHROPIC_API_KEY
@@ -292,7 +332,7 @@ contenox backend remove myvllm
 
 | Flag            | Description                                                                               |
 | --------------- | ----------------------------------------------------------------------------------------- |
-| `--type`        | Backend type: `ollama`, `openai`, `openrouter`, `anthropic`, `mistral`, `gemini`, `bedrock`, `vllm`, `local`, `vertex-google` |
+| `--type`        | Backend type: `llama`, `openvino`, `modeld`, `ollama`, `openai`, `openrouter`, `anthropic`, `mistral`, `gemini`, `bedrock`, `vllm`, `vertex-google`. (`local` is a legacy alias for `llama`.) |
 | `--url`         | Base URL (auto-inferred for openai/openrouter/anthropic/mistral/gemini; required for vllm, bedrock, and vertex-google) |
 | `--api-key-env` | Environment variable holding the API key (preferred)                                      |
 | `--api-key`     | API key literal (avoid — use `--api-key-env`)                                             |
@@ -302,7 +342,7 @@ contenox backend remove myvllm
 Manage persistent CLI defaults stored in SQLite.
 
 ```bash
-contenox config set default-provider local
+contenox config set default-provider llama
 contenox config set default-model    granite-3.2-2b
 contenox config set default-alt-model gemini-2.5-flash
 contenox config set default-alt-provider gemini
@@ -349,11 +389,18 @@ contenox mcp add hubspot --transport http --url https://mcp.hubspot.com/ \
   --oauth-client-id <client_id from vendor UI> \
   --oauth-client-secret-env HUBSPOT_MCP_CLIENT_SECRET
 
+# For OAuth servers, run the authorization flow AFTER adding (opens a browser).
+# This is a required, separate step — `mcp add --auth-type oauth` only registers
+# the server; it does not authenticate it. Re-run only when the token expires.
+contenox mcp auth notion
+
 contenox mcp list
 contenox mcp show myserver
 contenox mcp update myserver --inject "tenant_id=newvalue"
 contenox mcp remove myserver
 ```
+
+For OAuth servers the full sequence is: `contenox mcp add <name> ... --auth-type oauth`, then `contenox mcp auth <name>` to complete the OAuth 2.1 PKCE flow in the browser. The token is stored locally and reused until it expires.
 
 | Flag           | Description                                                                                |
 | -------------- | ------------------------------------------------------------------------------------------ |
@@ -372,6 +419,79 @@ contenox mcp remove myserver
 
 > [!NOTE]
 > `mcp update --header` and `mcp update --inject` each **replace** the entire corresponding map. Pass all required values in a single update call.
+
+### `contenox serve`
+
+Starts the Contenox HTTP server and serves the Beam web UI. Foundation routes live at `/health` and `/version`; the product API is under `/api`; chat (with its HITL approvals and execution-state replay) runs over the `/acp` WebSocket; the Beam UI is served at `/`.
+
+```bash
+contenox serve                                  # binds 127.0.0.1:32123 by default
+contenox serve ./repo ./another-repo            # extra allowed session workspace roots
+```
+
+Binds `127.0.0.1:32123` by default (override with `ADDR`/`PORT`). Set `TOKEN` to require a bearer token on mutating/cross-origin requests (mandatory when `ADDR` is not loopback). A configured model is required — run `contenox setup` first. Terminal routes are on by default under `/api/terminal/sessions` (disable with `TERMINAL_ENABLED=false`).
+
+| Flag / env | Description |
+| ---------- | ----------- |
+| `--workspace-root <dir>` | Directory a browser client may choose as a session workspace (repeatable). The serve directory is always allowed; also settable via `WORKSPACE_ROOTS` or as positional args. |
+| `ADDR` / `PORT` | Override the bind address/port. |
+| `TOKEN` | Bearer token required on mutating API requests and cross-origin reads. |
+| `BEAM_DEV_PROXY_URL` | Proxy Beam UI requests to a Vite dev server while keeping `/api` on this server. |
+
+### `contenox code [vscode args...]`
+
+Launches VS Code with Contenox's proposed-API extension enabled. Extra arguments are passed through to `code`.
+
+```bash
+contenox code .
+```
+
+### `contenox state`
+
+Inspects captured execution state from past chain runs — the per-task steps, handlers, transitions, and timings recorded for each request.
+
+```bash
+contenox state list             # list request IDs with captured execution state
+contenox state show <reqID>     # print the captured steps for a request
+contenox state show <reqID> --raw   # print the raw captured state as JSON
+```
+
+### `contenox cache clear`
+
+Clears cached backend model lists so the next `chat`/`run` refetches them from the live backends. Use it after adding models to a backend that the runtime hasn't picked up yet.
+
+```bash
+contenox cache clear
+```
+
+### `contenox update`
+
+Updates `contenox` to the latest release, or just checks for one.
+
+```bash
+contenox update             # download and install the latest release
+contenox update check       # report whether a newer version exists, without installing
+```
+
+### `contenox acp` / `contenox acpx`
+
+Run Contenox as an [ACP](https://agentclientprotocol.com/) agent over stdio, for editor/desktop clients (Zed, JetBrains, AionUi, OpenClaw). `acp` uses the standard editor profile (gated tools route through the client's approval UI); `acpx` uses the hardened headless / untrusted-driver profile.
+
+```bash
+contenox acp                 # standard editor profile
+contenox acp --auto          # unattended: disable HITL permission prompts
+contenox acpx                # headless / untrusted-driver profile
+```
+
+The chain each profile loads is overridable via `CONTENOX_ACP_CHAIN_PATH` (acp) and `CONTENOX_ACPX_CHAIN_PATH` (acpx). See the [editor integration guides](/docs/integrations/editors/zed/) for client setup.
+
+### `contenox vscode-agent`
+
+Runs the Contenox VS Code bridge over stdio. This is launched by the VS Code extension, not typically invoked by hand.
+
+```bash
+contenox vscode-agent --stdio
+```
 
 ### `contenox version`
 

@@ -77,7 +77,7 @@ Combine stdin piping with Notion write access to push any local file directly in
 
 These recipes work with `contenox run`. The default run chain (`.contenox/default-run-chain.json`) is configured with `"tools": ["*"]`, so registered MCP servers such as Notion are available to the model automatically.
 
-```json v-pre
+```json
 {
   "tasks": [{
     "handler": "chat_completion",
@@ -91,7 +91,7 @@ These recipes work with `contenox run`. The default run chain (`.contenox/defaul
 ```
 
 - `tools: ["*"]` — exposes all registered MCP servers to the model. Add `"!name"` entries to exclude specific servers (e.g. `["*", "!filesystem"]`).
-- A bare `contenox "..."` command is stateless and uses `.contenox/default-run-chain.json`.
+- A bare `contenox "..."` command is session-backed chat (injected as `chat`) and uses `default-chain.json`; only `contenox run` is the stateless path that uses `.contenox/default-run-chain.json`.
 - The task engine handles the full tool-call loop automatically: model calls a tool → result appended to history → model continues.
 
 > [!TIP]

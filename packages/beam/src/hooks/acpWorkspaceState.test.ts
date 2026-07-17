@@ -118,6 +118,39 @@ describe('acpWorkspaceReducer: session roster freshness sort', () => {
     expect(state.sessions[0]).toEqual({ sessionId: 'a', cwd: '/work', title: 'Original title', updatedAt: '2026-07-01T00:00:00Z' });
   });
 
+  it('sessions_replaced merges onto known entries instead of clobbering them (BUG: a reconnect-triggered refresh regressing an already-learned title)', () => {
+    // A session already has a live-pushed title (session_upserted, e.g. from
+    // session_info_update once the first turn resolves — see the test above).
+    const withTitle = acpWorkspaceReducer(initialAcpWorkspaceState, {
+      type: 'session_upserted',
+      session: { sessionId: 'a', cwd: '/work', title: 'Read README.md, then update its title' },
+    });
+    expect(withTitle.sessions[0].title).toBe('Read README.md, then update its title');
+
+    // `refreshSessions()` (auto-triggered by every reconnect, see
+    // acpWorkspaceController.ts's attemptReconnect()) re-pages session/list and
+    // replaces the roster — but the server's OWN listing index can lag behind
+    // the title the client already learned live, so its row for 'a' has none.
+    // A bare replace previously stomped `withTitle`'s title back to undefined
+    // the instant this same-membership snapshot landed, with no further live
+    // event to ever restore it — the sidebar and tab strip both read this same
+    // roster, so both would go back to (or stay on) the raw-id fallback.
+    const refreshed = acpWorkspaceReducer(withTitle, {
+      type: 'sessions_replaced',
+      sessions: [{ sessionId: 'a' }],
+    });
+    expect(refreshed.sessions[0]).toMatchObject({ sessionId: 'a', cwd: '/work', title: 'Read README.md, then update its title' });
+  });
+
+  it('sessions_replaced still drops a session genuinely absent from the new snapshot (merge is field-level, not membership-level)', () => {
+    const withTwo = run({
+      type: 'sessions_replaced',
+      sessions: [{ sessionId: 'a', title: 'Keep me' }, { sessionId: 'b' }],
+    });
+    const state = acpWorkspaceReducer(withTwo, { type: 'sessions_replaced', sessions: [{ sessionId: 'b' }] });
+    expect(state.sessions.map(s => s.sessionId)).toEqual(['b']);
+  });
+
   it('session_removed drops the session from the roster', () => {
     const withTwo = run({
       type: 'sessions_replaced',
