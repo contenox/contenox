@@ -96,6 +96,14 @@ type sessionEntry struct {
 	// It is clamped at set time (and on use) to the model's ContextLength when the model reports >0.
 	// 0 means "use chain default / unlimited". This is the value shown in usage indicators as "size".
 	EffectiveTokenLimit int
+	// HITLPolicy is the per-session HITL approval policy selection, session-scoped
+	// exactly like Model/Think/EffectiveTokenLimit. It stores either a concrete
+	// policy name or the "use configured default" sentinel (hitlPolicyDefaultValue);
+	// empty is treated as the sentinel. Changing it must NEVER touch the global
+	// cli.hitl-policy-name KV — that key is the single-session CLI/stdio fallback.
+	// A concrete selection is injected into the prompt context (see prompt.go) so a
+	// shared engine's one hitlservice gates each session's turn under its own policy.
+	HITLPolicy string
 }
 
 type Transport struct {
@@ -339,6 +347,29 @@ func (s *sessionEntry) think() string {
 func (s *sessionEntry) setThink(v string) {
 	s.mu.Lock()
 	s.Think = v
+	s.mu.Unlock()
+}
+
+// hitlPolicy returns the session's HITL policy selection, defaulting to the
+// "use configured default" sentinel when unset (nil-safe, mirroring think()).
+func (s *sessionEntry) hitlPolicy() string {
+	if s == nil {
+		return hitlPolicyDefaultValue
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.HITLPolicy == "" {
+		return hitlPolicyDefaultValue
+	}
+	return s.HITLPolicy
+}
+
+func (s *sessionEntry) setHITLPolicy(v string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.HITLPolicy = v
 	s.mu.Unlock()
 }
 

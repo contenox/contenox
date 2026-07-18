@@ -64,7 +64,7 @@ make build-contenox-windows
   - On Windows it embeds `bin/contenox-windows-amd64.exe` (or the native `.exe`).
 - Local model inference still requires a separately built `modeld.exe` + its DLLs (see the modeld section).
 
-## Working with modeld on Windows
+## Working with Modeld on Windows
 
 `contenox` talks to `modeld` (the native daemon) for local llama.cpp / OpenVINO inference. On Windows the daemon and its libraries are `.exe` + `.dll`.
 
@@ -73,7 +73,7 @@ make build-contenox-windows
 
 See `docs/development/modeld-source-build.md` for general modeld usage and `docs/integrations/providers/modeld.md` for the user view.
 
-## Producing Windows modeld dependency bundles ("that script")
+## Producing Windows Modeld dependency bundles ("that script")
 
 Windows release artifacts are produced in two stages:
 
@@ -103,7 +103,7 @@ See also:
 - `scripts/modeld-deps-bundle-windows.sh` (the script itself documents the expected inputs)
 - `mk/llama-flags.mk` and `Makefile.llamacpp-direct` (for how the llama runtime is produced)
 
-### License notices for public modeld distribution
+### License notices for public Modeld distribution
 
 modeld packages are shipped publicly (CLI `modeld install`, VS Code users, ACP/Zed, planned Windows Store). Every package must ship `LICENSES/` with:
 

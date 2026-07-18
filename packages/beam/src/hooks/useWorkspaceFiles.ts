@@ -58,12 +58,33 @@ export interface UseWorkspaceFilesResult {
   setAgentView: (on: boolean) => void;
 }
 
-function filesUrl(path: string, root: string, agentView: boolean): string {
+/**
+ * The per-session "use configured default" HITL policy sentinel. Mirrors
+ * acpsvc's `hitlPolicyDefaultValue`: it is the toolbar HITL option's value when
+ * the session defers to Contenox's configured fallback policy. The agent-view
+ * fetch omits `policy=` for it so the server default-resolves, matching a live
+ * agent that also runs under the configured default.
+ */
+export const HITL_POLICY_DEFAULT_VALUE = '__contenox_default__';
+
+export function filesUrl(
+  path: string,
+  root: string,
+  agentView: boolean,
+  hitlPolicyName?: string | null,
+): string {
   const params = new URLSearchParams({ path: path === ROOT_DIR ? '.' : path, root });
   // `filter=agent` makes the server annotate each entry with a policy verdict
-  // (`access`); `policy` is intentionally omitted so the server default-resolves
-  // the configured `hitl-policy-name` — the same policy a live agent runs under.
-  if (agentView) params.set('filter', 'agent');
+  // (`access`). When the session's toolbar HITL policy is a CONCRETE selection,
+  // pin the evaluation to it via `policy=<name>` so the tree's verdicts match the
+  // policy the live agent gates under. For the "Default" sentinel (or no value)
+  // `policy` is omitted so the server default-resolves the configured
+  // `hitl-policy-name` — the same fallback a defaulting session runs under.
+  if (agentView) {
+    params.set('filter', 'agent');
+    const policy = hitlPolicyName?.trim();
+    if (policy && policy !== HITL_POLICY_DEFAULT_VALUE) params.set('policy', policy);
+  }
   return `/api/files?${params.toString()}`;
 }
 
@@ -76,11 +97,15 @@ function contentUrl(path: string, root: string): string {
  * Data hook for the session workspace's file tree: fetches per-directory
  * listings from the `/files` browse API (rooted at `root`, validated
  * server-side against the workspace allowlist), caches them by path, and
- * lazily loads a directory's children on demand. Resets when `root` changes.
- * Kept free of tree/serialization logic — that lives in the pure
- * `workspaceTree.ts` helpers this composes.
+ * lazily loads a directory's children on demand. Resets when `root` — or the
+ * session's `hitlPolicyName` under agent-view — changes. Kept free of
+ * tree/serialization logic — that lives in the pure `workspaceTree.ts` helpers
+ * this composes.
  */
-export function useWorkspaceFiles(root: string | null): UseWorkspaceFilesResult {
+export function useWorkspaceFiles(
+  root: string | null,
+  hitlPolicyName?: string | null,
+): UseWorkspaceFilesResult {
   const [cache, setCache] = useState<DirCache>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
@@ -100,7 +125,7 @@ export function useWorkspaceFiles(root: string | null): UseWorkspaceFilesResult 
       requestedRef.current.add(dir);
       setLoading(prev => ({ ...prev, [dir]: true }));
       try {
-        const entries = await apiFetch<FilesListEntry[]>(filesUrl(dir, root, agentView));
+        const entries = await apiFetch<FilesListEntry[]>(filesUrl(dir, root, agentView, hitlPolicyName));
         if (rootRef.current !== root) return;
         const mapped: WorkspaceEntry[] = entries.map(e => ({
           path: e.path,
@@ -117,11 +142,13 @@ export function useWorkspaceFiles(root: string | null): UseWorkspaceFilesResult 
         if (rootRef.current === root) setLoading(prev => ({ ...prev, [dir]: false }));
       }
     },
-    [root, agentView],
+    [root, agentView, hitlPolicyName],
   );
 
   // (Re)load the root whenever the workspace root changes — or the agent-view
-  // toggle flips, which reidentifies `load` (it now fetches under a new filter).
+  // toggle flips, or the session's HITL policy changes: each reidentifies `load`
+  // (it now fetches under a new filter/policy), so the cache clears and every
+  // requested dir reloads under the new verdicts.
   useEffect(() => {
     requestedRef.current = new Set();
     setCache({});

@@ -1,6 +1,7 @@
 import { apiFetch } from './fetch';
 import {
   AuthenticatedUser,
+  AuthStatus,
   Backend,
   BackendRuntimeState,
   ChainDefinition,
@@ -202,22 +203,18 @@ export const api = {
     apiFetch<StatusResponse>(`/api/providers/${provider}/status`),
   getSupportedProviders: () => apiFetch<SupportedProvider[]>('/api/providers/supported'),
 
-  // Auth endpoints
-  login: async (_data: { email?: string; password?: string }): Promise<AuthenticatedUser> => {
-    void _data;
-    return localAuthenticatedUser;
-  },
+  // Auth endpoints. The runtime has a single local "user"; identity is not
+  // modeled server-side, so getCurrentUser is a static stand-in. Remote access
+  // is gated by a shared token exchanged for an HttpOnly session cookie via the
+  // /ui/* endpoints below (see runtime/serverapi/ui_auth.go).
   getCurrentUser: async (): Promise<AuthenticatedUser> => localAuthenticatedUser,
 
-  // First-run account
-  getAuthSetupStatus: async (): Promise<{ initialized: boolean }> => ({ initialized: true }),
-  initAccount: async (_data: {
-    username: string;
-    password: string;
-  }): Promise<{ initialized: boolean }> => {
-    void _data;
-    return { initialized: true };
-  },
+  /** Whether remote-access login is required and whether this browser is already authenticated (via the session cookie). Always readable. */
+  getAuthStatus: () => apiFetch<AuthStatus>('/ui/auth-status', { credentials: 'same-origin' }),
+  /** Exchange the shared access token for an HttpOnly session cookie. Throws (401) on a wrong token. */
+  loginWithToken: (token: string) => apiFetch<AuthStatus>('/ui/login', options('POST', { token })),
+  /** Clear the session cookie. */
+  logout: () => apiFetch<AuthStatus>('/ui/logout', options('POST')),
 
   executeTaskChain: (
     data: TaskExecutionRequest,

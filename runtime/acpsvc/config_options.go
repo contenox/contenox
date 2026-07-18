@@ -9,10 +9,7 @@ import (
 	"strings"
 
 	libacp "github.com/contenox/runtime/libacp"
-	"github.com/contenox/runtime/libtracker"
-	"github.com/contenox/runtime/runtime/internal/clikv"
 	"github.com/contenox/runtime/runtime/reasoning"
-	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/statetype"
 )
 
@@ -68,7 +65,7 @@ func (t *Transport) workspaceConfigOptions(ctx context.Context) []libacp.Session
 func (t *Transport) sessionConfigOptions(ctx context.Context, sess *sessionEntry) []libacp.SessionConfigOption {
 	opts := []libacp.SessionConfigOption{
 		t.modelConfigOption(ctx, sess),
-		t.hitlPolicyConfigOption(ctx),
+		t.hitlPolicyConfigOption(sess),
 		t.thinkConfigOption(sess),
 		t.tokenLimitConfigOption(ctx, sess),
 	}
@@ -144,15 +141,15 @@ func (t *Transport) modelConfigOption(ctx context.Context, sess *sessionEntry) l
 	}
 }
 
-func (t *Transport) hitlPolicyConfigOption(ctx context.Context) libacp.SessionConfigOption {
+func (t *Transport) hitlPolicyConfigOption(sess *sessionEntry) libacp.SessionConfigOption {
 	return libacp.SessionConfigOption{
 		ID:           configIDHITLPolicy,
 		Name:         "HITL Policy",
 		Description:  "Approval policy used for gated tool calls",
 		Category:     configCategoryHITLPolicy,
 		Type:         configTypeSelect,
-		CurrentValue: t.hitlPolicyConfigValue(ctx),
-		Options:      t.hitlPolicyConfigValues(ctx),
+		CurrentValue: sess.hitlPolicy(),
+		Options:      t.hitlPolicyConfigValues(sess),
 	}
 }
 
@@ -381,14 +378,7 @@ func (t *Transport) modelConfigValues(ctx context.Context, currentProvider, curr
 	return libacp.NewGroupedSessionConfigValues(groups)
 }
 
-func (t *Transport) hitlPolicyConfigValue(ctx context.Context) string {
-	if active := t.activeHITLPolicy(ctx); active != "" {
-		return active
-	}
-	return hitlPolicyDefaultValue
-}
-
-func (t *Transport) hitlPolicyConfigValues(ctx context.Context) libacp.SessionConfigValues {
+func (t *Transport) hitlPolicyConfigValues(sess *sessionEntry) libacp.SessionConfigValues {
 	defaultName := "Default"
 	defaultDescription := "Use Contenox's configured fallback policy"
 	if name := strings.TrimSpace(t.deps.HITLDefaultPolicyName); name != "" {
@@ -415,15 +405,26 @@ func (t *Transport) hitlPolicyConfigValues(ctx context.Context) libacp.SessionCo
 	for _, name := range t.deps.KnownPolicies {
 		add(name)
 	}
-	add(t.activeHITLPolicy(ctx))
+	// Fold in the session's current selection so a concrete policy that isn't in
+	// KnownPolicies still validates and renders as the current value. The sentinel
+	// is already seeded above, so hitlPolicy()'s sentinel default is a no-op here.
+	add(sess.hitlPolicy())
 	return libacp.NewSessionConfigValues(values)
 }
 
-func (t *Transport) activeHITLPolicy(ctx context.Context) string {
-	if t.deps.DB == nil {
-		return ""
+// resolveSessionHITLPolicy returns the concrete HITL policy name to ENFORCE for
+// this session's turn, or "" when the session defers to the runtime's configured
+// default. A concrete session selection resolves to its own name; the sentinel
+// (or unset) resolves to the operator-configured default (HITLDefaultPolicyName),
+// which is "" under serve — so a defaulting session injects no context override
+// and enforcement falls through the existing global-KV/fallback chain, byte-
+// identical to pre-per-session behavior. See prompt.go for the injection.
+func (t *Transport) resolveSessionHITLPolicy(sess *sessionEntry) string {
+	name := sess.hitlPolicy()
+	if name == "" || name == hitlPolicyDefaultValue {
+		return strings.TrimSpace(t.deps.HITLDefaultPolicyName)
 	}
-	return clikv.ReadHITLPolicy(ctx, runtimetypes.New(t.deps.DB.WithoutTransaction()))
+	return name
 }
 
 func (t *Transport) runtimeStates(ctx context.Context) []statetype.BackendRuntimeState {
@@ -486,20 +487,15 @@ func (t *Transport) setSessionConfigOption(ctx context.Context, sess *sessionEnt
 		return nil
 
 	case configIDHITLPolicy:
-		if !configOptionHasValue(t.hitlPolicyConfigOption(ctx), value) {
+		if !configOptionHasValue(t.hitlPolicyConfigOption(sess), value) {
 			return libacp.NewErrorf(libacp.ErrInvalidParams, "unknown HITL policy option %q", value)
 		}
-		policy := value
-		if policy == hitlPolicyDefaultValue {
-			policy = ""
-		}
-		if t.deps.DB == nil {
-			return fmt.Errorf("cannot set HITL policy: database unavailable")
-		}
-		cfgCtx := libtracker.WithNewRequestID(ctx)
-		if err := clikv.SetHITLPolicy(cfgCtx, runtimetypes.New(t.deps.DB.WithoutTransaction()), policy); err != nil {
-			return fmt.Errorf("set hitl policy: %w", err)
-		}
+		// Session-scoped, exactly like model/think/token-limit: store the chosen
+		// sentinel-or-name ON THE SESSION and DO NOT write the global
+		// cli.hitl-policy-name KV. Enforcement injects the resolved name into the
+		// prompt context (prompt.go) so two concurrent ACP sessions behind serve's
+		// one shared engine gate under their own policies.
+		sess.setHITLPolicy(value)
 		return nil
 
 	case configIDThink:

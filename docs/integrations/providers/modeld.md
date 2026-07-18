@@ -1,9 +1,9 @@
 ---
-title: modeld
+title: Modeld
 description: The local inference daemon that powers Contenox's on-device models.
 ---
 
-# modeld
+# Modeld
 
 `modeld` is Contenox's dedicated local inference daemon. It runs on your machine (or a remote GPU box), owns hardware resources, and serves GGUF (via llama.cpp) and OpenVINO models to the runtime over gRPC.
 
@@ -67,7 +67,7 @@ modeld serve                     # or the exact command printed by install
 
 Use `contenox doctor`, `contenox model local`, and the Beam "modeld console" (when running `contenox serve`) to inspect and control the resident model.
 
-## Remote modeld nodes
+## Remote Modeld nodes
 
 Register a modeld running elsewhere as a regular backend:
 

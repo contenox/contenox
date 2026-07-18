@@ -1,4 +1,4 @@
-# llama modeld Backend
+# llama Modeld Backend
 
 The old llama-only runbook has moved to the general modeld source-build guide:
 

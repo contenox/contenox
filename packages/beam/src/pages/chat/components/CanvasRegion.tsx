@@ -66,20 +66,29 @@ export function CanvasRegion({
 }: CanvasRegionProps) {
   const { t } = useTranslation();
   const sideBySide = useMediaQuery(SIDE_BY_SIDE_QUERY);
-  const { open } = canvas;
+  const { open, close } = canvas;
 
-  // The single affordance for opening the terminal as a canvas tab (dedups to a
-  // focus if already open) — replaces the old chat-toolbar toggle.
-  const openTerminal = useCallback(() => open(TERMINAL_CANVAS_TAB), [open]);
+  // The single terminal affordance is a real toggle: open the terminal canvas
+  // tab if it isn't open, close it if it is (so a second click dismisses it).
+  const terminalOpen = canvas.tabs.some(tab => tab.id === TERMINAL_CANVAS_TAB.id);
+  const toggleTerminal = useCallback(
+    () => (terminalOpen ? close(TERMINAL_CANVAS_TAB.id) : open(TERMINAL_CANVAS_TAB)),
+    [terminalOpen, open, close],
+  );
 
+  const terminalLabel = terminalOpen ? t('terminal.close_in_canvas') : t('terminal.open_in_canvas');
   const openTerminalButton = (
     <Button
       type="button"
       variant="ghost"
       size="icon"
-      aria-label={t('terminal.open_in_canvas')}
-      title={t('terminal.open_in_canvas')}
-      onClick={openTerminal}>
+      aria-pressed={terminalOpen}
+      aria-label={terminalLabel}
+      title={terminalLabel}
+      className={
+        terminalOpen ? 'bg-surface-200 text-text dark:bg-dark-surface-300 dark:text-dark-text' : undefined
+      }
+      onClick={toggleTerminal}>
       <Terminal className="h-4 w-4" />
     </Button>
   );

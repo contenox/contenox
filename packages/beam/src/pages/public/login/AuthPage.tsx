@@ -1,36 +1,19 @@
-import { Card, Page, Spinner } from '@contenox/ui';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '../../../lib/api';
+import { Card, Page } from '@contenox/ui';
 import { LoginForm } from './LoginForm';
-import { SetupAccountForm } from './SetupAccountForm';
 
+/**
+ * The remote-access login gate. Rendered by App.tsx's AuthGate (not as a routed
+ * page) whenever the server requires a token and this browser has no valid
+ * session cookie. A single "Access token" field POSTs /ui/login; on success the
+ * server sets an HttpOnly session cookie and the gate re-queries /ui/auth-status
+ * and swaps in the app.
+ */
 export default function AuthPage() {
-  const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery({
-    queryKey: ['authSetupStatus'],
-    queryFn: api.getAuthSetupStatus,
-    staleTime: 0,
-  });
-
-  const showSetup = !isLoading && data && !data.initialized;
-
   return (
     <Page bodyScroll="hidden">
       <div className="flex min-h-screen flex-col justify-start py-16">
-        <Card className="w-full max-w-4xl min-w-xs place-self-center" variant="filled">
-          {isLoading ? (
-            <div className="flex items-center justify-center p-8">
-              <Spinner size="md" />
-            </div>
-          ) : showSetup ? (
-            <SetupAccountForm
-              onInitialized={() => {
-                void queryClient.invalidateQueries({ queryKey: ['authSetupStatus'] });
-              }}
-            />
-          ) : (
-            <LoginForm />
-          )}
+        <Card className="w-full max-w-md min-w-xs place-self-center" variant="filled">
+          <LoginForm />
         </Card>
       </div>
     </Page>

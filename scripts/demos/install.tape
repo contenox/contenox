@@ -16,7 +16,7 @@ Set TypingSpeed 45ms
 Set WaitTimeout 8m
 
 Hide
-Type "source /home/naro/src/github.com/contenox/enterprise/runtime/scripts/demos/install-demo-env.sh && clear"
+Type "source ./install-demo-env.sh && clear"
 Enter
 Wait
 Show
@@ -50,7 +50,7 @@ Sleep 300ms
 Enter
 Wait
 
-Type "~/.contenox/modeld/v0.32.5/linux-amd64/modeld serve >/dev/null 2>&1 &"
+Type "~/.contenox/modeld/v*/linux-amd64/modeld serve >/dev/null 2>&1 &"
 Sleep 500ms
 Enter
 Wait

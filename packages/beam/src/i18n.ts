@@ -19,12 +19,17 @@ const resources = {
   en: {
     translation: {
       app: {
-        name: 'Contenox Chat',
+        name: 'Contenox',
       },
       settings: {
         page_title: 'Defaults',
         page_description:
           'Configure the local runtime defaults used by chat and task-chain execution.',
+        access_section_title: 'Remote access',
+        access_section_description:
+          'You are signed in to this runtime with an access token. Sign out to clear the session on this device.',
+        access_logout: 'Sign out',
+        access_logging_out: 'Signing out…',
         setup_load_error: 'Could not load setup status.',
         global_section_title: 'Runtime defaults',
         global_section_description:
@@ -410,7 +415,7 @@ const resources = {
         headers_count: '{{count}} header(s)',
       },
       navbar: {
-        title: 'Contenox Chat',
+        title: 'Contenox',
         hooks: 'Hooks',
         remote_hooks: 'Remote Hooks',
         monitoring: 'Monitoring',
@@ -1205,6 +1210,7 @@ const resources = {
         show_terminal: 'Terminal',
         toggle_label: 'Toggle terminal panel',
         open_in_canvas: 'Open the terminal beside the chat',
+        close_in_canvas: 'Close the terminal',
         collapse: 'Collapse terminal',
         empty: 'No terminal output yet. Type ! followed by a command to run it here.',
         card_label: 'Terminal output',
@@ -1553,6 +1559,10 @@ const resources = {
       },
       login: {
         title: 'Login',
+        description: 'Enter the access token to reach this runtime.',
+        access_token: 'Access token',
+        token_required: 'An access token is required.',
+        error: 'Login error: {{error}}',
         user_name: 'Username',
         user_password: 'Password',
         loading: 'Loading',
@@ -1811,12 +1821,17 @@ const resources = {
   de: {
     translation: {
       app: {
-        name: 'Contenox Chat',
+        name: 'Contenox',
       },
       settings: {
         page_title: 'Standards',
         page_description:
           'Lokale Runtime-Standards für Chat und Task-Chain-Ausführung konfigurieren.',
+        access_section_title: 'Fernzugriff',
+        access_section_description:
+          'Du bist mit einem Zugriffstoken an dieser Runtime angemeldet. Melde dich ab, um die Sitzung auf diesem Gerät zu beenden.',
+        access_logout: 'Abmelden',
+        access_logging_out: 'Abmelden…',
         setup_load_error: 'Setup-Status konnte nicht geladen werden.',
         global_section_title: 'Runtime-Standards',
         global_section_description:
@@ -2180,7 +2195,7 @@ const resources = {
         add_inject: 'Inject-Parameter hinzufügen',
       },
       navbar: {
-        title: 'Contenox Chat',
+        title: 'Contenox',
         hooks: 'Hooks',
         telegram: 'Telegram',
         github: 'Github',
@@ -2613,6 +2628,7 @@ const resources = {
         show_terminal: 'Terminal',
         toggle_label: 'Terminal-Bereich umschalten',
         open_in_canvas: 'Terminal neben dem Chat öffnen',
+        close_in_canvas: 'Terminal schließen',
         collapse: 'Terminal einklappen',
         empty: 'Noch keine Terminal-Ausgabe. Geben Sie ! gefolgt von einem Befehl ein, um ihn hier auszuführen.',
         card_label: 'Terminal-Ausgabe',
@@ -2949,6 +2965,10 @@ const resources = {
       },
       login: {
         title: 'Anmeldung',
+        description: 'Gib das Zugriffstoken ein, um diese Runtime zu erreichen.',
+        access_token: 'Zugriffstoken',
+        token_required: 'Ein Zugriffstoken ist erforderlich.',
+        error: 'Anmeldefehler: {{error}}',
         user_name: 'Benutzername',
         user_password: 'Passwort',
         loading: 'Laden',

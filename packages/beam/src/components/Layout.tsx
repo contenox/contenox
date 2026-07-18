@@ -88,7 +88,7 @@ export function Layout({ defaultOpen = true, mainContent, sidebarContent, classN
     if (location.pathname.startsWith('/settings')) return 'Settings';
     if (location.pathname.startsWith('/backends')) return 'Backends';
     if (location.pathname.startsWith('/control')) return 'Control Plane';
-    return 'Contenox Chat';
+    return 'Contenox';
   }, [location.pathname]);
 
   const handleDismissWizard = () => {

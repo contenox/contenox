@@ -119,6 +119,7 @@ stores keys and creates the matching backend for you:
 
 ## Next steps
 
+- [**Beam: the bundled web UI**](/docs/guide/beam/) — run `contenox serve` and drive the same sessions, chains, and approval gates in the browser
 - [**Your first chain**](/docs/guide/first-chain/) — author your own agent in five edits
 - [Core concepts](/docs/guide/concepts/) — how chains, tasks, and tools fit together
 - [MCP integration](/docs/integrations/tools/mcp/) — connect external tools

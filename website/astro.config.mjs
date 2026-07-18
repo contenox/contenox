@@ -71,8 +71,7 @@ export default defineConfig({
     "/docs/tools/remote": "/docs/integrations/tools/remote/",
     // Old marketing/docs aliases the Next config carried.
     "/features": "/docs/guide/quickstart/",
-    "/docs/beam": "/docs/guide/quickstart/",
-    "/docs/guide/beam": "/docs/guide/quickstart/",
+    "/docs/beam": "/docs/guide/beam/",
     "/docs/guide/introduction": "/docs/guide/quickstart/",
     // Retired EE/commerce surfaces.
     "/pricing": "/",

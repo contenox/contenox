@@ -1,13 +1,22 @@
 package contenoxcli
 
 import (
-	"crypto/subtle"
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/contenox/runtime/libacp"
+	"github.com/contenox/runtime/runtime/serverapi"
 	"golang.org/x/net/websocket"
 )
+
+// errACPUnauthorized rejects the WebSocket handshake before the 101 upgrade when
+// the caller presents no valid credential. Returning it from the Server's
+// Handshake callback makes golang.org/x/net/websocket answer 403 and never
+// switch protocols — the credential must be proven before, not after, the
+// upgrade. (Checking inside the Handler would still close an unauthenticated
+// socket with zero data served, but only after a misleading 101.)
+var errACPUnauthorized = errors.New("acp: unauthorized websocket handshake")
 
 // acpWSConn adapts a golang.org/x/net/websocket text-frame connection to the
 // io.ReadWriteCloser libacp expects: one NDJSON line (a JSON value + "\n")
@@ -61,15 +70,18 @@ func acpWebSocketHandler(factory libacp.AgentFactory, token string) http.Handler
 	s := &websocket.Server{
 		Handshake: func(cfg *websocket.Config, req *http.Request) error {
 			cfg.Origin, _ = websocket.Origin(cfg, req)
+			// When a TOKEN is configured, the upgrade must present a valid credential:
+			// either the session-cookie JWT a logged-in browser carries, or the raw
+			// TOKEN via bearer header / ?token= (programmatic clients). Both are checked
+			// by the same gate the /api/* middleware uses. Rejected here, pre-101.
+			if token != "" && !serverapi.AuthenticateCredential(token, extractACPToken(req)) {
+				return errACPUnauthorized
+			}
 			return nil
 		},
 	}
 	s.Handler = func(ws *websocket.Conn) {
 		req := ws.Request()
-		if token != "" && subtle.ConstantTimeCompare([]byte(extractACPToken(req)), []byte(token)) != 1 {
-			return
-		}
-
 		ws.PayloadType = websocket.TextFrame
 		adapter := &acpWSConn{ws: ws}
 		conn := libacp.NewAgentSideConnection(adapter, factory)

@@ -1,4 +1,4 @@
-import { Badge, Button, Collapsible, DiffView, diffLinesFromTexts, Span } from '@contenox/ui';
+import { Button, Collapsible, DiffView, diffLinesFromTexts, Span } from '@contenox/ui';
 import { Maximize2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -186,9 +186,13 @@ export function PermissionGate({ permission, onRespond, onMaximize }: Permission
                 <span className="flex w-full items-center justify-between gap-2 sm:justify-center">
                   {option.name}
                   {hint && (
-                    <Badge variant="outline" size="sm">
+                    // Not Badge variant="outline": its fixed dark text is
+                    // invisible on the filled primary/danger button in light
+                    // mode. text-current keeps the keycap readable on every
+                    // button variant in both themes.
+                    <span className="rounded-full border border-current px-2 py-0.5 text-xs text-current opacity-80">
                       {hint}
-                    </Badge>
+                    </span>
                   )}
                 </span>
               </Button>

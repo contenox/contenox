@@ -1,5 +1,6 @@
 import { H1, P, Page } from '@contenox/ui';
 import { useTranslation } from 'react-i18next';
+import { AccessSettingsSection } from './AccessSettingsSection';
 import { AutocompleteSettingsSection } from './AutocompleteSettingsSection';
 import { GlobalSettingsSection } from './GlobalSettingsSection';
 import { ResponseSettingsSection } from './ResponseSettingsSection';
@@ -24,6 +25,7 @@ export default function SettingsPage() {
         <AutocompleteSettingsSection />
         <WorkspaceSettingsSection />
         <TelemetrySettingsSection />
+        <AccessSettingsSection />
         <SetupWizardSection />
       </div>
     </Page>

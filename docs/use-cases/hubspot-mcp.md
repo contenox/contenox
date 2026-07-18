@@ -37,7 +37,7 @@ You'll be redirected to the app's details page. Copy two values:
 
 ---
 
-## 2. Register the MCP server with contenox
+## 2. Register the MCP server with Contenox
 
 ```bash
 export HUBSPOT_MCP_CLIENT_SECRET=<the client_secret from HubSpot, NOT the client_id>

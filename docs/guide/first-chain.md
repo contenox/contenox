@@ -48,11 +48,13 @@ The second one is a real authored chain: a main agentic loop with a 10-round bud
 
 You don't have to start there. You can write your own.
 
-Every chain in `~/.contenox/` (and your workspace `.contenox/`) is selectable
-per conversation — in the Beam UI (`contenox serve`) they appear as a picker
-when you start a chat:
+Chains live as files in `~/.contenox/` (and your workspace `.contenox/`); the
+CLI picks one per invocation with `--chain`, or falls back to the configured
+`default-chain`. Sessions in the Beam UI (`contenox serve`) run the workspace's
+default chain, with the model, HITL policy, and reasoning effort switchable per
+session:
 
-![Beam's new-chat page: the chain picker listing default-chain, chain-compact, and the other scaffolded chains](/beam-new-chat.png)
+![Beam's new-session page: per-session Model, HITL Policy, Think, Token Limit, and Workspace controls above an empty chat](/beam-new-chat.png)
 
 ---
 

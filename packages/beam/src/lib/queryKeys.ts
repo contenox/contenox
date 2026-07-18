@@ -69,6 +69,11 @@ export const systemKeys = {
   resources: () => [...systemKeys.all, 'resources'],
 };
 
+export const authKeys = {
+  all: ['auth'] as const,
+  status: () => [...authKeys.all, 'status'] as const,
+};
+
 export const execKeys = {
   all: ['exec'] as const,
 };

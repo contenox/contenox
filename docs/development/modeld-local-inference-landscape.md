@@ -1,4 +1,4 @@
-# modeld Local Inference Landscape
+# Modeld Local Inference Landscape
 
 Snapshot date: 2026-07-02
 
@@ -39,7 +39,7 @@ state and effective context beyond the practical native prompt window on limited
 local hardware. Treat those as product direction unless the specific release,
 backend, model, and device have been certified.
 
-## What modeld Is Not
+## What Modeld Is Not
 
 - It is not a general desktop chat application.
 - It is not primarily a model marketplace or model-library UX.

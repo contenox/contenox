@@ -251,14 +251,14 @@ func (h *handler) wsHandler() http.Handler {
 	s := &websocket.Server{
 		Handshake: func(cfg *websocket.Config, req *http.Request) error {
 			cfg.Origin, _ = websocket.Origin(cfg, req)
-			return nil
+			// Enforce the token at the handshake so an unauthenticated upgrade is
+			// rejected with 403 before the 101 switch, not accepted and then
+			// silently dropped inside the handler.
+			return h.requireToken(req)
 		},
 	}
 	s.Handler = func(ws *websocket.Conn) {
 		req := ws.Request()
-		if err := h.requireToken(req); err != nil {
-			return
-		}
 		principal, err := h.principal(req.Context())
 		if err != nil {
 			return

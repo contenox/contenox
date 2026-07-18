@@ -264,7 +264,7 @@ Save to `~/leads-to-hubspot.sh` and `chmod +x` it:
 
 ```bash
 #!/usr/bin/env bash
-# leads-to-hubspot.sh — feed a structured leads file through contenox into HubSpot,
+# leads-to-hubspot.sh — feed a structured leads file through Contenox into HubSpot,
 # one lead per agent invocation so each gets a fresh round budget.
 
 set -euo pipefail

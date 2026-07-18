@@ -23,37 +23,13 @@ const API_BASE_URL = resolveApiOrigin();
 const envTimeout = import.meta.env.VITE_API_TIMEOUT;
 const parsedTimeout = envTimeout ? parseInt(envTimeout, 10) : NaN;
 const API_TIMEOUT = !isNaN(parsedTimeout) ? parsedTimeout : 100000;
-export const API_TOKEN_STORAGE_KEY = 'contenox_api_token';
 
-export function getStoredApiToken(): string {
-  if (typeof window === 'undefined') return '';
-  try {
-    return (window.localStorage.getItem(API_TOKEN_STORAGE_KEY) ?? '').trim();
-  } catch {
-    return '';
-  }
-}
-
-export function setStoredApiToken(token: string): void {
-  if (typeof window === 'undefined') return;
-  try {
-    const trimmed = token.trim();
-    if (trimmed) {
-      window.localStorage.setItem(API_TOKEN_STORAGE_KEY, trimmed);
-    } else {
-      window.localStorage.removeItem(API_TOKEN_STORAGE_KEY);
-    }
-  } catch {
-    /* ignore storage failures */
-  }
-}
-
-function addStoredApiToken(headers: Headers): void {
-  const token = getStoredApiToken();
-  if (token && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${token}`);
-  }
-}
+// Browser auth is pure-cookie BFF: the server's login flow sets an HttpOnly
+// `auth_token` session cookie that the browser cannot read, and every request
+// below uses `credentials: 'same-origin'` so that cookie rides along. The UI
+// never handles the token in JS — no localStorage, no Authorization header. A
+// raw-token `Authorization: Bearer` remains a server-side option for
+// programmatic/remote clients, but is deliberately never produced here.
 
 export class ApiError extends Error {
   constructor(
@@ -111,10 +87,10 @@ export async function apiFetch<T>(url: string, options?: ApiFetchOptions): Promi
       headers.set('Content-Type', 'application/json');
     }
 
-    addStoredApiToken(headers);
     headers.set('Accept-Language', i18n.language);
 
     const response = await fetch(new URL(url, API_BASE_URL).toString(), {
+      credentials: 'same-origin',
       ...options,
       headers,
       signal: controller.signal,
@@ -190,7 +166,6 @@ export async function apiFetchBinary(url: string, init?: RequestInit): Promise<A
   }
   try {
     const headers = new Headers(init?.headers);
-    addStoredApiToken(headers);
     headers.set('Accept-Language', i18n.language);
     const response = await fetch(new URL(url, API_BASE_URL).toString(), {
       ...init,

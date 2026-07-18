@@ -1,9 +1,9 @@
 ---
-title: modeld Architecture
+title: Modeld Architecture
 description: How modeld owns hardware, plans capacity, and manages sessions.
 ---
 
-# modeld Architecture
+# Modeld Architecture
 
 This page gives a technical overview of the major systems inside `modeld`. For day-to-day usage see the [main modeld page](/docs/integrations/providers/modeld/).
 
@@ -73,7 +73,7 @@ Persistent sessions on the wire keep KV hot. The runtime can:
 
 modeld's slot + reaper decide when the underlying native session can be closed.
 
-## Remote modeld
+## Remote Modeld
 
 Exactly the same binary and protocol. The runtime just dials a different address (registered as a `modeld` backend type) and uses the same `Endpoint` / `ModeldTarget` machinery.
 

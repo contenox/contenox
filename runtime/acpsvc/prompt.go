@@ -8,6 +8,7 @@ import (
 	"github.com/contenox/runtime/libacp"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/agentservice"
+	"github.com/contenox/runtime/runtime/hitlservice"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/taskengine"
 )
@@ -55,6 +56,19 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 		t.unregisterPromptCancel(req.SessionID, promptReg)
 		cancelPrompt()
 	}()
+
+	// Gate this turn's tool calls under THIS session's chosen HITL policy. serve
+	// runs one shared engine (one hitlservice) behind every ACP session, so a
+	// concrete per-session selection must ride the request context: WithPolicyName
+	// makes hitlservice.Evaluate prefer it over the process-global
+	// cli.hitl-policy-name KV, letting two concurrent sessions gate independently.
+	// A defaulting session resolves to "" and injects nothing, leaving the global-
+	// KV/fallback chain intact (byte-identical to pre-per-session behavior). The
+	// context threads synchronously prompt -> agentservice -> taskengine tool
+	// gating -> HITLWrapper.Exec -> hitlservice.Evaluate.
+	if policyName := t.resolveSessionHITLPolicy(sess); policyName != "" {
+		promptCtx = hitlservice.WithPolicyName(promptCtx, policyName)
+	}
 
 	rawCh := make(chan []byte, 64)
 	bus := t.deps.Engine.Bus

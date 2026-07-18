@@ -242,7 +242,7 @@ func Handler(mux *http.ServeMux, config *Config) http.Handler {
 	}
 
 	var h http.Handler = mux
-	h = ProtectMutatingAPIWithAllowedOrigins(config.Token, config.AllowedAPIOrigins, h)
+	h = ProtectAPI(config.Token, config.AllowedAPIOrigins, h)
 	h = apiframework.TracingMiddleware(h)
 	h = apiframework.RequestIDMiddleware(h)
 	h = middleware.EnableCORS(cors, h)

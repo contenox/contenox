@@ -1,4 +1,4 @@
-# modeld Release Runbook
+# Modeld Release Runbook
 
 This is the maintainer runbook for producing official `modeld` artifacts. It
 separates the two roles in the process: dependency producer devices publish

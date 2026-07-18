@@ -13,7 +13,6 @@ import {
   type AcpSessionsState,
   type AcpWorkspaceState,
 } from '../../hooks/acpWorkspaceState';
-import { getStoredApiToken } from '../fetch';
 import { WebSocketTransport } from './transport';
 
 /**
@@ -76,12 +75,16 @@ export function createDeferredDisposer(dispose: () => void): { armForCleanup: ()
   };
 }
 
-/** `ws(s)://<host>/acp[?token=...]` — the browser can't set a WS Authorization header, so the stored API token (if any) travels as a query param instead. Re-read on every call (not cached) so a reconnect after a token refresh picks up the new one — see acpWorkspaceController.ts's `createTransport` doc comment. */
+/**
+ * `ws(s)://<host>/acp`. The HttpOnly `auth_token` session cookie authenticates
+ * the upgrade automatically — it rides on the same-origin WebSocket handshake,
+ * so no query param or header is needed and the UI never handles the token in
+ * JS. (Programmatic clients that cannot send the cookie may pass `?token=<TOKEN>`
+ * themselves; the browser never does.)
+ */
 function buildAcpWsUrl(): string {
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  const base = `${protocol}://${window.location.host}/acp`;
-  const token = getStoredApiToken();
-  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+  return `${protocol}://${window.location.host}/acp`;
 }
 
 export interface AcpWorkspaceProviderProps {

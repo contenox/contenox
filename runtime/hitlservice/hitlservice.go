@@ -71,6 +71,34 @@ var _ Service = (*service)(nil)
 
 const kvPrefixHITLPolicy = "cli.hitl-policy-name"
 
+// policyNameContextKey scopes an explicit per-request HITL policy name onto a
+// context. A single hitlservice is shared across many callers — serve builds ONE
+// behind every ACP WebSocket session — so per-session policy differentiation
+// cannot live in service state. Instead each ACP prompt turn injects its
+// session's resolved policy name into the turn context (see acpsvc/prompt.go),
+// and Evaluate prefers it over the process-global cli.hitl-policy-name KV. A
+// context WITHOUT this key is unchanged: single-session callers (the CLI,
+// `contenox acp`, `contenox chat`) keep reading the global KV.
+type policyNameContextKey struct{}
+
+// WithPolicyName returns a context that pins HITL evaluation to policyName for
+// this request only. An empty/whitespace policyName returns ctx unchanged, so a
+// caller that resolves to "no override" (a defaulting session) leaves the
+// existing global-KV/fallback chain intact.
+func WithPolicyName(ctx context.Context, policyName string) context.Context {
+	policyName = strings.TrimSpace(policyName)
+	if policyName == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, policyNameContextKey{}, policyName)
+}
+
+// policyNameFromContext returns the context-scoped policy override, or "".
+func policyNameFromContext(ctx context.Context) string {
+	name, _ := ctx.Value(policyNameContextKey{}).(string)
+	return strings.TrimSpace(name)
+}
+
 func (s *service) readActivePolicyName(ctx context.Context) string {
 	var val string
 	if err := s.store.GetKV(ctx, kvPrefixHITLPolicy, &val); err != nil {
@@ -82,7 +110,15 @@ func (s *service) readActivePolicyName(ctx context.Context) string {
 func (s *service) Evaluate(ctx context.Context, toolsName, toolName string, args map[string]any) (EvaluationResult, error) {
 	reportErr, reportChange, end := s.tracker.Start(ctx, "hitl", "evaluate", "toolsName", toolsName, "toolName", toolName)
 	defer end()
-	policyPath := s.readActivePolicyName(ctx)
+	// A per-request context override (an ACP session's chosen policy) wins over
+	// the process-global active-policy KV so concurrent sessions behind ONE shared
+	// service gate independently. Absent an override, fall through the existing
+	// global-KV -> constructor fallback -> built-in default chain (unchanged for
+	// single-session CLI callers).
+	policyPath := policyNameFromContext(ctx)
+	if policyPath == "" {
+		policyPath = s.readActivePolicyName(ctx)
+	}
 	if policyPath == "" {
 		policyPath = s.fallbackPolicy
 	}

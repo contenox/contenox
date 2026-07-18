@@ -24,6 +24,11 @@ export interface LandingStrings {
   hitlDemoAlt: string;
   beamShotAlt: string;
   beamShotCaption: string;
+  beamEyebrow: string;
+  beamH2: string;
+  beamLede: string;
+  beamPoints: [string, string][];
+  beamCta: string;
   standardsEyebrow: string;
   standardsH2: string;
   standards: [string, string, string][];
@@ -74,10 +79,30 @@ const btnGhost = 'rounded-lg border border-neutral-200 px-4 py-2 text-sm font-se
     class="mx-auto mt-10 w-full max-w-4xl rounded-xl border border-neutral-200/60 shadow-lg dark:border-neutral-800/60"
   ></video>
   <p class="mx-auto mt-3 max-w-2xl text-center text-xs text-neutral-500">{t.beamShotCaption}</p>
+  <div class="mt-4 text-center text-sm">
+    <a href="/docs/guide/beam/" class="font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300">{t.beamCta} →</a>
+  </div>
   <div class="mt-6 flex flex-wrap items-center justify-center gap-2">
     <a href="https://github.com/contenox/runtime"><img src="https://img.shields.io/github/stars/contenox/runtime?style=flat&logo=github&color=444" alt="GitHub stars" loading="lazy" /></a>
     <a href="https://github.com/contenox/runtime/releases"><img src="https://img.shields.io/github/v/release/contenox/runtime?label=version&color=444" alt="Latest release" loading="lazy" /></a>
     <img src="https://img.shields.io/badge/License-Apache%202.0-444" alt="Apache-2.0" loading="lazy" />
+  </div>
+</section>
+
+<section class="border-b border-neutral-200 px-5 py-16 dark:border-neutral-800">
+  <p class="text-center text-xs font-semibold tracking-widest text-neutral-500 uppercase">{t.beamEyebrow}</p>
+  <h2 class="mt-2 text-center text-2xl font-bold tracking-tight sm:text-3xl">{t.beamH2}</h2>
+  <p class="mx-auto mt-6 max-w-2xl text-center text-neutral-600 dark:text-neutral-400">{t.beamLede}</p>
+  <div class="mx-auto mt-8 grid max-w-4xl gap-4 sm:grid-cols-3">
+    {t.beamPoints.map(([title, body]) => (
+      <div class="rounded-xl border border-neutral-200/60 bg-white/80 p-5 shadow-sm backdrop-blur-sm transition-all hover:-translate-y-1 hover:border-indigo-500/30 hover:shadow-lg hover:shadow-indigo-500/10 dark:border-neutral-800/60 dark:bg-neutral-950/80 dark:hover:border-indigo-400/30">
+        <h3 class="font-semibold">{title}</h3>
+        <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-400">{body}</p>
+      </div>
+    ))}
+  </div>
+  <div class="mt-8 text-center text-sm">
+    <a href="/docs/guide/beam/" class="text-neutral-600 hover:text-black dark:text-neutral-400 dark:hover:text-white">{t.beamCta} →</a>
   </div>
 </section>
 

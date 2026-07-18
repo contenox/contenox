@@ -1,4 +1,5 @@
 import {
+  Button,
   ChatComposer,
   ChatScrollToLatest,
   ChatThread,
@@ -6,6 +7,7 @@ import {
   InlineNotice,
   useChatScroll,
 } from '@contenox/ui';
+import { PanelLeft, PanelLeftClose } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -51,6 +53,11 @@ const WORKSPACE_PANEL_TOGGLE_KEY = 'beam_workspace_panel_open';
 // session's cwd at creation time and is immutable afterward, so it is handled
 // specially (fed to newSession, filtered out of the live-session controls).
 const WORKSPACE_ROOT_CONFIG_ID = 'workspace-root';
+
+// Mirrors acpsvc's HITL-policy config option id. Its currentValue is the
+// session's chosen approval policy (a concrete name, or the "Default" sentinel);
+// the workspace file tree's agent-view evaluates against it (see useWorkspaceFiles).
+const HITL_POLICY_CONFIG_ID = 'hitl-policy';
 
 function configOptionCurrentValue(options: SessionConfigOption[], id: string): string | undefined {
   return options.find(o => o.id === id)?.currentValue;
@@ -144,7 +151,16 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
       : (defaultRoot ?? null)
     : activeSessionCwd;
 
-  const files = useWorkspaceFiles(workspaceRoot);
+  // The session's active HITL policy drives the workspace tree's agent-view: the
+  // file explorer evaluates each path against the SAME policy the live agent gates
+  // under, so switching strict/dev/etc. re-colors the verdicts. A live session
+  // reads its own `session.configOptions`; the empty chat reads the workspace
+  // options overlaid with staged picks (mirrors `headerConfigOptions` below).
+  const currentHitlPolicy = onEmptyChat
+    ? configOptionCurrentValue(overlayStagedValues(workspace.workspaceConfigOptions, stagedConfig), HITL_POLICY_CONFIG_ID)
+    : configOptionCurrentValue(session.configOptions, HITL_POLICY_CONFIG_ID);
+
+  const files = useWorkspaceFiles(workspaceRoot, currentHitlPolicy);
 
   const { open: panelOpen, toggle: togglePanel } = usePersistentToggle(WORKSPACE_PANEL_TOGGLE_KEY);
 
@@ -383,9 +399,6 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
   return (
     <div className="bg-surface dark:bg-dark-surface flex h-full min-h-0 flex-col">
       <ChatSessionToolbar
-        hasWorkspaceRoot={!!workspaceRoot}
-        filesPanelOpen={panelOpen}
-        onToggleFilesPanel={togglePanel}
         usage={session.usage}
         configOptions={headerConfigOptions}
         onConfigChange={handleConfigChange}
@@ -403,6 +416,26 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
       <PlanPanel entries={session.plan} />
 
       <div className="flex min-h-0 flex-1">
+        {workspaceRoot && (
+          // Slim left rail mirroring the terminal's right rail in CanvasRegion:
+          // a stable, edge-anchored toggle on the same side the file panel opens,
+          // instead of a switch buried in the top config strip. Desktop-only
+          // because the file panel itself is (`hidden sm:flex`) — the terminal,
+          // which works on narrow viewports via full-width takeover, has no such
+          // gate, so this asymmetry follows the panels' own responsiveness.
+          <div className="border-surface-200 dark:border-dark-surface-600 hidden shrink-0 flex-col items-center gap-1 border-r px-1 py-2 sm:flex">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-pressed={panelOpen}
+              aria-label={t('workspace.toggle_label')}
+              title={t('workspace.show_files')}
+              onClick={togglePanel}>
+              {panelOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
+            </Button>
+          </div>
+        )}
         {panelOpen && workspaceRoot && (
           <div className="hidden sm:flex">
             <WorkspacePanel

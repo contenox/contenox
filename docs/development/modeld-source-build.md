@@ -1,4 +1,4 @@
-# modeld Source Build and Packaging
+# Modeld Source Build and Packaging
 
 `modeld` is the native local inference daemon for Contenox. It currently hosts
 local adapters for llama.cpp GGUF compatibility and OpenVINO IR execution, while
@@ -96,7 +96,7 @@ CGO_ENABLED=0 go build -trimpath \
   ./cmd/contenox
 ```
 
-## Run modeld for llama.cpp GGUF
+## Run Modeld for llama.cpp GGUF
 
 In one terminal:
 
@@ -138,7 +138,7 @@ Starter llama models:
 | ~12 GB | `gpt-oss-20b` | ~12 GB | |
 | ~19 GB | `qwen3-coder-30b-a3b` | ~19 GB | |
 
-## Run modeld for OpenVINO IR
+## Run Modeld for OpenVINO IR
 
 OpenVINO needs its Python-wheel SDK and GenAI sources prepared first:
 
@@ -171,7 +171,7 @@ Starter OpenVINO models:
 | `phi-4-mini-ov` | ~2.4 GB | |
 | `gpt-oss-20b-ov` | ~12.6 GB | |
 
-## Use Local modeld for VS Code Autocomplete
+## Use Local Modeld for VS Code Autocomplete
 
 VS Code autocomplete has its own provider/model defaults. You can keep chat on
 OpenAI, Gemini, Mistral, OpenRouter, or another provider and route only ghost
@@ -211,7 +211,7 @@ If `CONTENOX_MODELD_BACKEND` is unset and several backends are compiled in,
 `modeld` chooses an accelerated backend when one is detected, otherwise it falls
 back to its built-in preference.
 
-## Build a Relocatable Linux modeld Bundle
+## Build a Relocatable Linux Modeld Bundle
 
 For a shippable Linux bundle:
 

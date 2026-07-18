@@ -58,9 +58,9 @@ export type SessionsDispatch = (action: AcpSessionsAction) => void;
 export interface AcpWorkspaceControllerDeps {
   /**
    * Builds a fresh `Transport` for one connection attempt. Called anew for
-   * the initial `connect()` AND for every reconnect attempt — this is what
-   * lets a reconnect re-read a possibly-refreshed auth token (see
-   * `AcpWorkspaceProvider.tsx`, which closes over `getStoredApiToken()`).
+   * the initial `connect()` AND for every reconnect attempt, so a reconnect
+   * re-opens the WebSocket with the current same-origin auth cookie (see
+   * `AcpWorkspaceProvider.tsx`'s `buildAcpWsUrl`).
    */
   createTransport: () => Transport;
   /** Wraps a transport into a client. Defaults to `createAcpClient(transport)` with no capability provider. */

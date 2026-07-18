@@ -1,0 +1,151 @@
+// Package agentregistryservice stores declared agent configurations — the
+// "bots table" concept (see the mvp core/serverops/store/schema.sql `bots`
+// table this generalizes) reborn as a polymorphic, kind-dispatched resource.
+// Today the only implemented kind is "external_acp" (an agent the runtime
+// spawns/drives as an external ACP peer via runtime/agenthost); "chain" is
+// reserved in the schema and validation below for a future kind where a
+// contenox task chain itself is addressable as an agent, but is not accepted
+// here yet.
+//
+// This package intentionally mirrors runtime/mcpserverservice's shape
+// (validated CRUD over a runtimetypes store, no HTTP routes) so the two
+// declared-resource registries stay easy to compare.
+package agentregistryservice
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/google/uuid"
+)
+
+// Service exposes validated CRUD operations for persisted agent
+// configurations.
+type Service interface {
+	Create(ctx context.Context, agent *runtimetypes.Agent) error
+	Get(ctx context.Context, id string) (*runtimetypes.Agent, error)
+	GetByName(ctx context.Context, name string) (*runtimetypes.Agent, error)
+	Update(ctx context.Context, agent *runtimetypes.Agent) error
+	Delete(ctx context.Context, id string) error
+	List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.Agent, error)
+}
+
+type service struct {
+	db libdb.DBManager
+}
+
+// New creates a new agent registry service backed by the given database
+// manager.
+func New(db libdb.DBManager) Service {
+	return &service{db: db}
+}
+
+func (s *service) store() runtimetypes.Store {
+	return runtimetypes.New(s.db.WithoutTransaction())
+}
+
+// Create validates agent (name/kind/per-kind config) and its name against
+// existing agents, then persists it. A colliding name surfaces as
+// libdb.ErrUniqueViolation (checked via errors.Is), the same sentinel a raw
+// DB unique-constraint violation would translate to elsewhere in this
+// codebase — checked here up front so the conflict is reported clearly
+// instead of relying solely on the storage layer's constraint error.
+func (s *service) Create(ctx context.Context, agent *runtimetypes.Agent) error {
+	if err := validate(agent); err != nil {
+		return err
+	}
+	if agent.ID == "" {
+		agent.ID = uuid.NewString()
+	}
+	if err := s.checkNameAvailable(ctx, agent.Name, agent.ID); err != nil {
+		return err
+	}
+	return s.store().CreateAgent(ctx, agent)
+}
+
+func (s *service) Get(ctx context.Context, id string) (*runtimetypes.Agent, error) {
+	if id == "" {
+		return nil, fmt.Errorf("id is required")
+	}
+	return s.store().GetAgent(ctx, id)
+}
+
+func (s *service) GetByName(ctx context.Context, name string) (*runtimetypes.Agent, error) {
+	if name == "" {
+		return nil, fmt.Errorf("name is required")
+	}
+	return s.store().GetAgentByName(ctx, name)
+}
+
+// Update validates agent the same way Create does, additionally requiring an
+// ID, and re-checks name uniqueness against every other agent (excluding
+// agent's own ID, so renaming an agent to its own current name is a no-op,
+// not a conflict).
+func (s *service) Update(ctx context.Context, agent *runtimetypes.Agent) error {
+	if agent.ID == "" {
+		return fmt.Errorf("id is required for update")
+	}
+	if err := validate(agent); err != nil {
+		return err
+	}
+	if err := s.checkNameAvailable(ctx, agent.Name, agent.ID); err != nil {
+		return err
+	}
+	return s.store().UpdateAgent(ctx, agent)
+}
+
+func (s *service) Delete(ctx context.Context, id string) error {
+	if id == "" {
+		return fmt.Errorf("id is required")
+	}
+	return s.store().DeleteAgent(ctx, id)
+}
+
+func (s *service) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.Agent, error) {
+	return s.store().ListAgents(ctx, createdAtCursor, limit)
+}
+
+// checkNameAvailable returns a libdb.ErrUniqueViolation-wrapping error if an
+// agent with name already exists under a different ID than excludeID.
+func (s *service) checkNameAvailable(ctx context.Context, name, excludeID string) error {
+	existing, err := s.store().GetAgentByName(ctx, name)
+	if err != nil {
+		if errors.Is(err, libdb.ErrNotFound) {
+			return nil
+		}
+		return err
+	}
+	if existing.ID == excludeID {
+		return nil
+	}
+	return fmt.Errorf("agent: name %q already exists: %w", name, libdb.ErrUniqueViolation)
+}
+
+// validate checks the agent-level fields (name, kind) and, for kinds this
+// registry currently implements, the per-kind config's own Validate().
+func validate(agent *runtimetypes.Agent) error {
+	if agent.Name == "" {
+		return fmt.Errorf("name is required")
+	}
+	switch agent.Kind {
+	case runtimetypes.AgentKindExternalACP:
+		cfg, err := agent.ExternalACPConfig()
+		if err != nil {
+			return err
+		}
+		if err := cfg.Validate(); err != nil {
+			return err
+		}
+	case runtimetypes.AgentKindChain:
+		return fmt.Errorf("agent kind %q is reserved and not implemented yet", runtimetypes.AgentKindChain)
+	case "":
+		return fmt.Errorf("kind is required")
+	default:
+		return fmt.Errorf("unknown agent kind %q: must be %q", agent.Kind, runtimetypes.AgentKindExternalACP)
+	}
+	return nil
+}

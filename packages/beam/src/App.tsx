@@ -1,5 +1,5 @@
 import { ErrorBoundary, Spinner } from '@contenox/ui';
-import { Suspense, useContext, type ReactNode } from 'react';
+import { Suspense, lazy, useContext, type ReactNode } from 'react';
 import { Route, HashRouter as Router, Routes } from 'react-router-dom';
 import './app.css';
 import { Layout } from './components/Layout';
@@ -7,8 +7,41 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { AcpSessionSidebar } from './components/sidebar/AcpSessionSidebar';
 import { routes } from './config/routes';
 import { AuthProvider } from './lib/AuthProvider';
-import { AuthContext } from './lib/authContext';
 import { AcpWorkspaceProvider } from './lib/acp/AcpWorkspaceProvider';
+import { AuthContext } from './lib/authContext';
+
+const AuthPage = lazy(() => import('./pages/public/login/AuthPage'));
+
+/**
+ * The remote-access gate. While /ui/auth-status is loading it shows a spinner;
+ * when the server requires login and this browser has no valid session cookie
+ * it renders the login page in place of the whole app; otherwise it renders the
+ * app. Locally (no TOKEN) `authRequired` is false, so this is a transparent
+ * pass-through — the app appears with no prompt.
+ */
+function AuthGate({ children }: { children: ReactNode }) {
+  const { isLoading, authRequired, authenticated } = useContext(AuthContext);
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
+  if (authRequired && !authenticated) {
+    return (
+      <Suspense
+        fallback={
+          <div className="flex min-h-screen items-center justify-center">
+            <Spinner />
+          </div>
+        }>
+        <AuthPage />
+      </Suspense>
+    );
+  }
+  return <>{children}</>;
+}
 
 /**
  * Hoists the one app-wide `AcpWorkspaceProvider` above `Layout` (sidebar +
@@ -29,37 +62,39 @@ export default function App() {
   return (
     <Router>
       <AuthProvider>
-        <AuthenticatedAcpProvider>
-          <Layout
-            sidebarContent={({ setIsOpen }) => <AcpSessionSidebar setIsOpen={setIsOpen} />}
-            defaultOpen={true}
-            mainContent={
-              <ErrorBoundary>
-                <Suspense
-                  fallback={
-                    <div className="flex min-h-screen items-center justify-center">
-                      <Spinner />
-                    </div>
-                  }>
-                  <Routes>
-                    {routes.map((route, index) => {
-                      const Element = route.element;
-                      const wrappedElement =
-                        route.protected !== false ? (
-                          <ProtectedRoute>
+        <AuthGate>
+          <AuthenticatedAcpProvider>
+            <Layout
+              sidebarContent={({ setIsOpen }) => <AcpSessionSidebar setIsOpen={setIsOpen} />}
+              defaultOpen={true}
+              mainContent={
+                <ErrorBoundary>
+                  <Suspense
+                    fallback={
+                      <div className="flex min-h-screen items-center justify-center">
+                        <Spinner />
+                      </div>
+                    }>
+                    <Routes>
+                      {routes.map((route, index) => {
+                        const Element = route.element;
+                        const wrappedElement =
+                          route.protected !== false ? (
+                            <ProtectedRoute>
+                              <Element />
+                            </ProtectedRoute>
+                          ) : (
                             <Element />
-                          </ProtectedRoute>
-                        ) : (
-                          <Element />
-                        );
-                      return <Route key={index} path={route.path} element={wrappedElement} />;
-                    })}
-                  </Routes>
-                </Suspense>
-              </ErrorBoundary>
-            }
-          />
-        </AuthenticatedAcpProvider>
+                          );
+                        return <Route key={index} path={route.path} element={wrappedElement} />;
+                      })}
+                    </Routes>
+                  </Suspense>
+                </ErrorBoundary>
+              }
+            />
+          </AuthenticatedAcpProvider>
+        </AuthGate>
       </AuthProvider>
     </Router>
   );

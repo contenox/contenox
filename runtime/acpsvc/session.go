@@ -134,6 +134,7 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 		Provider:          t.provider(),
 		Model:             t.model(),
 		Think:             t.thinkDefault(),
+		HITLPolicy:        hitlPolicyDefaultValue,
 	}
 	t.sessionMu.Lock()
 	t.sessions[req.SessionID] = entry
@@ -383,6 +384,7 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 		Provider:          t.provider(),
 		Model:             t.model(),
 		Think:             t.thinkDefault(),
+		HITLPolicy:        hitlPolicyDefaultValue,
 	}
 	t.sessionMu.Lock()
 	t.sessions[sessionID] = entry
@@ -479,6 +481,7 @@ func (t *Transport) ResumeSession(ctx context.Context, req libacp.ResumeSessionR
 		Provider:          t.provider(),
 		Model:             t.model(),
 		Think:             t.thinkDefault(),
+		HITLPolicy:        hitlPolicyDefaultValue,
 	}
 	t.sessionMu.Lock()
 	t.sessions[req.SessionID] = entry

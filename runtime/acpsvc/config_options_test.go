@@ -23,7 +23,9 @@ func setupConfigOptionsDB(t *testing.T) (context.Context, libdb.DBManager) {
 
 func TestUnit_SessionConfigOptionsExposeModelPolicyAndThink(t *testing.T) {
 	ctx, db := setupConfigOptionsDB(t)
-	require.NoError(t, clikv.SetHITLPolicy(ctx, runtimetypes.New(db.WithoutTransaction()), "dev"))
+	// A decoy global value: per-session display must ignore the global KV entirely
+	// (the HITL policy is session-scoped, like model/think/token-limit).
+	require.NoError(t, clikv.SetHITLPolicy(ctx, runtimetypes.New(db.WithoutTransaction()), "strict"))
 
 	tr := &Transport{
 		deps: Deps{
@@ -36,7 +38,7 @@ func TestUnit_SessionConfigOptionsExposeModelPolicyAndThink(t *testing.T) {
 		defaultAltProvider: "anthropic",
 		defaultAltModel:    "claude-sonnet-4",
 	}
-	sess := &sessionEntry{Think: "medium"}
+	sess := &sessionEntry{Think: "medium", HITLPolicy: "dev"}
 
 	options := tr.sessionConfigOptions(ctx, sess)
 	require.Len(t, options, 4)
@@ -54,7 +56,7 @@ func TestUnit_SessionConfigOptionsExposeModelPolicyAndThink(t *testing.T) {
 
 	policy := optionByID(t, options, configIDHITLPolicy)
 	require.Equal(t, configCategoryHITLPolicy, policy.Category)
-	require.Equal(t, "dev", policy.CurrentValue)
+	require.Equal(t, "dev", policy.CurrentValue, "per-session HITL policy drives CurrentValue, not the global cli.hitl-policy-name KV")
 	require.True(t, configOptionHasValue(policy, hitlPolicyDefaultValue))
 	require.True(t, configOptionHasValue(policy, "strict"))
 	require.True(t, configOptionHasValue(policy, "dev"))
@@ -122,8 +124,11 @@ func TestUnit_SetSessionConfigOptionUpdatesSessionAndPolicyConfig(t *testing.T) 
 		Value:     libacp.StringConfigValue("dev"),
 	})
 	require.NoError(t, err)
-	require.Equal(t, "dev", clikv.ReadHITLPolicy(ctx, runtimetypes.New(db.WithoutTransaction())))
+	require.Equal(t, "dev", sess.hitlPolicy(), "HITL policy is stored on the session")
+	require.Empty(t, clikv.ReadHITLPolicy(ctx, runtimetypes.New(db.WithoutTransaction())),
+		"setting the toolbar HITL policy must NOT write the global cli.hitl-policy-name KV")
 	require.Equal(t, "dev", optionByID(t, resp.ConfigOptions, configIDHITLPolicy).CurrentValue)
+	require.Equal(t, "dev", tr.resolveSessionHITLPolicy(sess), "a concrete selection resolves to its own name for enforcement")
 
 	resp, err = tr.SetSessionConfigOption(ctx, libacp.SetSessionConfigOptionRequest{
 		SessionID: sid,
@@ -131,8 +136,10 @@ func TestUnit_SetSessionConfigOptionUpdatesSessionAndPolicyConfig(t *testing.T) 
 		Value:     libacp.StringConfigValue(hitlPolicyDefaultValue),
 	})
 	require.NoError(t, err)
+	require.Equal(t, hitlPolicyDefaultValue, sess.hitlPolicy())
 	require.Empty(t, clikv.ReadHITLPolicy(ctx, runtimetypes.New(db.WithoutTransaction())))
 	require.Equal(t, hitlPolicyDefaultValue, optionByID(t, resp.ConfigOptions, configIDHITLPolicy).CurrentValue)
+	require.Equal(t, "strict", tr.resolveSessionHITLPolicy(sess), "the sentinel resolves to the operator-configured default policy")
 
 	resp, err = tr.SetSessionConfigOption(ctx, libacp.SetSessionConfigOptionRequest{
 		SessionID: sid,
@@ -142,6 +149,60 @@ func TestUnit_SetSessionConfigOptionUpdatesSessionAndPolicyConfig(t *testing.T) 
 	require.NoError(t, err)
 	require.Equal(t, "xhigh", sess.think())
 	require.Equal(t, "xhigh", optionByID(t, resp.ConfigOptions, configIDThink).CurrentValue)
+}
+
+// TestUnit_HITLPolicyIsPerSessionIndependent proves the fix's core invariant:
+// two live sessions on ONE transport carry independent HITL policy selections,
+// each drives its own config-option CurrentValue and its own enforcement policy
+// name (resolveSessionHITLPolicy — what prompt.go injects into the turn context),
+// and NEITHER write touches the global cli.hitl-policy-name KV. Together with the
+// hitlservice ctx-override tests this is the end-to-end guarantee that two
+// concurrent ACP sessions gate independently through the shared engine.
+func TestUnit_HITLPolicyIsPerSessionIndependent(t *testing.T) {
+	ctx, db := setupConfigOptionsDB(t)
+
+	sidA := libacp.SessionID("sess-A")
+	sidB := libacp.SessionID("sess-B")
+	sessA := &sessionEntry{Provider: "openai", Model: "gpt-5-mini", Think: "low", HITLPolicy: hitlPolicyDefaultValue}
+	sessB := &sessionEntry{Provider: "openai", Model: "gpt-5-mini", Think: "low", HITLPolicy: hitlPolicyDefaultValue}
+	tr := &Transport{
+		deps: Deps{
+			DB:                    db,
+			KnownPolicies:         []string{"strict", "dev"},
+			HITLDefaultPolicyName: "strict",
+		},
+		sessions:        map[libacp.SessionID]*sessionEntry{sidA: sessA, sidB: sessB},
+		contenoxToACPID: map[string]libacp.SessionID{},
+		defaultProvider: "openai",
+		defaultModel:    "gpt-5-mini",
+	}
+
+	// Session A picks the permissive-in-name "dev" policy; session B stays on the
+	// configured default (sentinel).
+	_, err := tr.SetSessionConfigOption(ctx, libacp.SetSessionConfigOptionRequest{
+		SessionID: sidA, ConfigID: configIDHITLPolicy, Value: libacp.StringConfigValue("dev"),
+	})
+	require.NoError(t, err)
+	_, err = tr.SetSessionConfigOption(ctx, libacp.SetSessionConfigOptionRequest{
+		SessionID: sidB, ConfigID: configIDHITLPolicy, Value: libacp.StringConfigValue("strict"),
+	})
+	require.NoError(t, err)
+
+	// Independent per-session state.
+	require.Equal(t, "dev", sessA.hitlPolicy())
+	require.Equal(t, "strict", sessB.hitlPolicy())
+
+	// Independent enforcement policy names (what prompt.go injects per turn).
+	require.Equal(t, "dev", tr.resolveSessionHITLPolicy(sessA))
+	require.Equal(t, "strict", tr.resolveSessionHITLPolicy(sessB))
+
+	// Independent config-option display.
+	require.Equal(t, "dev", optionByID(t, tr.sessionConfigOptions(ctx, sessA), configIDHITLPolicy).CurrentValue)
+	require.Equal(t, "strict", optionByID(t, tr.sessionConfigOptions(ctx, sessB), configIDHITLPolicy).CurrentValue)
+
+	// The global KV was never written by either session.
+	require.Empty(t, clikv.ReadHITLPolicy(ctx, runtimetypes.New(db.WithoutTransaction())),
+		"per-session HITL selection must never write the global cli.hitl-policy-name KV")
 }
 
 func TestUnit_SetSessionConfigOptionRejectsUnknownValue(t *testing.T) {

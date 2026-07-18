@@ -1,4 +1,4 @@
-# contenox CLI Reference
+# Contenox CLI Reference
 
 `contenox` is the local AI agent CLI. It runs the Contenox chain engine entirely on your machine.
 

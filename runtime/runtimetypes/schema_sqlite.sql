@@ -168,6 +168,37 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
 );
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_created_at ON mcp_servers(created_at);
 
+-- agents: polymorphic declared-agent resource. `kind` selects which
+-- kind-specific shape `config_json` holds ('external_acp' today; 'chain'
+-- reserved for a future in-runtime task-chain-as-agent kind). Config lives in
+-- the typed JSON column rather than flat per-kind columns (contrast
+-- mcp_servers, which can use flat columns because it has only one kind) so
+-- adding a new kind never requires a schema migration.
+-- harness_id is a reserved FK seam (no harness table/service exists yet in
+-- this slice; NULL means "the implicit serve harness"). workspace_id follows
+-- the same scoping convention as kv/message_indices.
+-- source/registry_id/registry_version are system-managed provenance for
+-- display and updates (e.g. "seeded from the ACP registry"): source is
+-- 'registry' or 'manual', registry_id/registry_version record the catalog
+-- entry an agent was seeded from. They are kept OUT of config_json — the
+-- user-editable run spec — so `contenox agent edit` never touches them.
+CREATE TABLE IF NOT EXISTS agents (
+    id               VARCHAR(255) PRIMARY KEY,
+    name             VARCHAR(255) NOT NULL UNIQUE,
+    kind             VARCHAR(50)  NOT NULL,
+    enabled          BOOLEAN NOT NULL DEFAULT 1,
+    config_json      TEXT NOT NULL DEFAULT '{}',
+    harness_id       VARCHAR(255),
+    workspace_id     VARCHAR(255),
+    source           VARCHAR(50),
+    registry_id      VARCHAR(255),
+    registry_version VARCHAR(50),
+    created_at       TIMESTAMP NOT NULL,
+    updated_at       TIMESTAMP NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agents_created_at ON agents(created_at);
+CREATE INDEX IF NOT EXISTS idx_agents_kind ON agents(kind);
+
 CREATE TABLE IF NOT EXISTS llm_model_registry (
     id          VARCHAR(255) PRIMARY KEY,
     name        VARCHAR(512) NOT NULL UNIQUE,
@@ -240,6 +271,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_kv_key_workspace ON kv(key, workspace_id);
 -- remote_tools: auth flow columns added after initial release
 ALTER TABLE remote_tools ADD COLUMN auth_flow_json TEXT;
 ALTER TABLE remote_tools ADD COLUMN insecure_skip_verify BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- message_indices: agent_id reserved for future session -> agent attribution
+-- (external ACP / chain agents driving a session). Nullable; not wired to any
+-- code path yet. Runs once per fresh install (column absent from the CREATE
+-- TABLE above); silently skipped on databases where it was already added.
+ALTER TABLE message_indices ADD COLUMN agent_id VARCHAR(255);
 
 PRAGMA foreign_keys=off;
 BEGIN TRANSACTION;

@@ -224,6 +224,14 @@ type Store interface {
 	// Used by the CLI to register config-file MCP servers into SQLite at startup.
 	UpsertMCPServerByName(ctx context.Context, srv *MCPServer) error
 
+	CreateAgent(ctx context.Context, agent *Agent) error
+	GetAgent(ctx context.Context, id string) (*Agent, error)
+	GetAgentByName(ctx context.Context, name string) (*Agent, error)
+	UpdateAgent(ctx context.Context, agent *Agent) error
+	DeleteAgent(ctx context.Context, id string) error
+	ListAgents(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*Agent, error)
+	EstimateAgentCount(ctx context.Context) (int64, error)
+
 	EnforceMaxRowCount(ctx context.Context, count int64) error
 }
 
@@ -250,7 +258,7 @@ const MaxRowsCount = 100000
 var sqliteCountableTables = map[string]bool{
 	"job_queue_v2": true, "kv": true, "remote_tools": true,
 	"ollama_models": true, "llm_affinity_group": true, "llm_backends": true,
-	"mcp_servers": true, "llm_model_registry": true,
+	"mcp_servers": true, "llm_model_registry": true, "agents": true,
 }
 
 func (s *store) estimateCount(ctx context.Context, table string) (int64, error) {

@@ -375,11 +375,19 @@ func runServe(cmd *cobra.Command, args []string) error {
 	rootMux := http.NewServeMux()
 	serverapi.AddHealthRoutes(rootMux)
 	serverapi.AddVersionRoutes(rootMux, version.Get(), nodeID, "local")
-	// Mutating /api/* requests require the bearer token when configured; a
-	// configured token also protects cross-origin browser reads. Without a token,
+	// When a TOKEN is configured, EVERY /api/* request (all methods, incl. GET)
+	// requires a valid credential — a session-cookie JWT or the raw token as a
+	// bearer — closing the same-origin-read hole. Without a token (loopback dev),
 	// browser-originated mutations must be same-origin or explicitly allowed.
 	// StripPrefix lets route packages register clean paths (/state, /models, ...).
-	rootMux.Handle("/api/", http.StripPrefix("/api", serverapi.ProtectMutatingAPIWithAllowedOrigins(config.Token, config.AllowedAPIOrigins, apiMux)))
+	rootMux.Handle("/api/", http.StripPrefix("/api", serverapi.ProtectAPI(config.Token, config.AllowedAPIOrigins, apiMux)))
+	// Beam remote-access login: /ui/login issues an HttpOnly session cookie for
+	// the configured TOKEN, /ui/logout clears it, /ui/auth-status reports whether
+	// login is required and the caller is authenticated. Registered directly on
+	// the root mux (not under the /api protection wrapper) so /ui/login is
+	// reachable before the browser holds the cookie it issues. stdio ACP is
+	// unaffected — these routes exist only on the serve HTTP surface.
+	serverapi.AddUIAuthRoutes(rootMux, config.Token)
 	if acpAgentFactory != nil {
 		rootMux.Handle("/acp", acpWebSocketHandler(acpAgentFactory, config.Token))
 	}

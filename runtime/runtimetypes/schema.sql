@@ -129,6 +129,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_message_indices_name
     ON message_indices (name, workspace_id)
     WHERE name IS NOT NULL;
 
+-- message_indices: agent_id reserved for future session -> agent attribution
+-- (external ACP / chain agents driving a session). Nullable; not wired to any
+-- code path yet.
+ALTER TABLE message_indices ADD COLUMN IF NOT EXISTS agent_id VARCHAR(255);
+
 CREATE TABLE IF NOT EXISTS messages (
     id VARCHAR(255),
     idx_id VARCHAR(255) NOT NULL REFERENCES message_indices(id) ON DELETE CASCADE,
@@ -160,6 +165,37 @@ ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS inject_params_json JSONB DEFAUL
 ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS oauth_client_id TEXT NOT NULL DEFAULT '';
 ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS oauth_client_secret_env TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_created_at ON mcp_servers(created_at);
+
+-- agents: polymorphic declared-agent resource. `kind` selects which
+-- kind-specific shape `config_json` holds ('external_acp' today; 'chain'
+-- reserved for a future in-runtime task-chain-as-agent kind). Config lives in
+-- the typed JSON column rather than flat per-kind columns (contrast
+-- mcp_servers, which can use flat columns because it has only one kind) so
+-- adding a new kind never requires a schema migration.
+-- harness_id is a reserved FK seam (no harness table/service exists yet in
+-- this slice; NULL means "the implicit serve harness"). workspace_id follows
+-- the same scoping convention as kv/message_indices.
+-- source/registry_id/registry_version are system-managed provenance for
+-- display and updates (e.g. "seeded from the ACP registry"): source is
+-- 'registry' or 'manual', registry_id/registry_version record the catalog
+-- entry an agent was seeded from. They are kept OUT of config_json — the
+-- user-editable run spec — so `contenox agent edit` never touches them.
+CREATE TABLE IF NOT EXISTS agents (
+    id               VARCHAR(255) PRIMARY KEY,
+    name             VARCHAR(255) NOT NULL UNIQUE,
+    kind             VARCHAR(50)  NOT NULL,
+    enabled          BOOLEAN NOT NULL DEFAULT true,
+    config_json      JSONB NOT NULL DEFAULT '{}',
+    harness_id       VARCHAR(255),
+    workspace_id     VARCHAR(255),
+    source           VARCHAR(50),
+    registry_id      VARCHAR(255),
+    registry_version VARCHAR(50),
+    created_at       TIMESTAMP NOT NULL,
+    updated_at       TIMESTAMP NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agents_created_at ON agents(created_at);
+CREATE INDEX IF NOT EXISTS idx_agents_kind ON agents(kind);
 
 -- plan-review feature removed: drop orphaned tables on upgraded databases.
 DROP TABLE IF EXISTS plan_steps CASCADE;

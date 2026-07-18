@@ -519,6 +519,12 @@ export type AuthenticatedUser = {
   expiresAt?: string;
 };
 
+/** Result of GET /ui/auth-status: whether remote-access login is required, and whether this browser is already authenticated via its session cookie. */
+export type AuthStatus = {
+  required: boolean;
+  authenticated: boolean;
+};
+
 export type PendingJob = {
   id: string;
   taskType: string;

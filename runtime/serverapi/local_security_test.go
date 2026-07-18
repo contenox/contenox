@@ -216,7 +216,10 @@ func TestProtectMutatingAPI_TokenRejectsSecFetchCrossSiteReadWithoutToken(t *tes
 	}
 }
 
-func TestProtectMutatingAPI_TokenAllowsSameOriginBrowserReadWithoutToken(t *testing.T) {
+// SECURITY REGRESSION: a same-origin browser GET with NO credential used to be
+// served (the mutation-only gate never checked reads). With a TOKEN configured,
+// every read must now require a credential — same-origin is not enough.
+func TestProtectMutatingAPI_TokenRejectsSameOriginBrowserReadWithoutToken(t *testing.T) {
 	called := false
 	handler := ProtectMutatingAPI("secret", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
@@ -229,15 +232,17 @@ func TestProtectMutatingAPI_TokenAllowsSameOriginBrowserReadWithoutToken(t *test
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
-	if !called {
-		t.Fatal("handler was not called for same-origin browser read")
+	if called {
+		t.Fatal("handler was called for same-origin browser read without credential")
 	}
-	if rr.Code != http.StatusNoContent {
-		t.Fatalf("status = %d, want 204", rr.Code)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rr.Code)
 	}
 }
 
-func TestProtectMutatingAPI_TokenAllowsNonBrowserReadWithoutToken(t *testing.T) {
+// SECURITY REGRESSION: a non-browser GET with no credential (e.g. a LAN attacker's
+// curl) used to be served. With a TOKEN configured it must now 401.
+func TestProtectMutatingAPI_TokenRejectsNonBrowserReadWithoutToken(t *testing.T) {
 	called := false
 	handler := ProtectMutatingAPI("secret", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
@@ -249,11 +254,11 @@ func TestProtectMutatingAPI_TokenAllowsNonBrowserReadWithoutToken(t *testing.T) 
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
-	if !called {
-		t.Fatal("handler was not called for non-browser read")
+	if called {
+		t.Fatal("handler was called for non-browser read without credential")
 	}
-	if rr.Code != http.StatusNoContent {
-		t.Fatalf("status = %d, want 204", rr.Code)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rr.Code)
 	}
 }
 
