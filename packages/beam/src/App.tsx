@@ -8,6 +8,7 @@ import { AcpSessionSidebar } from './components/sidebar/AcpSessionSidebar';
 import { routes } from './config/routes';
 import { AuthProvider } from './lib/AuthProvider';
 import { AcpWorkspaceProvider } from './lib/acp/AcpWorkspaceProvider';
+import { StagedAgentProvider } from './lib/stagedAgent';
 import { AuthContext } from './lib/authContext';
 
 const AuthPage = lazy(() => import('./pages/public/login/AuthPage'));
@@ -64,6 +65,10 @@ export default function App() {
       <AuthProvider>
         <AuthGate>
           <AuthenticatedAcpProvider>
+            {/* Shares the "next new chat's agent" staging between the sessions
+                sidebar (which seeds it) and the empty chat surface (which shows,
+                changes, and consumes it). See lib/stagedAgent.tsx. */}
+            <StagedAgentProvider>
             <Layout
               sidebarContent={({ setIsOpen }) => <AcpSessionSidebar setIsOpen={setIsOpen} />}
               defaultOpen={true}
@@ -93,6 +98,7 @@ export default function App() {
                 </ErrorBoundary>
               }
             />
+            </StagedAgentProvider>
           </AuthenticatedAcpProvider>
         </AuthGate>
       </AuthProvider>

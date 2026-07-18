@@ -13,16 +13,70 @@ import (
 	"github.com/contenox/runtime/runtime/taskengine"
 )
 
+// Prompt resolves the session and dispatches the turn to its driver. The driver
+// (native chain engine vs. registered downstream ACP agent) owns everything the
+// turn does — there is no native-vs-external branch here.
 func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libacp.PromptResponse, error) {
-	reportErr, reportChange, end := t.tracker().Start(ctx, "prompt", "acp_session", "session_id", string(req.SessionID), "prompt_blocks", len(req.Prompt))
-	defer end()
-
 	sess, ok := t.sessionFor(req.SessionID)
 	if !ok {
+		reportErr, _, end := t.tracker().Start(ctx, "prompt", "acp_session", "session_id", string(req.SessionID), "prompt_blocks", len(req.Prompt))
+		defer end()
 		err := libacp.NewErrorf(libacp.ErrInvalidParams, "unknown session %q", req.SessionID)
 		reportErr(err)
 		return libacp.PromptResponse{}, err
 	}
+	return sess.driver.Prompt(ctx, req, sess)
+}
+
+// nativeDriver drives a session against the contenox task-chain engine — the
+// historical (non-external) ACP path. It wraps the session's agentservice.Agent
+// and owns the chain execution + event-translation flow.
+type nativeDriver struct {
+	t     *Transport
+	agent agentservice.Agent
+}
+
+// AgentName is "" for a native session (no external agent attribution).
+func (d *nativeDriver) AgentName() string { return "" }
+
+// Close is a no-op: a native session holds no downstream connection.
+func (d *nativeDriver) Close() error { return nil }
+
+// AvailableCommands advertises contenox's admin slash-command menu.
+func (d *nativeDriver) AvailableCommands() []libacp.AvailableCommand { return acpCommands() }
+
+// ConfigOptions returns the chain-engine config selects (model/HITL/think/token,
+// plus the workspace root when an allowlist is configured).
+func (d *nativeDriver) ConfigOptions(ctx context.Context, sess *sessionEntry) []libacp.SessionConfigOption {
+	t := d.t
+	opts := []libacp.SessionConfigOption{
+		t.modelConfigOption(ctx, sess),
+		t.hitlPolicyConfigOption(sess),
+		t.thinkConfigOption(sess),
+		t.tokenLimitConfigOption(ctx, sess),
+	}
+	if opt, ok := t.workspaceRootConfigOption(sess); ok {
+		opts = append(opts, opt)
+	}
+	return opts
+}
+
+// SetConfigOption applies a native config change (model/think/policy/token),
+// byte-identical to the pre-driver-seam path: it delegates to the same
+// transport-level switch the RPC handler used directly before the driver seam,
+// dropping the boolean/string union back to the string form the native selects
+// consume.
+func (d *nativeDriver) SetConfigOption(ctx context.Context, sess *sessionEntry, configID string, value libacp.SessionConfigOptionValue) error {
+	return d.t.setSessionConfigOption(ctx, sess, configID, value.AsString())
+}
+
+// Prompt runs one native turn: it intercepts slash commands, then executes the
+// default chain, translating engine events to session/update notifications.
+func (d *nativeDriver) Prompt(ctx context.Context, req libacp.PromptRequest, sess *sessionEntry) (libacp.PromptResponse, error) {
+	t := d.t
+	reportErr, reportChange, end := t.tracker().Start(ctx, "prompt", "acp_session", "session_id", string(req.SessionID), "prompt_blocks", len(req.Prompt))
+	defer end()
+
 	if t.deps.ChainRegistry == nil || t.deps.ChainRegistry.Default() == nil {
 		err := libacp.InternalError("no chain configured")
 		reportErr(err)
@@ -140,7 +194,7 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 		}
 	}
 
-	resp, err := sess.Agent.Prompt(promptCtx, agentservice.PromptRequest{
+	resp, err := d.agent.Prompt(promptCtx, agentservice.PromptRequest{
 		SessionID:      sess.InternalSessionID,
 		Input:          input,
 		Chain:          t.deps.ChainRegistry.Default(),

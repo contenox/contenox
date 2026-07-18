@@ -885,6 +885,47 @@
         },
         "type": "object"
       },
+      "runtimetypes_Agent": {
+        "properties": {
+          "configJson": {},
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "harnessId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "registryId": {
+            "type": "string"
+          },
+          "registryVersion": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "runtimetypes_Backend": {
         "properties": {
           "baseUrl": {
@@ -1695,6 +1736,122 @@
         ]
       }
     },
+    "/agents": {
+      "get": {
+        "operationId": "agentregistry_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/runtimetypes_Agent"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /agents",
+        "tags": [
+          "agentregistry"
+        ]
+      }
+    },
+    "/agents/by-name/{name}": {
+      "get": {
+        "operationId": "agentregistry_getByName",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/runtimetypes_Agent"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /agents/by-name/{name}",
+        "tags": [
+          "agentregistry"
+        ]
+      }
+    },
+    "/agents/{id}": {
+      "get": {
+        "operationId": "agentregistry_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/runtimetypes_Agent"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /agents/{id}",
+        "tags": [
+          "agentregistry"
+        ]
+      }
+    },
     "/api/chat": {
       "post": {
         "operationId": "compat_chat",
@@ -2152,14 +2309,12 @@
     },
     "/files": {
       "delete": {
-        "operationId": "localfile_deletePath",
+        "operationId": "delete_files",
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/apiframework_MessageResponse"
-                }
+                "schema": {}
               }
             },
             "description": "OK"
@@ -2251,23 +2406,12 @@
         ]
       },
       "put": {
-        "operationId": "localfile_updateFile",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/localfileapi_writeFileRequest"
-              }
-            }
-          }
-        },
+        "operationId": "put_files",
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/localfileservice_Entry"
-                }
+                "schema": {}
               }
             },
             "description": "OK"
@@ -2322,7 +2466,7 @@
     },
     "/files/download": {
       "get": {
-        "operationId": "localfile_download",
+        "operationId": "get_files_download",
         "responses": {
           "200": {
             "content": {
@@ -2391,14 +2535,12 @@
     },
     "/files/stat": {
       "get": {
-        "operationId": "localfile_stat",
+        "operationId": "get_files_stat",
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/localfileservice_Entry"
-                }
+                "schema": {}
               }
             },
             "description": "OK"
@@ -2422,14 +2564,12 @@
     },
     "/folders": {
       "delete": {
-        "operationId": "localfile_deletePath",
+        "operationId": "delete_folders",
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/apiframework_MessageResponse"
-                }
+                "schema": {}
               }
             },
             "description": "OK"
@@ -2451,23 +2591,12 @@
         ]
       },
       "post": {
-        "operationId": "localfile_createFolder",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/localfileapi_createFolderRequest"
-              }
-            }
-          }
-        },
+        "operationId": "post_folders",
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/localfileservice_Entry"
-                }
+                "schema": {}
               }
             },
             "description": "OK"

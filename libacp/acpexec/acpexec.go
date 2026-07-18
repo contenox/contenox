@@ -89,6 +89,13 @@ func Spawn(ctx context.Context, cmd *exec.Cmd, opts ...Option) (*Process, error)
 	}
 	cmd.Stderr = cfg.stderr
 
+	// Own process group (unix), so Close's kill escalation can take down not
+	// just the direct child but any children it forked — npx/uvx-style
+	// wrapper commands, a first-class registration method for external
+	// agents, put the real agent a fork or two down, and a surviving
+	// grandchild would both leak and hold our pipes open (blocking Wait).
+	setProcessGroup(cmd)
+
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("acpexec: start %s: %w", cmd.Path, err)
 	}
@@ -144,21 +151,45 @@ func (p *Process) Write(b []byte) (int, error) { return p.stdin.Write(b) }
 // and every call, including ones after the process already exited on its
 // own, returns the same result — the subprocess's exit error, or nil for a
 // clean exit.
+// killReapTimeout bounds how long Close waits, after killing the process
+// group, for the Wait reaper to come back. Wait can outlive the kill when
+// something outside the group still holds the subprocess's stderr pipe (a
+// double-forked daemon); better to return a loud error than block a caller
+// forever on a process we cannot reach.
+const killReapTimeout = 5 * time.Second
+
 func (p *Process) Close() error {
 	p.closeOnce.Do(func() {
 		_ = p.stdin.Close()
 
+		killed := false
 		select {
 		case <-p.waitDone:
 		case <-time.After(p.grace):
-			if p.cmd.Process != nil {
-				_ = p.cmd.Process.Kill()
+			killed = true
+			killProcessTree(p.cmd)
+			select {
+			case <-p.waitDone:
+			case <-time.After(killReapTimeout):
+				_ = p.stdout.Close()
+				p.closeErr = fmt.Errorf("acpexec: subprocess %s not reaped %s after kill (a descendant outside its process group may be holding its pipes)", p.cmd.Path, killReapTimeout)
+				return
 			}
-			<-p.waitDone
 		}
 
 		_ = p.stdout.Close()
 		p.closeErr = p.waitErr
+
+		// A persistent agent that ignores stdin-close (testy, most editor
+		// adapters) and had to be killed took the escalation tail of this
+		// method's own documented shutdown sequence — the kill-induced exit
+		// status is not a failure of Close. Only a death this method's own
+		// kill can have caused is suppressed (see exitFromKill): a process
+		// that died with a bad exit status on its own still surfaces that
+		// error, even if the kill branch happened to run.
+		if killed && exitFromKill(p.waitErr) {
+			p.closeErr = nil
+		}
 	})
 	return p.closeErr
 }

@@ -9,7 +9,6 @@ import (
 	libacp "github.com/contenox/runtime/libacp"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/libtracker"
-	"github.com/contenox/runtime/runtime/agentservice"
 	"github.com/contenox/runtime/runtime/enginesvc"
 	"github.com/contenox/runtime/runtime/internal/clikv"
 	"github.com/contenox/runtime/runtime/runtimetypes"
@@ -87,7 +86,6 @@ type sessionEntry struct {
 	WorkspaceID       string
 	Cwd               string
 	InternalSessionID string
-	Agent             agentservice.Agent
 	McpServerNames    []string
 	Provider          string
 	Model             string
@@ -104,6 +102,47 @@ type sessionEntry struct {
 	// A concrete selection is injected into the prompt context (see prompt.go) so a
 	// shared engine's one hitlservice gates each session's turn under its own policy.
 	HITLPolicy string
+
+	// driver is this session's execution backend: a nativeDriver for the
+	// contenox task-chain engine, or an externalDriver for a REGISTERED downstream
+	// ACP agent. It is chosen once at construction — NewSession/LoadSession/
+	// ResumeSession decide which from the session/new `_meta` or the persisted
+	// agent KV — and every prompt/config/menu/teardown path dispatches through it
+	// polymorphically, so there is no native-vs-external flag branch anywhere else.
+	driver sessionDriver
+}
+
+// sessionDriver is the per-session execution backend a sessionEntry delegates
+// to. The native and external implementations share the session's data
+// (workspace, cwd, ids, model/think, HITL, mcp names) on the sessionEntry passed
+// to each call; only the execution mechanism differs.
+type sessionDriver interface {
+	// Prompt runs one full turn for sess. The implementation owns everything the
+	// turn needs: update relay / event translation, cancellation registration,
+	// and history persistence all happen inside it.
+	Prompt(ctx context.Context, req libacp.PromptRequest, sess *sessionEntry) (libacp.PromptResponse, error)
+	// ConfigOptions returns the session config options advertised for sess. The
+	// native driver returns the model/think/policy/token selects; the external
+	// driver returns the DOWNSTREAM agent's own advertised options (captured from
+	// its session/new response and kept current by config_option_update relays) —
+	// contenox's native chain selects stay suppressed for an external session.
+	ConfigOptions(ctx context.Context, sess *sessionEntry) []libacp.SessionConfigOption
+	// SetConfigOption applies a config-option change for sess. The native driver
+	// mutates the session's own model/think/policy/token selection; the external
+	// driver forwards it to the downstream agent (session/set_config_option) and
+	// adopts the option set the agent confirms. value carries the wire union
+	// (string or boolean) so a boolean-typed downstream option round-trips intact.
+	SetConfigOption(ctx context.Context, sess *sessionEntry, configID string, value libacp.SessionConfigOptionValue) error
+	// AvailableCommands returns the slash-command menu emitted for the session, or
+	// nil when the session has none — the external driver returns nil because the
+	// downstream agent's own menu is relayed live via available_commands_update.
+	AvailableCommands() []libacp.AvailableCommand
+	// AgentName is the registered external agent name (feeds the session/new
+	// `_meta` echo and session/list attribution), or "" for a native session.
+	AgentName() string
+	// Close releases the driver's connection-local resources. Idempotent: the
+	// native driver is a no-op, the external driver closes the downstream Handle.
+	Close() error
 }
 
 type Transport struct {
@@ -112,6 +151,14 @@ type Transport struct {
 	// connectionID scopes client-supplied MCP servers to this ACP connection so
 	// two clients loading the same session cannot overwrite each other's tools.
 	connectionID string
+
+	// connCtx is a connection-scoped context spawned external agents are bound to
+	// (their subprocess dies when it is cancelled). connCancel is fired when the
+	// upstream connection ends — the serve WebSocket path never calls
+	// Transport.Close, so the connection's own Closed signal (both stdio and WS)
+	// is the reliable teardown hook that guarantees no downstream process leaks.
+	connCtx    context.Context
+	connCancel context.CancelFunc
 
 	initMu     sync.Mutex
 	clientInfo *libacp.Implementation
@@ -201,10 +248,13 @@ func (t *Transport) sendToolCallUpdateGuarded(ctx context.Context, sid libacp.Se
 
 func New(deps Deps) libacp.AgentFactory {
 	return func(conn *libacp.AgentSideConnection) libacp.Agent {
+		connCtx, connCancel := context.WithCancel(context.Background())
 		t := &Transport{
 			deps:               deps,
 			conn:               conn,
 			connectionID:       newSessionID("conn"),
+			connCtx:            connCtx,
+			connCancel:         connCancel,
 			sessions:           make(map[libacp.SessionID]*sessionEntry),
 			contenoxToACPID:    make(map[string]libacp.SessionID),
 			toolCallStatus:     make(map[string]libacp.ToolCallStatus),
@@ -223,6 +273,14 @@ func New(deps Deps) libacp.AgentFactory {
 		// foreign client never calls them; unknown extension methods still answer
 		// MethodNotFound because this handler only claims the contenox namespace.
 		conn.SetExtRequestHandler(t.handleExtRequest)
+		// Tear down any external-agent subprocesses when this connection ends.
+		// Cancelling connCtx closes every downstream agent spawned on it (Connect
+		// binds the subprocess to it); this fires for both the stdio path and the
+		// serve WebSocket path, the latter never calling Transport.Close.
+		go func() {
+			<-conn.Closed()
+			connCancel()
+		}()
 		return t
 	}
 }

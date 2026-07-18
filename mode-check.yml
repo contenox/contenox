@@ -1,0 +1,6 @@
+- main [ref=f8e3]:
+  - generic [ref=f8e4]:
+    - generic [ref=f8e5]:
+      - heading "Session not found" [level=2] [ref=f8e6]
+      - paragraph [ref=f8e8]: This session no longer exists or is not available.
+    - button "Start new session" [ref=f8e10]

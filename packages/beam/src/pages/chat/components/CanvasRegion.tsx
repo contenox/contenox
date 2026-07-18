@@ -12,10 +12,8 @@ import { useMediaQuery } from '../../../hooks/useMediaQuery';
 import type { WorkspaceFilePeek } from '../../../hooks/useWorkspaceFiles';
 import { TERMINAL_CANVAS_TAB, type CanvasTab } from '../lib/canvasTabs';
 import type { UseCanvasTabsResult } from '../../../hooks/useCanvasTabs';
-import type { RequestPermissionRequest } from '../../../lib/acp';
 import { TerminalTab } from './TerminalTab';
 import { FileViewTab } from './FileViewTab';
-import { ApprovalViewTab } from './ApprovalViewTab';
 
 /** The canvas becomes a side-by-side split at/above this width; below it, a full-width takeover. */
 const SIDE_BY_SIDE_QUERY = '(min-width: 1024px)';
@@ -27,10 +25,6 @@ export interface CanvasRegionProps {
   canvas: UseCanvasTabsResult;
   /** Reads a file's content — threaded to the read-only `file` canvas tabs. */
   readFile: (path: string) => Promise<WorkspaceFilePeek>;
-  /** The session's live pending permission (or null) — threaded to `approval` canvas tabs so they know when they've gone stale. */
-  pendingPermission: RequestPermissionRequest | null;
-  /** The same responder the permission gate uses — threaded to `approval` canvas tabs. */
-  onRespondPermission: (optionId: string) => void;
   /** The primary (chat) body — rendered beside the canvas when open, full-width when the canvas is empty. */
   children: ReactNode;
   className?: string;
@@ -59,8 +53,6 @@ export function CanvasRegion({
   sessionId,
   canvas,
   readFile,
-  pendingPermission,
-  onRespondPermission,
   children,
   className,
 }: CanvasRegionProps) {
@@ -112,8 +104,6 @@ export function CanvasRegion({
         return t('terminal.panel_title');
       case 'file':
         return tab.title ?? tab.path ?? tab.id;
-      case 'approval':
-        return tab.title ?? t('acp_chat.permission_title');
       default:
         return tab.id;
     }
@@ -142,15 +132,6 @@ export function CanvasRegion({
           <TabPanel key={tab.id} tabId={tab.id} activeTab={activeId} className="flex min-h-0 flex-col p-2">
             {tab.kind === 'terminal' && <TerminalTab sessionId={sessionId} />}
             {tab.kind === 'file' && tab.path && <FileViewTab path={tab.path} readFile={readFile} />}
-            {tab.kind === 'approval' && tab.approval && (
-              <ApprovalViewTab
-                permission={tab.approval}
-                pendingPermission={pendingPermission}
-                active={tab.id === activeId}
-                onRespond={onRespondPermission}
-                onClose={() => canvas.close(tab.id)}
-              />
-            )}
           </TabPanel>
         ))}
       </TabPanels>

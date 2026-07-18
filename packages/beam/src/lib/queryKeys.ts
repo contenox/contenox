@@ -190,6 +190,14 @@ export const mcpServerKeys = {
   byName: (name: string) => [...mcpServerKeys.all, 'name', name] as const,
 };
 
+export const agentKeys = {
+  all: ['agents'] as const,
+  list: (params: { limit?: number; cursor?: string }) =>
+    [...agentKeys.all, 'list', params] as const,
+  detail: (id: string) => [...agentKeys.all, id] as const,
+  byName: (name: string) => [...agentKeys.all, 'name', name] as const,
+};
+
 export const modelRegistryKeys = {
   all: ['model-registry'] as const,
 };

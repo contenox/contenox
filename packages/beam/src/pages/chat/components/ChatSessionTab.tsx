@@ -23,24 +23,25 @@ import { useAcpWorkspace } from '../../../hooks/useAcpWorkspace';
 import { useWorkspaceFiles } from '../../../hooks/useWorkspaceFiles';
 import { initialAcpSessionState } from '../../../hooks/acpSessionState';
 import { EMPTY_SESSION_KEY } from '../../../hooks/acpWorkspaceState';
-import type { SessionConfigOption, SessionConfigOptionValue } from '../../../lib/acp';
+import { externalAgentFromMeta, type SessionConfigOption, type SessionConfigOptionValue } from '../../../lib/acp';
+import { useStagedAgent } from '../../../lib/stagedAgent';
 import { useSetupStatus } from '../../../hooks/useSetupStatus';
 import { usePersistentToggle } from '../../../hooks/usePersistentToggle';
 import { classifyAcpExecutionError } from '../../../lib/acpFailureKind';
 import { activeMentions, mentionPreviewPath, type WorkspaceFileRef } from '../lib/mentions';
+import { resolveWorkspaceRoot } from '../lib/workspaceRoot';
 import { useFilePreview } from '../../../hooks/useFilePreview';
 import { parseTerminalPassthrough } from '../lib/terminalPassthrough';
 import { ChatSessionToolbar } from './ChatSessionToolbar';
 import { ExecutionErrorBanner, ResumedBanner } from './SessionBanners';
 import { MentionMenu, useMentionMenu } from './MentionMenu';
-import { PermissionGate } from './PermissionGate';
 import { PlanPanel } from './PlanPanel';
 import { SlashCommandMenu, useSlashCommandMenu } from './SlashCommandMenu';
 import { TranscriptItems } from './TranscriptItems';
 import { WorkspacePanel } from './WorkspacePanel';
 import { CanvasRegion } from './CanvasRegion';
 import { useCanvasTabs } from '../../../hooks/useCanvasTabs';
-import { approvalCanvasTab, APPROVAL_CANVAS_TAB_PREFIX, fileCanvasTab, TERMINAL_CANVAS_TAB } from '../lib/canvasTabs';
+import { fileCanvasTab, TERMINAL_CANVAS_TAB } from '../lib/canvasTabs';
 
 // Shared workspace-wide UI preference (localStorage key). The file panel toggle
 // is workspace-scoped, not per-session, so every open tab reads/writes one
@@ -127,6 +128,20 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
   const sessionKey = sessionId ?? EMPTY_SESSION_KEY;
   const session = sessions.slices[sessionKey] ?? initialAcpSessionState;
 
+  const onEmptyChat = sessionId == null;
+
+  // The external agent this chat talks to. On the empty chat it is the staged
+  // pick (seeded by the sidebar's "new chat with an agent", changeable in the
+  // toolbar); on a live session it is read back from the roster's `_meta` echo.
+  // `null` means the native "contenox" chain.
+  const { stagedAgent, setStagedAgent } = useStagedAgent();
+  const sessionInfo = workspace.sessions.find(s => s.sessionId === sessionId);
+  const sessionAgentName = externalAgentFromMeta(sessionInfo?._meta);
+  const stagedExternalAgent = onEmptyChat ? stagedAgent : null;
+  // Attribution for the transcript's assistant label: an external session shows
+  // its agent's name instead of the generic workspace agent (init.agentInfo).
+  const attributionAgentName = sessionAgentName ?? workspace.agentName;
+
   const { refetch: refetchSetupStatus } = useSetupStatus(true);
 
   const [draft, setDraft] = useState('');
@@ -138,18 +153,24 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
     deps: [session.items, session.pendingPermission],
   });
 
-  const onEmptyChat = sessionId == null;
-
   // The session's workspace root: an active session's persisted cwd, or (on the
-  // empty chat) the staged/default workspace-root pick.
+  // empty chat) the staged/default workspace-root pick. This is contenox
+  // runtime-side data — the `/files` REST is rooted here and the `@`-mention list
+  // comes from it — so it is INDEPENDENT of which agent drives the session: an
+  // external-agent session resolves its root exactly like a native one (its
+  // `@`-mentions ride as reference-only `resource_link` blocks the downstream
+  // agent reads under the same cwd). See lib/workspaceRoot.ts for the full rules;
+  // notably an external session exposes no root PICKER, so it falls back to the
+  // default root — the cwd the runtime creates it under.
   const stagedRoot = stagedConfig[WORKSPACE_ROOT_CONFIG_ID];
-  const activeSessionCwd = workspace.sessions.find(s => s.sessionId === sessionId)?.cwd ?? null;
+  const activeSessionCwd = sessionInfo?.cwd ?? null;
   const defaultRoot = configOptionCurrentValue(workspace.workspaceConfigOptions, WORKSPACE_ROOT_CONFIG_ID);
-  const workspaceRoot = onEmptyChat
-    ? typeof stagedRoot === 'string' && stagedRoot
-      ? stagedRoot
-      : (defaultRoot ?? null)
-    : activeSessionCwd;
+  const workspaceRoot = resolveWorkspaceRoot({
+    onEmptyChat,
+    stagedRoot: typeof stagedRoot === 'string' ? stagedRoot : undefined,
+    defaultRoot,
+    activeSessionCwd,
+  });
 
   // The session's active HITL policy drives the workspace tree's agent-view: the
   // file explorer evaluates each path against the SAME policy the live agent gates
@@ -174,43 +195,6 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
   const openFile = useCallback((path: string) => openCanvasTab(fileCanvasTab(path)), [openCanvasTab]);
   const activeFileTab = canvas.tabs.find(tab => tab.id === canvas.activeId && tab.kind === 'file');
   const selectedFilePath = activeFileTab?.path ?? null;
-
-  // Maximize-to-tab for the permission gate: `maximizedApprovalId` is the
-  // tool-call id whose gate is currently demoted to a full-size canvas tab. The
-  // modal is suppressed (see `gatePermission`) ONLY while that id still matches
-  // the live pending request — so a new request pops the modal normally, and a
-  // resolution un-suppresses whatever is next. The pending request itself is
-  // never touched by maximizing; it stays live until answered.
-  const [maximizedApprovalId, setMaximizedApprovalId] = useState<string | null>(null);
-  const pendingToolCallId = session.pendingPermission?.toolCall.toolCallId ?? null;
-  const isApprovalMaximized = maximizedApprovalId != null && maximizedApprovalId === pendingToolCallId;
-
-  const handleMaximizeApproval = useCallback(() => {
-    const pending = session.pendingPermission;
-    if (!pending) return;
-    openCanvasTab(approvalCanvasTab(pending));
-    setMaximizedApprovalId(pending.toolCall.toolCallId);
-  }, [session.pendingPermission, openCanvasTab]);
-
-  // The gate must never be lost: whenever the maximized approval tab is closed by
-  // ANY route (its ✕, the restore pill, or a neighbor-close), drop the modal
-  // suppression. If the request is still pending the modal snaps back; if it was
-  // already answered this is a harmless no-op (pending is null either way).
-  useEffect(() => {
-    if (maximizedApprovalId == null) return;
-    const tabId = `${APPROVAL_CANVAS_TAB_PREFIX}${maximizedApprovalId}`;
-    if (!canvas.tabs.some(tab => tab.id === tabId)) setMaximizedApprovalId(null);
-  }, [maximizedApprovalId, canvas.tabs]);
-
-  // The restore affordance: collapse the maximized tab back to the modal.
-  const restoreApproval = useCallback(() => {
-    if (maximizedApprovalId == null) return;
-    canvas.close(`${APPROVAL_CANVAS_TAB_PREFIX}${maximizedApprovalId}`);
-  }, [maximizedApprovalId, canvas]);
-
-  // While maximized-and-still-pending, hide the modal (the tab owns the gate) but
-  // keep the request live for a genuinely-new request to still surface normally.
-  const gatePermission = isApprovalMaximized ? null : session.pendingPermission;
 
   // Surface the terminal canvas tab automatically the first time THIS session
   // produces shell output. The canvas is per-session, so the `!`-passthrough on
@@ -307,11 +291,12 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
         if (!shellSid) {
           const rootPick = typeof stagedRoot === 'string' && stagedRoot.trim() !== '' ? stagedRoot : undefined;
           try {
-            shellSid = await newSession(rootPick);
+            shellSid = await newSession(rootPick, stagedExternalAgent);
           } catch {
             setDraft(draft);
             return;
           }
+          if (stagedExternalAgent) setStagedAgent(null);
           onSessionCreated(shellSid);
         }
         void runTerminal(shellCommand);
@@ -324,30 +309,38 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
 
       let sid = sessionId;
       if (!sid) {
-        // Lazy creation (D5): no session/new until the first submit.
+        // Lazy creation (D5): no session/new until the first submit. A staged
+        // external agent binds the session via `_meta` (see AGENT_META_KEY).
         const rootPick = typeof stagedRoot === 'string' && stagedRoot.trim() !== '' ? stagedRoot : undefined;
         try {
-          sid = await newSession(rootPick);
+          sid = await newSession(rootPick, stagedExternalAgent);
         } catch {
           // newSession() already surfaced the failure; restore the draft.
           setDraft(text);
           setMentions(turnMentions);
           return;
         }
-        // Flush the empty-chat's staged config choices onto the just-minted
-        // session BEFORE the prompt runs (so they win over server defaults).
-        const staged = Object.entries(stagedConfig)
-          .filter(([configId]) => configId !== WORKSPACE_ROOT_CONFIG_ID)
-          .map(([configId, value]) => ({ configId, value }));
-        if (staged.length > 0) {
-          try {
-            await applyConfigOptions(staged);
-          } catch {
-            setDraft(text);
-            setMentions(turnMentions);
-            return;
+        // Flush the empty-chat's staged native config choices onto the just-minted
+        // session BEFORE the prompt runs (so they win over server defaults). An
+        // external session has NO config options (set_config_option would fail),
+        // so this is native-only.
+        if (!stagedExternalAgent) {
+          const staged = Object.entries(stagedConfig)
+            .filter(([configId]) => configId !== WORKSPACE_ROOT_CONFIG_ID)
+            .map(([configId, value]) => ({ configId, value }));
+          if (staged.length > 0) {
+            try {
+              await applyConfigOptions(staged);
+            } catch {
+              setDraft(text);
+              setMentions(turnMentions);
+              return;
+            }
           }
         }
+        // The staged agent is one-shot — consumed by this session, so the next
+        // fresh empty chat starts native again.
+        if (stagedExternalAgent) setStagedAgent(null);
         // Promote the empty surface to a real tab (URL follows the active tab).
         onSessionCreated(sid);
       }
@@ -360,6 +353,8 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
       draft,
       mentions,
       stagedRoot,
+      stagedExternalAgent,
+      setStagedAgent,
       sessionId,
       stagedConfig,
       newSession,
@@ -391,9 +386,13 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
 
   // Config controls source: a live session's own `session.configOptions`, or (on
   // the empty chat) the workspace-level options overlaid with staged picks. The
-  // workspace-root option is a pre-session picker only.
+  // workspace-root option is a pre-session picker only. A staged external agent
+  // exposes NO native config options (model/think/policy don't apply — the live
+  // external session likewise returns none), so they are hidden pre-session too.
   const headerConfigOptions = onEmptyChat
-    ? overlayStagedValues(workspace.workspaceConfigOptions, stagedConfig)
+    ? stagedExternalAgent
+      ? []
+      : overlayStagedValues(workspace.workspaceConfigOptions, stagedConfig)
     : session.configOptions.filter(o => o.id !== WORKSPACE_ROOT_CONFIG_ID);
 
   return (
@@ -450,27 +449,27 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
           sessionId={sessionId}
           canvas={canvas}
           readFile={files.readFile}
-          pendingPermission={session.pendingPermission}
-          onRespondPermission={respondPermission}
           className="flex-1">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {isApprovalMaximized && (
-            <button
-              type="button"
-              onClick={restoreApproval}
-              className="border-warning-200 bg-warning-50 text-warning-900 dark:border-dark-surface-500 dark:bg-dark-surface-300 dark:text-dark-text mx-3 mt-2 flex shrink-0 items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-left text-xs">
-              <span className="truncate">{t('acp_chat.approval_pending_pill')}</span>
-              <span className="shrink-0 font-medium underline">{t('acp_chat.approval_restore')}</span>
-            </button>
-          )}
-          {!hasContent ? (
+          {!hasContent && !session.pendingPermission ? (
             <div className="m-auto">
-              <EmptyState title={t('acp_chat.empty_title')} description={t('acp_chat.empty_description')} />
+              <EmptyState
+                title={t('acp_chat.empty_title')}
+                description={
+                  stagedExternalAgent
+                    ? t('acp_chat.empty_description_agent', { name: stagedExternalAgent })
+                    : t('acp_chat.empty_description')
+                }
+              />
             </div>
           ) : (
             <div className="relative flex min-h-0 flex-1 flex-col">
               <ChatThread containerRef={containerRef} endRef={endRef}>
-                <TranscriptItems session={session} agentName={workspace.agentName} />
+                <TranscriptItems
+                  session={session}
+                  agentName={attributionAgentName}
+                  onRespondPermission={respondPermission}
+                />
               </ChatThread>
               <ChatScrollToLatest
                 visible={!isNearBottom}
@@ -517,8 +516,6 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
           </div>
         </CanvasRegion>
       </div>
-
-      <PermissionGate permission={gatePermission} onRespond={respondPermission} onMaximize={handleMaximizeApproval} />
     </div>
   );
 }

@@ -16,38 +16,26 @@
  * collapses and the chat takes the full width (see `CanvasRegion`).
  */
 
-import type { PermissionOptionKind, RequestPermissionRequest } from '../../../lib/acp';
-
 /**
- * The kinds of surface the canvas can host: the per-session terminal, read-only
- * file views, and maximized permission approvals (a pending permission gate
- * opened full-size so large diffs/commands can be read in the panel).
+ * The kinds of surface the canvas can host: the per-session terminal and
+ * read-only file views. (Permission approvals are NOT a canvas surface — they
+ * render inline in the transcript as a `PermissionCard`, see `TranscriptItems`.)
  */
-export type CanvasTabKind = 'terminal' | 'file' | 'approval';
+export type CanvasTabKind = 'terminal' | 'file';
 
 export interface CanvasTab {
   /**
    * Stable identity used for dedup and for the `Tabs`/`TabPanel` wiring. For a
    * per-session singleton like the terminal this is a fixed string; a file tab
    * encodes its path (`file:src/app.ts`) so re-opening the same file focuses its
-   * existing tab instead of duplicating it; an approval tab encodes its tool-call
-   * id (`approval:<toolCallId>`) so re-maximizing the same request focuses the
-   * open tab and concurrent requests each get their own.
+   * existing tab instead of duplicating it.
    */
   id: string;
   kind: CanvasTabKind;
   /** For `file` tabs: the workspace-relative path this view reads. */
   path?: string;
-  /** For `file`/`approval` tabs: the display label shown on the tab strip. */
+  /** For `file` tabs: the display label shown on the tab strip. */
   title?: string;
-  /**
-   * For `approval` tabs: the SNAPSHOT of the permission request taken when the
-   * gate was maximized. Snapshotted (not read live) so the tab keeps rendering
-   * the payload after the request resolves — the live `pendingPermission` clears
-   * to null on answer, but the maximized tab must not blank out mid-read (see
-   * `approvalTabStatus`).
-   */
-  approval?: RequestPermissionRequest;
 }
 
 export interface CanvasTabsState {
@@ -117,60 +105,4 @@ export const FILE_CANVAS_TAB_PREFIX = 'file:';
 export function fileCanvasTab(path: string): CanvasTab {
   const name = path.split('/').filter(Boolean).pop() ?? path;
   return { id: `${FILE_CANVAS_TAB_PREFIX}${path}`, kind: 'file', path, title: name };
-}
-
-/** Prefix for an approval tab's id, keyed by tool-call id so concurrent approvals never collide. */
-export const APPROVAL_CANVAS_TAB_PREFIX = 'approval:';
-
-/**
- * A maximized-permission-approval canvas tab for `request`. The id is derived
- * from the request's tool-call id so re-maximizing the same pending request
- * focuses its existing tab (dedup by identity) and concurrent approvals each get
- * their own tab. The whole request is snapshotted onto the tab so the panel can
- * keep rendering the payload after the request resolves (see `CanvasTab.approval`).
- */
-export function approvalCanvasTab(request: RequestPermissionRequest): CanvasTab {
-  const { toolCall } = request;
-  return {
-    id: `${APPROVAL_CANVAS_TAB_PREFIX}${toolCall.toolCallId}`,
-    kind: 'approval',
-    title: toolCall.title ?? toolCall.toolCallId,
-    approval: request,
-  };
-}
-
-/** How an approval was resolved, for the tab's post-answer banner. */
-export type ApprovalResolution = 'allowed' | 'denied';
-
-/**
- * The lifecycle state a maximized-approval tab renders. `pending` shows the live
- * Allow/Deny actions + keymap; `resolved` shows a read-only banner (never a live
- * Allow button on a dead request). `resolution` is the outcome when it was
- * answered IN this tab, or `null` when the request resolved elsewhere (the modal,
- * another tab) or the turn was cancelled — an outcome the tab can't attribute.
- */
-export type ApprovalTabStatus =
-  | { state: 'pending' }
-  | { state: 'resolved'; resolution: ApprovalResolution | null };
-
-/**
- * Pure pending→resolved decision for a maximized-approval tab. The tab is `pending`
- * only while its snapshotted `toolCallId` still matches the session's live
- * `pendingToolCallId` AND it hasn't been answered here; once answered here the
- * local `answered` outcome wins, and any other divergence (live request gone or
- * swapped to a different tool call) reads as resolved-elsewhere.
- */
-export function approvalTabStatus(
-  toolCallId: string,
-  pendingToolCallId: string | null,
-  answered: ApprovalResolution | null,
-): ApprovalTabStatus {
-  if (answered !== null) return { state: 'resolved', resolution: answered };
-  if (pendingToolCallId !== null && pendingToolCallId === toolCallId) return { state: 'pending' };
-  return { state: 'resolved', resolution: null };
-}
-
-/** Maps a chosen permission option's kind to the resolution the tab records (allow* → allowed, else denied). */
-export function approvalResolutionForOption(kind: PermissionOptionKind): ApprovalResolution {
-  return kind.startsWith('allow') ? 'allowed' : 'denied';
 }

@@ -89,7 +89,7 @@ func transportWithFakeAgent(a agentservice.Agent) (*Transport, libacp.SessionID,
 	}
 	tr.deps.Engine = &enginesvc.Engine{Tracker: rt}
 	tr.deps.ChainRegistry = &ChainRegistry{defaultChain: &taskengine.TaskChainDefinition{}}
-	tr.sessions[sid] = &sessionEntry{InternalSessionID: "internal-1", Agent: a}
+	tr.sessions[sid] = &sessionEntry{InternalSessionID: "internal-1", driver: &nativeDriver{t: tr, agent: a}}
 	return tr, sid, rt
 }
 

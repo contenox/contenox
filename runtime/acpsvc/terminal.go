@@ -124,6 +124,27 @@ func (t *Transport) subscribeTerminal(sid libacp.SessionID, internalID string) {
 	t.termSubMu.Unlock()
 }
 
+// ensureTerminalSubscribed subscribes a session's shell output to the client
+// only when no subscription is live yet, unlike subscribeTerminal which always
+// cancels-and-replaces. The external-agent terminal bridge calls it on every
+// terminal/create (an external session never subscribes at session/new — see
+// NewSession's external branch — so the FIRST create must start the panel
+// stream), but a second create in the same session must NOT tear down and
+// repaint the panel. A replace is only wanted on reconnect/reload, where the
+// native path calls subscribeTerminal directly.
+func (t *Transport) ensureTerminalSubscribed(sid libacp.SessionID, internalID string) {
+	if t.deps.ShellSessions == nil || internalID == "" {
+		return
+	}
+	t.termSubMu.Lock()
+	_, exists := t.termSubs[sid]
+	t.termSubMu.Unlock()
+	if exists {
+		return
+	}
+	t.subscribeTerminal(sid, internalID)
+}
+
 // unsubscribeTerminal stops forwarding a session's shell output.
 func (t *Transport) unsubscribeTerminal(sid libacp.SessionID) {
 	t.termSubMu.Lock()

@@ -1,10 +1,14 @@
 import { Button, Span, Spinner } from '@contenox/ui';
-import { Trash2 } from 'lucide-react';
+import { ChevronDown, Trash2 } from 'lucide-react';
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useMatch, useNavigate } from 'react-router-dom';
 import { useAcpWorkspace } from '../../hooks/useAcpWorkspace';
-import type { SessionInfo } from '../../lib/acp';
+import { externalAgentFromMeta, type SessionInfo } from '../../lib/acp';
+import { useStagedAgent } from '../../lib/stagedAgent';
+import { AgentPicker } from '../AgentPicker';
 import { meaningfulTitle } from '../../pages/chat/lib/sessionLabel';
+import { startNewChat } from './newChatIntent';
 
 /**
  * App-shell rail for the ACP workspace (Stage 4 replaced the console/REST
@@ -44,17 +48,22 @@ export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =>
   const navigate = useNavigate();
   const match = useMatch('/chat/:sessionId');
   const activeSessionId = match?.params.sessionId;
-  const { workspace, deleteSession } = useAcpWorkspace();
+  const { workspace, sessions, deleteSession } = useAcpWorkspace();
+  const { setStagedAgent } = useStagedAgent();
 
-  const handleNewSession = () => {
-    // Just navigate to bare /chat — the tab-model's param sync opens a fresh
-    // empty tab via `focusEmptyTab` (which, unlike the old `clearActiveSession`,
-    // does NOT tear the focused session down), so opening a new chat leaves any
-    // already-open session tabs live in the background. The next lazy
-    // `newSession()` still mints a genuinely new session (focus is null).
-    navigate('/chat');
-    setIsOpen(false);
-  };
+  // ONE path for starting a fresh chat: the plain "New session" button is just
+  // `startNew(null)` (native contenox — clears any staged agent), and the agent
+  // picker's `onSelect` is `startNew(name)`. Sharing `startNewChat` guarantees
+  // the two affordances behave identically (stage the pick, route to the empty
+  // `/chat` surface, collapse the mobile rail) and can never drift. The empty
+  // surface reads the staged agent reactively, so a pick made while already on
+  // `/chat` (where the navigate is a no-op) still shows and binds. See
+  // `newChatIntent.ts`.
+  const startNew = useCallback(
+    (agent: string | null) =>
+      startNewChat(agent, { setStagedAgent, navigate, closeSidebar: () => setIsOpen(false) }),
+    [setStagedAgent, navigate, setIsOpen],
+  );
 
   const handleDelete = (session: SessionInfo) => {
     const label = meaningfulTitle(session) ?? t('acp_sidebar.session_fallback_label', { shortId: session.sessionId.slice(0, 8) });
@@ -69,10 +78,28 @@ export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =>
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="border-surface-300 dark:border-dark-surface-700 shrink-0 border-b p-3">
-        <Button variant="primary" size="sm" className="w-full" onClick={handleNewSession}>
+      <div className="border-surface-300 dark:border-dark-surface-700 flex shrink-0 items-center gap-1 border-b p-3">
+        <Button variant="primary" size="sm" className="min-w-0 flex-1" onClick={() => startNew(null)}>
           <span className="truncate">{t('acp_sidebar.new_session')}</span>
         </Button>
+        {/* Start a new chat with a specific registered agent (native contenox at
+            top). Hidden when no enabled agents are registered. */}
+        <AgentPicker
+          value={null}
+          onSelect={startNew}
+          trigger={
+            <Button
+              type="button"
+              variant="outline"
+              palette="neutral"
+              size="icon"
+              aria-label={t('acp_sidebar.new_session_with_agent')}
+              title={t('acp_sidebar.new_session_with_agent')}
+            >
+              <ChevronDown className="h-4 w-4" aria-hidden />
+            </Button>
+          }
+        />
       </div>
       <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3" aria-label={t('acp_sidebar.title')}>
         {isInitialLoad ? (
@@ -87,6 +114,13 @@ export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =>
             const isActive = activeSessionId === session.sessionId;
             const label = meaningfulTitle(session) ?? t('acp_sidebar.session_fallback_label', { shortId: session.sessionId.slice(0, 8) });
             const relative = relativeTimeLabel(session.updatedAt, i18n.language, t('acp_sidebar.just_now'));
+            const agentName = externalAgentFromMeta(session._meta);
+            // A background (non-focused) session with a permission request waiting
+            // on the user surfaces a subtle dot here so it is discoverable while
+            // its tab is out of view. Only OPEN (subscribed) sessions have a live
+            // slice, so this is naturally scoped to sessions that can actually have
+            // a pending request.
+            const hasPendingPermission = sessions.slices[session.sessionId]?.pendingPermission != null;
             return (
               <div
                 key={session.sessionId}
@@ -100,6 +134,24 @@ export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =>
                   onClick={() => setIsOpen(false)}
                   className="min-w-0 flex-1 py-2 text-left">
                   <Span className="text-text dark:text-dark-text line-clamp-2 text-xs">{label}</Span>
+                  {hasPendingPermission && (
+                    <Span
+                      className="text-warning-800 dark:text-warning-300 mt-1 flex items-center gap-1.5 text-xs font-medium"
+                      title={t('acp_sidebar.pending_permission')}>
+                      <span
+                        aria-hidden
+                        className="bg-warning-500 h-1.5 w-1.5 shrink-0 rounded-full"
+                      />
+                      <span className="truncate">{t('acp_sidebar.pending_permission')}</span>
+                    </Span>
+                  )}
+                  {agentName && (
+                    <Span
+                      className="text-text-muted dark:text-dark-text-muted mt-1 block truncate text-xs"
+                      title={t('acp_chat.agent_label', { name: agentName })}>
+                      {agentName}
+                    </Span>
+                  )}
                   {relative && (
                     <Span className="text-text-muted dark:text-dark-text-muted mt-1 block text-xs">{relative}</Span>
                   )}

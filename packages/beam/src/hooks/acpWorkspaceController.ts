@@ -1,6 +1,7 @@
 import {
   AcpClient,
   AcpError,
+  agentMeta,
   createAcpClient,
   JSON_RPC_ERROR_CODES,
   workspaceConfigOptionsFromInit,
@@ -74,8 +75,8 @@ export interface AcpWorkspaceController {
   connect(): Promise<void>;
   /** Pages `session/list` to completion and replaces the roster. No-op while disconnected. */
   refreshSessions(): Promise<void>;
-  /** Lazy-creation primitive (D5): creates a session, subscribes to it, focuses it, and closes whichever session was previously focused. Returns the new session id. `cwd` overrides the default workspace root for this session (the root the user picked before the first prompt); falls back to the controller's default cwd. */
-  newSession(cwd?: string): Promise<SessionId>;
+  /** Lazy-creation primitive (D5): creates a session, subscribes to it, focuses it, and closes whichever session was previously focused. Returns the new session id. `cwd` overrides the default workspace root for this session (the root the user picked before the first prompt); falls back to the controller's default cwd. `agentName`, when set, binds the session to a registered external agent via the `session/new` `_meta` extension (see `AGENT_META_KEY`) — the runtime spawns/drives that agent instead of the native chain; the response `_meta` echo is threaded into the roster for attribution. */
+  newSession(cwd?: string, agentName?: string | null): Promise<SessionId>;
   /** Single-view switch: opens `id` as a tab (see `openSessionTab`) and closes whichever session was previously focused, preserving the pre-multiplexing "one open session at a time" behavior. No-op if `id` is already focused. */
   openSession(id: SessionId): Promise<void>;
   /**
@@ -658,19 +659,23 @@ export function createAcpWorkspaceController(
     setFocus(null);
   }
 
-  async function newSession(overrideCwd?: string): Promise<SessionId> {
+  async function newSession(overrideCwd?: string, agentName?: string | null): Promise<SessionId> {
     if (disposed || !client) throw new Error('acp: workspace controller is not connected');
     const c = client;
     // The workspace root the user picked on the empty chat becomes this
     // session's cwd; absent a pick, the controller's default cwd is used.
     const sessionCwd = overrideCwd && overrideCwd.trim() !== '' ? overrideCwd : cwd;
 
+    // A staged external agent binds the session via the session/new `_meta`
+    // extension; a null/blank agentName means the native chain (no `_meta`).
+    const meta = agentName && agentName.trim() !== '' ? agentMeta(agentName.trim()) : undefined;
+
     const previousId = focusedSessionId;
     if (previousId) rejectPendingPermission(previousId);
 
     // session/new mints the id server-side, so (unlike session/load) we
     // cannot subscribe until the response carries it.
-    const result = await runGuarded(() => c.newSession(sessionCwd)).catch(err => {
+    const result = await runGuarded(() => c.newSession(sessionCwd, [], meta)).catch(err => {
       // Auth failures are already surfaced as `setup_required` by
       // guardAuthRequired (inside runGuarded) — that swaps the whole page to
       // SetupRequiredState, so there's no composer left to show an inline
@@ -695,7 +700,10 @@ export function createAcpWorkspaceController(
     // than relying on onConfigOptions.
     if (result.configOptions) sessionDispatch(sid, { type: 'config_options', configOptions: result.configOptions });
 
-    workspaceDispatch({ type: 'session_upserted', session: { sessionId: sid, cwd: sessionCwd } });
+    // Thread the response `_meta` echo (external agent attribution — see
+    // AGENT_META_KEY) into the roster so the sidebar row + transcript label can
+    // read it right away, matching what a later session/list would carry.
+    workspaceDispatch({ type: 'session_upserted', session: { sessionId: sid, cwd: sessionCwd, _meta: result._meta } });
     setFocus(sid);
     // A brand-new session is trivially "open" — clears any stale
     // not_found/error left by a previous failed openSession() (e.g. the

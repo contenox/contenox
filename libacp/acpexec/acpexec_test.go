@@ -87,12 +87,64 @@ func TestSpawn_CloseKillsAProcessThatIgnoresStdinClosing(t *testing.T) {
 	select {
 	case err := <-closeDone:
 		assert.Less(t, time.Since(start), 10*time.Second, "Close should have killed the process well within its 30s sleep")
-		if err != nil {
-			assert.NotErrorIs(t, err, context.DeadlineExceeded)
-		}
+		// The kill is the escalation tail of Close's own documented shutdown
+		// sequence, so the kill-induced exit status must not surface as a
+		// Close error (persistent agents like testy always take this path).
+		assert.NoError(t, err)
 	case <-time.After(10 * time.Second):
 		t.Fatal("Close did not kill a subprocess ignoring stdin closing")
 	}
+}
+
+// TestSpawn_CloseKillsTheWholeProcessTree reproduces the npx-wrapper shape
+// that real registry agents spawn as (`npx -y <package>` forks the actual
+// agent a level down): a shell whose backgrounded child inherits our
+// stdout/stderr pipes. Killing only the direct child would leave that
+// grandchild alive holding the pipes, blocking the Wait reaper — and Close —
+// forever. With the process group in place, Close must take the whole tree
+// down and return promptly and cleanly.
+func TestSpawn_CloseKillsTheWholeProcessTree(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var stderr acpexec.LockedBuffer
+	proc, err := acpexec.Spawn(ctx,
+		exec.Command("sh", "-c", "sleep 300 & exec sleep 300"),
+		acpexec.WithStderr(&stderr),
+		acpexec.WithKillGrace(200*time.Millisecond))
+	require.NoError(t, err)
+
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- proc.Close() }()
+	select {
+	case err := <-closeDone:
+		require.NoError(t, err, "kill-path teardown of the whole tree must be clean")
+	case <-time.After(10 * time.Second):
+		t.Fatal("Close hung: the backgrounded grandchild kept the pipes open, so the process group kill did not work")
+	}
+}
+
+// TestSpawn_CloseSurfacesASelfInflictedBadExit is the boundary of the kill
+// path's error suppression: a process that exited on its own with a bad
+// status — no kill involved — must still have that status reported by Close.
+func TestSpawn_CloseSurfacesASelfInflictedBadExit(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	proc, err := acpexec.Spawn(ctx, exec.Command("sh", "-c", "exit 3"))
+	require.NoError(t, err)
+
+	// Drain stdout to EOF so the process is known to have exited before
+	// Close runs — this must take the "already exited" branch, not the kill
+	// branch.
+	_, err = io.ReadAll(proc)
+	require.NoError(t, err)
+
+	err = proc.Close()
+	require.Error(t, err)
+	var exitErr *exec.ExitError
+	require.ErrorAs(t, err, &exitErr)
+	assert.Equal(t, 3, exitErr.ExitCode())
 }
 
 func TestSpawn_CtxCancellationTearsDownTheProcess(t *testing.T) {

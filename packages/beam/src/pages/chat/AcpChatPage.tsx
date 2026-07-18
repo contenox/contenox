@@ -3,6 +3,8 @@ import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAcpWorkspace } from '../../hooks/useAcpWorkspace';
+import { useStagedAgent } from '../../lib/stagedAgent';
+import { resolveActiveAgentName } from './lib/activeAgent';
 import type { AcpWorkspaceStatus } from '../../hooks/acpWorkspaceState';
 import { useSetupStatus } from '../../hooks/useSetupStatus';
 import { classifySetupIssueCode } from '../../lib/acpFailureKind';
@@ -134,6 +136,19 @@ function AcpChatWorkspace() {
   const navigate = useNavigate();
   const { sessionId: paramSessionId } = useParams<{ sessionId?: string }>();
   const { workspace, session, openSessionIds, reconnect } = useAcpWorkspace();
+  const { stagedAgent } = useStagedAgent();
+
+  // The header names who this chat actually talks to: the active session's own
+  // agent (external sessions carry it in their `_meta`), the staged pick on an
+  // empty chat, and only then the workspace-level agent ("contenox") — one
+  // generic label for every session was a bug, not a design.
+  const activeSessionMeta = workspace.sessions.find(s => s.sessionId === paramSessionId)?._meta;
+  const headerAgentName = resolveActiveAgentName({
+    sessionMeta: activeSessionMeta,
+    isEmptySurface: !paramSessionId,
+    stagedAgent,
+    workspaceAgentName: workspace.agentName,
+  });
   const { data: setupStatus, refetch: refetchSetupStatus } = useSetupStatus(true);
   const blockingSetupIssue = getBlockingSetupIssue(setupStatus);
 
@@ -187,9 +202,9 @@ function AcpChatWorkspace() {
           <Badge variant={statusBadgeVariant(workspace.status)} size="sm">
             {t(`acp_chat.status_${workspace.status}`)}
           </Badge>
-          {workspace.agentName && (
+          {headerAgentName && (
             <Span variant="muted" className="text-sm">
-              {workspace.agentName}
+              {headerAgentName}
             </Span>
           )}
         </div>

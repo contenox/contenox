@@ -1,6 +1,5 @@
 import {
   AlertTriangle,
-  Bot,
   Check,
   Database,
   FileDiff,
@@ -12,6 +11,7 @@ import {
   RefreshCw,
   Search,
   SlidersHorizontal,
+  Sparkles,
   Trash2,
   Wrench,
   X,
@@ -303,7 +303,7 @@ export function BeamChat({
   readiness: BeamChatReadiness;
   embedded?: boolean;
   productName?: string;
-  /** Custom icon to use for product/assistant branding (e.g. Contenox logo). Falls back to generic Bot. */
+  /** Custom icon to use for product/assistant branding (e.g. Contenox logo). Falls back to a generic sparkles glyph. */
   productIcon?: React.ReactNode;
   composerAction?: BeamChatComposerAction | null;
   onComposerActionHandled?: () => void;
@@ -842,7 +842,7 @@ export function BeamChat({
         <div className="border-surface-200 dark:border-dark-surface-700 flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              {productIcon ?? <Bot className="h-5 w-5 opacity-70" />}
+              {productIcon ?? <Sparkles className="h-5 w-5 opacity-70" />}
               <h2 className="truncate text-base font-semibold">
                 {selected ? sessionTitle(selected) : productName}
               </h2>
@@ -1370,7 +1370,7 @@ function UnavailableState({
   return (
     <Panel variant="empty" className="max-w-xl text-center">
       <div className="bg-surface-100 dark:bg-dark-surface-200 mx-auto mb-4 w-fit rounded-full p-4">
-        {productIcon ?? <Bot className="h-8 w-8 opacity-70" />}
+        {productIcon ?? <Sparkles className="h-8 w-8 opacity-70" />}
       </div>
       <h3 className="text-lg font-semibold">{productName} is not connected yet</h3>
       <Span variant="muted" className="mt-2 block text-sm">

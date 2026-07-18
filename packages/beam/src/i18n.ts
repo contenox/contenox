@@ -1710,6 +1710,7 @@ const resources = {
         copied: 'Copied!',
         empty_title: 'No messages yet',
         empty_description: 'Say hello — you are talking to the runtime, live.',
+        empty_description_agent: 'Say hello — you are talking to {{name}}, live.',
         composer_placeholder: 'Message the agent…',
         composer_placeholder_connecting: 'Connecting…',
         composer_send: 'Send',
@@ -1749,6 +1750,7 @@ const resources = {
         config_options_label: 'Options',
         slash_menu_label: 'Command suggestions',
         permission_title: 'Permission requested',
+        permission_card_title: 'Permission required',
         permission_default_kind: 'action',
         permission_raw_input_label: 'Raw input',
         permission_maximize: 'Open in a full-size tab',
@@ -1764,6 +1766,11 @@ const resources = {
           'The selected model doesn\'t match any available backend — pick a different model above under "Model".',
         turn_failed_label: 'This request failed',
         scroll_to_latest: 'Scroll to latest',
+        // External-agent chat (registered agents driven over ACP): the empty
+        // chat's staged-agent picker + transcript/sidebar attribution.
+        agent_native: 'Contenox (default)',
+        agent_picker_aria: 'Choose an agent',
+        agent_label: 'Agent: {{name}}',
       },
       // Deduplicated, component-named error recovery states shared between a
       // live session/prompt failure and a `/setup-status` blocking issue for
@@ -1789,6 +1796,8 @@ const resources = {
         delete_label: 'Delete {{name}}',
         confirm_delete: 'Delete "{{name}}"? This cannot be undone.',
         just_now: 'Just now',
+        new_session_with_agent: 'New chat with an agent',
+        pending_permission: 'Approval needed',
       },
       // Session workspace: the shared directory a chat session operates in — the
       // file explorer panel, its file peek, and the composer's @-mention picker.
@@ -3136,6 +3145,7 @@ const resources = {
         copied: 'Kopiert!',
         empty_title: 'Noch keine Nachrichten',
         empty_description: 'Sag Hallo — du sprichst live mit der Runtime.',
+        empty_description_agent: 'Sag Hallo — du sprichst live mit {{name}}.',
         composer_placeholder: 'Nachricht an den Agenten…',
         composer_placeholder_connecting: 'Verbinde…',
         composer_send: 'Senden',
@@ -3176,6 +3186,7 @@ const resources = {
         config_options_label: 'Optionen',
         slash_menu_label: 'Befehlsvorschläge',
         permission_title: 'Berechtigung angefragt',
+        permission_card_title: 'Berechtigung erforderlich',
         permission_default_kind: 'Aktion',
         permission_raw_input_label: 'Roheingabe',
         permission_maximize: 'In voller Größe öffnen',
@@ -3191,6 +3202,9 @@ const resources = {
           'Das gewählte Modell passt nicht zu den verfügbaren Backends — wähle oben unter »Model« ein anderes Modell.',
         turn_failed_label: 'Diese Anfrage ist fehlgeschlagen',
         scroll_to_latest: 'Zum neuesten Eintrag scrollen',
+        agent_native: 'Contenox (Standard)',
+        agent_picker_aria: 'Agenten auswählen',
+        agent_label: 'Agent: {{name}}',
       },
       acp_recovery: {
         backend_unreachable_title: 'Runtime-Backend nicht erreichbar',
@@ -3211,6 +3225,8 @@ const resources = {
         delete_label: '{{name}} löschen',
         confirm_delete: '„{{name}}“ löschen? Dies kann nicht rückgängig gemacht werden.',
         just_now: 'Gerade eben',
+        new_session_with_agent: 'Neuer Chat mit einem Agenten',
+        pending_permission: 'Freigabe erforderlich',
       },
       workspace: {
         panel_title: 'Arbeitsbereich',

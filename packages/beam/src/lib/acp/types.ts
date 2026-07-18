@@ -150,6 +150,32 @@ export function workspaceConfigOptionsFromInit(init: InitializeResponse): Sessio
   );
 }
 
+/**
+ * The `_meta` key that binds an ACP session to a registered external agent —
+ * mirrored from `acpsvc.AgentMetaKey`. Put `{ [AGENT_META_KEY]: "<agent name>" }`
+ * in the `session/new` request `_meta` to have the runtime spawn/drive that
+ * external agent for the session instead of the native chain; the `session/new`
+ * response `_meta` echoes the same key back, and each external `session/list`
+ * entry's `_meta` carries it too (native sessions omit it entirely).
+ */
+export const AGENT_META_KEY = 'contenox.agent';
+
+/**
+ * Reads the registered external-agent name out of a session's `_meta` (the
+ * `session/new` response echo or a `session/list` entry). Returns `null` for a
+ * native session (no key), a blank value, or a malformed payload — attribution
+ * degrades to the generic/native label rather than throwing.
+ */
+export function externalAgentFromMeta(meta: Record<string, unknown> | undefined | null): string | null {
+  const raw = meta?.[AGENT_META_KEY];
+  return typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : null;
+}
+
+/** Builds the `session/new` request `_meta` that drives external agent `name` (see {@link AGENT_META_KEY}). */
+export function agentMeta(name: string): Record<string, unknown> {
+  return { [AGENT_META_KEY]: name };
+}
+
 export interface AuthenticateResponse {
   _meta?: unknown;
 }
@@ -316,6 +342,12 @@ export interface NewSessionResponse {
   sessionId: SessionId;
   modes?: SessionModeState;
   configOptions?: SessionConfigOption[];
+  /**
+   * Present when the session was bound to a registered external agent: echoes
+   * the request's `{ [AGENT_META_KEY]: "<name>" }` back (see `externalAgentFromMeta`).
+   * Omitted for native sessions.
+   */
+  _meta?: Record<string, unknown>;
 }
 
 export interface LoadSessionResponse {
@@ -340,6 +372,12 @@ export interface SessionInfo {
   cwd?: string;
   title?: string;
   updatedAt?: string;
+  /**
+   * Per-session extension metadata from `session/list`. For an external session
+   * this carries `{ [AGENT_META_KEY]: "<agent name>" }` (see `externalAgentFromMeta`),
+   * which drives the sidebar/transcript agent attribution; native sessions omit it.
+   */
+  _meta?: Record<string, unknown>;
 }
 
 export interface ListSessionsResponse {

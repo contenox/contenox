@@ -13,11 +13,16 @@ import (
 	"runtime"
 	"strings"
 	"text/tabwriter"
+	"time"
 
+	"github.com/contenox/runtime/libacp"
+	"github.com/contenox/runtime/libacp/acpexec"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/agenthost"
 	"github.com/contenox/runtime/runtime/agentregistry"
 	"github.com/contenox/runtime/runtime/agentregistryservice"
+	"github.com/contenox/runtime/runtime/mcpserverservice"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/spf13/cobra"
 )
@@ -60,6 +65,7 @@ Examples:
   contenox agent add local-bot -- /usr/local/bin/my-acp-agent --stdio
   contenox agent list
   contenox agent show my-goose
+  contenox agent check my-goose
   contenox agent edit my-goose
   contenox agent disable my-goose
   contenox agent remove my-goose`,
@@ -428,6 +434,161 @@ registration; it does not affect any binary or package the agent would spawn.`,
 	},
 }
 
+var agentCheckCmd = &cobra.Command{
+	Use:   "check <name> [prompt...]",
+	Short: "Spawn a registered agent and drive one live prompt turn through it.",
+	Long: `Resolve an agent by name, spawn it as an ACP subprocess, and drive one full
+initialize → session/new → session/prompt turn against it, streaming the
+agent's reply to stdout. This is how to verify a registered agent actually
+works: it exercises the same client-host path the runtime itself uses
+(runtime/agenthost), not a lighter fake.
+
+The check drives one plain text turn rooted in the current working directory.
+Agent-initiated callbacks (file system, terminal, permission requests) are
+declined, so an agent that insists on them may stop early; answering a simple
+prompt should not need any.
+
+If the agent's config declares an mcp_servers allowlist (registered MCP
+server names, see 'contenox mcp list' and 'contenox agent edit'), those
+servers are forwarded to the agent in session/new exactly as a real client
+session would — entries the agent's capabilities cannot consume are reported,
+not silently dropped. The slash commands the agent advertises during the turn
+are printed after the reply.
+
+Everything after the name is used as the prompt; without one, the agent is
+asked to confirm the connection.
+
+Examples:
+  contenox agent check my-goose
+  contenox agent check claude Say hello
+  contenox agent check local-bot --timeout 30s`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: runAgentCheck,
+}
+
+// checkHarness streams agent_message_chunk text to out as it arrives while
+// recording everything via the embedded RecordingHarness, so `agent check`
+// shows the reply live and can still run turn-level verification afterwards.
+type checkHarness struct {
+	agenthost.RecordingHarness
+	out io.Writer
+}
+
+func (h *checkHarness) SessionUpdate(ctx context.Context, n libacp.SessionNotification) error {
+	if n.Update.SessionUpdate == libacp.SessionUpdateAgentMessageChunk {
+		if c := n.Update.Content; c != nil && c.Type == string(libacp.ContentKindText) {
+			fmt.Fprint(h.out, c.Text)
+		}
+	}
+	return h.RecordingHarness.SessionUpdate(ctx, n)
+}
+
+func runAgentCheck(cmd *cobra.Command, args []string) error {
+	ctx := libtracker.WithNewRequestID(context.Background())
+	name := args[0]
+
+	db, svc, err := openAgentService(cmd)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	agent, err := svc.GetByName(ctx, name)
+	if err != nil {
+		return fmt.Errorf("agent %q not found: %w", name, err)
+	}
+	cfg, err := agent.ExternalACPConfig()
+	if err != nil {
+		return err
+	}
+
+	out := cmd.OutOrStdout()
+	if !agent.Enabled {
+		fmt.Fprintf(out, "Note: agent %q is disabled; checking it anyway.\n", name)
+	}
+	fmt.Fprintf(out, "Checking agent %q: %s\n", name, renderRunCommand(cfg.Command, cfg.Args))
+
+	// The agent's mcp_servers allowlist is part of its declared run context:
+	// a check without it would verify a different setup than the one the
+	// agent actually runs with.
+	var mcpServers []libacp.McpServer
+	if len(cfg.McpServers) > 0 {
+		mcpServers, err = agenthost.ResolveForwardedMcpServers(ctx, mcpserverservice.New(db), cfg.McpServers)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "Forwarding MCP servers: %s\n", strings.Join(cfg.McpServers, ", "))
+	}
+	fmt.Fprintln(out)
+
+	promptText := strings.TrimSpace(strings.Join(args[1:], " "))
+	if promptText == "" {
+		promptText = "This is a connection check. Reply with a short confirmation."
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("resolve working directory: %w", err)
+	}
+
+	timeout, _ := cmd.Flags().GetDuration("timeout")
+	turnCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	var agentStderr acpexec.LockedBuffer
+	harness := &checkHarness{out: out}
+	res, err := agenthost.DriveTurn(turnCtx, agent, harness, agenthost.TurnRequest{
+		Cwd:        cwd,
+		Prompt:     []libacp.ContentBlock{libacp.NewTextContent(promptText)},
+		ClientInfo: &libacp.Implementation{Name: "contenox", Title: "contenox agent check", Version: cliVersion()},
+		McpServers: mcpServers,
+		Stderr:     &agentStderr,
+		// Persistent agents (most editor adapters) never exit on stdin-close;
+		// a short grace keeps the check from stalling on teardown.
+		KillGrace: 2 * time.Second,
+	})
+	if harness.MessageText() != "" {
+		fmt.Fprintln(out)
+	}
+	if err != nil {
+		if s := agentStderr.String(); s != "" {
+			fmt.Fprintf(cmd.ErrOrStderr(), "agent stderr:\n%s\n", s)
+		}
+		return fmt.Errorf("check failed: %w", err)
+	}
+
+	// A normal prompt response with zero displayable output is the known
+	// empty-turn interop failure — fail the check rather than report success
+	// on a silent agent.
+	tracker := &libacp.TurnTracker{}
+	for _, n := range harness.Updates() {
+		tracker.Observe(n)
+	}
+	if trackErr := tracker.Err(res.StopReason); trackErr != nil {
+		if s := agentStderr.String(); s != "" {
+			fmt.Fprintf(cmd.ErrOrStderr(), "agent stderr:\n%s\n", s)
+		}
+		return fmt.Errorf("check failed: %w", trackErr)
+	}
+
+	if info := res.Initialize.AgentInfo; info != nil && info.Name != "" {
+		fmt.Fprintf(out, "\nTurn completed (agent %s %s, stopReason=%s).\n", info.Name, info.Version, res.StopReason)
+	} else {
+		fmt.Fprintf(out, "\nTurn completed (stopReason=%s).\n", res.StopReason)
+	}
+	if len(res.DroppedMcpServers) > 0 {
+		fmt.Fprintf(out, "Note: MCP servers NOT forwarded — the agent's mcpCapabilities cannot consume their transport: %s\n",
+			strings.Join(res.DroppedMcpServers, ", "))
+	}
+	if cmds := harness.AvailableCommands(); len(cmds) > 0 {
+		names := make([]string, 0, len(cmds))
+		for _, c := range cmds {
+			names = append(names, "/"+c.Name)
+		}
+		fmt.Fprintf(out, "Agent advertises %d command(s): %s\n", len(cmds), strings.Join(names, " "))
+	}
+	return nil
+}
+
 var agentEnableCmd = &cobra.Command{
 	Use:   "enable <name>",
 	Short: "Enable a registered agent.",
@@ -600,11 +761,13 @@ func init() {
 	agentAddCmd.Flags().String("name", "", "Alias for a registry agent (registry form only; defaults to the registry id)")
 	agentAddCmd.Flags().Bool("refresh", false, "Force a re-fetch of the ACP registry catalog before resolving")
 	agentEditCmd.Flags().String("config-file", "", "Replace the config from a file (or '-' for stdin) instead of opening $EDITOR")
+	agentCheckCmd.Flags().Duration("timeout", 2*time.Minute, "How long the whole check turn may take before it is cancelled")
 
 	agentCmd.AddCommand(agentSearchCmd)
 	agentCmd.AddCommand(agentAddCmd)
 	agentCmd.AddCommand(agentListCmd)
 	agentCmd.AddCommand(agentShowCmd)
+	agentCmd.AddCommand(agentCheckCmd)
 	agentCmd.AddCommand(agentEditCmd)
 	agentCmd.AddCommand(agentRemoveCmd)
 	agentCmd.AddCommand(agentEnableCmd)

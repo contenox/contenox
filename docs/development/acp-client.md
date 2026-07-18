@@ -48,3 +48,50 @@ Both targets skip-or-fail cleanly when their binary env var is unset:
   by relative path, so copy it next to a rust-sdk checkout and `cargo build`
   there (the README has the exact steps). `ACP_YOPO_BIN` (optional,
   additional client) builds from the rust-sdk's `src/yopo`.
+
+## The composed host e2e (registry → agenthost → live turn)
+
+One layer above the wire-dispatch harnesses, `make acp-host-e2e` validates the
+runtime's **client-host composition** end to end: an `agents` row created and
+resolved through the real registry service, spawned and driven by
+`runtime/agenthost.DriveTurn` (initialize → session/new → session/prompt →
+teardown), with the streamed reply asserted on the caller's harness. This is
+the harness scoped by
+[blueprints/acp/agent-servers-and-client-e2e.md](blueprints/acp/agent-servers-and-client-e2e.md).
+Servers, each isolating something different:
+
+| Server | Gate | Asserts |
+| --- | --- | --- |
+| `acp-stub-agent` (hermetic) | none — runs in plain `go test` | deterministic "ack" turn, update ordering through the harness seam |
+| contenox self-loopback (`contenox acp` built in-test, driving a no-model chain fixture) | none (skips under `-short`) | byte-exact fixture reply through registry → host → real chain |
+| `testy` | `ACP_TESTY_BIN` | deterministic echo/greet through the composed path |
+| Claude Code (via `claude-code-acp`) | `ACP_CLAUDE_ACP_BIN` — never CI; needs Claude credentials | turn **shape** only: `end_turn` plus displayable output from a real, foreign production agent |
+
+The user-facing twin of this harness is `contenox agent check <name>`: it
+drives the same DriveTurn path against any registered agent and streams the
+reply — the way to verify an agent right after `contenox agent add`.
+
+### MCP forwarding and the agent's command surface
+
+An agent row's `mcp_servers` config field is an explicit, per-agent allowlist
+of registered MCP server names (`contenox mcp list`) forwarded to that agent
+in ACP `session/new` — the mirror of what `runtime/acpsvc` consumes when
+contenox is on the *agent* side of the same exchange. The host
+(`agenthost.ResolveForwardedMcpServers` + DriveTurn) resolves names loudly
+(a missing name fails the turn rather than silently shrinking the agent's
+declared context), filters by the agent's initialize-advertised
+`mcpCapabilities` (stdio is baseline; http/sse gated), and reports
+forwarded-vs-dropped on the TurnResult. Contenox-side auth synthesis
+(authToken/authEnvKey/oauth/injectParams) is never translated into the
+payload; forwarding a server at all is the consent boundary. The composed
+pass-down is pinned by `TestHostE2E_Testy_McpPassDownThroughComposedPath`
+(testy connects to the forwarded `mcp-echo-server` and lists its tools).
+
+The slash commands a hosted agent advertises (`available_commands_update`)
+are recorded by the harness (`RecordingHarness.AvailableCommands`) and
+printed by `agent check`. *Merging* them with contenox's own acpsvc command
+set is deliberately not built here — it belongs to the future re-exposure
+layer (front-end ↔ contenox-as-agent ↔ hosted agent), where acpsvc's
+leading-slash interception is the natural merge point and a collision policy
+is required (a real case: claude-code-acp and acpsvc both advertise
+`/compact`).

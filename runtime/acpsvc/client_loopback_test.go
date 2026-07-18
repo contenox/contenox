@@ -240,9 +240,11 @@ func newLoopbackHarness(t *testing.T) *loopbackHarness {
 // swapAgent installs a into sid's live sessionEntry, replacing the real
 // agentservice.Agent that NewSession created for the duration of the test's
 // Prompt calls — the same white-box seam prompt_test.go uses one layer down.
+// NewSession backs a native session with a nativeDriver, so the swap reaches
+// into it.
 func (h *loopbackHarness) swapAgent(sid libacp.SessionID, a agentservice.Agent) {
 	h.tr.sessionMu.Lock()
-	h.tr.sessions[sid].Agent = a
+	h.tr.sessions[sid].driver.(*nativeDriver).agent = a
 	h.tr.sessionMu.Unlock()
 }
 

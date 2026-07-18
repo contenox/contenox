@@ -161,7 +161,7 @@ CONTENOX_DEV_URL ?= http://$(CONTENOX_DEV_ADDR):$(CONTENOX_DEV_PORT)
 	dev-beam dev-web-proxy dev-install dev-install-vscode dev-link dev-unlink vscode-dev-install \
 	run-modeld \
 	test test-unit test-api test-ui test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help \
-	acp-conformance acp-client-e2e \
+	acp-conformance acp-client-e2e acp-host-e2e \
 	verify-ui-embed
 
 help:
@@ -172,6 +172,7 @@ help:
 	@echo "test-*     test test-unit test-api test-ui test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help"
 	@echo "acp-conformance  validate libacp's agent-side wire dispatch against Rust reference ACP clients (needs ACP_VALIDATOR_BIN, see Makefile comment)"
 	@echo "acp-client-e2e   validate libacp's client-side wire dispatch against the Rust reference testy agent over a real subprocess (needs ACP_TESTY_BIN, see Makefile comment)"
+	@echo "acp-host-e2e     validate the composed registry→host path (runtime/agenthost) end to end: contenox self-loopback always; testy/claude too when ACP_TESTY_BIN/ACP_CLAUDE_ACP_BIN are set (see Makefile comment)"
 	@echo "dev-*      dev-beam dev-web-proxy dev-install dev-install-vscode dev-link dev-unlink run-modeld"
 	@echo "           (modeld includes llama.cpp, adds OpenVINO/CUDA when available, and selects backend at runtime)"
 	@echo "deps-*     deps-modeld deps-modeld-prebuilt deps-llamacpp-ref deps-openvino deps-ui deps-vscode"
@@ -719,7 +720,7 @@ ACP_YOPO_BIN ?=
 
 acp-conformance:
 	@test -n "$(ACP_VALIDATOR_BIN)" || { echo "set ACP_VALIDATOR_BIN=/path/to/acp-validator (see Makefile comment above test-contenox-help)"; exit 1; }
-	ACP_VALIDATOR_BIN=$(ACP_VALIDATOR_BIN) ACP_YOPO_BIN=$(ACP_YOPO_BIN) go test -C $(PROJECT_ROOT) -run '^TestConformance_' -v ./libacp/...
+	ACP_VALIDATOR_BIN=$(ACP_VALIDATOR_BIN) ACP_YOPO_BIN=$(ACP_YOPO_BIN) ACP_STUB_ADVERTISE_MODES=1 go test -C $(PROJECT_ROOT) -run '^TestConformance_' -v ./libacp/...
 
 # ACP client e2e harness (Slice 3): validates libacp's client-side wire
 # dispatch (client.go/clientconn.go — ClientSideConnection's outbound
@@ -739,6 +740,29 @@ ACP_MCP_ECHO_BIN ?=
 acp-client-e2e:
 	@test -n "$(ACP_TESTY_BIN)" || { echo "set ACP_TESTY_BIN=/path/to/testy (see Makefile comment above acp-client-e2e)"; exit 1; }
 	ACP_TESTY_BIN=$(ACP_TESTY_BIN) ACP_MCP_ECHO_BIN=$(ACP_MCP_ECHO_BIN) go test -C $(PROJECT_ROOT) -run '^TestTesty_' -v ./libacp/acpexec/...
+
+# ACP host e2e harness: validates the composed client-host path one layer above
+# acp-client-e2e — registry row → resolve → runtime/agenthost spawn →
+# initialize → session/new → session/prompt → teardown (see
+# docs/development/blueprints/acp/agent-servers-and-client-e2e.md). Servers:
+#   - contenox self-loopback: builds the contenox binary in-test and drives a
+#     deterministic no-model chain fixture; always runs (no env var needed).
+#   - ACP_TESTY_BIN: additionally drives the Rust reference testy agent through
+#     the composed path (build it as documented above acp-client-e2e); those
+#     tests skip cleanly when unset.
+#   - ACP_CLAUDE_ACP_BIN: additionally drives a real Claude Code agent over ACP —
+#     point it at an executable serving it, e.g. a wrapper script:
+#       #!/bin/sh
+#       unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT
+#       exec npx -y @zed-industries/claude-code-acp "$$@"
+#     (the unset matters when running from inside a Claude Code session: the
+#     spawned claude refuses to nest under an inherited CLAUDECODE.)
+#     Needs Claude credentials (logged-in claude or ANTHROPIC_API_KEY); replies
+#     are asserted by shape only. Never set this in CI.
+ACP_CLAUDE_ACP_BIN ?=
+
+acp-host-e2e:
+	ACP_TESTY_BIN=$(ACP_TESTY_BIN) ACP_CLAUDE_ACP_BIN=$(ACP_CLAUDE_ACP_BIN) go test -C $(PROJECT_ROOT) -run '^TestHostE2E_' -v ./runtime/agenthost/...
 
 # dev
 dev-beam:

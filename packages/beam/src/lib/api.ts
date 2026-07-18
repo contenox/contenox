@@ -1,5 +1,6 @@
 import { apiFetch } from './fetch';
 import {
+  Agent,
   AuthenticatedUser,
   AuthStatus,
   Backend,
@@ -119,6 +120,17 @@ export const api = {
       `/api/mcp-servers/${id}/oauth/start`,
       options('POST', body),
     ),
+
+  // Declared agents (read-only; registration stays with `contenox agent`).
+  getAgents: (params?: { limit?: number; cursor?: string }) => {
+    const search = new URLSearchParams();
+    if (params?.limit !== undefined) search.set('limit', params.limit.toString());
+    if (params?.cursor) search.set('cursor', params.cursor);
+    const qs = search.toString() ? `?${search.toString()}` : '';
+    return apiFetch<Agent[]>(`/api/agents${qs}`);
+  },
+  getAgentByName: (name: string) =>
+    apiFetch<Agent>(`/api/agents/by-name/${encodeURIComponent(name)}`),
   // Backends
   getBackends: () => apiFetch<Backend[]>('/api/backends'),
   getBackend: (id: string) => apiFetch<Backend>(`/api/backends/${id}`),

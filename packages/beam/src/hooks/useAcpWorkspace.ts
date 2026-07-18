@@ -16,8 +16,8 @@ export interface UseAcpWorkspaceResult {
   openSessionIds: string[];
   /** Pages `session/list` to completion and replaces the roster. */
   refreshSessions: () => void;
-  /** Lazy-creation primitive (D5): creates a session, subscribes to it, and makes it active. Call this on first prompt submit, not on mount — see acpWorkspaceController.ts. `cwd` sets the session's workspace root (the user's pre-session pick). */
-  newSession: (cwd?: string) => Promise<string>;
+  /** Lazy-creation primitive (D5): creates a session, subscribes to it, and makes it active. Call this on first prompt submit, not on mount — see acpWorkspaceController.ts. `cwd` sets the session's workspace root (the user's pre-session pick). `agentName` binds the session to a registered external agent via the `session/new` `_meta` extension (null/omitted = native chain). */
+  newSession: (cwd?: string, agentName?: string | null) => Promise<string>;
   /** Single-view switch: opens `id` and closes whichever session was focused. */
   openSession: (id: string) => void;
   /** Multi-session (Slice 2): opens/focuses `id` as a tab WITHOUT closing others — several sessions stay open and live. See `acpWorkspaceController.ts`'s `openSessionTab()`. */
@@ -70,7 +70,10 @@ export function useAcpWorkspace(): UseAcpWorkspaceResult {
     void controller.refreshSessions();
   }, [controller]);
 
-  const newSession = useCallback((cwd?: string) => controller.newSession(cwd), [controller]);
+  const newSession = useCallback(
+    (cwd?: string, agentName?: string | null) => controller.newSession(cwd, agentName),
+    [controller],
+  );
 
   const openSession = useCallback(
     (id: string) => {

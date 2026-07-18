@@ -1,7 +1,9 @@
 import type { PermissionOption, PermissionOptionKind } from '../../../lib/acp';
 
 /**
- * Pure keyboard-mapping logic for the permission gate (PermissionGate.tsx).
+ * Pure option-ordering / keyboard-mapping helpers for permission requests. The
+ * inline `PermissionCard` uses `orderedPermissionOptions` to render allow-before-
+ * reject; the key-mapping helpers stay available for any keyboard affordance.
  * Mapping is by option KIND, not by button position — the agent controls the
  * order/wording of `options`, so a fixed "first button = 'y'" mapping would
  * silently rebind if the agent ever reorders its offers. No React, no DOM.

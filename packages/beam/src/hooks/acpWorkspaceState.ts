@@ -116,6 +116,10 @@ function mergeSessionInfo(existing: SessionInfo | undefined, incoming: SessionIn
     cwd: incoming.cwd ?? existing.cwd,
     title: incoming.title ?? existing.title,
     updatedAt: incoming.updatedAt ?? existing.updatedAt,
+    // External-agent attribution (see AGENT_META_KEY): keep whichever side has
+    // it, so a session/new echo isn't wiped by a `session/list` refresh page
+    // that lags (same `incoming ?? existing` rule as every other field).
+    _meta: incoming._meta ?? existing._meta,
   };
 }
 

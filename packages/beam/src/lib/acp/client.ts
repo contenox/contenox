@@ -522,8 +522,22 @@ export class AcpClient {
     });
   }
 
-  async newSession(cwd: string, mcpServers: McpServer[] = []): Promise<NewSessionResponse> {
-    return this.call<NewSessionResponse>('session/new', { cwd, mcpServers });
+  /**
+   * `meta`, when provided, is sent as the `session/new` request `_meta` — this
+   * is how a caller binds the session to a registered external agent (see
+   * `AGENT_META_KEY`/`agentMeta`). Omitted entirely when absent, so a native
+   * `session/new` is byte-identical to before this parameter existed.
+   */
+  async newSession(
+    cwd: string,
+    mcpServers: McpServer[] = [],
+    meta?: Record<string, unknown>,
+  ): Promise<NewSessionResponse> {
+    return this.call<NewSessionResponse>('session/new', {
+      cwd,
+      mcpServers,
+      ...(meta ? { _meta: meta } : {}),
+    });
   }
 
   async loadSession(

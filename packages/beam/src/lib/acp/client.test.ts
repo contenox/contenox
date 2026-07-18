@@ -57,6 +57,33 @@ async function flushMicrotasks(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+describe('AcpClient: session/new _meta (external-agent binding)', () => {
+  it('forwards a passed meta as the session/new `_meta` param (external agent)', () => {
+    const transport = new MockTransport();
+    const client = new AcpClient(transport);
+
+    void client.newSession('/work', [], { 'contenox.agent': 'stub-bot' });
+
+    const req = transport.lastSent();
+    expect(req.method).toBe('session/new');
+    expect(req.params).toEqual({
+      cwd: '/work',
+      mcpServers: [],
+      _meta: { 'contenox.agent': 'stub-bot' },
+    });
+  });
+
+  it('omits `_meta` entirely when none is passed (native session unchanged)', () => {
+    const transport = new MockTransport();
+    const client = new AcpClient(transport);
+
+    void client.newSession('/work');
+
+    const req = transport.lastSent();
+    expect(req.params).toEqual({ cwd: '/work', mcpServers: [] });
+  });
+});
+
 describe('AcpClient: request/response id correlation', () => {
   it('correlates the initialize request with its response', async () => {
     const transport = new MockTransport();

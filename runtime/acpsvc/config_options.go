@@ -59,20 +59,19 @@ func (t *Transport) workspaceConfigOptions(ctx context.Context) []libacp.Session
 		Model:    t.model(),
 		Think:    t.thinkDefault(),
 	}
+	// The workspace snapshot mirrors the first (native) session's options, so seed
+	// a native driver: sessionConfigOptions dispatches through the driver, and a
+	// native driver returns exactly the chain-engine selects this advertises.
+	seed.driver = &nativeDriver{t: t}
 	return t.sessionConfigOptions(ctx, seed)
 }
 
+// sessionConfigOptions returns the config options advertised for a session,
+// dispatching to its driver: the native driver returns the chain-engine
+// model/think/token/policy selects; the external driver returns nil, since those
+// configure the chain the downstream agent does not drive.
 func (t *Transport) sessionConfigOptions(ctx context.Context, sess *sessionEntry) []libacp.SessionConfigOption {
-	opts := []libacp.SessionConfigOption{
-		t.modelConfigOption(ctx, sess),
-		t.hitlPolicyConfigOption(sess),
-		t.thinkConfigOption(sess),
-		t.tokenLimitConfigOption(ctx, sess),
-	}
-	if opt, ok := t.workspaceRootConfigOption(sess); ok {
-		opts = append(opts, opt)
-	}
-	return opts
+	return sess.driver.ConfigOptions(ctx, sess)
 }
 
 // workspaceRootConfigOption advertises the allowlisted workspace roots a client
@@ -462,7 +461,11 @@ func (t *Transport) SetSessionConfigOption(ctx context.Context, req libacp.SetSe
 		return libacp.SetSessionConfigOptionResponse{}, err
 	}
 
-	if err := t.setSessionConfigOption(ctx, sess, req.ConfigID, req.Value.AsString()); err != nil {
+	// Dispatch through the session's driver: the native driver mutates the
+	// chain-engine selection (the historical switch below); the external driver
+	// forwards to the downstream agent's session/set_config_option. Routing here
+	// keeps SetSessionConfigOption blind to which backend a session runs.
+	if err := sess.driver.SetConfigOption(ctx, sess, req.ConfigID, req.Value); err != nil {
 		reportErr(err)
 		return libacp.SetSessionConfigOptionResponse{}, err
 	}

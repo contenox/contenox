@@ -424,6 +424,27 @@ export type LocalHook = {
   unavailableReason?: string;
 };
 
+/**
+ * Persisted declared-agent config; matches runtimetypes.Agent JSON. Read-only
+ * over REST for now (registration stays with `contenox agent`). configJson is
+ * the kind-specific config as a raw JSON value (e.g. an ExternalACPConfig for
+ * kind "external_acp"), so it is intentionally untyped here.
+ */
+export type Agent = {
+  id: string;
+  name: string;
+  kind: string;
+  enabled: boolean;
+  configJson: unknown;
+  harnessId?: string;
+  workspaceId?: string;
+  source?: string;
+  registryId?: string;
+  registryVersion?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 /** Persisted MCP server config; matches runtimetypes.MCPServer JSON. */
 export type MCPServer = {
   id: string;

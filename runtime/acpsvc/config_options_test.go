@@ -38,7 +38,7 @@ func TestUnit_SessionConfigOptionsExposeModelPolicyAndThink(t *testing.T) {
 		defaultAltProvider: "anthropic",
 		defaultAltModel:    "claude-sonnet-4",
 	}
-	sess := &sessionEntry{Think: "medium", HITLPolicy: "dev"}
+	sess := &sessionEntry{Think: "medium", HITLPolicy: "dev", driver: &nativeDriver{t: tr}}
 
 	options := tr.sessionConfigOptions(ctx, sess)
 	require.Len(t, options, 4)
@@ -103,6 +103,7 @@ func TestUnit_SetSessionConfigOptionUpdatesSessionAndPolicyConfig(t *testing.T) 
 		defaultAltProvider: "anthropic",
 		defaultAltModel:    "claude-sonnet-4",
 	}
+	sess.driver = &nativeDriver{t: tr}
 
 	resp, err := tr.SetSessionConfigOption(ctx, libacp.SetSessionConfigOptionRequest{
 		SessionID: sid,
@@ -176,6 +177,8 @@ func TestUnit_HITLPolicyIsPerSessionIndependent(t *testing.T) {
 		defaultProvider: "openai",
 		defaultModel:    "gpt-5-mini",
 	}
+	sessA.driver = &nativeDriver{t: tr}
+	sessB.driver = &nativeDriver{t: tr}
 
 	// Session A picks the permissive-in-name "dev" policy; session B stays on the
 	// configured default (sentinel).
@@ -209,14 +212,16 @@ func TestUnit_SetSessionConfigOptionRejectsUnknownValue(t *testing.T) {
 	ctx, db := setupConfigOptionsDB(t)
 
 	sid := libacp.SessionID("sess-1")
+	sess := &sessionEntry{Provider: "openai", Model: "gpt-5-mini", Think: "low"}
 	tr := &Transport{
 		deps:               Deps{DB: db},
-		sessions:           map[libacp.SessionID]*sessionEntry{sid: &sessionEntry{Provider: "openai", Model: "gpt-5-mini", Think: "low"}},
+		sessions:           map[libacp.SessionID]*sessionEntry{sid: sess},
 		defaultProvider:    "openai",
 		defaultModel:       "gpt-5-mini",
 		defaultAltProvider: "anthropic",
 		defaultAltModel:    "claude-sonnet-4",
 	}
+	sess.driver = &nativeDriver{t: tr}
 
 	_, err := tr.SetSessionConfigOption(ctx, libacp.SetSessionConfigOptionRequest{
 		SessionID: sid,
@@ -271,7 +276,7 @@ func TestUnit_WorkspaceConfigOptionsMirrorFreshSession(t *testing.T) {
 
 	// Byte-identical to what the first session (seeded from the same defaults)
 	// carries — the single source of truth for the option shapes.
-	sess := &sessionEntry{Provider: tr.provider(), Model: tr.model(), Think: tr.thinkDefault()}
+	sess := &sessionEntry{Provider: tr.provider(), Model: tr.model(), Think: tr.thinkDefault(), driver: &nativeDriver{t: tr}}
 	require.Equal(t, tr.sessionConfigOptions(ctx, sess), options)
 }
 

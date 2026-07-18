@@ -159,6 +159,31 @@ describe('acpWorkspaceReducer: session roster freshness sort', () => {
     const state = acpWorkspaceReducer(withTwo, { type: 'session_removed', sessionId: 'a' });
     expect(state.sessions.map(s => s.sessionId)).toEqual(['b']);
   });
+
+  it('carries and preserves external-agent _meta attribution across upsert + a lagging refresh', () => {
+    // session/new echoes the external-agent binding in _meta (AGENT_META_KEY).
+    const created = acpWorkspaceReducer(initialAcpWorkspaceState, {
+      type: 'session_upserted',
+      session: { sessionId: 'ext', cwd: '/', _meta: { 'contenox.agent': 'stub-bot' } },
+    });
+    expect(created.sessions[0]._meta).toEqual({ 'contenox.agent': 'stub-bot' });
+
+    // A session/list page for the same session that omits _meta (lagging index)
+    // must NOT clear the already-known agent binding — same merge rule as title.
+    const refreshed = acpWorkspaceReducer(created, {
+      type: 'sessions_replaced',
+      sessions: [{ sessionId: 'ext' }],
+    });
+    expect(refreshed.sessions[0]._meta).toEqual({ 'contenox.agent': 'stub-bot' });
+
+    // A session first SEEN via session/list (reloaded external session) picks up
+    // its _meta straight from the listing.
+    const listed = acpWorkspaceReducer(initialAcpWorkspaceState, {
+      type: 'sessions_replaced',
+      sessions: [{ sessionId: 'ext2', _meta: { 'contenox.agent': 'other-bot' } }],
+    });
+    expect(listed.sessions[0]._meta).toEqual({ 'contenox.agent': 'other-bot' });
+  });
 });
 
 describe('acpWorkspaceReducer: active session', () => {

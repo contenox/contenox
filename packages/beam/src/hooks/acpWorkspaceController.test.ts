@@ -324,6 +324,46 @@ describe('acpWorkspaceController: newSession() is lazy (D5)', () => {
     expect(h.sessStore.state.configOptions).toEqual(configOptions);
   });
 
+  it('newSession(cwd, agentName) binds the session to an external agent via _meta and threads the response echo into the roster', async () => {
+    const h = setup();
+    await connectReady(h);
+
+    const p = h.controller.newSession(undefined, 'stub-bot');
+    await flushMicrotasks();
+    const req = h.transports[0].lastSent();
+    expect(req.method).toBe('session/new');
+    // Wire-fact: the exact _meta key acpsvc reads to spawn the external agent
+    // (acpsvc.AgentMetaKey).
+    expect((req.params as Record<string, unknown>)._meta).toEqual({ 'contenox.agent': 'stub-bot' });
+
+    // acpsvc echoes the binding back on the response (agentMetaJSON); it must
+    // reach the roster so the sidebar row + transcript attribution can read it.
+    h.transports[0].feed({
+      jsonrpc: '2.0',
+      id: req.id,
+      result: { sessionId: 'ext-a', _meta: { 'contenox.agent': 'stub-bot' } },
+    });
+    await p;
+
+    const info = h.wsStore.state.sessions.find(s => s.sessionId === 'ext-a');
+    expect(info?._meta).toEqual({ 'contenox.agent': 'stub-bot' });
+  });
+
+  it('newSession() with no agent sends no _meta and leaves the roster entry native', async () => {
+    const h = setup();
+    await connectReady(h);
+
+    const p = h.controller.newSession();
+    await flushMicrotasks();
+    const req = h.transports[0].lastSent();
+    expect((req.params as Record<string, unknown>)._meta).toBeUndefined();
+    h.transports[0].feed({ jsonrpc: '2.0', id: req.id, result: { sessionId: 'native-a' } });
+    await p;
+
+    const info = h.wsStore.state.sessions.find(s => s.sessionId === 'native-a');
+    expect(info?._meta).toBeUndefined();
+  });
+
   it('BUG 5: a non-auth failure surfaces via session.error (prompt_error) and still rejects for the caller to handle', async () => {
     const h = setup();
     await connectReady(h);
@@ -1441,5 +1481,124 @@ describe('acpWorkspaceController: session_info_update-derived title (tab-strip/s
     // Membership still comes from the server: merging fields must not resurrect
     // a session the server no longer lists.
     expect(h.wsStore.state.sessions.find(s => s.sessionId === 'sess-a')).toBeUndefined();
+  });
+});
+
+/**
+ * The inline permission card (PermissionCard, rendered in the transcript) answers
+ * a `session/request_permission` ONLY through an explicit option-button click,
+ * which routes to `controller.respondPermission`. These tests pin that contract
+ * at the wire: the ONLY thing that sends a response is `respondPermission`, it
+ * sends exactly one `selected` outcome with the chosen optionId, and a request
+ * left unanswered stays pending (no implicit deny on dismiss/scroll/tab-switch —
+ * the UI equivalents have no controller path at all). Concurrency: two open
+ * sessions each hold their own pending request and are answered independently.
+ */
+describe('acpWorkspaceController: inline permission card responses (explicit-only)', () => {
+  /** Feeds a `session/request_permission` request for `sessionId` with a stable rpc id and an allow/deny option pair. */
+  function feedPermissionRequest(t: MockTransport, rpcId: string, sessionId: string, toolCallId: string): void {
+    t.feed({
+      jsonrpc: '2.0',
+      id: rpcId,
+      method: 'session/request_permission',
+      params: {
+        sessionId,
+        toolCall: { toolCallId, title: 'Edit config' },
+        options: [
+          { optionId: 'allow-1', name: 'Allow once', kind: 'allow_once' },
+          { optionId: 'deny-1', name: 'Deny once', kind: 'reject_once' },
+        ],
+      },
+    });
+  }
+
+  it('respondPermission answers exactly once with the chosen optionId and clears the pending request', async () => {
+    const h = setup();
+    await connectReady(h);
+    await createSession(h, 'sess-a');
+
+    feedPermissionRequest(h.transports[0], 'perm-c', 'sess-a', 'tc-1');
+    await flushMicrotasks();
+    expect(h.sessStore.state.pendingPermission).not.toBeNull();
+    // No response goes out merely from the request arriving.
+    expect(h.transports[0].sent.filter(f => f.id === 'perm-c')).toHaveLength(0);
+
+    h.controller.respondPermission('allow-1');
+    await flushMicrotasks();
+
+    const responses = h.transports[0].sent.filter(f => f.id === 'perm-c');
+    expect(responses).toHaveLength(1);
+    expect(responses[0]).toMatchObject({ result: { outcome: { outcome: 'selected', optionId: 'allow-1' } } });
+    expect(h.sessStore.state.pendingPermission).toBeNull();
+
+    // Exactly once: a second respondPermission after the request is resolved is a
+    // no-op — no further response, and the recorded one still carries allow-1.
+    h.controller.respondPermission('deny-1');
+    await flushMicrotasks();
+    const after = h.transports[0].sent.filter(f => f.id === 'perm-c');
+    expect(after).toHaveLength(1);
+    expect(after[0]).toMatchObject({ result: { outcome: { outcome: 'selected', optionId: 'allow-1' } } });
+  });
+
+  it('leaves an unanswered request pending and sends NO response when unrelated events arrive (no implicit deny on dismiss)', async () => {
+    const h = setup();
+    await connectReady(h);
+    await createSession(h, 'sess-a');
+
+    feedPermissionRequest(h.transports[0], 'perm-b', 'sess-a', 'tc-1');
+    await flushMicrotasks();
+    expect(h.sessStore.state.pendingPermission).not.toBeNull();
+
+    // Simulate everything the OLD modal treated as an implicit deny — none of
+    // these has a controller path in the inline-card design, so we drive the
+    // closest runtime analogues (unrelated stream traffic + focus changes) and
+    // assert nothing answers the request.
+    feedAgentChunk(h.transports[0], 'sess-a', 'm-1', 'still working…');
+    h.controller.focusEmptyTab(); // "navigate away" from the tab
+    h.controller.focusSession('sess-a'); // "navigate back"
+    await flushMicrotasks();
+
+    expect(h.transports[0].sent.filter(f => f.id === 'perm-b')).toHaveLength(0);
+    expect(h.sliceOf('sess-a')?.pendingPermission).not.toBeNull();
+
+    // The explicit button click is still the one path that answers it.
+    h.controller.respondPermission('deny-1');
+    await flushMicrotasks();
+    expect(h.transports[0].sent.filter(f => f.id === 'perm-b')).toHaveLength(1);
+    expect(h.sliceOf('sess-a')?.pendingPermission).toBeNull();
+  });
+
+  it('keeps two concurrent open sessions each holding their own pending request; answering one leaves the other pending', async () => {
+    const h = setup();
+    await connectReady(h);
+    await createSession(h, 'sess-a');
+    await openTab(h, 'sess-b'); // additive: both sessions stay open, focus is sess-b
+
+    feedPermissionRequest(h.transports[0], 'perm-a', 'sess-a', 'tc-a');
+    feedPermissionRequest(h.transports[0], 'perm-b', 'sess-b', 'tc-b');
+    await flushMicrotasks();
+
+    // Each session's slice holds ITS OWN pending request (each renders its own card).
+    expect(h.sliceOf('sess-a')?.pendingPermission?.toolCall.toolCallId).toBe('tc-a');
+    expect(h.sliceOf('sess-b')?.pendingPermission?.toolCall.toolCallId).toBe('tc-b');
+
+    // Answer the focused session (sess-b) — the other must remain pending.
+    h.controller.respondPermission('allow-1');
+    await flushMicrotasks();
+    expect(h.transports[0].sent.filter(f => f.id === 'perm-b')).toMatchObject([
+      { result: { outcome: { outcome: 'selected', optionId: 'allow-1' } } },
+    ]);
+    expect(h.sliceOf('sess-b')?.pendingPermission).toBeNull();
+    expect(h.sliceOf('sess-a')?.pendingPermission?.toolCall.toolCallId).toBe('tc-a');
+    expect(h.transports[0].sent.filter(f => f.id === 'perm-a')).toHaveLength(0);
+
+    // Now focus + answer sess-a independently.
+    h.controller.focusSession('sess-a');
+    h.controller.respondPermission('deny-1');
+    await flushMicrotasks();
+    expect(h.transports[0].sent.filter(f => f.id === 'perm-a')).toMatchObject([
+      { result: { outcome: { outcome: 'selected', optionId: 'deny-1' } } },
+    ]);
+    expect(h.sliceOf('sess-a')?.pendingPermission).toBeNull();
   });
 });

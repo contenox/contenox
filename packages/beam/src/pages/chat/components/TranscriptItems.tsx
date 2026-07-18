@@ -24,6 +24,7 @@ import type { AcpChatMessage, AcpErrorCard, AcpSessionState, AcpTerminalCard, Ac
 import { classifyAcpExecutionError } from '../../../lib/acpFailureKind';
 import { useTheme } from '../../../lib/ThemeProvider';
 import { shouldShowStreamingCaret, shouldShowStreamingPlaceholder } from '../lib/streamingPresentation';
+import { PermissionCard } from './PermissionCard';
 
 function toolCallCardStatus(status?: AcpToolCallState['status']): NonNullable<ToolCallCardProps['status']> {
   switch (status) {
@@ -227,37 +228,64 @@ function TranscriptError({ card }: { card: AcpErrorCard }) {
 export interface TranscriptItemsProps {
   session: AcpSessionState;
   agentName: string | null;
+  /** Answers this session's pending permission (see `PermissionCard`). The card is only rendered when `session.pendingPermission` is set. */
+  onRespondPermission: (optionId: string) => void;
 }
 
 /**
  * Renders `session.items` in arrival order (D4's unified timeline) —
  * messages via `ChatMessage`, tool calls via `ToolCallCard`. Order is exactly
  * `session.items`; this component adds no derivation of its own.
+ *
+ * A pending permission request (`session.pendingPermission`) is rendered inline
+ * as a `PermissionCard` anchored right after the tool-call item it belongs to
+ * (matched by `toolCallId`), so the approve/deny surface lives chronologically
+ * where the request happened instead of in a page-covering modal. When the
+ * pending request references no tool-call item yet (it can arrive before its
+ * `tool_call` update), the card falls back to the end of the transcript. The
+ * card answers ONLY via its explicit buttons — there is no dismiss/deny-on-
+ * outside-click path anywhere in this flow.
  */
-export function TranscriptItems({ session, agentName }: TranscriptItemsProps) {
+export function TranscriptItems({ session, agentName, onRespondPermission }: TranscriptItemsProps) {
+  const pending = session.pendingPermission;
+  const pendingToolCallId = pending?.toolCall.toolCallId ?? null;
+  // Anchor the card after a real tool-call item only when one matches; otherwise
+  // it renders once at the end (see the fallback below).
+  const anchorId =
+    pendingToolCallId != null && session.items.some(it => it.kind === 'tool_call' && it.id === pendingToolCallId)
+      ? pendingToolCallId
+      : null;
+
   return (
     <>
       {session.items.map((item, i) => {
         const isLatest = i === session.items.length - 1;
+        let rendered: ReactNode = null;
         if (item.kind === 'message') {
           const message = session.messages[item.id];
-          if (!message) return null;
-          return <TranscriptMessage key={`m-${item.id}`} message={message} agentName={agentName} isLatest={isLatest} />;
-        }
-        if (item.kind === 'terminal') {
+          rendered = message ? (
+            <TranscriptMessage key={`m-${item.id}`} message={message} agentName={agentName} isLatest={isLatest} />
+          ) : null;
+        } else if (item.kind === 'terminal') {
           const card = session.terminals[item.id];
-          if (!card) return null;
-          return <TranscriptTerminal key={`x-${item.id}`} card={card} />;
-        }
-        if (item.kind === 'error') {
+          rendered = card ? <TranscriptTerminal key={`x-${item.id}`} card={card} /> : null;
+        } else if (item.kind === 'error') {
           const card = session.errorCards[item.id];
-          if (!card) return null;
-          return <TranscriptError key={`e-${item.id}`} card={card} />;
+          rendered = card ? <TranscriptError key={`e-${item.id}`} card={card} /> : null;
+        } else {
+          const toolCall = session.toolCalls[item.id];
+          rendered = toolCall ? <TranscriptToolCall key={`t-${item.id}`} toolCall={toolCall} /> : null;
         }
-        const toolCall = session.toolCalls[item.id];
-        if (!toolCall) return null;
-        return <TranscriptToolCall key={`t-${item.id}`} toolCall={toolCall} />;
+        const anchorHere = pending && anchorId != null && item.kind === 'tool_call' && item.id === anchorId;
+        if (!anchorHere) return rendered;
+        // Return a keyed array (not a wrapper element) so the tool-call card keeps
+        // its own stable key and is NOT remounted when the permission arrives or
+        // resolves; the card is anchored as its immediate sibling.
+        return [rendered, <PermissionCard key={`perm-${item.id}`} permission={pending} onRespond={onRespondPermission} />];
       })}
+      {pending && anchorId == null && (
+        <PermissionCard key="perm-fallback" permission={pending} onRespond={onRespondPermission} />
+      )}
     </>
   );
 }

@@ -13,9 +13,11 @@ import (
 	libbus "github.com/contenox/runtime/libbus"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/agentregistryservice"
 	"github.com/contenox/runtime/runtime/agentservice"
 	"github.com/contenox/runtime/runtime/backendservice"
 	"github.com/contenox/runtime/runtime/hitlservice"
+	"github.com/contenox/runtime/runtime/internal/agentregistryapi"
 	"github.com/contenox/runtime/runtime/internal/backendapi"
 	"github.com/contenox/runtime/runtime/internal/hitlpolicyapi"
 	"github.com/contenox/runtime/runtime/internal/localfileapi"
@@ -164,6 +166,11 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 	store := runtimetypes.New(deps.DB.WithoutTransaction())
 	backendSvc := backendservice.New(deps.DB)
 	stateSvc := stateservice.New(deps.State, deps.DB, deps.WorkspaceID)
+
+	// Read-only declared-agents registry (registration stays with `contenox
+	// agent`). Mounted here where deps.DB is guaranteed non-nil, not gated on
+	// PubSub — listing agents needs only the store.
+	agentregistryapi.AddAgentRegistryRoutes(mux, agentregistryservice.New(deps.DB))
 
 	backendapi.AddStateRoutes(mux, stateSvc)
 	backendapi.AddModelRoutes(mux, stateSvc, deps.Defaults)

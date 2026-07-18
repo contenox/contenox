@@ -33,6 +33,13 @@ type ExternalACPAgent struct {
 	// Stderr, if set, receives the spawned subprocess's stderr as it is
 	// written (see acpexec.WithStderr). Defaults to io.Discard.
 	Stderr io.Writer
+
+	// KillGrace, if positive, overrides how long teardown waits for the
+	// spawned agent to exit after its stdin is closed before killing it
+	// (see acpexec.WithKillGrace; default 5s). Persistent agents — testy,
+	// most editor adapters — never exit on stdin-close, so a short grace
+	// here is what keeps their teardown from stalling for the full default.
+	KillGrace time.Duration
 }
 
 // NewExternalACPAgent returns an ExternalACPAgent for cfg.
@@ -89,6 +96,9 @@ func (a *ExternalACPAgent) connectStdio(ctx context.Context, harness libacp.Clie
 	var opts []acpexec.Option
 	if a.Stderr != nil {
 		opts = append(opts, acpexec.WithStderr(a.Stderr))
+	}
+	if a.KillGrace > 0 {
+		opts = append(opts, acpexec.WithKillGrace(a.KillGrace))
 	}
 
 	proc, err := acpexec.Spawn(ctx, cmd, opts...)

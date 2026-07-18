@@ -8,9 +8,10 @@
 // The harness — the libacp.Client callback surface an agent calls back into
 // (session/request_permission, fs/*, terminal/*, session/update) — is always
 // a parameter supplied by the caller, never assembled inside this package.
-// That seam is deliberate: this slice only builds the low-level plumbing to
-// spawn/connect an external ACP agent kind (runtimetypes.AgentKindExternalACP);
-// a real harness registry/service, session driving, and a "chain" agent kind
+// That seam is deliberate: this package builds the low-level plumbing to
+// spawn/connect an external ACP agent kind (runtimetypes.AgentKindExternalACP)
+// plus minimal single-turn session driving on top of it (DriveTurn, drive.go);
+// a real harness registry/service and a "chain" agent kind
 // (runtimetypes.AgentKindChain, reserved in the schema) are later work.
 package agenthost
 

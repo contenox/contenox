@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	libdb "github.com/contenox/runtime/libdbexec"
@@ -40,6 +41,16 @@ type ExternalACPConfig struct {
 	Env       map[string]string `json:"env,omitempty"`
 	Cwd       string            `json:"cwd,omitempty" example:"/workspace"`
 	URL       string            `json:"url,omitempty" example:"https://agent.example.com/acp"`
+
+	// McpServers is the explicit allowlist of registered MCP server names
+	// (the mcp_servers table, `contenox mcp list`) forwarded to this agent
+	// in ACP session/new. Forwarding hands the agent everything it needs to
+	// reach that server — argv for stdio servers, URL and configured headers
+	// (which may carry auth) for http/sse — so it is per-agent consent, named
+	// server by named server: there is deliberately no "all servers"
+	// wildcard, and contenox-side auth synthesis (authToken/authEnvKey/
+	// oauth/injectParams) is never forwarded. Empty means forward nothing.
+	McpServers []string `json:"mcp_servers,omitempty" example:"['filesystem']" openapi_include_type:"string"`
 }
 
 // Transport values accepted by ExternalACPConfig.Transport.
@@ -66,6 +77,11 @@ func (c ExternalACPConfig) Validate() error {
 		return fmt.Errorf("external_acp: transport is required (stdio or endpoint)")
 	default:
 		return fmt.Errorf("external_acp: unknown transport %q: must be stdio or endpoint", c.Transport)
+	}
+	for _, name := range c.McpServers {
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("external_acp: mcp_servers entries must be non-empty registered server names")
+		}
 	}
 	return nil
 }

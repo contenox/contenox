@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/contenox/runtime/runtime/agentregistryservice"
+	"github.com/contenox/runtime/runtime/mcpserverservice"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
@@ -330,4 +333,148 @@ func TestUnit_AgentHelpers(t *testing.T) {
 	pretty2, err := prettyJSONBytes(nil)
 	require.NoError(t, err)
 	require.Equal(t, "{}", string(pretty2))
+}
+
+// ─── check ──────────────────────────────────────────────────────────────────
+
+func newCheckCmd() *cobra.Command {
+	c := &cobra.Command{Use: "check", Args: cobra.MinimumNArgs(1), RunE: runAgentCheck}
+	c.Flags().Duration("timeout", 2*time.Minute, "")
+	return c
+}
+
+// buildStubAgentBin compiles the hermetic in-repo ACP stub agent so the check
+// command has a real agent subprocess to spawn — the same binary the
+// runtime/agenthost e2e drives.
+func buildStubAgentBin(t *testing.T) string {
+	t.Helper()
+	binPath := filepath.Join(t.TempDir(), "acp-stub-agent")
+	out, err := exec.Command("go", "build", "-o", binPath, "github.com/contenox/runtime/libacp/cmd/acp-stub-agent").CombinedOutput()
+	require.NoError(t, err, "build acp-stub-agent:\n%s", out)
+	return binPath
+}
+
+// TestUnit_AgentCheck_DrivesARealTurnAgainstTheStub is the CLI-level close of
+// the loop: register an agent (manual form), then `agent check` spawns it and
+// drives one live prompt turn, streaming the reply. Against the hermetic stub
+// the reply is deterministic ("ack").
+func TestUnit_AgentCheck_DrivesARealTurnAgainstTheStub(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "agents.db")
+	stubBin := buildStubAgentBin(t)
+
+	ctx, svc, done := openServiceAt(t, dbPath)
+	agent := &runtimetypes.Agent{Name: "stub-check", Enabled: true}
+	require.NoError(t, agent.SetExternalACPConfig(runtimetypes.ExternalACPConfig{
+		Transport: runtimetypes.ExternalACPTransportStdio,
+		Command:   stubBin,
+	}))
+	require.NoError(t, svc.Create(ctx, agent))
+	done()
+
+	root := agentTestRoot(newCheckCmd())
+	var buf bytes.Buffer
+	root.SetOut(&buf)
+	root.SetErr(&buf)
+	root.SetArgs([]string{"--db", dbPath, "check", "stub-check"})
+	require.NoError(t, root.Execute(), "output:\n%s", buf.String())
+
+	out := buf.String()
+	require.Contains(t, out, `Checking agent "stub-check"`)
+	require.Contains(t, out, "ack", "the stub's streamed reply must reach stdout")
+	require.Contains(t, out, "Turn completed (agent acp-stub-agent 0.0.1, stopReason=end_turn)")
+}
+
+func TestUnit_AgentCheck_DisabledAgentStillChecksWithNote(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "agents.db")
+	stubBin := buildStubAgentBin(t)
+
+	ctx, svc, done := openServiceAt(t, dbPath)
+	agent := &runtimetypes.Agent{Name: "stub-off", Enabled: false}
+	require.NoError(t, agent.SetExternalACPConfig(runtimetypes.ExternalACPConfig{
+		Transport: runtimetypes.ExternalACPTransportStdio,
+		Command:   stubBin,
+	}))
+	require.NoError(t, svc.Create(ctx, agent))
+	done()
+
+	root := agentTestRoot(newCheckCmd())
+	var buf bytes.Buffer
+	root.SetOut(&buf)
+	root.SetErr(&buf)
+	root.SetArgs([]string{"--db", dbPath, "check", "stub-off"})
+	require.NoError(t, root.Execute(), "output:\n%s", buf.String())
+	require.Contains(t, buf.String(), "disabled; checking it anyway")
+}
+
+func TestUnit_AgentCheck_UnknownAgentErrors(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "agents.db")
+
+	root := agentTestRoot(newCheckCmd())
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"--db", dbPath, "check", "no-such-agent"})
+	err := root.Execute()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not found")
+}
+
+// TestUnit_AgentCheck_ForwardsAllowlistedMcpServers registers an MCP server
+// and an agent whose config allowlists it, then asserts the check resolves
+// and reports the forwarding (the stub agent ignores the servers, so this
+// pins the CLI wiring: allowlist → registry lookup → session/new, loudly).
+func TestUnit_AgentCheck_ForwardsAllowlistedMcpServers(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "agents.db")
+	stubBin := buildStubAgentBin(t)
+
+	ctx, svc, done := openServiceAt(t, dbPath)
+	db, err := OpenDBAt(ctx, dbPath)
+	require.NoError(t, err)
+	require.NoError(t, mcpserverservice.New(db).Create(ctx, &runtimetypes.MCPServer{
+		Name: "echo", Transport: "stdio", Command: "mcp-echo-server", ConnectTimeoutSeconds: 30,
+	}))
+	require.NoError(t, db.Close())
+
+	agent := &runtimetypes.Agent{Name: "stub-mcp", Enabled: true}
+	require.NoError(t, agent.SetExternalACPConfig(runtimetypes.ExternalACPConfig{
+		Transport:  runtimetypes.ExternalACPTransportStdio,
+		Command:    stubBin,
+		McpServers: []string{"echo"},
+	}))
+	require.NoError(t, svc.Create(ctx, agent))
+	done()
+
+	root := agentTestRoot(newCheckCmd())
+	var buf bytes.Buffer
+	root.SetOut(&buf)
+	root.SetErr(&buf)
+	root.SetArgs([]string{"--db", dbPath, "check", "stub-mcp"})
+	require.NoError(t, root.Execute(), "output:\n%s", buf.String())
+	require.Contains(t, buf.String(), "Forwarding MCP servers: echo")
+	require.Contains(t, buf.String(), "Turn completed")
+}
+
+// TestUnit_AgentCheck_MissingAllowlistedMcpServerFailsLoudly pins that a
+// check against an agent whose allowlist names an unregistered server fails
+// before any subprocess is spawned, instead of silently checking with less
+// context than the agent declared.
+func TestUnit_AgentCheck_MissingAllowlistedMcpServerFailsLoudly(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "agents.db")
+
+	ctx, svc, done := openServiceAt(t, dbPath)
+	agent := &runtimetypes.Agent{Name: "stub-ghost-mcp", Enabled: true}
+	require.NoError(t, agent.SetExternalACPConfig(runtimetypes.ExternalACPConfig{
+		Transport:  runtimetypes.ExternalACPTransportStdio,
+		Command:    "irrelevant-not-actually-spawned",
+		McpServers: []string{"ghost"},
+	}))
+	require.NoError(t, svc.Create(ctx, agent))
+	done()
+
+	root := agentTestRoot(newCheckCmd())
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"--db", dbPath, "check", "stub-ghost-mcp"})
+	err := root.Execute()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "ghost")
 }

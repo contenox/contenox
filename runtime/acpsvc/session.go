@@ -129,8 +129,8 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 		WorkspaceID:       workspaceID,
 		Cwd:               sessionCwd,
 		InternalSessionID: contenoxSessionID,
-		Agent:             ag,
 		McpServerNames:    registered,
+		driver:            &nativeDriver{t: t, agent: ag},
 		Provider:          t.provider(),
 		Model:             t.model(),
 		Think:             t.thinkDefault(),
@@ -141,27 +141,41 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 	t.bindContenoxSession(contenoxSessionID, req.SessionID)
 	t.sessionMu.Unlock()
 	t.persistSessionCwd(ctx, store, req.SessionID, sessionCwd)
+	// Re-flag an external session from its persisted agent name so its config
+	// options come back minimal and the next prompt routes to the downstream
+	// agent (lazily respawned). The transcript is replayed below either way; the
+	// downstream process is deliberately NOT resurrected during load.
+	t.markExternalIfPersisted(ctx, store, req.SessionID, entry)
 
 	t.clearToolCallState(req.SessionID)
 	t.subscribeTerminal(req.SessionID, contenoxSessionID)
 	t.replayMessages(ctx, req.SessionID, messages)
-	// Emit the slash-command menu only after the session/load result is on the
-	// wire (see sendAvailableCommands) so the client can resolve the session.
-	libacp.AfterResponse(ctx, func() {
-		t.sendAvailableCommands(ctx, req.SessionID)
-		if banner := t.takeBanner(); banner != "" {
-			t.sendUpdate(ctx, libacp.SessionNotification{
-				SessionID: req.SessionID,
-				Update:    libacp.NewAgentMessageChunk(banner),
-			})
-		}
-	})
+	// Emit the slash-command menu only after the session/load result is on the wire
+	// (see sendAvailableCommands) so the client can resolve the session. A native
+	// session emits its contenox menu (and banner). An external session has no native
+	// menu (AvailableCommands is nil); its downstream agent's menu — dead with the
+	// pre-load connection and not resurrected until the next prompt — is re-emitted
+	// from the values persisted at session/new, so the reopened session shows it
+	// without a first prompt.
+	if _, isExternal := entry.driver.(*externalDriver); isExternal {
+		t.reemitExternalCommandMenu(ctx, store, req.SessionID)
+	} else if entry.driver.AvailableCommands() != nil {
+		libacp.AfterResponse(ctx, func() {
+			t.sendAvailableCommands(ctx, req.SessionID)
+			if banner := t.takeBanner(); banner != "" {
+				t.sendUpdate(ctx, libacp.SessionNotification{
+					SessionID: req.SessionID,
+					Update:    libacp.NewAgentMessageChunk(banner),
+				})
+			}
+		})
+	}
 
 	reportChange(string(req.SessionID), map[string]any{
 		"contenox_session_id": contenoxSessionID,
 		"message_count":       len(messages),
 	})
-	return libacp.LoadSessionResponse{ConfigOptions: t.sessionConfigOptions(ctx, entry)}, nil
+	return libacp.LoadSessionResponse{ConfigOptions: t.reloadedConfigOptions(ctx, store, req.SessionID, entry)}, nil
 }
 
 func (t *Transport) replayMessages(ctx context.Context, sessionID libacp.SessionID, messages []taskengine.Message) {
@@ -354,6 +368,77 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 	workspaceID := t.workspaceID()
 
 	store := runtimetypes.New(t.deps.DB.WithoutTransaction())
+
+	// A client binds this session to a REGISTERED external ACP agent via the
+	// contenox.agent `_meta` key; absent, the native chain path below runs
+	// unchanged (byte-for-byte the historical behavior).
+	if agentName := parseAgentMeta(req.Meta); agentName != "" {
+		// Spawn and drive the downstream agent first: an unknown/disabled agent or a
+		// spawn/handshake failure must fail session/new cleanly with NO session and
+		// NO leaked process. The upstream client's req.McpServers are for the chain
+		// engine (unused here); the downstream agent gets its own declared allowlist.
+		handle, downstreamID, bridge, spawnErr := t.spawnExternal(ctx, sessionID, sessionCwd, agentName, false)
+		if spawnErr != nil {
+			reportErr(spawnErr)
+			return libacp.NewSessionResponse{}, spawnErr
+		}
+		ag := agentservice.New(agentservice.Deps{
+			Engine:      t.deps.Engine,
+			DB:          t.deps.DB,
+			WorkspaceID: workspaceID,
+			Identity:    "acp-client",
+		})
+		contenoxSessionID, sessErr := ag.SessionNew(ctx, internalID)
+		if sessErr != nil {
+			_ = handle.Close()
+			wrapped := fmt.Errorf("acpsvc: agent.SessionNew: %w", sessErr)
+			reportErr(wrapped)
+			return libacp.NewSessionResponse{}, wrapped
+		}
+		entry := &sessionEntry{
+			WorkspaceID:       workspaceID,
+			Cwd:               sessionCwd,
+			InternalSessionID: contenoxSessionID,
+			HITLPolicy:        hitlPolicyDefaultValue,
+			driver: &externalDriver{
+				t:            t,
+				agentName:    agentName,
+				upstreamID:   sessionID,
+				handle:       handle,
+				downstreamID: downstreamID,
+				bridge:       bridge,
+			},
+		}
+		t.sessionMu.Lock()
+		t.sessions[sessionID] = entry
+		t.bindContenoxSession(contenoxSessionID, sessionID)
+		t.sessionMu.Unlock()
+		t.persistSessionCwd(ctx, store, sessionID, sessionCwd)
+		t.persistSessionAgent(ctx, store, sessionID, agentName)
+		t.clearToolCallState(sessionID)
+
+		// The downstream agent advertises its slash-command menu immediately after
+		// its own session/new (an available_commands_update the bridge cached without
+		// relaying — a menu delivered before THIS session/new response references a
+		// session id the upstream client has not learned and is dropped). Re-emit the
+		// cached menu once the result is on the wire, mirroring the native menu's
+		// sendAvailableCommands scheduling (see externalBridge.markBound).
+		libacp.AfterResponse(ctx, func() {
+			bridge.markBound(ctx)
+		})
+
+		reportChange(string(sessionID), map[string]any{
+			"contenox_session_id": contenoxSessionID,
+			"workspace_id":        workspaceID,
+			"external_agent":      agentName,
+		})
+		return libacp.NewSessionResponse{
+			SessionID:     sessionID,
+			ConfigOptions: t.sessionConfigOptions(ctx, entry),
+			Meta:          agentMetaJSON(entry.driver.AgentName()),
+		}, nil
+	}
+
 	registered, err := t.registerMcpServers(ctx, store, sessionID, req.McpServers)
 	if err != nil {
 		reportErr(err)
@@ -379,8 +464,8 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 		WorkspaceID:       workspaceID,
 		Cwd:               sessionCwd,
 		InternalSessionID: contenoxSessionID,
-		Agent:             ag,
 		McpServerNames:    registered,
+		driver:            &nativeDriver{t: t, agent: ag},
 		Provider:          t.provider(),
 		Model:             t.model(),
 		Think:             t.thinkDefault(),
@@ -476,8 +561,8 @@ func (t *Transport) ResumeSession(ctx context.Context, req libacp.ResumeSessionR
 		WorkspaceID:       workspaceID,
 		Cwd:               sessionCwd,
 		InternalSessionID: contenoxSessionID,
-		Agent:             ag,
 		McpServerNames:    registered,
+		driver:            &nativeDriver{t: t, agent: ag},
 		Provider:          t.provider(),
 		Model:             t.model(),
 		Think:             t.thinkDefault(),
@@ -488,17 +573,25 @@ func (t *Transport) ResumeSession(ctx context.Context, req libacp.ResumeSessionR
 	t.bindContenoxSession(contenoxSessionID, req.SessionID)
 	t.sessionMu.Unlock()
 	t.persistSessionCwd(ctx, store, req.SessionID, sessionCwd)
+	t.markExternalIfPersisted(ctx, store, req.SessionID, entry)
 	t.clearToolCallState(req.SessionID)
 	t.subscribeTerminal(req.SessionID, contenoxSessionID)
 
-	libacp.AfterResponse(ctx, func() {
-		t.sendAvailableCommands(ctx, req.SessionID)
-	})
+	// Mirror LoadSession: a native session re-advertises its contenox menu; an
+	// external session re-emits its downstream agent's persisted menu (the live bridge
+	// died with the pre-resume connection and is not respawned until the next prompt).
+	if _, isExternal := entry.driver.(*externalDriver); isExternal {
+		t.reemitExternalCommandMenu(ctx, store, req.SessionID)
+	} else if entry.driver.AvailableCommands() != nil {
+		libacp.AfterResponse(ctx, func() {
+			t.sendAvailableCommands(ctx, req.SessionID)
+		})
+	}
 
 	reportChange(string(req.SessionID), map[string]any{
 		"contenox_session_id": contenoxSessionID,
 	})
-	return libacp.ResumeSessionResponse{ConfigOptions: t.sessionConfigOptions(ctx, entry)}, nil
+	return libacp.ResumeSessionResponse{ConfigOptions: t.reloadedConfigOptions(ctx, store, req.SessionID, entry)}, nil
 }
 
 // SetSessionMode is not supported: contenox does not model a Zed-style
@@ -524,6 +617,12 @@ func (t *Transport) CloseSession(ctx context.Context, req libacp.CloseSessionReq
 	if entry != nil && t.deps.DB != nil {
 		store := runtimetypes.New(t.deps.DB.WithoutTransaction())
 		t.cleanupMcpServers(ctx, store, entry.McpServerNames)
+	}
+	// An explicit close ends the session on this connection: tear down its driver
+	// (an external driver closes its downstream agent now, rather than waiting for
+	// connection teardown to reap it; the native driver is a no-op).
+	if entry != nil {
+		_ = entry.driver.Close()
 	}
 	t.clearToolCallState(req.SessionID)
 	// An explicit close is a user action ending the session on this connection —
@@ -562,6 +661,11 @@ func (t *Transport) DeleteSession(ctx context.Context, req libacp.DeleteSessionR
 	if entry != nil {
 		t.cleanupMcpServers(ctx, store, entry.McpServerNames)
 	}
+	// The session is being deleted; its driver's downstream agent (if any) must
+	// not outlive it.
+	if entry != nil {
+		_ = entry.driver.Close()
+	}
 	t.clearToolCallState(req.SessionID)
 	// The session's history is being deleted; its shell must not outlive it.
 	t.closeTerminal(req.SessionID, entry)
@@ -577,6 +681,13 @@ func (t *Transport) DeleteSession(ctx context.Context, req libacp.DeleteSessionR
 		return libacp.DeleteSessionResponse{}, libacp.InternalError(err.Error())
 	}
 	_ = store.DeleteKV(ctx, acpSessionCwdKVPrefix+string(req.SessionID))
+	_ = store.DeleteKV(ctx, acpSessionAgentKVPrefix+string(req.SessionID))
+	// The downstream-surface keys (command menu, config options) and the external
+	// session's per-session HITL policy are meaningful only alongside the agent-name
+	// key; drop them with it.
+	_ = store.DeleteKV(ctx, acpSessionAgentCommandsKVPrefix+string(req.SessionID))
+	_ = store.DeleteKV(ctx, acpSessionAgentConfigOptionsKVPrefix+string(req.SessionID))
+	_ = store.DeleteKV(ctx, acpSessionHITLPolicyKVPrefix+string(req.SessionID))
 
 	reportChange(string(req.SessionID), map[string]any{"was_open": entry != nil})
 	return libacp.DeleteSessionResponse{}, nil
@@ -810,6 +921,10 @@ func (t *Transport) Close(ctx context.Context) error {
 
 	for _, e := range entries {
 		t.cleanupMcpServers(ctx, store, e.McpServerNames)
+		// Tear down this session's driver. For an external session this closes the
+		// downstream agent it spawned; idempotent with the connCtx-cancel teardown
+		// the New() Closed goroutine performs. Native is a no-op.
+		_ = e.driver.Close()
 	}
 	return nil
 }
@@ -957,6 +1072,11 @@ func (t *Transport) ListSessions(ctx context.Context, req libacp.ListSessionsReq
 			SessionID: libacp.SessionID(row.name),
 			Title:     t.sessionListTitle(ctx, chatMgr, exec, row.internalID, row.name),
 			Cwd:       t.sessionCwd(ctx, store, libacp.SessionID(row.name)),
+		}
+		// External sessions carry their agent attribution in `_meta` so a client
+		// (the beam fleet view) can tell which registered agent runs each one.
+		if agentName := t.readSessionAgent(ctx, store, libacp.SessionID(row.name)); agentName != "" {
+			info.Meta = agentMetaJSON(agentName)
 		}
 		if row.hasTime {
 			info.UpdatedAt = row.updatedAt.UTC().Format(time.RFC3339)
