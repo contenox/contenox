@@ -373,15 +373,18 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 	// contenox.agent `_meta` key; absent, the native chain path below runs
 	// unchanged (byte-for-byte the historical behavior).
 	if agentName := parseAgentMeta(req.Meta); agentName != "" {
-		// Spawn and drive the downstream agent first: an unknown/disabled agent or a
+		// Bring up and drive the downstream agent first: an unknown/disabled agent or a
 		// spawn/handshake failure must fail session/new cleanly with NO session and
-		// NO leaked process. The upstream client's req.McpServers are for the chain
-		// engine (unused here); the downstream agent gets its own declared allowlist.
-		handle, downstreamID, bridge, spawnErr := t.spawnExternal(ctx, sessionID, sessionCwd, agentName, false)
+		// NO leaked process/instance. The upstream client's req.McpServers are for the
+		// chain engine (unused here); the downstream agent gets its own declared
+		// allowlist. When Deps.Instances is wired the downstream is a Manager-owned
+		// instance that survives this connection; otherwise a connCtx-bound subprocess.
+		att, spawnErr := t.bringUpExternal(ctx, sessionID, sessionCwd, agentName, false)
 		if spawnErr != nil {
 			reportErr(spawnErr)
 			return libacp.NewSessionResponse{}, spawnErr
 		}
+		bridge := att.bridge
 		ag := agentservice.New(agentservice.Deps{
 			Engine:      t.deps.Engine,
 			DB:          t.deps.DB,
@@ -390,7 +393,7 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 		})
 		contenoxSessionID, sessErr := ag.SessionNew(ctx, internalID)
 		if sessErr != nil {
-			_ = handle.Close()
+			att.teardown(t)
 			wrapped := fmt.Errorf("acpsvc: agent.SessionNew: %w", sessErr)
 			reportErr(wrapped)
 			return libacp.NewSessionResponse{}, wrapped
@@ -404,8 +407,10 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 				t:            t,
 				agentName:    agentName,
 				upstreamID:   sessionID,
-				handle:       handle,
-				downstreamID: downstreamID,
+				conn:         att.conn,
+				handle:       att.handle,
+				instanceID:   att.instanceID,
+				downstreamID: att.downstreamID,
 				bridge:       bridge,
 			},
 		}
@@ -415,6 +420,11 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 		t.sessionMu.Unlock()
 		t.persistSessionCwd(ctx, store, sessionID, sessionCwd)
 		t.persistSessionAgent(ctx, store, sessionID, agentName)
+		// Persist the Manager instance id AND the downstream session id (both no-ops on
+		// the nil-Instances path) so a later session/load re-attaches to THIS still-running
+		// instance and drives its SAME downstream session, preserving the agent's context.
+		t.persistSessionInstance(ctx, sessionID, att.instanceID)
+		t.persistSessionDownstream(ctx, sessionID, att.downstreamID)
 		t.clearToolCallState(sessionID)
 
 		// The downstream agent advertises its slash-command menu immediately after
@@ -673,9 +683,20 @@ func (t *Transport) DeleteSession(ctx context.Context, req libacp.DeleteSessionR
 		t.cleanupMcpServers(ctx, store, entry.McpServerNames)
 	}
 	// The session is being deleted; its driver's downstream agent (if any) must
-	// not outlive it.
+	// not outlive it. Close detaches a Manager-owned instance (leaving it Running);
+	// the explicit stop below is what actually ends it — a delete, unlike a plain
+	// close/disconnect, terminates the instance.
 	if entry != nil {
 		_ = entry.driver.Close()
+	}
+	// Stop the Manager-owned instance backing this external session, if any. The
+	// persisted instanceID is the durable source of truth (the session may not be
+	// open on this connection, so entry can be nil). A no-op on the nil-Instances
+	// path and for native sessions.
+	if t.deps.Instances != nil {
+		if instanceID := t.readSessionInstance(ctx, store, req.SessionID); instanceID != "" {
+			_ = t.deps.Instances.Stop(instanceID)
+		}
 	}
 	t.clearToolCallState(req.SessionID)
 	// The session's history is being deleted; its shell must not outlive it.
@@ -693,12 +714,14 @@ func (t *Transport) DeleteSession(ctx context.Context, req libacp.DeleteSessionR
 	}
 	_ = store.DeleteKV(ctx, acpSessionCwdKVPrefix+string(req.SessionID))
 	_ = store.DeleteKV(ctx, acpSessionAgentKVPrefix+string(req.SessionID))
-	// The downstream-surface keys (command menu, config options) and the external
-	// session's per-session HITL policy are meaningful only alongside the agent-name
-	// key; drop them with it.
+	// The downstream-surface keys (command menu, config options), the external
+	// session's per-session HITL policy, and its Manager instance + downstream session
+	// ids are meaningful only alongside the agent-name key; drop them with it.
 	_ = store.DeleteKV(ctx, acpSessionAgentCommandsKVPrefix+string(req.SessionID))
 	_ = store.DeleteKV(ctx, acpSessionAgentConfigOptionsKVPrefix+string(req.SessionID))
 	_ = store.DeleteKV(ctx, acpSessionHITLPolicyKVPrefix+string(req.SessionID))
+	_ = store.DeleteKV(ctx, acpSessionInstanceKVPrefix+string(req.SessionID))
+	_ = store.DeleteKV(ctx, acpSessionDownstreamKVPrefix+string(req.SessionID))
 
 	reportChange(string(req.SessionID), map[string]any{"was_open": entry != nil})
 	return libacp.DeleteSessionResponse{}, nil

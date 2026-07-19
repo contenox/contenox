@@ -9,6 +9,7 @@ import (
 	libacp "github.com/contenox/runtime/libacp"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/agentinstance"
 	"github.com/contenox/runtime/runtime/enginesvc"
 	"github.com/contenox/runtime/runtime/internal/clikv"
 	"github.com/contenox/runtime/runtime/runtimetypes"
@@ -72,6 +73,17 @@ type Deps struct {
 	// behind one engine); the stdio ACP path leaves it nil — it has one
 	// transport, late-bound directly into the engine's AskApproval closure.
 	PermissionRouter *PermissionRouter
+
+	// Instances, when set, owns the lifecycle of external-agent instances OFF any
+	// single connection: an external session obtains its downstream agent from this
+	// Manager (StartExternal) instead of spawning a subprocess bound to its own
+	// connCtx, so the agent's process — and thus its context — SURVIVES a client
+	// disconnect/reload, and a reloaded session re-attaches (Attach) to the same
+	// still-running instance. serve sets it (a process-owned Manager, Closed at
+	// shutdown). When nil (the stdio `contenox acp` path), the external path falls
+	// back to today's connCtx-bound spawn — byte-for-byte the historical behavior —
+	// so nothing regresses where the Manager is not wired.
+	Instances agentinstance.Manager
 }
 
 // EnvSetupSpec describes environment-variable-based setup (the non-interactive

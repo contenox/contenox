@@ -221,7 +221,13 @@ func (bt *bridgeTerminal) watch(mgr shellsession.Manager, connDone <-chan struct
 // append-only panel. A clean `$ <command>` header is emitted first so the panel
 // reads like a terminal session.
 func (b *externalBridge) CreateTerminal(_ context.Context, req libacp.CreateTerminalRequest) (libacp.CreateTerminalResponse, error) {
-	t := b.t
+	// A downstream agent only calls terminal/* while running a prompt turn, which is
+	// driven by an attached upstream transport — so the relay target is the connection
+	// hosting this turn. Detached (no turn in flight) there is nothing to run against.
+	t := b.transport()
+	if t == nil {
+		return libacp.CreateTerminalResponse{}, libacp.MethodNotFound(libacp.MethodTerminalCreate)
+	}
 	mgr := t.deps.ShellSessions
 	if mgr == nil {
 		return libacp.CreateTerminalResponse{}, libacp.MethodNotFound(libacp.MethodTerminalCreate)
@@ -307,7 +313,11 @@ func (b *externalBridge) CreateTerminal(_ context.Context, req libacp.CreateTerm
 // and truncated (tail-kept) to the request's byte limit when one was set; a START
 // marker aged out of the bounded ring also reports truncated.
 func (b *externalBridge) TerminalOutput(_ context.Context, req libacp.TerminalOutputRequest) (libacp.TerminalOutputResponse, error) {
-	mgr := b.t.deps.ShellSessions
+	t := b.transport()
+	if t == nil {
+		return libacp.TerminalOutputResponse{}, libacp.MethodNotFound(libacp.MethodTerminalOutput)
+	}
+	mgr := t.deps.ShellSessions
 	if mgr == nil {
 		return libacp.TerminalOutputResponse{}, libacp.MethodNotFound(libacp.MethodTerminalOutput)
 	}
@@ -436,11 +446,15 @@ func (b *externalBridge) removeTerminal(id string) (*bridgeTerminal, bool) {
 // but only when the shell still exists — Run would otherwise recreate a shell just
 // to signal into it.
 func (b *externalBridge) interrupt(bt *bridgeTerminal) {
-	mgr := b.t.deps.ShellSessions
+	t := b.transport()
+	if t == nil {
+		return
+	}
+	mgr := t.deps.ShellSessions
 	if mgr == nil || !mgr.Read(bt.internalID, bt.startOffset, 0).Exists {
 		return
 	}
-	runCtx := context.WithValue(b.t.connCtx, runtimetypes.SessionIDContextKey, bt.internalID)
+	runCtx := context.WithValue(t.connCtx, runtimetypes.SessionIDContextKey, bt.internalID)
 	_, _ = mgr.Run(runCtx, bt.internalID, "\x03")
 }
 

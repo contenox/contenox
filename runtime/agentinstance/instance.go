@@ -1,0 +1,369 @@
+package agentinstance
+
+import (
+	"context"
+	"sync"
+	"time"
+
+	"github.com/contenox/runtime/libacp"
+	"github.com/contenox/runtime/runtime/agenthost"
+)
+
+// Instance lifecycle states — the vocabulary of InstanceStatus.State.
+//
+//   - StateStarting: transient, while a subprocess is (re)spawning.
+//   - StateRunning: the instance is up (external: a live downstream connection;
+//     native: a process-less placeholder).
+//   - StateStopped: torn down intentionally (Stop/Close). The watchDog never
+//     restarts out of this state.
+//   - StateError: the downstream died UNEXPECTEDLY. Terminal when restart is
+//     disabled; transient (a way-station to StateStarting) when it is enabled.
+//   - StateWarning: restart was enabled but exhausted its limit (or a restart
+//     re-spawn itself failed) — the "needs attention, gave up restarting" state,
+//     the analogue of go-process-manager's ProcessStateWarnning.
+const (
+	StateStarting = "starting"
+	StateRunning  = "running"
+	StateStopped  = "stopped"
+	StateError    = "error"
+	StateWarning  = "warning"
+)
+
+// InstanceStatus is a point-in-time snapshot of one instance. It is a value
+// copy: mutating it never affects the live instance.
+type InstanceStatus struct {
+	ID        string    `json:"id"`
+	AgentID   string    `json:"agentId"`
+	AgentName string    `json:"agentName"`
+	Kind      string    `json:"kind"`
+	State     string    `json:"state"`
+	Sessions  int       `json:"sessions"`
+	Viewers   int       `json:"viewers"`
+	StartedAt time.Time `json:"startedAt"`
+}
+
+// journalingHarness is the instance's INTERNAL libacp.Client — the harness wired
+// into the downstream connection. It replaces the K1 design where a caller
+// supplied the harness: now the instance owns it, and callers ATTACH as viewers.
+//
+// On every downstream session/update it FIRST folds the update into the session's
+// captured driving surface (config options / modes / commands — via the driver),
+// THEN journals + fans it out to viewers (via the hub); the capture-before-fanout
+// order means an accessor read right after a viewer observed an update sees the same
+// value. It routes every session/request_permission to the session's controller
+// viewer, and every terminal/* to that controller IFF it implements TerminalServer
+// (else MethodNotFound). fs/* is left to UnimplementedClient (MethodNotFound).
+type journalingHarness struct {
+	libacp.UnimplementedClient
+	hub    *viewerHub
+	driver *sessionDriver
+}
+
+func (h *journalingHarness) SessionUpdate(ctx context.Context, n libacp.SessionNotification) error {
+	h.driver.capture(n)
+	h.hub.deliver(ctx, n)
+	return nil
+}
+
+func (h *journalingHarness) RequestPermission(ctx context.Context, req libacp.RequestPermissionRequest) (libacp.RequestPermissionResponse, error) {
+	return h.hub.requestPermission(ctx, req)
+}
+
+// The terminal/* family is ROUTED to the session's controller viewer when it implements
+// TerminalServer, else refused with MethodNotFound — the same routing shape as
+// RequestPermission, for the second inbound-callback surface (see TerminalServer).
+
+func (h *journalingHarness) CreateTerminal(ctx context.Context, req libacp.CreateTerminalRequest) (libacp.CreateTerminalResponse, error) {
+	if ts := h.hub.terminalServer(req.SessionID); ts != nil {
+		return ts.CreateTerminal(ctx, req)
+	}
+	return libacp.CreateTerminalResponse{}, libacp.MethodNotFound(libacp.MethodTerminalCreate)
+}
+
+func (h *journalingHarness) TerminalOutput(ctx context.Context, req libacp.TerminalOutputRequest) (libacp.TerminalOutputResponse, error) {
+	if ts := h.hub.terminalServer(req.SessionID); ts != nil {
+		return ts.TerminalOutput(ctx, req)
+	}
+	return libacp.TerminalOutputResponse{}, libacp.MethodNotFound(libacp.MethodTerminalOutput)
+}
+
+func (h *journalingHarness) WaitForTerminalExit(ctx context.Context, req libacp.WaitForTerminalExitRequest) (libacp.WaitForTerminalExitResponse, error) {
+	if ts := h.hub.terminalServer(req.SessionID); ts != nil {
+		return ts.WaitForTerminalExit(ctx, req)
+	}
+	return libacp.WaitForTerminalExitResponse{}, libacp.MethodNotFound(libacp.MethodTerminalWaitForExit)
+}
+
+func (h *journalingHarness) KillTerminal(ctx context.Context, req libacp.KillTerminalRequest) (libacp.KillTerminalResponse, error) {
+	if ts := h.hub.terminalServer(req.SessionID); ts != nil {
+		return ts.KillTerminal(ctx, req)
+	}
+	return libacp.KillTerminalResponse{}, libacp.MethodNotFound(libacp.MethodTerminalKill)
+}
+
+func (h *journalingHarness) ReleaseTerminal(ctx context.Context, req libacp.ReleaseTerminalRequest) (libacp.ReleaseTerminalResponse, error) {
+	if ts := h.hub.terminalServer(req.SessionID); ts != nil {
+		return ts.ReleaseTerminal(ctx, req)
+	}
+	return libacp.ReleaseTerminalResponse{}, libacp.MethodNotFound(libacp.MethodTerminalRelease)
+}
+
+// instanceConfig is the fully-resolved input to newInstance. The Manager builds
+// it from a declared agent; the instance primitive itself never touches the
+// registry — it depends only on libacp + agenthost.
+type instanceConfig struct {
+	id        string
+	agentID   string
+	agentName string
+	kind      string
+
+	// rootCtx is the long-lived context the subprocess is bound to (the Manager's
+	// root), so the instance outlives the caller ctx that started it. spawner is
+	// the agenthost primitive that (re)establishes the downstream connection; nil
+	// marks a process-less native instance.
+	rootCtx context.Context
+	spawner agenthost.Agent
+
+	journalSize    int
+	restartEnabled bool
+	restartLimit   int
+
+	onState  func(state string)
+	onAttach func(sessionID libacp.SessionID, viewerID string, controller bool)
+	onDetach func(sessionID libacp.SessionID, viewerID string)
+}
+
+// instance is one running agent instance: the pure primitive of Layer A. Its own
+// mutable lifecycle state is guarded by mu; its per-session viewer/journal state
+// lives in hub (separately locked), so a status read never contends with the
+// fan-out.
+type instance struct {
+	id        string
+	agentID   string
+	agentName string
+	kind      string
+	startedAt time.Time
+
+	rootCtx        context.Context
+	spawner        agenthost.Agent
+	harness        *journalingHarness
+	hub            *viewerHub
+	driver         *sessionDriver
+	restartEnabled bool
+	restartLimit   int
+
+	onState func(state string)
+
+	mu           sync.Mutex
+	state        string
+	handle       *agenthost.Handle // nil for native; reassigned on restart
+	manualStop   bool              // set by stop(): the watchDog must never restart
+	restartCount int
+	closed       bool
+}
+
+// newInstance builds the instance and its internal harness/hub, but does NOT
+// spawn — call start for that. The hub's attach/detach hooks are wired to the
+// Manager-supplied callbacks here so viewer lifecycle reaches the event sink.
+func newInstance(cfg instanceConfig) *instance {
+	hub := newViewerHub(cfg.id, cfg.journalSize)
+	hub.onAttach = cfg.onAttach
+	hub.onDetach = cfg.onDetach
+	driver := newSessionDriver()
+	return &instance{
+		id:             cfg.id,
+		agentID:        cfg.agentID,
+		agentName:      cfg.agentName,
+		kind:           cfg.kind,
+		startedAt:      time.Now().UTC(),
+		rootCtx:        cfg.rootCtx,
+		spawner:        cfg.spawner,
+		harness:        &journalingHarness{hub: hub, driver: driver},
+		hub:            hub,
+		driver:         driver,
+		restartEnabled: cfg.restartEnabled,
+		restartLimit:   cfg.restartLimit,
+		onState:        cfg.onState,
+		// StateStarting until start() transitions it — never observed externally
+		// (registration follows a successful start), but keeps a status snapshot
+		// non-empty if one is ever taken during the spawn window.
+		state: StateStarting,
+	}
+}
+
+// start brings the instance up. For a native (spawner-less) instance it simply
+// transitions to Running. For an external one it spawns the subprocess wired to
+// the internal journaling harness and arms the watchDog. A spawn failure leaves
+// the instance StateError and returns the error, so the Manager can decline to
+// register it (nothing leaks).
+func (i *instance) start() error {
+	if i.spawner == nil {
+		i.setState(StateRunning)
+		return nil
+	}
+	handle, err := i.spawner.Connect(i.rootCtx, i.harness)
+	if err != nil {
+		i.setState(StateError)
+		return err
+	}
+	i.mu.Lock()
+	i.handle = handle
+	i.mu.Unlock()
+	i.setState(StateRunning)
+	go i.watchDog(handle)
+	return nil
+}
+
+// setState atomically checks the predicates (each evaluated with mu held, so it
+// may read i.state directly) and, if all pass, sets the state and fires the
+// onState hook OUTSIDE the lock — a sink that calls back into the Manager cannot
+// deadlock. Returns whether the transition happened. Mirrors
+// go-process-manager's ProcessBase.SetState.
+func (i *instance) setState(s string, preds ...func() bool) bool {
+	i.mu.Lock()
+	for _, p := range preds {
+		if !p() {
+			i.mu.Unlock()
+			return false
+		}
+	}
+	i.state = s
+	fn := i.onState
+	i.mu.Unlock()
+	if fn != nil {
+		fn(s)
+	}
+	return true
+}
+
+// watchDog watches one downstream connection and applies the restart policy when
+// it closes — the ACP analogue of go-process-manager's watchDog (which waits on
+// os.Process.Wait). It runs once per live handle and re-arms itself on the fresh
+// handle after a restart, so it never leaks past teardown.
+//
+// ACP caveat: a restart re-spawns a FRESH subprocess that must be re-Initialized
+// by a driver; the downstream agent's conversation/session context is LOST.
+// Viewers and the journal survive (they are the instance's, not the process's),
+// but they now describe a conversation the new process has never heard of.
+func (i *instance) watchDog(h *agenthost.Handle) {
+	<-h.Conn.Closed()
+
+	i.mu.Lock()
+	stopped := i.manualStop || i.closed
+	current := i.handle == h // ignore a stale handle we have already replaced
+	i.mu.Unlock()
+	if stopped || !current {
+		return
+	}
+
+	// Unexpected death: mark errored, unless a Stop raced in and already claimed
+	// the terminal Stopped state.
+	i.setState(StateError, func() bool {
+		return i.state == StateRunning || i.state == StateStarting
+	})
+
+	i.mu.Lock()
+	raced := i.manualStop || i.closed
+	enabled := i.restartEnabled
+	count := i.restartCount
+	limit := i.restartLimit
+	i.mu.Unlock()
+	if raced || !enabled {
+		return // crash-terminal: stays StateError when restart is disabled
+	}
+	if count >= limit {
+		i.setState(StateWarning) // restart budget exhausted
+		return
+	}
+
+	i.setState(StateStarting, func() bool { return i.state == StateError })
+	newHandle, err := i.spawner.Connect(i.rootCtx, i.harness)
+	if err != nil {
+		i.setState(StateWarning) // could not re-spawn
+		return
+	}
+
+	i.mu.Lock()
+	if i.manualStop || i.closed {
+		// A Stop raced in while we were re-spawning: abandon the fresh handle.
+		i.mu.Unlock()
+		_ = newHandle.Close()
+		return
+	}
+	i.handle = newHandle
+	i.restartCount = count + 1
+	i.mu.Unlock()
+
+	i.setState(StateRunning, func() bool { return i.state == StateStarting })
+	go i.watchDog(newHandle)
+}
+
+// stop transitions the instance to Stopped and tears down its subprocess (if
+// external). manualStop is set BEFORE the handle is closed so the watchDog, which
+// wakes on the resulting Closed signal, sees an intentional stop and neither
+// mislabels it Error nor restarts it. Idempotent.
+func (i *instance) stop() error {
+	i.mu.Lock()
+	if i.closed {
+		i.mu.Unlock()
+		return nil
+	}
+	i.closed = true
+	i.manualStop = true
+	i.state = StateStopped
+	h := i.handle
+	fn := i.onState
+	i.mu.Unlock()
+
+	if fn != nil {
+		fn(StateStopped)
+	}
+	if h != nil {
+		return h.Close()
+	}
+	return nil
+}
+
+// conn returns the instance's live downstream connection, or nil for a native or
+// not-yet-started instance. It is INTERNAL: the instance's own session-driving methods
+// (openSession/promptSession/... in drive.go) issue their ACP calls on it, and white-box
+// tests use it directly. The Manager exposes NO raw-connection accessor — driving goes
+// through the kernel's session-driving API so no consumer holds the connection.
+//
+// NOTE: after a watchDog restart this returns a DIFFERENT connection (the fresh
+// subprocess); the initialize-once handshake (ensureInitialized) re-arms on the new
+// connection because the downstream's session context was lost — see the package doc.
+func (i *instance) conn() *libacp.ClientSideConnection {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.handle == nil {
+		return nil
+	}
+	return i.handle.Conn
+}
+
+func (i *instance) status() InstanceStatus {
+	i.mu.Lock()
+	state := i.state
+	started := i.startedAt
+	i.mu.Unlock()
+	sessions, viewers := i.hub.counts()
+	return InstanceStatus{
+		ID:        i.id,
+		AgentID:   i.agentID,
+		AgentName: i.agentName,
+		Kind:      i.kind,
+		State:     state,
+		Sessions:  sessions,
+		Viewers:   viewers,
+		StartedAt: started,
+	}
+}
+
+func (i *instance) attach(ctx context.Context, sessionID libacp.SessionID, viewer Viewer) (bool, error) {
+	return i.hub.attach(ctx, sessionID, viewer)
+}
+
+func (i *instance) detach(sessionID libacp.SessionID, viewerID string) error {
+	return i.hub.detach(sessionID, viewerID)
+}

@@ -21,6 +21,8 @@ import (
 	"github.com/contenox/runtime/libkvstore"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/acpsvc"
+	"github.com/contenox/runtime/runtime/agentinstance"
+	"github.com/contenox/runtime/runtime/agentregistryservice"
 	"github.com/contenox/runtime/runtime/agentservice"
 	"github.com/contenox/runtime/runtime/enginesvc"
 	"github.com/contenox/runtime/runtime/hitlservice"
@@ -320,6 +322,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 		defer stopTerminalReaper()
 	}
 
+	// External-agent instances live OFF any single connection: the Manager owns each
+	// declared external agent's subprocess on its own root context, so an agent's
+	// process (and thus its context) survives a browser disconnect/reload and a
+	// reloaded session re-attaches to the still-running instance. Owned by the serve
+	// process and torn down (every subprocess killed) on shutdown.
+	instances := agentinstance.New(agentregistryservice.New(db))
+	defer func() { _ = instances.Close() }()
+
 	// /acp serves the same acpsvc agent `contenox acp` speaks over stdio, over
 	// a WebSocket instead — see acp_ws.go. It reuses the engine/db/workspace
 	// already built above; only the ACP chain registry is looked up fresh
@@ -347,7 +357,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 			// connection's transport registers its live sessions and gated tool
 			// calls route back to the client that raised them.
 			PermissionRouter: permissionRouter,
-			KnownPolicies:    embeddedPolicyNames(),
+			// External-agent sessions attach to Manager-owned instances that survive
+			// client disconnect/reload (a reload re-attaches to the same instance).
+			Instances:     instances,
+			KnownPolicies: embeddedPolicyNames(),
 			// serve passes no fallbackPolicy to hitlservice.NewWithDefaultPolicy
 			// above ("" = the service's own built-in default), so there is no
 			// named policy to report here either; HITLDefaultPolicyName is
