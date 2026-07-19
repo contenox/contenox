@@ -265,7 +265,7 @@ bundle-llama-libs:
 		echo "bundled direct llama.cpp runtime (copies) -> $(LLAMA_LIBS_DIR)"; \
 		if [ "$(LLAMA_CUDA)" = "ON" ]; then \
 			bash "$(PROJECT_ROOT)scripts/modeld-vendor-cuda-libs.sh" "$(LLAMA_LIBS_DIR)"; \
-			# Stage CUDA EULA if vendored (for compliance in dev packages).
+			# Stage CUDA EULA if vendored (for compliance in dev packages). \
 			mkdir -p "$(LLAMA_LIBS_DIR)/../licenses/cuda" 2>/dev/null || true; \
 			for cand in "$${CUDA_HOME:-}/EULA.txt" "$${CUDA_PATH:-}/EULA.txt" /usr/local/cuda/EULA.txt; do \
 				[ -f "$$cand" ] && cp -a "$$cand" "$(LLAMA_LIBS_DIR)/../licenses/cuda/" 2>/dev/null || true; \
@@ -530,8 +530,8 @@ check-modeld-deps-bundle:
 	# License completeness check for public redistribution (VSCode, registries, Store).
 	@test -d "$(MODELD_DEPS_ROOT)/licenses" || { echo "bundle missing licenses/ dir"; exit 1; }
 	@ls "$(MODELD_DEPS_ROOT)/licenses"/* >/dev/null 2>&1 || { echo "bundle licenses/ appears empty"; exit 1; }
-	@if [ "$(MODELD_RELEASE_OPENVINO)" = "1" ]; then
-		ls "$(MODELD_DEPS_ROOT)/licenses/openvino"*/* 2>/dev/null | head -1 >/dev/null || { echo "openvino declared but no license texts under licenses/openvino*"; exit 1; }
+	@if [ "$(MODELD_RELEASE_OPENVINO)" = "1" ]; then \
+		ls "$(MODELD_DEPS_ROOT)/licenses/openvino"*/* 2>/dev/null | head -1 >/dev/null || { echo "openvino declared but no license texts under licenses/openvino*"; exit 1; }; \
 	fi
 	@echo "licenses/ present for declared components"
 
