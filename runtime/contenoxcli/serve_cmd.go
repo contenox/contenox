@@ -81,14 +81,19 @@ func init() {
 		"Directory a browser client may choose as a session workspace (repeatable). The serve directory is always the default; these extend the allowlist. Also settable via WORKSPACE_ROOTS (OS path-list separated) or as `contenox serve [dir]...` positional arguments.")
 }
 
-// buildWorkspaceFactory assembles the workspace-root allowlist. The serve
-// directory (defaultRoot) is always first, making it the Factory default and
-// preserving today's behavior when nothing else is configured. Positional args,
-// --workspace-root flags, and the WORKSPACE_ROOTS env (OS path-list separated)
-// extend the allowlist. Duplicates are collapsed by the Factory.
+// buildWorkspaceFactory assembles the workspace-root allowlist. defaultRoot is
+// the effective workspace root (the served project directory when one is given
+// positionally, else home) and is always first, making it the Factory default.
+// It already IS the first positional serve arg (resolved) when one was given, so
+// only positional args BEYOND the first extend the allowlist here — home is
+// never injected as an extra root when a project is served. --workspace-root
+// flags and the WORKSPACE_ROOTS env (OS path-list separated) also extend it.
+// Duplicates are collapsed by the Factory.
 func buildWorkspaceFactory(cmd *cobra.Command, args []string, config *serverapi.Config, defaultRoot string) (*vfs.Factory, error) {
 	roots := []string{defaultRoot}
-	roots = append(roots, args...)
+	if len(args) > 1 {
+		roots = append(roots, args[1:]...)
+	}
 	if flags, _ := cmd.Flags().GetStringArray("workspace-root"); len(flags) > 0 {
 		roots = append(roots, flags...)
 	}
@@ -143,7 +148,20 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("resolve .contenox dir: %w", err)
 	}
 	workspaceID := ResolveWorkspaceID(contenoxDir)
+	// The effective workspace root is the cwd for every chat session (native and
+	// external), the local-exec allowed dir, the terminal allowed root, the
+	// /files ProjectRoot, and the Factory default. When a project directory is
+	// served positionally it BECOMES that root, bounding all of the above to the
+	// project. Only the argument-less `contenox serve` falls back to the parent
+	// of ~/.contenox (home), preserving today's behavior.
 	workspaceRoot := filepath.Dir(contenoxDir)
+	if len(args) > 0 {
+		servedDir, err := filepath.Abs(args[0])
+		if err != nil {
+			return fmt.Errorf("resolve serve directory %q: %w", args[0], err)
+		}
+		workspaceRoot = servedDir
+	}
 	nodeID := uuid.NewString()[:8]
 
 	store := runtimetypes.New(db.WithoutTransaction())

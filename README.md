@@ -179,6 +179,29 @@ Tool invocations render dynamically as interactive UI cards showing the underlyi
 
 ---
 
+## Host External Agents
+
+The inverse of Contenox-as-agent: Contenox can also **register and drive other ACP agents**—Claude Code, Goose, or a binary of your own. It spawns them on demand and puts every gated action behind the same human-in-the-loop approval you author for your own chains.
+
+```bash
+# Register an agent from a bare command…
+contenox agent add local-bot -- /usr/local/bin/my-acp-agent --stdio
+
+# …or seed one from the ACP registry catalog
+contenox agent search claude
+contenox agent add claude-acp
+
+# Verify it end-to-end with one live turn
+contenox agent check claude-acp "say hello"
+
+```
+
+Registered agents surface in **Beam**'s agent picker for gated, browser-based chat, and over the read-only `GET /api/agents` endpoint. Per-agent MCP forwarding is an explicit allowlist—named server by named server, no wildcard, and Contenox-side credentials are never forwarded to the agent.
+
+*Full guide:* [Host external ACP agents](https://contenox.com/docs/integrations/agents/external-acp-agents/).
+
+---
+
 ## Managing Backends
 
 Routing rules are treated as system configuration, not application logic. Add hosted, local, or private network backends seamlessly:

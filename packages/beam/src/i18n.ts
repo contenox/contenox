@@ -1696,7 +1696,10 @@ const resources = {
         no_response: 'No response received',
       },
       acp_chat: {
-        title: 'Chat',
+        // "beam" is the product name of this chat surface (identical in every
+        // language). The label now lives in the shell navbar (see Layout's
+        // headerTitle); this string is kept in sync for any remaining consumer.
+        title: 'Beam',
         new_session: 'New session',
         tab_close_label: 'Close tab: {{name}}',
         role_user: 'You',
@@ -3131,7 +3134,9 @@ const resources = {
         no_response: 'Keine Antwort erhalten',
       },
       acp_chat: {
-        title: 'Chat',
+        // "beam" ist der Produktname dieser Chat-Oberfläche (in jeder Sprache
+        // identisch) — siehe englischen Kommentar.
+        title: 'Beam',
         new_session: 'Neue Sitzung',
         tab_close_label: 'Tab schließen: {{name}}',
         role_user: 'Du',

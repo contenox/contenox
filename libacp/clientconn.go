@@ -703,6 +703,21 @@ func (c *ClientSideConnection) SetSessionMode(ctx context.Context, req SetSessio
 	return resp, nil
 }
 
+// SetSessionModel switches a session to a different ModelInfo.ID, one of the ids
+// the session's SessionModelState.AvailableModels advertised. This is the UNSTABLE
+// Zed model-picker surface (session/set_model, see MethodSessionSetModel) — Zed's
+// claude-code-acp adapter exposes it as `unstable_setSessionModel`; it is not part
+// of the stable ACP spec and MAY change. On success the requested model is
+// authoritative (the response carries no state, and no session/update kind exists
+// to reconfirm it).
+func (c *ClientSideConnection) SetSessionModel(ctx context.Context, req SetSessionModelRequest) (SetSessionModelResponse, error) {
+	var resp SetSessionModelResponse
+	if err := c.call(ctx, MethodSessionSetModel, req, &resp); err != nil {
+		return SetSessionModelResponse{}, err
+	}
+	return resp, nil
+}
+
 func (c *ClientSideConnection) SetSessionConfigOption(ctx context.Context, req SetSessionConfigOptionRequest) (SetSessionConfigOptionResponse, error) {
 	var resp SetSessionConfigOptionResponse
 	if err := c.call(ctx, MethodSessionSetConfigOption, req, &resp); err != nil {

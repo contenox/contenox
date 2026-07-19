@@ -3,6 +3,7 @@ import { Suspense, lazy, useContext, type ReactNode } from 'react';
 import { Route, HashRouter as Router, Routes } from 'react-router-dom';
 import './app.css';
 import { Layout } from './components/Layout';
+import { NavbarSlotProvider } from './components/NavbarSlot';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AcpSessionSidebar } from './components/sidebar/AcpSessionSidebar';
 import { routes } from './config/routes';
@@ -69,6 +70,10 @@ export default function App() {
                 sidebar (which seeds it) and the empty chat surface (which shows,
                 changes, and consumes it). See lib/stagedAgent.tsx. */}
             <StagedAgentProvider>
+            {/* Lets a routed page (today the chat surface) project chrome into
+                the shell's navbar center; wraps Layout so both the navbar and
+                the routed pages inside `mainContent` share the one slot. */}
+            <NavbarSlotProvider>
             <Layout
               sidebarContent={({ setIsOpen }) => <AcpSessionSidebar setIsOpen={setIsOpen} />}
               defaultOpen={true}
@@ -98,6 +103,7 @@ export default function App() {
                 </ErrorBoundary>
               }
             />
+            </NavbarSlotProvider>
             </StagedAgentProvider>
           </AuthenticatedAcpProvider>
         </AuthGate>

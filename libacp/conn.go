@@ -528,6 +528,20 @@ func (c *AgentSideConnection) callMethod(ctx context.Context, req Request, pc *p
 		}
 		return resp, nil
 
+	// MethodSessionSetModel is the UNSTABLE Zed model-picker method (session/set_model).
+	// An agent that advertises no `models` state returns MethodNotFound from
+	// SetSessionModel, mirroring the experimental method's optional-capability contract.
+	case MethodSessionSetModel:
+		var p SetSessionModelRequest
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, InvalidParams(err.Error())
+		}
+		resp, err := c.agent.SetSessionModel(ctx, p)
+		if err != nil {
+			return nil, AsError(err)
+		}
+		return resp, nil
+
 	case MethodSessionSetConfigOption:
 		var p SetSessionConfigOptionRequest
 		if err := json.Unmarshal(params, &p); err != nil {

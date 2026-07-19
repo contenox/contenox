@@ -9,11 +9,13 @@ import { startNewChat, type NewChatDeps } from './newChatIntent';
  */
 function mockDeps(): NewChatDeps & {
   setStagedAgent: ReturnType<typeof vi.fn>;
+  focusEmptyTab: ReturnType<typeof vi.fn>;
   navigate: ReturnType<typeof vi.fn>;
   closeSidebar: ReturnType<typeof vi.fn>;
 } {
   return {
     setStagedAgent: vi.fn(),
+    focusEmptyTab: vi.fn(),
     navigate: vi.fn(),
     closeSidebar: vi.fn(),
   };
@@ -21,26 +23,33 @@ function mockDeps(): NewChatDeps & {
 
 describe('startNewChat', () => {
   it('picking an agent stages that agent AND focuses the empty /chat surface (from a session tab)', () => {
-    // Entry state (a): the rail's picker is used while a session tab is open —
-    // the navigate to bare /chat is what moves focus to the empty surface.
+    // Entry state (a): the rail's picker is used while a session tab is open.
+    // Driving `focusEmptyTab` re-points the tab-model to the empty surface — the
+    // source of truth — so the navigate to bare /chat is NOT reverted by the
+    // tab↔route sync (see WorkspaceTabs) the way a bare navigate alone was.
     const deps = mockDeps();
     startNewChat('claude', deps);
 
     expect(deps.setStagedAgent).toHaveBeenCalledTimes(1);
     expect(deps.setStagedAgent).toHaveBeenCalledWith('claude');
+    expect(deps.focusEmptyTab).toHaveBeenCalledTimes(1);
     expect(deps.navigate).toHaveBeenCalledWith('/chat');
     expect(deps.closeSidebar).toHaveBeenCalledTimes(1);
   });
 
-  it('stages first, then routes — order-fixed so the empty surface reads the pick', () => {
+  it('stages, then focuses the empty surface, then routes — order-fixed so the sync agrees with the route', () => {
+    // The tab-model focus MUST precede the route: it is what makes the empty
+    // surface the active tab before the URL follows, so the sync never reverts
+    // /chat back to the outgoing /chat/:id.
     const calls: string[] = [];
     const deps: NewChatDeps = {
       setStagedAgent: () => calls.push('stage'),
+      focusEmptyTab: () => calls.push('focusEmptyTab'),
       navigate: () => calls.push('navigate'),
       closeSidebar: () => calls.push('close'),
     };
     startNewChat('claude', deps);
-    expect(calls).toEqual(['stage', 'navigate', 'close']);
+    expect(calls).toEqual(['stage', 'focusEmptyTab', 'navigate', 'close']);
   });
 
   it('picking while already on the empty surface still updates the staged agent (navigate is a no-op there)', () => {
@@ -54,8 +63,10 @@ describe('startNewChat', () => {
 
     expect(deps.setStagedAgent).toHaveBeenNthCalledWith(1, 'claude');
     expect(deps.setStagedAgent).toHaveBeenNthCalledWith(2, 'gpt-4o');
-    // The action does not branch on the current route — it always re-stages.
+    // The action does not branch on the current route — it always re-stages and
+    // re-drives the empty surface (both are idempotent while already there).
     expect(deps.setStagedAgent).toHaveBeenCalledTimes(2);
+    expect(deps.focusEmptyTab).toHaveBeenCalledTimes(2);
     expect(deps.navigate).toHaveBeenCalledTimes(2);
   });
 
@@ -67,6 +78,7 @@ describe('startNewChat', () => {
     startNewChat(null, deps);
 
     expect(deps.setStagedAgent).toHaveBeenCalledWith(null);
+    expect(deps.focusEmptyTab).toHaveBeenCalledTimes(1);
     expect(deps.navigate).toHaveBeenCalledWith('/chat');
   });
 
@@ -81,6 +93,7 @@ describe('startNewChat', () => {
     startNewChat(null, nativePick); // picker -> native
 
     expect(plainButton.setStagedAgent.mock.calls).toEqual(nativePick.setStagedAgent.mock.calls);
+    expect(plainButton.focusEmptyTab.mock.calls).toEqual(nativePick.focusEmptyTab.mock.calls);
     expect(plainButton.navigate.mock.calls).toEqual(nativePick.navigate.mock.calls);
   });
 });

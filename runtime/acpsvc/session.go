@@ -603,6 +603,17 @@ func (t *Transport) SetSessionMode(_ context.Context, _ libacp.SetSessionModeReq
 	return libacp.SetSessionModeResponse{}, libacp.MethodNotFound(libacp.MethodSessionSetMode)
 }
 
+// SetSessionModel is not supported on contenox's OWN upstream surface: the runtime
+// never advertises a `models` state (SessionModelState) to its clients — for an
+// external session the DOWNSTREAM agent's model picker is surfaced as the synthetic
+// AgentModelConfigOptionID config option and switched via set_config_option (which the
+// driver translates to the downstream's session/set_model), and a native session
+// exposes no model picker of this UNSTABLE shape at all. So a conformant client never
+// calls this; it reports MethodNotFound, mirroring SetSessionMode.
+func (t *Transport) SetSessionModel(_ context.Context, _ libacp.SetSessionModelRequest) (libacp.SetSessionModelResponse, error) {
+	return libacp.SetSessionModelResponse{}, libacp.MethodNotFound(libacp.MethodSessionSetModel)
+}
+
 // CloseSession releases the connection-local resources of a session without
 // touching its stored history. Closing an unknown session succeeds: the
 // desired state (not open here) already holds.

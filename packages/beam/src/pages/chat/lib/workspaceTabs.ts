@@ -97,3 +97,30 @@ export function workspaceTabsReducer(state: WorkspaceTabsState, action: Workspac
       return state;
   }
 }
+
+/**
+ * The URL the tab→route sync should target for a given active tab, or `null`
+ * when it must NOT navigate at all.
+ *
+ * This is the authoritative half of `WorkspaceTabs`'s route↔tab sync — the
+ * "who navigates to `/chat/:focusedId`, and when" decision — pulled out as a
+ * pure function so it is unit-testable (the effect that applies it lives in a
+ * DOM-only component). The rules:
+ *
+ *  - A real active tab always reflects its OWN `/chat/:id`.
+ *  - The empty/new-chat surface pushes bare `/chat` ONLY when the move there was
+ *    intentional (a "new session" action, or closing the last tab). During
+ *    deep-link adoption `activeId` is briefly `null` before the URL's tab opens;
+ *    returning `null` there leaves the deep-link URL untouched rather than
+ *    clobbering it with `/chat`.
+ *
+ * Returning `null` (rather than pushing `/chat/:id`) for the non-intentional
+ * empty case is also what stops the regression where a sidebar "new session"
+ * — a bare `navigate('/chat')` — was reverted back to `/chat/:id`: once the tab
+ * model has actually reached the empty surface (`activeId === null`), the sync
+ * never targets the outgoing session id.
+ */
+export function routeForActiveTab(activeId: string | null, intentionalEmpty: boolean): string | null {
+  if (activeId !== null) return `/chat/${activeId}`;
+  return intentionalEmpty ? '/chat' : null;
+}

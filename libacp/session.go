@@ -18,8 +18,13 @@ type NewSessionRequest struct {
 }
 
 type NewSessionResponse struct {
-	SessionID     SessionID             `json:"sessionId"`
-	Modes         *SessionModeState     `json:"modes,omitempty"`
+	SessionID SessionID         `json:"sessionId"`
+	Modes     *SessionModeState `json:"modes,omitempty"`
+	// Models is the UNSTABLE Zed model-picker surface (session/set_model + the
+	// `models` state, see SessionModelState) an agent MAY advertise in its
+	// session/new response. Omitted (nil) means the agent exposes no selectable
+	// model, the byte-identical spec-conformant default.
+	Models        *SessionModelState    `json:"models,omitempty"`
 	ConfigOptions []SessionConfigOption `json:"configOptions,omitempty"`
 	Meta          json.RawMessage       `json:"_meta,omitempty"`
 }
@@ -37,6 +42,7 @@ type LoadSessionRequest struct {
 
 type LoadSessionResponse struct {
 	Modes         *SessionModeState     `json:"modes,omitempty"`
+	Models        *SessionModelState    `json:"models,omitempty"`
 	ConfigOptions []SessionConfigOption `json:"configOptions,omitempty"`
 	Meta          json.RawMessage       `json:"_meta,omitempty"`
 }
@@ -67,6 +73,49 @@ type SetSessionModeRequest struct {
 }
 
 type SetSessionModeResponse struct {
+	Meta json.RawMessage `json:"_meta,omitempty"`
+}
+
+// SessionModelState is the UNSTABLE Zed model-picker surface: the wire shape of
+// the optional `models` field in session/new, session/load, and session/resume
+// responses. It carries the current model id plus the set of selectable models,
+// mirroring SessionModeState for modes. This is an experimental extension (the
+// client-side driver invokes it as `unstable_setSessionModel` and it is dispatched
+// over the `session/set_model` method — see MethodSessionSetModel); it is not part
+// of the stable ACP spec and MAY change.
+type SessionModelState struct {
+	CurrentModelID  string          `json:"currentModelId"`
+	AvailableModels []ModelInfo     `json:"availableModels"`
+	Meta            json.RawMessage `json:"_meta,omitempty"`
+}
+
+// ModelInfo describes a single selectable model in a SessionModelState. ID is the
+// stable identifier passed back in SetSessionModelRequest; Name is the
+// human-readable label. Part of the UNSTABLE Zed model-picker surface. Note that
+// this surface carries no effort/fast-mode facet — a model entry is id + name +
+// optional description only; reasoning-effort controls (if any) live elsewhere,
+// not in this state.
+type ModelInfo struct {
+	ID          string          `json:"modelId"`
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Meta        json.RawMessage `json:"_meta,omitempty"`
+}
+
+// SetSessionModelRequest is session/set_model's params: switch a session to a
+// different ModelInfo.ID, one of the ids SessionModelState.AvailableModels
+// advertised. Part of the UNSTABLE Zed model-picker surface (see
+// MethodSessionSetModel); the client-side driver names it `unstable_setSessionModel`.
+type SetSessionModelRequest struct {
+	SessionID SessionID       `json:"sessionId"`
+	ModelID   string          `json:"modelId"`
+	Meta      json.RawMessage `json:"_meta,omitempty"`
+}
+
+// SetSessionModelResponse is session/set_model's result: an empty object (the
+// UNSTABLE surface carries no state back — the requested modelId is authoritative
+// on success, and no session/update notification kind exists to reconfirm it).
+type SetSessionModelResponse struct {
 	Meta json.RawMessage `json:"_meta,omitempty"`
 }
 
@@ -327,6 +376,7 @@ type ResumeSessionRequest struct {
 
 type ResumeSessionResponse struct {
 	Modes         *SessionModeState     `json:"modes,omitempty"`
+	Models        *SessionModelState    `json:"models,omitempty"`
 	ConfigOptions []SessionConfigOption `json:"configOptions,omitempty"`
 	Meta          json.RawMessage       `json:"_meta,omitempty"`
 }

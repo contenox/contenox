@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   initialWorkspaceTabsState,
+  routeForActiveTab,
   workspaceTabsReducer,
   type WorkspaceTabsState,
 } from './workspaceTabs';
@@ -177,5 +178,36 @@ describe('workspaceTabsReducer', () => {
       );
       expect(state).toEqual({ tabs: [], activeId: null });
     });
+  });
+});
+
+describe('routeForActiveTab (tab -> URL sync decision)', () => {
+  // The half of WorkspaceTabs's route↔tab sync that decides "who navigates to
+  // /chat/:focusedId, and when" — the exact seam where the "New session" /
+  // agent-pick regression lived. When this fired with a STALE active tab it
+  // reverted the sidebar's `navigate('/chat')` straight back to /chat/:id.
+
+  it('targets a real active tab’s own /chat/:id', () => {
+    // This IS the value that reverted the sidebar navigate — but it may only be
+    // produced while the session is genuinely still the active tab.
+    expect(routeForActiveTab('sess-a', false)).toBe('/chat/sess-a');
+    // Intent is irrelevant once a real tab is active.
+    expect(routeForActiveTab('sess-a', true)).toBe('/chat/sess-a');
+  });
+
+  it('targets bare /chat when the empty surface was reached intentionally', () => {
+    // "New session" / last-tab-close: the focused session + startNewChat outcome
+    // — active tab is now the empty surface, so the route target is /chat, NOT a
+    // reverted /chat/:id.
+    expect(routeForActiveTab(null, true)).toBe('/chat');
+  });
+
+  it('targets nothing (null) for the transient empty of deep-link adoption', () => {
+    // On entry `activeId` is briefly null before the URL's tab opens; returning
+    // null leaves the deep-link URL untouched instead of clobbering it with
+    // /chat. This is also what makes the post-startNewChat empty surface (whose
+    // move was driven by the tab-model, not this one-shot flag) NOT re-navigate:
+    // the sidebar already routed to /chat and the sync adds nothing.
+    expect(routeForActiveTab(null, false)).toBeNull();
   });
 });

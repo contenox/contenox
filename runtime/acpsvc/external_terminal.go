@@ -26,6 +26,15 @@ import (
 // the contenox.terminalOutput session/update path (see terminal.go), so the user
 // watches a foreign agent's shell activity exactly as they watch a native turn's.
 //
+// Unlike the `!` passthrough — which forwards the shell's RAW scrollback verbatim
+// (the user typed that line, so its echo and prompt belong on screen) — the panel
+// feed for an agent's terminal is FILTERED per-terminal by bt.watch: only the
+// bytes between the bridge's START/END markers reach the panel, so the wrapper
+// line, the markers, and their erase sequences (internal bookkeeping) are never
+// shown. beam's panel is an append-only log view that does not process cursor
+// controls, so relying on the `\033[2K\r` erase to hide the markers would leak
+// them; the markers are instead used only to slice, never forwarded.
+//
 // # Mapping onto the shared session shell
 //
 // runtime/shellsession gives ONE persistent PTY-backed shell per chat session
@@ -78,6 +87,7 @@ type bridgeTerminal struct {
 	startRe     *regexp.Regexp
 	endRe       *regexp.Regexp
 	byteLimit   int64 // OutputByteLimit from the request; 0 = unlimited
+	panelGuard  int   // trailing bytes held back from the panel while the END marker may be partial
 
 	mu       sync.Mutex
 	exited   bool
@@ -137,12 +147,27 @@ func (bt *bridgeTerminal) locate(raw string) (out string, sawStart, sawEnd bool,
 	return out, sawStart, sawEnd, code
 }
 
-// watch resolves the terminal's exit by scanning the shared scrollback for the
-// END marker. It is event-driven: a shellsession subscription pokes signal on
-// each output flush and the loop rescans, so there is no timer poll. It exits
-// when the END marker appears (recording the exit code), when done is closed by
-// another lifecycle path (kill/release/teardown), or when the connection ends.
-func (bt *bridgeTerminal) watch(mgr shellsession.Manager, connDone <-chan struct{}) {
+// watch resolves the terminal's exit AND feeds the upstream client's terminal
+// panel with the command's REAL output, both driven off the same START/END marker
+// locate. It is event-driven: a shellsession subscription pokes signal on each
+// output flush and the loop rescans the shared scrollback since startOffset, so
+// there is no timer poll.
+//
+// Panel feed: only the bytes BETWEEN the markers are forwarded (via panel), so the
+// echoed wrapper line, the START/END markers, and their `\033[2K\r` erase
+// sequences — the bridge's internal framing — never reach beam's append-only
+// terminal panel; it shows just what the command printed. Because locate is rerun
+// against the WHOLE accumulated scrollback each poke (not per-chunk), a marker
+// split across two flushes is handled naturally, and output streams incrementally
+// as it arrives (only the newly-located bytes are sent). While the END marker is
+// not yet fully present a trailing window (panelGuard) is held back so a
+// half-written marker is never forwarded — it flushes the instant the marker
+// completes.
+//
+// It exits when the END marker appears (recording the exit code AFTER forwarding
+// the last of the output), when done is closed by another lifecycle path
+// (kill/release/teardown), or when the connection ends.
+func (bt *bridgeTerminal) watch(mgr shellsession.Manager, connDone <-chan struct{}, panel func(string)) {
 	signal := make(chan struct{}, 1)
 	cancel := mgr.Subscribe(bt.internalID, func(shellsession.Chunk) {
 		select {
@@ -152,9 +177,25 @@ func (bt *bridgeTerminal) watch(mgr shellsession.Manager, connDone <-chan struct
 	})
 	defer cancel()
 
+	forwarded := 0 // bytes of the located output already sent to the panel
 	for {
 		raw := mgr.Read(bt.internalID, bt.startOffset, 0).Content
-		if _, _, sawEnd, code := bt.locate(raw); sawEnd {
+		out, sawStart, sawEnd, code := bt.locate(raw)
+		if panel != nil && sawStart {
+			end := len(out)
+			if !sawEnd {
+				// The END marker may be only partially in the scrollback; hold back a
+				// trailing window that could be a nascent marker so framing never leaks.
+				if end -= bt.panelGuard; end < 0 {
+					end = 0
+				}
+			}
+			if end > forwarded {
+				panel(out[forwarded:end])
+				forwarded = end
+			}
+		}
+		if sawEnd {
 			bt.finish(code, nil)
 			return
 		}
@@ -173,8 +214,12 @@ func (bt *bridgeTerminal) watch(mgr shellsession.Manager, connDone <-chan struct
 // CreateTerminal spawns the downstream agent's command in the RUNTIME's session
 // shell (rooted at the session workspace via the same cwd resolver the native
 // tools use) and returns a terminal id the agent tracks with the other terminal/*
-// calls. The command's output also streams live to the upstream client's terminal
-// panel through the shared shellsession subscription (ensureTerminalSubscribed).
+// calls. The command's REAL output also streams live to the upstream client's
+// terminal panel, but through the per-terminal FILTERED forwarder in bt.watch (not
+// the raw session subscription): only the bytes between the START/END markers are
+// forwarded, so the bridge's wrapper line and framing markers never reach the
+// append-only panel. A clean `$ <command>` header is emitted first so the panel
+// reads like a terminal session.
 func (b *externalBridge) CreateTerminal(_ context.Context, req libacp.CreateTerminalRequest) (libacp.CreateTerminalResponse, error) {
 	t := b.t
 	mgr := t.deps.ShellSessions
@@ -187,10 +232,14 @@ func (b *externalBridge) CreateTerminal(_ context.Context, req libacp.CreateTerm
 	}
 	internalID := entry.InternalSessionID
 
-	// The `!` passthrough self-subscribes on run because an external session never
-	// subscribes at session/new; mirror that so the first terminal/create lights up
-	// beam's panel, and a second create in the same session does not repaint it.
-	t.ensureTerminalSubscribed(b.upstreamID, internalID)
+	// Drop any RAW session-scoped panel subscription so it cannot forward this
+	// terminal's wrapper line and framing markers verbatim. An external session
+	// never subscribes at session/new, but session/load and session/resume do
+	// (unconditionally, even for external sessions), so a reopened session can carry
+	// a raw subscription; remove it and let the per-terminal FILTERED forwarder in
+	// bt.watch (below) be the sole feed for the panel. The `!` passthrough
+	// re-subscribes on its own next run, unaffected.
+	t.unsubscribeTerminal(b.upstreamID)
 
 	nonce := strings.ReplaceAll(uuid.NewString(), "-", "")
 	startTok := "CTXS" + nonce
@@ -218,10 +267,16 @@ func (b *externalBridge) CreateTerminal(_ context.Context, req libacp.CreateTerm
 		id:          "ext-term-" + nonce,
 		internalID:  internalID,
 		startOffset: startOffset,
-		startRe:     regexp.MustCompile(regexp.QuoteMeta(startTok) + `(\d)`),
-		endRe:       regexp.MustCompile(regexp.QuoteMeta(endTok) + ` (\d+)`),
+		startRe:     startMarkerRegexp(startTok),
+		endRe:       endMarkerRegexp(endTok),
 		byteLimit:   byteLimit,
-		done:        make(chan struct{}),
+		// While the END marker is not yet fully in the scrollback its longest
+		// unmatched printed prefix is "\n" + endTok + " " (token + separating space,
+		// before the exit-code digit that completes the regex). Hold back at least
+		// that many trailing bytes from the panel so a half-written marker never
+		// leaks; the slack keeps it safe against the leading newline and any digits.
+		panelGuard: len(endTok) + 16,
+		done:       make(chan struct{}),
 	}
 	b.termMu.Lock()
 	if b.terminals == nil {
@@ -230,7 +285,19 @@ func (b *externalBridge) CreateTerminal(_ context.Context, req libacp.CreateTerm
 	b.terminals[bt.id] = bt
 	b.termMu.Unlock()
 
-	go bt.watch(mgr, t.connCtx.Done())
+	// Emit a clean `$ <command>` header (the AGENT's requested command, never the
+	// bridge's bash -c wrapper) before the output flows, so the panel shows what ran.
+	// Sent here, on the request goroutine, strictly before bt.watch starts forwarding
+	// output, so the header always precedes the command's output on the wire.
+	display := req.Command
+	if len(req.Args) > 0 {
+		display = req.Command + " " + strings.Join(req.Args, " ")
+	}
+	t.sendTerminalChunk(b.upstreamID, shellsession.Chunk{Data: "$ " + display + "\n"})
+
+	go bt.watch(mgr, t.connCtx.Done(), func(chunk string) {
+		t.sendTerminalChunk(b.upstreamID, shellsession.Chunk{Data: chunk})
+	})
 
 	return libacp.CreateTerminalResponse{TerminalID: bt.id}, nil
 }
@@ -383,13 +450,37 @@ func (b *externalBridge) interrupt(bt *bridgeTerminal) {
 // persistent shell), then the exit-code END marker. The markers are wrapped in
 // erase sequences so a VT-rendered panel hides them; their bytes remain in the
 // raw scrollback for the watcher to parse.
+//
+// The command has two request shapes, per the ACP terminal spec and how real
+// adapters use it:
+//
+//   - Args EMPTY: req.Command is a full SHELL COMMAND LINE. This is what
+//     claude-code-acp sends — e.g. "echo hello", "git status -s | head" — the
+//     `command` field carries a bash line, not an execvp program. It MUST run
+//     through a shell so word-splitting, pipes, and redirects work; quoting it as
+//     a single execvp atom (`'echo hello'`) makes env/exec look for a program
+//     literally named "echo hello" and fail with exit 127. So it runs as
+//     `bash -c <line>`, with the whole subshell capturing its exit code.
+//   - Args NON-EMPTY: execvp-style program + argv — the command and each arg are
+//     quoted separately and run directly, no shell.
+//
+// env (when present) applies to the whole invocation in both shapes; cwd is
+// entered inside the subshell so neither leaks into the persistent session shell.
 func composeTerminalCommand(req libacp.CreateTerminalRequest, startTok, endTok string) string {
-	parts := make([]string, 0, 1+len(req.Args))
-	parts = append(parts, shellQuoteArg(req.Command))
-	for _, a := range req.Args {
-		parts = append(parts, shellQuoteArg(a))
+	var exec string
+	if len(req.Args) == 0 {
+		// A shell command line: hand it to bash verbatim so pipes/redirects/word-
+		// splitting all work.
+		exec = "bash -c " + shellQuoteArg(req.Command)
+	} else {
+		// execvp-style: program + argv, each a separate quoted atom.
+		parts := make([]string, 0, 1+len(req.Args))
+		parts = append(parts, shellQuoteArg(req.Command))
+		for _, a := range req.Args {
+			parts = append(parts, shellQuoteArg(a))
+		}
+		exec = strings.Join(parts, " ")
 	}
-	exec := strings.Join(parts, " ")
 	if len(req.Env) > 0 {
 		env := make([]string, 0, len(req.Env)+1)
 		env = append(env, "env")
@@ -422,4 +513,17 @@ func composeTerminalCommand(req libacp.CreateTerminalRequest, startTok, endTok s
 // escaping embedded single quotes.
 func shellQuoteArg(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// startMarkerRegexp / endMarkerRegexp compile the regexes that locate a marker's
+// PRINTED form in the scrollback. Both require a digit immediately after the token
+// (the `%d`-substituted value), so the marker's format string as it appears in the
+// echoed input line — which carries a literal `%d`, not a digit — never matches;
+// only the printed output does. The END regex captures the exit code.
+func startMarkerRegexp(tok string) *regexp.Regexp {
+	return regexp.MustCompile(regexp.QuoteMeta(tok) + `(\d)`)
+}
+
+func endMarkerRegexp(tok string) *regexp.Regexp {
+	return regexp.MustCompile(regexp.QuoteMeta(tok) + ` (\d+)`)
 }

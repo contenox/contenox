@@ -1,11 +1,15 @@
 // Beam product demo recording — real flows only, per scripts/demos/RECORDING.md.
-// Story: seeded sidebar → new session in demo-project → prompt → read tool card
-// → approval gate with diff → Allow (Y) → write lands → agent-view policy overlay.
+// Story (external-ACP-agents wave): seeded sidebar → "New chat with an agent" →
+// pick the registered agent → prompt that reads then writes a file → tool cards
+// → INLINE permission card with diff → Allow → write lands → agent-view policy
+// overlay closer.
 //
-// Deps: `npm i playwright-core` anywhere on NODE_PATH (no browser download
-// needed — a Playwright-managed Chromium from ~/.cache/ms-playwright is
-// reused). Set prep per RECORDING.md: `contenox serve <demo-dir>`, think off,
-// seeded sidebar, fixtures reset. Run: node record-beam.mjs
+// Deps: playwright-core on NODE_PATH (a Playwright-managed Chromium from
+// ~/.cache/ms-playwright is reused — no browser download). Prep per RECORDING.md:
+// serve FROM the demo project so the external agent's cwd is scoped to it
+// (`cd <demo-dir> && contenox serve <demo-dir>`), register the demo agent,
+// reset fixtures. Env: BEAM_URL, BEAM_TOKEN (LAN serve token), BEAM_AGENT.
+// Run: NODE_PATH=<dir-with-playwright-core> node record-beam.mjs
 import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -32,7 +36,9 @@ function chromiumExe() {
 
 const EXE = chromiumExe();
 const OUT = fileURLToPath(new URL('./video/', import.meta.url));
-const BEAM = process.env.BEAM_URL ?? 'http://127.0.0.1:32123/#/chat';
+const BASE = process.env.BEAM_URL ?? 'http://127.0.0.1:32123';
+const TOKEN = process.env.BEAM_TOKEN ?? '';
+const AGENT = process.env.BEAM_AGENT ?? 'claude';
 const hold = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const browser = await chromium.launch({ executablePath: EXE, headless: true });
@@ -45,69 +51,69 @@ await ctx.addInitScript(() => localStorage.setItem('i18nextLng', 'en'));
 const page = await ctx.newPage();
 
 try {
-  await page.goto(BEAM);
+  await page.goto(BASE + '/#/chat');
   await page.waitForLoadState('networkidle');
-  await hold(400);
 
-  // Opening shot: open the session drawer for a 2.5s pan, then close it again
-  // so it can't intercept clicks on the chat surface.
-  const toggle = page.getByRole('button', { name: /toggle sidebar/i }).first();
-  const sessionsNav = page.locator('nav[aria-label="Sessions"], nav[aria-label="Sitzungen"]');
-  if (!(await sessionsNav.isVisible().catch(() => false))) {
-    await toggle.click();
-    await hold(1800);
-    await toggle.click();
-    await hold(500);
-  } else {
-    await hold(1800);
+  // Auth: the LAN serve gates on a token. Fill the login field if present.
+  const tokenField = page.getByRole('textbox').first();
+  if (await tokenField.isVisible().catch(() => false)) {
+    await tokenField.fill(TOKEN);
+    await page.getByRole('button', { name: /^login$/i }).click();
+    await page.waitForLoadState('networkidle');
   }
-
-  // New session via the tab-bar affordance (not the drawer button).
-  const newChat = page.getByRole('button', { name: /new chat|new session|neuer chat|neue sitzung/i }).last();
-  await newChat.click();
   await hold(1200);
 
-  // Pick the demo-project workspace — fail fast if it isn't offered.
-  const wsSelect = page.locator('select').filter({ has: page.locator('option', { hasText: /demo-project/i }) }).last();
-  await wsSelect.waitFor({ state: 'attached', timeout: 10000 });
-  const val = await wsSelect.locator('option', { hasText: /demo-project/i }).first().getAttribute('value');
-  await wsSelect.selectOption(val);
-  await hold(1200);
+  // Opening: the seeded sidebar on camera briefly.
+  await hold(1600);
+
+  // The headline beat: "New chat with an agent" → pick the registered agent.
+  await page.getByRole('button', { name: /new chat with an agent/i }).first().click();
+  await hold(700);
+  await page.getByRole('option', { name: new RegExp(`^${AGENT}$`, 'i') }).click();
+  await hold(1400);
 
   // Open the workspace files panel so the project tree (and the agent-view
-  // toggle) are on camera for the whole take.
-  const filesToggle = page.getByRole('button', { name: /workspace files|dateien/i }).last();
-  await filesToggle.click();
-  await hold(1500);
+  // toggle) are on camera. Scoped to the demo project because serve runs there.
+  await page
+    .getByRole('button', { name: /workspace files|dateien/i })
+    .last()
+    .click()
+    .catch(() => {});
+  await hold(1400);
 
-  // Type the prompt like a human
-  const box = page.locator('textarea[placeholder], input[placeholder*="essage"], textarea').last();
+  // Type the prompt like a human — a read-then-gated-write turn.
+  const box = page.locator('textarea').last();
   await box.click();
   await page.keyboard.type(
-    'Read TODO.md and add a 0.2.0 entry to CHANGELOG.md for the completed items.',
-    { delay: 34 },
+    'Read TODO.md, then append a new line to it: "- [ ] Ship the external-agents launch demo".',
+    { delay: 30 },
   );
-  await hold(600);
+  await hold(500);
   await page.keyboard.press('Enter');
 
-  // Wait for the approval gate (up to 60s), let the diff breathe, approve via Y
-  const dialog = page.locator('[role="dialog"], [role="alertdialog"]');
-  await dialog.waitFor({ state: 'visible', timeout: 60000 });
+  // Wait for the INLINE permission card (role="group", not a dialog), let the
+  // diff breathe, then Allow via the button (no click-outside, no `y`).
+  const card = page.getByRole('group', { name: /permission required/i }).first();
+  await card.waitFor({ state: 'visible', timeout: 90000 });
   await hold(3200);
-  await page.keyboard.press('y');
+  await page.getByRole('button', { name: /^allow$/i }).first().click();
 
-  // Wait for the turn to finish (stop button gone), hold on the answer
+  // Wait for the turn to finish (Stop gone), hold on the answer.
   await page
     .getByRole('button', { name: /^stop$|^stopp$/i })
-    .waitFor({ state: 'hidden', timeout: 90000 })
+    .waitFor({ state: 'hidden', timeout: 120000 })
     .catch(() => {});
   await hold(2600);
 
-  // Closer: agent-view policy overlay on the file tree (mandatory shot)
+  // Closer: agent-view policy overlay on the file tree (optional — skip cleanly
+  // if the toggle isn't present for this session).
   const shield = page.getByRole('button', { name: /agent view|agenten-ansicht/i }).first();
-  await shield.waitFor({ state: 'visible', timeout: 10000 });
-  await shield.click();
-  await hold(3500);
+  if (await shield.isVisible().catch(() => false)) {
+    await shield.click();
+    await hold(3500);
+  } else {
+    await hold(1500);
+  }
 
   await page.screenshot({ path: OUT + 'cover-frame.png' });
 } finally {

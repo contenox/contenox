@@ -14,6 +14,7 @@ import (
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/agentregistryservice"
 	"github.com/contenox/runtime/runtime/enginesvc"
+	"github.com/contenox/runtime/runtime/internal/clikv"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/stretchr/testify/require"
 )
@@ -959,13 +960,18 @@ func TestLoopback_ExternalAgent_SessionNewCarriesSyntheticModeOption(t *testing.
 	require.True(t, configOptionHasValue(mode, "ask"),
 		"each downstream availableMode must be a selectable value")
 
-	// The driver surfaces exactly the synthetic mode option — a modes-only downstream
-	// agent advertises no real config options, and no contenox-native selects are folded in.
+	// The driver surfaces the synthetic mode option followed by contenox's own HITL
+	// policy select — a modes-only downstream agent advertises no real config options,
+	// and no chain-engine model/think/token selects are folded in.
 	h.tr.sessionMu.Lock()
 	entry := h.tr.sessions[newResp.SessionID]
 	h.tr.sessionMu.Unlock()
-	require.Len(t, h.tr.sessionConfigOptions(ctx, entry), 1,
-		"a modes-only downstream agent surfaces just the synthetic mode select")
+	opts := h.tr.sessionConfigOptions(ctx, entry)
+	require.Len(t, opts, 2,
+		"a modes-only downstream agent surfaces the synthetic mode select plus contenox's own HITL policy select")
+	require.Equal(t, AgentModeConfigOptionID, opts[0].ID, "the synthetic mode select leads")
+	require.Equal(t, configIDHITLPolicy, opts[len(opts)-1].ID,
+		"contenox's HITL policy select is appended last, after the downstream surface")
 }
 
 // TestLoopback_ExternalAgent_SetModeOptionRoundTripsToDownstream proves an upstream
@@ -1141,4 +1147,331 @@ func TestLoopback_NativeSession_NoSyntheticModeOption(t *testing.T) {
 		require.NotEqual(t, AgentModeConfigOptionID, o.ID,
 			"the synthetic downstream-mode option is external-only; a native session must never carry it")
 	}
+}
+
+// TestLoopback_ExternalAgent_SessionNewCarriesSyntheticModelOption is the model
+// keystone: a downstream agent that advertises the UNSTABLE `models` state ONLY (here
+// the stub opted into ACP_STUB_ADVERTISE_MODELS, Fast/Smart with Fast current, and no
+// modes or config options of its own) surfaces those models as the single synthetic
+// "Model" select (id contenox.agent-model) in the external session/new response. The
+// synthetic option leads the downstream surface, its value id/label come from each
+// availableModel, and its currentValue mirrors the downstream currentModelId.
+func TestLoopback_ExternalAgent_SessionNewCarriesSyntheticModelOption(t *testing.T) {
+	h := newLoopbackHarness(t)
+	ctx := context.Background()
+	agentName := registerStubAgentInDB(t, h.tr.deps.DB, "claude-stub-models",
+		map[string]string{"ACP_STUB_ADVERTISE_MODELS": "1"})
+
+	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
+	require.NoError(t, err)
+
+	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
+		Cwd:        "/tmp/loopback-external-models",
+		McpServers: []libacp.McpServer{},
+		Meta:       agentMetaJSON(agentName),
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, newResp.ConfigOptions,
+		"an external session/new response must surface the downstream agent's models as the synthetic model select")
+	require.Equal(t, AgentModelConfigOptionID, newResp.ConfigOptions[0].ID,
+		"the synthetic model select must lead the config-option set (no modes here, so model is first)")
+	model := optionByID(t, newResp.ConfigOptions, AgentModelConfigOptionID)
+	require.Equal(t, "select", model.Type)
+	require.Equal(t, "Model", model.Name)
+	require.Equal(t, "stub-model-fast", model.CurrentValue,
+		"the synthetic option's currentValue mirrors the downstream currentModelId")
+	require.True(t, configOptionHasValue(model, "stub-model-fast"))
+	require.True(t, configOptionHasValue(model, "stub-model-smart"),
+		"each downstream availableModel must be a selectable value")
+
+	// The driver surfaces the synthetic model option followed by contenox's own HITL
+	// policy select — a models-only downstream agent advertises no real config options.
+	h.tr.sessionMu.Lock()
+	entry := h.tr.sessions[newResp.SessionID]
+	h.tr.sessionMu.Unlock()
+	opts := h.tr.sessionConfigOptions(ctx, entry)
+	require.Len(t, opts, 2,
+		"a models-only downstream agent surfaces the synthetic model select plus contenox's own HITL policy select")
+	require.Equal(t, AgentModelConfigOptionID, opts[0].ID, "the synthetic model select leads")
+	require.Equal(t, configIDHITLPolicy, opts[len(opts)-1].ID,
+		"contenox's HITL policy select is appended last, after the downstream surface")
+}
+
+// TestLoopback_ExternalAgent_SessionNewCarriesModeAndModelInOrder pins the full
+// synthetic ordering: a downstream agent advertising BOTH session modes AND the
+// UNSTABLE model picker (and no config options of its own) surfaces them in the fixed
+// order mode, model, then contenox's own HITL policy select last — the toolbar order
+// beam renders (mode, model, downstream options, hitl-policy).
+func TestLoopback_ExternalAgent_SessionNewCarriesModeAndModelInOrder(t *testing.T) {
+	h := newLoopbackHarness(t)
+	ctx := context.Background()
+	agentName := registerStubAgentInDB(t, h.tr.deps.DB, "claude-stub-modes-models",
+		map[string]string{"ACP_STUB_ADVERTISE_MODES": "1", "ACP_STUB_ADVERTISE_MODELS": "1"})
+
+	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
+	require.NoError(t, err)
+
+	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
+		Cwd:        "/tmp/loopback-external-modes-models",
+		McpServers: []libacp.McpServer{},
+		Meta:       agentMetaJSON(agentName),
+	})
+	require.NoError(t, err)
+	require.Len(t, newResp.ConfigOptions, 3,
+		"a modes+models downstream agent surfaces the synthetic mode select, the synthetic model select, and contenox's HITL policy select")
+	require.Equal(t, AgentModeConfigOptionID, newResp.ConfigOptions[0].ID,
+		"the synthetic mode select leads")
+	require.Equal(t, AgentModelConfigOptionID, newResp.ConfigOptions[1].ID,
+		"the synthetic model select follows the mode select")
+	require.Equal(t, configIDHITLPolicy, newResp.ConfigOptions[2].ID,
+		"contenox's HITL policy select is last")
+	require.Equal(t, "code", optionByID(t, newResp.ConfigOptions, AgentModeConfigOptionID).CurrentValue)
+	require.Equal(t, "stub-model-fast", optionByID(t, newResp.ConfigOptions, AgentModelConfigOptionID).CurrentValue)
+}
+
+// TestLoopback_ExternalAgent_SetModelOptionRoundTripsToDownstream proves an upstream
+// set_config_option on the synthetic model id is translated to the downstream agent's
+// UNSTABLE session/set_model, and the confirmed model round-trips: the upstream response
+// reflects the new model (proving it went downstream and was adopted, not mutated
+// blindly). Unlike the mode path there is NO relayed update afterward — the ACP stream
+// carries no model-update kind, so the stateless set_model response is the truth.
+func TestLoopback_ExternalAgent_SetModelOptionRoundTripsToDownstream(t *testing.T) {
+	h := newLoopbackHarness(t)
+	ctx := context.Background()
+	agentName := registerStubAgentInDB(t, h.tr.deps.DB, "claude-stub-models-set",
+		map[string]string{"ACP_STUB_ADVERTISE_MODELS": "1"})
+
+	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
+	require.NoError(t, err)
+
+	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
+		Cwd:        "/tmp/loopback-external-models-set",
+		McpServers: []libacp.McpServer{},
+		Meta:       agentMetaJSON(agentName),
+	})
+	require.NoError(t, err)
+
+	setResp, err := h.client.SetSessionConfigOption(ctx, libacp.SetSessionConfigOptionRequest{
+		SessionID: newResp.SessionID,
+		ConfigID:  AgentModelConfigOptionID,
+		Value:     libacp.StringConfigValue("stub-model-smart"),
+	})
+	require.NoError(t, err)
+	require.Equal(t, "stub-model-smart", optionByID(t, setResp.ConfigOptions, AgentModelConfigOptionID).CurrentValue,
+		"the set_config_option response must carry the downstream agent's confirmed model")
+	require.True(t, configOptionHasValue(optionByID(t, setResp.ConfigOptions, AgentModelConfigOptionID), "stub-model-fast"),
+		"the refreshed synthetic option must still list every downstream model")
+}
+
+// TestE2E_Wire_ExternalAgent_ReloadRestoresModelPicker is the reload regression for the
+// model picker: an external session whose downstream advertises the UNSTABLE model state
+// only is created, then the whole connection (and the downstream process) is torn down.
+// A FRESH Transport on the SAME DB session/loads it with NO prompt and must restore the
+// synthetic model picker in the load RESPONSE — from persistence, since the downstream
+// is not respawned during load.
+func TestE2E_Wire_ExternalAgent_ReloadRestoresModelPicker(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	db, err := libdb.NewSQLiteDBManager(ctx, filepath.Join(t.TempDir(), "wire-external-models-reload.db"), runtimetypes.SchemaSQLite)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	const ws = "wire-external-models-reload-ws"
+	const cwd = "/tmp/wire-external-models-reload-project"
+	agentName := registerStubAgentInDB(t, db, "claude-stub-models-reload",
+		map[string]string{"ACP_STUB_ADVERTISE_MODELS": "1"})
+
+	// --- Connection 1: create the external session, then drop the connection. ---
+	c1 := dialWireTransport(ctx, t, db, ws)
+	resp, _ := c1.client.call(libacp.MethodInitialize, libacp.InitializeRequest{
+		ProtocolVersion: libacp.ProtocolVersion,
+		ClientInfo:      &libacp.Implementation{Name: "wiretest", Version: "0"},
+	})
+	require.Nil(t, resp.Error)
+
+	resp, notes := c1.client.call(libacp.MethodSessionNew, libacp.NewSessionRequest{
+		Cwd:        cwd,
+		McpServers: []libacp.McpServer{},
+		Meta:       agentMetaJSON(agentName),
+	})
+	require.Nil(t, resp.Error)
+	require.Empty(t, notes, "no update may precede the external session/new result")
+	var newResp libacp.NewSessionResponse
+	require.NoError(t, json.Unmarshal(resp.Result, &newResp))
+	require.NotEmpty(t, newResp.SessionID)
+	require.Equal(t, AgentModelConfigOptionID, optionByID(t, newResp.ConfigOptions, AgentModelConfigOptionID).ID,
+		"the external session/new response must carry the synthetic model picker")
+
+	c1.shutdown() // downstream process dies with the connection
+
+	// --- Connection 2: fresh Transport, same DB. session/load with NO prompt. ---
+	c2 := dialWireTransport(ctx, t, db, ws)
+	resp, _ = c2.client.call(libacp.MethodInitialize, libacp.InitializeRequest{
+		ProtocolVersion: libacp.ProtocolVersion,
+		ClientInfo:      &libacp.Implementation{Name: "wiretest", Version: "0"},
+	})
+	require.Nil(t, resp.Error)
+
+	resp, _ = c2.client.call(libacp.MethodSessionLoad, libacp.LoadSessionRequest{
+		SessionID:  newResp.SessionID,
+		Cwd:        cwd,
+		McpServers: []libacp.McpServer{},
+	})
+	require.Nil(t, resp.Error)
+
+	var loadResp libacp.LoadSessionResponse
+	require.NoError(t, json.Unmarshal(resp.Result, &loadResp))
+	require.NotEmpty(t, loadResp.ConfigOptions,
+		"session/load must restore the synthetic model picker from persistence, no prompt required")
+	model := optionByID(t, loadResp.ConfigOptions, AgentModelConfigOptionID)
+	require.Equal(t, "select", model.Type)
+	require.Equal(t, "stub-model-fast", model.CurrentValue,
+		"the restored model picker must carry the persisted current model")
+	require.True(t, configOptionHasValue(model, "stub-model-fast") && configOptionHasValue(model, "stub-model-smart"),
+		"the restored model picker must still list every downstream model")
+}
+
+// TestLoopback_NativeSession_NoSyntheticModelOption is the native guard: the synthetic
+// downstream-model option is external-only. A native (chain-engine) session/new still
+// advertises its chain selects and must NEVER carry the contenox.agent-model option.
+func TestLoopback_NativeSession_NoSyntheticModelOption(t *testing.T) {
+	h := newLoopbackHarness(t)
+	ctx := context.Background()
+
+	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
+	require.NoError(t, err)
+
+	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
+		Cwd:        "/tmp/loopback-native-nomodel",
+		McpServers: []libacp.McpServer{},
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, newResp.ConfigOptions, "a native session still advertises chain config options")
+	for _, o := range newResp.ConfigOptions {
+		require.NotEqual(t, AgentModelConfigOptionID, o.ID,
+			"the synthetic downstream-model option is external-only; a native session must never carry it")
+	}
+}
+
+// TestLoopback_ExternalAgent_HITLPolicyPickerRoundTripsNativelyAndPersists proves the
+// external session's contenox-NATIVE HITL policy select: it is appended AFTER the
+// downstream agent's surface, a set on it routes through the native per-session path
+// (validated + stored on the session, resolved for enforcement, and NEVER forwarded to
+// the downstream agent — which knows no such id), and the selection survives a
+// session/load that rebuilds the entry with the sentinel default. This is the picker
+// beam's file-explorer agent-view evaluates its HITL labels against, so exposing it —
+// and keeping its value — is what fixes the labels for external sessions.
+func TestLoopback_ExternalAgent_HITLPolicyPickerRoundTripsNativelyAndPersists(t *testing.T) {
+	h := newLoopbackHarness(t)
+	// The HITL policy select validates a concrete pick against the operator's known
+	// presets. Set before any RPC reads them — this happens-before the agent
+	// goroutine's read (a client call writes the request pipe, which synchronizes).
+	h.tr.deps.KnownPolicies = []string{"strict", "dev"}
+	h.tr.deps.HITLDefaultPolicyName = "strict"
+	ctx := context.Background()
+	agentName := registerStubAgentInDB(t, h.tr.deps.DB, "claude-stub-hitl",
+		map[string]string{"ACP_STUB_ADVERTISE_CONFIG_OPTIONS": "1"})
+
+	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
+	require.NoError(t, err)
+
+	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
+		Cwd:        "/tmp/loopback-external-hitl",
+		McpServers: []libacp.McpServer{},
+		Meta:       agentMetaJSON(agentName),
+	})
+	require.NoError(t, err)
+	// The HITL policy select rides AFTER the downstream agent's own surface.
+	require.Equal(t, "stub-verbosity", newResp.ConfigOptions[0].ID, "the downstream option comes first")
+	require.Equal(t, configIDHITLPolicy, newResp.ConfigOptions[len(newResp.ConfigOptions)-1].ID,
+		"contenox's HITL policy select is appended last, after the downstream surface")
+	require.Equal(t, hitlPolicyDefaultValue,
+		optionByID(t, newResp.ConfigOptions, configIDHITLPolicy).CurrentValue,
+		"a fresh external session defaults to the sentinel policy")
+
+	// Setting the HITL policy routes through the NATIVE per-session path: stored on the
+	// session and reflected in the response WITHOUT reaching the downstream stub (which
+	// would reject an unknown "hitl-policy" id — the round trip succeeding proves it
+	// never went downstream, and the downstream option below stays put).
+	setResp, err := h.client.SetSessionConfigOption(ctx, libacp.SetSessionConfigOptionRequest{
+		SessionID: newResp.SessionID,
+		ConfigID:  configIDHITLPolicy,
+		Value:     libacp.StringConfigValue("dev"),
+	})
+	require.NoError(t, err)
+	require.Equal(t, "dev", optionByID(t, setResp.ConfigOptions, configIDHITLPolicy).CurrentValue,
+		"the HITL policy set is reflected in the external session's config options")
+	require.Equal(t, "low", optionByID(t, setResp.ConfigOptions, "stub-verbosity").CurrentValue,
+		"the downstream option is untouched — the HITL set never went downstream")
+
+	// It resolved through the native per-session enforcement path — what prompt.go and
+	// the runtime-mediated (terminal bridge / future fs) gating read.
+	h.tr.sessionMu.Lock()
+	entry := h.tr.sessions[newResp.SessionID]
+	h.tr.sessionMu.Unlock()
+	require.Equal(t, "dev", entry.hitlPolicy(), "the selection is stored on the session")
+	require.Equal(t, "dev", h.tr.resolveSessionHITLPolicy(entry),
+		"the external session's HITL policy resolves to its own name for gating")
+
+	// Reload: session/load rebuilds the entry with the sentinel default;
+	// markExternalIfPersisted must restore the persisted selection and
+	// reloadedConfigOptions must re-advertise the picker with the value intact.
+	store := runtimetypes.New(h.tr.deps.DB.WithoutTransaction())
+	reloaded := &sessionEntry{HITLPolicy: hitlPolicyDefaultValue, driver: &nativeDriver{t: h.tr}}
+	h.tr.markExternalIfPersisted(ctx, store, newResp.SessionID, reloaded)
+	require.IsType(t, &externalDriver{}, reloaded.driver, "the reloaded entry is re-flagged external")
+	require.Equal(t, "dev", reloaded.hitlPolicy(), "the per-session HITL policy survives a reload")
+	reloadedOpts := h.tr.reloadedConfigOptions(ctx, store, newResp.SessionID, reloaded)
+	require.Equal(t, configIDHITLPolicy, reloadedOpts[len(reloadedOpts)-1].ID,
+		"the reloaded external session re-advertises the HITL policy picker after the downstream surface")
+	require.Equal(t, "dev", optionByID(t, reloadedOpts, configIDHITLPolicy).CurrentValue,
+		"the reloaded picker shows the previously-chosen value, not the sentinel default")
+}
+
+// TestLoopback_NativeSession_PolicySlashCommandStillWorks is the /policy regression
+// guard: the NATIVE slash command still switches the GLOBAL cli.hitl-policy-name KV
+// (the operator-owned default the engine reads live) — distinct from the per-session
+// toolbar HITL picker, which never writes that KV. External sessions instead pass
+// "/policy" through to the downstream agent verbatim (see the passthrough test above);
+// this pins that leaving that passthrough pure did not regress the native command.
+func TestLoopback_NativeSession_PolicySlashCommandStillWorks(t *testing.T) {
+	h := newLoopbackHarness(t)
+	ctx := context.Background()
+
+	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
+	require.NoError(t, err)
+
+	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
+		Cwd:        "/tmp/loopback-native-policy",
+		McpServers: []libacp.McpServer{},
+	})
+	require.NoError(t, err)
+	h.lc.drain(t, 1) // the deferred available_commands_update after session/new
+
+	promptResp, err := h.client.Prompt(ctx, libacp.PromptRequest{
+		SessionID: newResp.SessionID,
+		Prompt:    []libacp.ContentBlock{libacp.NewTextContent("/policy dev")},
+	})
+	require.NoError(t, err)
+	require.Equal(t, libacp.StopReasonEndTurn, promptResp.StopReason,
+		"a native /policy command resolves as an ended turn, not a downstream prompt")
+
+	// dispatchCommand emits the command's confirmation as an agent_message_chunk and,
+	// because /policy updates config options, a follow-up config_option_update.
+	updates := h.lc.drain(t, 2)
+	var confirmed bool
+	for _, u := range updates {
+		if u.Update.SessionUpdate == libacp.SessionUpdateAgentMessageChunk && u.Update.Content != nil {
+			require.Contains(t, u.Update.Content.Text, "HITL policy set to dev",
+				"the native /policy switch confirms inline")
+			confirmed = true
+		}
+	}
+	require.True(t, confirmed, "the /policy confirmation must reach the client")
+
+	// The native slash path writes the GLOBAL KV (contrast the per-session toolbar
+	// picker, which the test above proves never does).
+	require.Equal(t, "dev", clikv.ReadHITLPolicy(ctx, runtimetypes.New(h.tr.deps.DB.WithoutTransaction())),
+		"native /policy still writes the global cli.hitl-policy-name KV")
 }

@@ -1,16 +1,15 @@
-import { Badge, Button, ChatThreadSkeleton, EmptyState, H2, Span } from '@contenox/ui';
+import { Button, ChatThreadSkeleton, EmptyState } from '@contenox/ui';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useNavbarSlot } from '../../components/NavbarSlot';
 import { useAcpWorkspace } from '../../hooks/useAcpWorkspace';
-import { useStagedAgent } from '../../lib/stagedAgent';
-import { resolveActiveAgentName } from './lib/activeAgent';
-import type { AcpWorkspaceStatus } from '../../hooks/acpWorkspaceState';
 import { useSetupStatus } from '../../hooks/useSetupStatus';
 import { classifySetupIssueCode } from '../../lib/acpFailureKind';
 import { getBlockingSetupIssue, getSetupIssueFixPath } from '../../lib/setupHealth';
 import type { SetupIssue } from '../../lib/types';
 import { SlashCommandRegistryProvider } from '../../lib/slashCommands';
+import { ChatConnectionBadge } from './components/ChatConnectionBadge';
 import { WorkspaceTabs } from './components/WorkspaceTabs';
 
 /**
@@ -32,13 +31,6 @@ export default function AcpChatPage() {
       <AcpChatWorkspace />
     </SlashCommandRegistryProvider>
   );
-}
-
-function statusBadgeVariant(status: AcpWorkspaceStatus): 'success' | 'warning' | 'error' | 'secondary' {
-  if (status === 'ready') return 'success';
-  if (status === 'reconnecting') return 'warning';
-  if (status === 'error' || status === 'disconnected' || status === 'setup_required') return 'error';
-  return 'secondary';
 }
 
 /**
@@ -136,19 +128,15 @@ function AcpChatWorkspace() {
   const navigate = useNavigate();
   const { sessionId: paramSessionId } = useParams<{ sessionId?: string }>();
   const { workspace, session, openSessionIds, reconnect } = useAcpWorkspace();
-  const { stagedAgent } = useStagedAgent();
 
-  // The header names who this chat actually talks to: the active session's own
-  // agent (external sessions carry it in their `_meta`), the staged pick on an
-  // empty chat, and only then the workspace-level agent ("contenox") — one
-  // generic label for every session was a bug, not a design.
-  const activeSessionMeta = workspace.sessions.find(s => s.sessionId === paramSessionId)?._meta;
-  const headerAgentName = resolveActiveAgentName({
-    sessionMeta: activeSessionMeta,
-    isEmptySurface: !paramSessionId,
-    stagedAgent,
-    workspaceAgentName: workspace.agentName,
-  });
+  // Connection status + the attributed agent name now live in the global navbar
+  // (reclaiming the vertical space of the old in-body header strip) via the
+  // navbar slot. `ChatConnectionBadge` reads the workspace/staged-agent contexts
+  // itself, so it stays correct rendered up in the shell's navbar. Injected here
+  // unconditionally (before the early returns below) so the badge is present for
+  // every workspace status, not only the ready one.
+  useNavbarSlot(<ChatConnectionBadge />);
+
   const { data: setupStatus, refetch: refetchSetupStatus } = useSetupStatus(true);
   const blockingSetupIssue = getBlockingSetupIssue(setupStatus);
 
@@ -194,22 +182,12 @@ function AcpChatWorkspace() {
     );
   }
 
+  // The old header strip (title + status + agent) is gone — its content moved
+  // into the navbar via `useNavbarSlot(<ChatConnectionBadge/>)` above, so the tab
+  // strip + per-session config toolbar (WorkspaceTabs → ChatSessionTab) is the
+  // first row of the chat body, directly under the navbar.
   return (
     <div className="bg-surface dark:bg-dark-surface flex h-full min-h-0 flex-col">
-      <header className="border-surface-200 dark:border-dark-surface-600 flex shrink-0 flex-wrap items-center gap-3 border-b px-3 py-3 sm:px-4">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <H2>{t('acp_chat.title')}</H2>
-          <Badge variant={statusBadgeVariant(workspace.status)} size="sm">
-            {t(`acp_chat.status_${workspace.status}`)}
-          </Badge>
-          {headerAgentName && (
-            <Span variant="muted" className="text-sm">
-              {headerAgentName}
-            </Span>
-          )}
-        </div>
-      </header>
-
       <WorkspaceTabs />
     </div>
   );

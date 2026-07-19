@@ -5,6 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAcpWorkspace } from '../../../hooks/useAcpWorkspace';
 import { useWorkspaceTabs } from '../../../hooks/useWorkspaceTabs';
 import { meaningfulTitle } from '../lib/sessionLabel';
+import { routeForActiveTab } from '../lib/workspaceTabs';
 import { ChatSessionTab } from './ChatSessionTab';
 
 /** TabPanel id for the empty/new-chat surface — cannot collide with a session id. */
@@ -55,19 +56,30 @@ export function WorkspaceTabs() {
     else openEmpty();
   }, [paramSessionId, open, openEmpty]);
 
-  // Active tab -> URL. A real active tab always reflects its id; the empty
-  // surface only pushes `/chat` when the move there was intentional (guarding
-  // the deep-link adoption window, where activeId is transiently null).
+  // react-router's `useNavigate` (this app uses HashRouter → the non-data-router
+  // `useNavigateUnstable`) hands back a NEW `navigate` identity on every location
+  // change — its callback closes over `locationPathname`. We deliberately hold it
+  // in a ref and depend ONLY on `activeId` below, so the tab→URL effect fires when
+  // the ACTIVE TAB changes, never merely because a navigation just changed
+  // `navigate`'s identity. The previous `[activeId, navigate]` deps re-ran this
+  // effect on that identity change while `activeId` was still the OUTGOING session
+  // id, so a sidebar "new session" (`navigate('/chat')`) was instantly reverted
+  // back to `/chat/:id` (replace) before the tab model reached the empty surface.
+  // Every target here is an absolute path, so a ref-held (latest) navigate is safe.
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+
+  // Active tab -> URL. The target is decided by the pure `routeForActiveTab` (see
+  // workspaceTabs.ts): a real tab -> its `/chat/:id`; the empty surface -> bare
+  // `/chat` only when the move there was intentional (a one-shot flag, consumed
+  // here), else `null` = "leave the URL alone" (the transient null of deep-link
+  // adoption).
   useEffect(() => {
-    if (activeId !== null) {
-      navigate(`/chat/${activeId}`, { replace: true });
-      return;
-    }
-    if (intentToEmptyRef.current) {
-      intentToEmptyRef.current = false;
-      navigate('/chat', { replace: true });
-    }
-  }, [activeId, navigate]);
+    const intentionalEmpty = intentToEmptyRef.current;
+    if (activeId === null) intentToEmptyRef.current = false;
+    const target = routeForActiveTab(activeId, intentionalEmpty);
+    if (target !== null) navigateRef.current(target, { replace: true });
+  }, [activeId]);
 
   const handleSessionCreated = useCallback(
     (sid: string) => {

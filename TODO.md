@@ -22,15 +22,17 @@ makes an agent chat usable in practice:
       elapsed-time indicator ("responding for 12s"), no distinction between
       queued (model cold-loading, single slot busy) and generating. Local
       inference is slow — the UI must own that honestly.
-- [ ] **Tool cards.** Tool calls need proper cards: which tool, the key
-      arguments, running/succeeded/failed state, collapsible result payload —
-      not raw dumps or invisible execution.
-- [ ] **File peek.** When a tool touches a file (read/write/edit), the
-      transcript should offer an inline peek/diff of the file content, not
-      just the path string.
-- [ ] **@-mentions.** No way to @-reference files/resources in the prompt
-      composer (ACP supports resource blocks; the composer should support
-      typing @ to attach workspace files).
+- [x] **Tool cards.** Shipped: tool calls render through `ToolCallCard`
+      (`@contenox/ui`) in `TranscriptItems.tsx` — tool title/kind,
+      pending/running/succeeded/failed status, and a collapsible `ToolCallDetail`
+      (target locations, `DiffView` for edits, raw output) rather than raw dumps.
+- [x] **File peek.** Shipped: file edits render as a `DiffView` inside the
+      tool-call card's detail; clicking a workspace file opens it as a read-only
+      canvas tab (`fileCanvasTab` / `CanvasRegion`), and the `@`-mention menu
+      shows a live `useFilePreview` of the highlighted file.
+- [x] **@-mentions.** Shipped: typing `@` in the composer opens `MentionMenu`
+      (`useMentionMenu` in `ChatSessionTab.tsx`) to attach workspace files, which
+      ride the prompt as reference `resource_link` blocks (`activeMentions`).
 - [ ] **Dark-mode shade/contrast audit.** Light mode reads noticeably more
       polished than dark mode (observed 2026-07-16): dark shades and contrast
       steps are flatter — surfaces, borders, and muted text blur together.

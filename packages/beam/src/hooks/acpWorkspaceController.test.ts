@@ -720,6 +720,48 @@ describe('acpWorkspaceController: clearActiveSession() (BUG 1 — "new session" 
   });
 });
 
+describe('acpWorkspaceController: focusEmptyTab() (additive empty surface — the sidebar "New session" contract)', () => {
+  // The action the sidebar's `startNewChat` drives (via `useAcpWorkspace`) to
+  // move focus to the empty/new-chat surface. Unlike `clearActiveSession`, it is
+  // ADDITIVE: it re-points focus WITHOUT tearing the focused session down, so a
+  // fresh new-chat surface can coexist with already-open session tabs.
+  it('re-points focus to the empty surface WITHOUT tearing down the focused session', async () => {
+    const h = setup();
+    await connectReady(h);
+    await createSession(h, 'sess-a');
+    expect(h.wsStore.state.activeSessionId).toBe('sess-a');
+    const sentBefore = h.transports[0].sentRaw.length;
+
+    h.controller.focusEmptyTab();
+
+    // Focus is now the empty-chat surface (activeSessionId -> null, focused key
+    // is the reserved empty-chat slice)...
+    expect(h.wsStore.state.activeSessionId).toBeNull();
+    expect(h.sessionsStore.state.focusedKey).toBe('');
+    // ...but sess-a stays OPEN and live (its slice survives) and nothing goes to
+    // the wire — no session/close, unlike clearActiveSession.
+    expect(h.sliceOf('sess-a')).toBeDefined();
+    await flushMicrotasks();
+    expect(h.transports[0].sentRaw.length).toBe(sentBefore);
+    expect(h.transports[0].sent.some(f => f.method === 'session/close')).toBe(false);
+    expect(h.wsStore.state.sessions.some(s => s.sessionId === 'sess-a')).toBe(true);
+  });
+
+  it('leaves every already-open tab live when moving to the empty surface', async () => {
+    const h = setup();
+    await connectReady(h);
+    await createSession(h, 'sess-a');
+    await openTab(h, 'sess-b'); // additive open: both live, focus is sess-b
+
+    h.controller.focusEmptyTab();
+
+    expect(h.wsStore.state.activeSessionId).toBeNull();
+    // Both sessions remain subscribed/open — the empty surface coexists with them.
+    expect(h.sliceOf('sess-a')).toBeDefined();
+    expect(h.sliceOf('sess-b')).toBeDefined();
+  });
+});
+
 describe('acpWorkspaceController: sendPrompt()', () => {
   it('no-ops with no active session', async () => {
     const h = setup();

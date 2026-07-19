@@ -15,6 +15,7 @@ import {
   dismissWizard,
 } from '../lib/wizardDismissal';
 import { ControlPlaneDropdown } from './ControlPlaneDropdown';
+import { useNavbarSlotValue } from './NavbarSlot';
 import { OnboardingWizard } from './setup/OnboardingWizard';
 import { Sidebar } from './sidebar/Sidebar';
 
@@ -79,12 +80,19 @@ export function Layout({ defaultOpen = true, mainContent, sidebarContent, classN
   // dismissed for this exact state — surface a slim banner instead of nothing.
   const showIncompleteBanner = !!user && !setupLoading && !setupComplete && !showWizard;
   const logoUrl = theme === 'dark' ? logoMarkDarkUrl : logoMarkLightUrl;
+  // A routed page can project one piece of chrome into the navbar center (today
+  // the chat connection badge) rather than spending body height on its own
+  // header strip — see components/NavbarSlot.tsx.
+  const navbarSlot = useNavbarSlotValue();
   const renderedSidebarContent =
     typeof sidebarContent === 'function'
       ? sidebarContent({ isOpen: isSidebarOpen, setIsOpen: setSidebarIsOpen })
       : sidebarContent;
 
   const headerTitle = useMemo(() => {
+    // "Beam" is the product name of the chat surface (same in every language) —
+    // it replaces the old in-body "Chat" H2, which moved up into this navbar.
+    if (location.pathname.startsWith('/chat')) return 'Beam';
     if (location.pathname.startsWith('/settings')) return 'Settings';
     if (location.pathname.startsWith('/backends')) return 'Backends';
     if (location.pathname.startsWith('/control')) return 'Control Plane';
@@ -111,7 +119,7 @@ export function Layout({ defaultOpen = true, mainContent, sidebarContent, classN
     <Panel
       variant="bordered"
       className="flex h-16 shrink-0 items-center justify-between gap-4 bg-inherit px-4 text-inherit">
-      <div className="flex items-center gap-4">
+      <div className="flex shrink-0 items-center gap-4">
         {/* The wizard replaces the whole main area (see showWizard below) and
             never renders <Sidebar>, so toggling it here would do nothing
             visible — hide it instead of shipping a dead button. */}
@@ -128,7 +136,13 @@ export function Layout({ defaultOpen = true, mainContent, sidebarContent, classN
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      {/* The page-supplied navbar slot (chat connection badge), right-aligned
+          next to the edge controls. Allowed to shrink and truncate so it never
+          pushes them off-screen at narrow widths; empty (and inert) on routes
+          that don't fill it. */}
+      <div className="flex min-w-0 flex-1 items-center justify-end gap-2 px-2">{navbarSlot}</div>
+
+      <div className="flex shrink-0 items-center gap-2">
         {user ? (
           <ControlPlaneDropdown isOpen={isControlPlaneOpen} setIsOpen={setControlPlaneOpen} />
         ) : (

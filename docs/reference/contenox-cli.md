@@ -286,6 +286,81 @@ contenox tools remove <name>
 | `--inject`  | Tool call argument to inject and hide from the model, e.g. `"tenant_id=acme"` (repeatable) |
 | `--timeout` | Request timeout in milliseconds (default: 10000)                                           |
 
+### `contenox agent`
+
+Register and manage the external ACP agents the runtime can spawn and drive. An agent is an external program that speaks the [Agent Client Protocol (ACP)](https://agentclientprotocol.com/); contenox never installs one — it invokes a binary you already have, or lets a runtime fetcher (`npx`/`uvx`) pull it down. Registered agents appear in [Beam](/docs/guide/beam/)'s agent picker and over the read-only `GET /api/agents` endpoint. For the full walkthrough see [Host external ACP agents](/docs/integrations/agents/external-acp-agents/).
+
+There are exactly two ways to register one — seed from the ACP registry catalog, or give a bare command:
+
+```bash
+# Registry: browse the catalog, then resolve + register an entry
+contenox agent search                     # list the whole catalog
+contenox agent search claude              # filter by id / name / description
+contenox agent add claude-acp             # register a catalog entry (source: registry)
+contenox agent add goose --name my-goose  # …under an alias
+
+# Manual: everything after '--' is the argv contenox spawns
+contenox agent add local-bot -- /usr/local/bin/my-acp-agent --stdio
+
+contenox agent list                       # id, name, source, kind, enabled
+contenox agent show my-goose              # provenance + run command + config_json
+contenox agent check my-goose             # drive one live turn to verify it (below)
+contenox agent edit my-goose              # open $EDITOR on the run config
+contenox agent enable my-goose            # (and: disable)
+contenox agent remove my-goose            # (alias: rm)
+```
+
+`search` caches the catalog locally (`agent-registry.json`, next to the database) and falls back to that cache when the network is unavailable; pass `--refresh` to force a re-fetch. `add`'s registry form is named after the registry id unless `--name` gives an alias; its manual form takes the name *before* `--` and the argv *after* it — there are deliberately no `--transport`/`--env`/`--args` flags, so any further customization is done by editing the config (below). `remove` deletes only the local registration; it never touches the binary or package the agent would spawn.
+
+| Flag | Description |
+| ---- | ----------- |
+| `--name <alias>` | Alias for a registry agent (registry form of `add` only; defaults to the registry id). |
+| `--refresh` | Force a re-fetch of the ACP registry catalog instead of using the local cache (`search`, `add`). |
+| `--config-file <path>` | Replace the config from a file (or `-` for stdin) instead of opening `$EDITOR` (`edit`). |
+| `--timeout <dur>` | How long the `check` turn may take before it is cancelled (default `2m`; see below). |
+
+#### The agent run config (`config_json`)
+
+`contenox agent edit <name>` opens the agent's `config_json` — the run spec — in `$EDITOR` (`$VISUAL`, then `nano` as fallbacks), validates it on save, and persists it. Provenance (source, registry id/version) is system-managed and never part of this JSON. For the `external_acp` kind the shape is:
+
+| Field | Description |
+| ----- | ----------- |
+| `transport` | `stdio` (spawn `command`) or `endpoint` (dial `url`; not yet implemented). Required. |
+| `command` | Executable to spawn. Required for `stdio`. |
+| `args` | Arguments passed to `command`. |
+| `env` | Extra environment variables for the spawned process. |
+| `cwd` | Working directory for the spawned process. |
+| `url` | Endpoint URL (`endpoint` transport). |
+| `mcp_servers` | Explicit allowlist of registered MCP server names (`contenox mcp list`) forwarded to this agent in ACP `session/new`. |
+
+The `mcp_servers` allowlist is per-agent consent, named server by named server: forwarding a server hands the agent everything it needs to reach it — argv for stdio servers, URL and configured headers for http/sse — so there is deliberately no "all servers" wildcard, and contenox-side auth synthesis (`authToken`/`authEnvKey`/OAuth/injected params) is never forwarded into the payload. Empty means forward nothing. The [external ACP agents guide](/docs/integrations/agents/external-acp-agents/#forwarding-mcp-servers) covers the consent boundary in full.
+
+```json
+{
+  "transport": "stdio",
+  "command": "claude-code-acp",
+  "mcp_servers": ["filesystem"]
+}
+```
+
+#### `contenox agent check <name> [prompt...]`
+
+Verify a registered agent by driving one live turn through it. `check` spawns the agent as an ACP subprocess and runs a full `initialize → session/new → session/prompt` turn against it — the same client-host path the runtime itself uses (`runtime/agenthost`), not a lighter fake — streaming the agent's reply to stdout as it arrives. It is how you confirm an agent actually works right after `contenox agent add`.
+
+```bash
+contenox agent check my-goose             # a plain connection check
+contenox agent check claude Say hello     # everything after the name is the prompt
+contenox agent check local-bot --timeout 30s
+```
+
+The turn is rooted in the current working directory and drives one plain-text prompt; with no prompt the agent is asked to confirm the connection. Agent-initiated callbacks (file system, terminal, permission requests) are declined, so an agent that insists on them may stop early — answering a simple prompt should not need any.
+
+If the agent's config declares an `mcp_servers` allowlist, `check` forwards those servers in `session/new` exactly as a real session would, printing a `Forwarding MCP servers:` line; entries the agent's advertised capabilities cannot consume are reported (`Note: MCP servers NOT forwarded …`), not silently dropped. After the reply it prints the turn's stop reason (`Turn completed (agent … stopReason=end_turn)`) and any slash commands the agent advertised (`Agent advertises N command(s): …`). A normal turn that produces no displayable output fails the check rather than reporting success on a silent agent.
+
+| Flag | Description |
+| ---- | ----------- |
+| `--timeout <dur>` | How long the whole check turn may take before it is cancelled (default `2m`). Separate from the root `--timeout`. |
+
 ### `contenox init [provider]`
 
 Initializes a workspace (`.contenox/`) and ensures default runtime presets exist globally (`~/.contenox/`). It's best to run `contenox setup` first for a guided configuration.

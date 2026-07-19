@@ -16,6 +16,10 @@ agent is bound to, which files its policy lets it touch, every tool call as a
 card, and — before any gated write or command runs — a diff you approve or reject
 yourself.
 
+<!-- TODO(recapture): beam-demo.webm ends on the retired modal approval gate and
+     predates the sidebar agent picker + inline permission card. Re-record per the
+     "Hero loop" take in docs/development/recording-shot-list.md (include the
+     agent-picker flow), then swap this src + poster. -->
 <video src="/beam-demo.webm" poster="/beam-video-cover.png" controls muted playsinline style="width:100%;border-radius:8px"></video>
 
 *The whole loop in 30 seconds: a prompt in a project workspace, the agent reads
@@ -105,6 +109,13 @@ The left sidebar lists your chat sessions. **New session** starts a fresh one;
 each row links to its conversation and carries a delete button. These are the
 same sessions the CLI sees — see [step 3](#3-shared-with-the-cli).
 
+Next to **New session** is a chevron — **New chat with an agent**. It only
+appears once you have [registered an external ACP agent](/docs/integrations/agents/external-acp-agents/),
+and it opens the [agent picker](#chat-with-a-registered-agent) below. A session
+started against an external agent carries that agent's name (`Agent: {name}`) on
+its sidebar row, so you can tell at a glance which sessions ran on the native
+runtime and which drove a foreign agent.
+
 ### Per-session controls
 
 Each session has its own configuration, shown in the chat toolbar (collapsed
@@ -121,7 +132,41 @@ under an **Options** dropdown on narrow viewports):
 Changing a control affects only that session, so you can keep one session on a
 local model with a strict policy and another on a hosted model — side by side.
 
+<!-- TODO(recapture): beam-new-chat.png predates the staged-agent picker on the
+     empty surface and the sidebar's "New chat with an agent" chevron. Re-shoot
+     per the "New-chat surface" take in docs/development/recording-shot-list.md. -->
 ![A new Beam session bound to a project workspace, with the per-session Model, HITL Policy, Think, Token Limit, and Workspace controls above an empty chat](/beam-new-chat.png)
+
+### Chat with a registered agent
+
+Beam is not only a face for the native runtime chain — it can also drive any
+[external ACP agent you have registered](/docs/integrations/agents/external-acp-agents/)
+(Claude Code, Goose, a home-grown one) from the same window, gated by the same
+approvals.
+
+1. Register an agent from the CLI once — `contenox agent add <name> -- <command>`
+   (or seed one from the catalog with `contenox agent add <registry-id>`), then
+   `contenox agent check <name>` to confirm it answers. See the
+   [CLI reference](/docs/reference/contenox-cli/#contenox-agent).
+2. In the sidebar, click the **New chat with an agent** chevron. The picker lists
+   **Contenox (default)** — the native chain — at the top, then every enabled
+   registered agent.
+3. Pick an agent and the empty chat stages it: the greeting reads *"Say hello —
+   you are talking to {name}, live"*, and the session is bound to that agent the
+   moment you send the first message. The binding is fixed for the life of the
+   session — an agent is chosen at creation, never switched mid-conversation, so
+   there is no in-chat agent switcher.
+
+An external-agent session's toolbar surfaces the config options that *agent*
+advertises for the session — for example a Claude Code session exposes its own
+**Mode** and **Model** pickers — alongside contenox's own **HITL Policy**
+control, so the contenox approval gate still applies to a foreign agent's gated
+actions. (The native runtime's per-session Model / Think / Token-Limit controls
+do not apply to an external agent and are not shown.)
+
+The agent's turns stream into the transcript like any other, its tool calls
+render as cards, and any [permission request](#the-approval-gate) it raises
+becomes the same inline card described below.
 
 ### Workspace file tree and the agent-view overlay
 
@@ -146,26 +191,56 @@ into something you can read off the tree before you send a prompt.
 
 ### Files and the terminal as tabs
 
-Opened files, the approval gate maximized, and the terminal all live as tabs in
-the canvas region beside the chat. The **Terminal** tab streams a PTY rooted at
-the session's workspace; type `!` followed by a command in the chat to run it
-there. (Terminal API routes are on by default for local serve; set
-`TERMINAL_ENABLED=false` on the serve process to disable them.)
+Opened files and the terminal live as tabs in the canvas region beside the chat.
+The **Terminal** tab streams a PTY rooted at the session's workspace; type `!`
+followed by a command in the chat to run it there, and when the agent itself runs
+a shell command mid-turn its output streams into this same tab — every shell line,
+yours or the agent's, runs through the runtime's own workspace shell. (Terminal
+API routes are on by default for local serve; set `TERMINAL_ENABLED=false` on the
+serve process to disable them.)
+
+### Composer shortcuts
+
+The prompt composer understands three inline prefixes:
+
+- **`@`** opens the mention menu — attach a workspace file to the prompt by name,
+  with a live preview of the highlighted file.
+- **`/`** opens the **command suggestions** menu of the slash-commands the active
+  agent advertises. The native runtime and a registered external agent each
+  surface their own command set here; picking one drops it into the composer.
+- **`!`** runs the rest of the line as a shell command in the workspace Terminal
+  tab (above), with no LLM turn.
 
 ### The approval gate
 
 When a tool call matches an **approve** rule in the active HITL policy, the run
-pauses and Beam raises the approval gate. For a pending file write it renders a
-**diff** of exactly what would change; for other calls it shows the tool, the
-target paths, and the raw input. You decide:
+pauses and Beam raises an **inline permission card** — a warning-styled card that
+appears in the transcript flow, anchored to the pending tool call it belongs to,
+so the request lives exactly where it happened instead of floating over the page.
+The card shows the action's kind and title, the target paths (`path:line`), a
+**diff** of a pending file write, and the raw tool input under a collapsible
+toggle.
 
-- **Y** — allow this call once
-- **N** — reject this call
+You answer by clicking one of the offered buttons — typically **Allow** or
+**Deny**, plus their *always* variants when the policy offers them (each with a
+keyboard shortcut). Nothing else responds: clicking elsewhere, pressing Escape,
+scrolling, or switching tabs never answers the request — an unanswered request
+simply stays pending, which is the correct behaviour (the agent waits). This is
+deliberate. The gate is no longer a modal you could accidentally dismiss, and the
+old "click outside to deny" footgun is gone; there is likewise no maximize-to-tab
+step — the card is already inline.
 
-![The approval gate: a pending CHANGELOG.md write rendered as a diff with Allow (Y) and Deny (N)](/beam-approval-gate.png)
+<!-- TODO(recapture): beam-approval-gate.png shows the RETIRED modal gate and
+     contradicts the inline-card prose above. Replace it with the new
+     agent-permission-card.png — see the "Permission card" take in
+     docs/development/recording-shot-list.md — then re-enable this embed. -->
+<!-- ![The inline permission card in the transcript: a pending CHANGELOG.md write rendered as a diff with Allow and Deny](/agent-permission-card.png) -->
 
 Nothing gated runs until you say so, and the decision is recorded in the session
-transcript alongside the tool-call card. Failed turns render inline error cards
+transcript alongside the tool-call card, where the card itself persists. Because
+each open session carries its own card, a permission waiting in a *background*
+session surfaces an **Approval needed** marker on its sidebar row, so it stays
+discoverable while its tab is out of view. Failed turns render inline error cards
 (with a *Show details* toggle) instead of vanishing, so a session is a durable,
 reviewable record — tool-call cards, diffs, approvals, and errors all survive a
 reload.

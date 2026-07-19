@@ -48,21 +48,24 @@ export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =>
   const navigate = useNavigate();
   const match = useMatch('/chat/:sessionId');
   const activeSessionId = match?.params.sessionId;
-  const { workspace, sessions, deleteSession } = useAcpWorkspace();
+  const { workspace, sessions, deleteSession, focusEmptyTab } = useAcpWorkspace();
   const { setStagedAgent } = useStagedAgent();
 
   // ONE path for starting a fresh chat: the plain "New session" button is just
   // `startNew(null)` (native contenox — clears any staged agent), and the agent
   // picker's `onSelect` is `startNew(name)`. Sharing `startNewChat` guarantees
-  // the two affordances behave identically (stage the pick, route to the empty
-  // `/chat` surface, collapse the mobile rail) and can never drift. The empty
-  // surface reads the staged agent reactively, so a pick made while already on
-  // `/chat` (where the navigate is a no-op) still shows and binds. See
-  // `newChatIntent.ts`.
+  // the two affordances behave identically (stage the pick, drive the tab-model
+  // to the empty surface via `focusEmptyTab`, route to `/chat`, collapse the
+  // mobile rail) and can never drift. Driving `focusEmptyTab` — the same
+  // controller action `useWorkspaceTabs` uses — is what makes the transition
+  // deterministic from a focused session tab: a bare navigate alone was reverted
+  // by the tab↔route sync. The empty surface reads the staged agent reactively,
+  // so a pick made while already on `/chat` (where the navigate is a no-op) still
+  // shows and binds. See `newChatIntent.ts`.
   const startNew = useCallback(
     (agent: string | null) =>
-      startNewChat(agent, { setStagedAgent, navigate, closeSidebar: () => setIsOpen(false) }),
-    [setStagedAgent, navigate, setIsOpen],
+      startNewChat(agent, { setStagedAgent, focusEmptyTab, navigate, closeSidebar: () => setIsOpen(false) }),
+    [setStagedAgent, focusEmptyTab, navigate, setIsOpen],
   );
 
   const handleDelete = (session: SessionInfo) => {

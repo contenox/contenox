@@ -24,6 +24,12 @@ const (
 	MethodSessionUpdate          = "session/update"
 	MethodSessionSetMode         = "session/set_mode"
 	MethodSessionSetConfigOption = "session/set_config_option"
+	// MethodSessionSetModel is the UNSTABLE Zed model-picker method: switch a
+	// session's active model (see SetSessionModelRequest / SessionModelState). The
+	// client-side driver surfaces it as `unstable_setSessionModel`; it is dispatched
+	// over this `session/set_model` method name. This is an experimental extension,
+	// NOT part of the stable ACP spec, and MAY change or be removed.
+	MethodSessionSetModel = "session/set_model"
 
 	MethodSessionRequestPermission = "session/request_permission"
 

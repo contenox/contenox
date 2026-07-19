@@ -73,6 +73,54 @@ func syntheticModeOption(m *libacp.SessionModeState) (libacp.SessionConfigOption
 	}, true
 }
 
+// AgentModelConfigOptionID is the reserved SessionConfigOption id under which an
+// external session surfaces the DOWNSTREAM agent's UNSTABLE model-picker state (its
+// SessionModelState) as a single synthetic "select" picker in the upstream client's
+// toolbar — the exact parallel of AgentModeConfigOptionID for session modes. Zed's
+// claude-code-acp advertises a `models` state (availableModels + currentModelId) in
+// its session/new response and switches models via the unstable `session/set_model`
+// method (`unstable_setSessionModel`), a surface distinct from both session modes and
+// config options; contenox does not expose a first-class model toggle to its clients,
+// so mapping that state onto one synthetic config option — id AgentModelConfigOptionID,
+// label "Model", type "select", each availableModel as a value(modelId)→label(name),
+// currentValue the currentModelId — lets the existing config-option picker render it.
+// A set on this id is translated back to session/set_model (see
+// externalDriver.SetConfigOption). Unlike modes, the ACP session/update stream carries
+// NO model-update kind, so there is nothing to relay after a switch: the (stateless)
+// set_model response is the truth and the confirmed model is adopted locally. The
+// model entries carry no effort/fast-mode facet (claude-code-acp's availableModels are
+// modelId + name + description only), so this select has no sub-option for reasoning
+// effort. It lives in contenox's reserved dotted namespace so it never collides with a
+// downstream agent's own option ids, and it is placed after the synthetic mode option
+// and before the downstream's own config options.
+const AgentModelConfigOptionID = "contenox.agent-model"
+
+// syntheticModelOption maps a downstream SessionModelState onto the single synthetic
+// "Model" select the upstream toolbar renders (see AgentModelConfigOptionID). Returns
+// ok=false when there are no models to surface (nil state or empty availableModels),
+// so an agent that advertises no model picker yields no synthetic option — mirroring
+// syntheticModeOption.
+func syntheticModelOption(m *libacp.SessionModelState) (libacp.SessionConfigOption, bool) {
+	if m == nil || len(m.AvailableModels) == 0 {
+		return libacp.SessionConfigOption{}, false
+	}
+	values := make([]libacp.SessionConfigValue, 0, len(m.AvailableModels))
+	for _, model := range m.AvailableModels {
+		values = append(values, libacp.SessionConfigValue{
+			Value:       model.ID,
+			Name:        model.Name,
+			Description: model.Description,
+		})
+	}
+	return libacp.SessionConfigOption{
+		ID:           AgentModelConfigOptionID,
+		Name:         "Model",
+		Type:         libacp.SessionConfigOptionTypeSelect,
+		CurrentValue: m.CurrentModelID,
+		Options:      libacp.NewSessionConfigValues(values),
+	}, true
+}
+
 // externalKillGrace bounds how long a spawned downstream agent's teardown waits
 // for it to exit on stdin-close before killing it. Persistent agents (most
 // editor adapters) never exit on stdin-close, so a short grace keeps CloseSession
@@ -124,11 +172,12 @@ const acpSessionAgentKVPrefix = "acp:session_agent:"
 // the next prompt — see ensureSpawned), so the bridge's live cache dies with the
 // pre-load connection; these keys let a reopened external session restore its menu
 // and pickers immediately, without waiting for the first prompt's respawn. The
-// synthetic mode select (mapped from the downstream's session Modes) is folded into
-// the persisted config-option set — no separate key — so a reopened session's toolbar
-// keeps its mode picker too. Fresh live values overwrite them on every (re)spawn and
-// on each config-option / mode change — live truth wins. Both are deleted with the
-// agent-name key on session delete.
+// synthetic mode select (mapped from the downstream's session Modes) and the synthetic
+// model select (mapped from its UNSTABLE model-picker state) are both folded into the
+// persisted config-option set — no separate keys — so a reopened session's toolbar
+// keeps its mode and model pickers too. Fresh live values overwrite them on every
+// (re)spawn and on each config-option / mode / model change — live truth wins. Both are
+// deleted with the agent-name key on session delete.
 const (
 	acpSessionAgentCommandsKVPrefix      = "acp:session_agent_commands:"
 	acpSessionAgentConfigOptionsKVPrefix = "acp:session_agent_configoptions:"
@@ -340,6 +389,19 @@ type externalBridge struct {
 	// not built yet); seedModes applies it once the availableModes arrive.
 	pendingModeID string
 
+	// modelState is the downstream agent's UNSTABLE model-picker state
+	// (SessionModelState), seeded from the downstream session/new response and updated
+	// only by a confirmed session/set_model (applyModel adopts the requested model into
+	// its currentModelId). It is folded into the driver's config-option output as the
+	// synthetic AgentModelConfigOptionID select, placed AFTER the mode option and before
+	// the downstream's own configOptions. nil when the downstream advertises no models
+	// (e.g. a bare agent, or a modes-only agent) — no synthetic model option then.
+	// Unlike modeState there is no *received/*pending race machinery: the ACP
+	// session/update stream carries no model-update kind, so nothing can race the seed —
+	// the only mutation is applyModel, which happens strictly after the seed (a set
+	// requires a spawned bridge, which the seed already populated).
+	modelState *libacp.SessionModelState
+
 	// termMu guards terminals, the live set of downstream-created terminals for
 	// this session keyed by the bridge-minted terminal id. It is independent of mu
 	// (which guards the update-relay caches) so terminal lifecycle never contends
@@ -537,23 +599,60 @@ func (b *externalBridge) applyMode(modeID string) {
 	b.mu.Unlock()
 }
 
+// seedModels records the downstream session/new response's SessionModelState as the
+// initial model set (copied, so a later currentModelId mutation stays local). Never
+// overwrites an already-established modelState. Mirrors seedModes, but without the
+// pending/received race fold-in: the ACP stream carries no model-update kind, so no
+// live update can race this seed.
+func (b *externalBridge) seedModels(m *libacp.SessionModelState) {
+	if m == nil {
+		return
+	}
+	b.mu.Lock()
+	if b.modelState == nil {
+		cp := *m
+		b.modelState = &cp
+	}
+	b.mu.Unlock()
+}
+
+// applyModel adopts an upstream-confirmed model (from a session/set_model the driver
+// forwarded downstream) into the synthetic option's currentValue. The set_model
+// response carries no state, and no model-update notification kind exists, so the
+// requested modelId is authoritative. No-op when the downstream advertised no models
+// (modelState nil) — a set could not have targeted the synthetic model id then.
+func (b *externalBridge) applyModel(modelID string) {
+	b.mu.Lock()
+	if b.modelState != nil {
+		b.modelState.CurrentModelID = modelID
+	}
+	b.mu.Unlock()
+}
+
 // buildConfigOptionsLocked assembles the driver's full upstream config-option set:
 // the synthetic downstream-mode select FIRST (when the downstream advertises modes),
-// then the downstream agent's own config options. Caller holds b.mu.
+// then the synthetic downstream-model select (when it advertises a model picker), then
+// the downstream agent's own config options. Caller holds b.mu.
 func (b *externalBridge) buildConfigOptionsLocked() []libacp.SessionConfigOption {
-	opt, ok := syntheticModeOption(b.modeState)
-	if !ok {
+	modeOpt, hasMode := syntheticModeOption(b.modeState)
+	modelOpt, hasModel := syntheticModelOption(b.modelState)
+	if !hasMode && !hasModel {
 		return b.configOptions
 	}
-	out := make([]libacp.SessionConfigOption, 0, len(b.configOptions)+1)
-	out = append(out, opt)
+	out := make([]libacp.SessionConfigOption, 0, len(b.configOptions)+2)
+	if hasMode {
+		out = append(out, modeOpt)
+	}
+	if hasModel {
+		out = append(out, modelOpt)
+	}
 	out = append(out, b.configOptions...)
 	return out
 }
 
 // snapshotConfigOptions returns the driver's current upstream option set: the
-// synthetic downstream-mode select first (when present), then the downstream agent's
-// own options.
+// synthetic downstream-mode select first (when present), then the synthetic
+// downstream-model select (when present), then the downstream agent's own options.
 func (b *externalBridge) snapshotConfigOptions() []libacp.SessionConfigOption {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -678,11 +777,14 @@ func (d *externalDriver) AvailableCommands() []libacp.AvailableCommand { return 
 
 // ConfigOptions returns the DOWNSTREAM agent's own advertised config options —
 // prefixed by the synthetic "Mode" select mapped from the downstream's session
-// Modes (see AgentModeConfigOptionID) when it advertises any — captured from its
-// session/new response and kept current by config_option_update / current_mode_update
-// relays and confirmed set_config_option / set_mode calls, and SUFFIXED by
-// contenox's OWN per-session HITL policy select. The model/think/token chain selects
-// stay suppressed (an external session does not drive the chain), but the HITL policy
+// Modes (see AgentModeConfigOptionID) and the synthetic "Model" select mapped from
+// its UNSTABLE model-picker state (see AgentModelConfigOptionID) when it advertises
+// them — captured from its session/new response and kept current by
+// config_option_update / current_mode_update relays and confirmed set_config_option /
+// set_mode / set_model calls, and SUFFIXED by contenox's OWN per-session HITL policy
+// select. The chain-engine's own model/think/token selects stay suppressed (an external
+// session does not drive the chain — the synthetic model select above is the DOWNSTREAM
+// agent's picker, not the chain's), but the HITL policy
 // is a real per-session capability: the runtime gates the foreign agent's
 // runtime-mediated actions (terminal bridge, future fs) under it and it drives beam's
 // file-explorer HITL labels, so it is appended after the downstream surface. The
@@ -750,6 +852,24 @@ func (d *externalDriver) SetConfigOption(ctx context.Context, sess *sessionEntry
 		bridge.applyMode(value.AsString())
 		// Persist the merged set (synthetic mode first) so a session/load reflects the
 		// new mode even before the next prompt respawns the downstream.
+		bridge.persistConfigOptions(ctx, bridge.snapshotConfigOptions())
+		return nil
+	}
+	// The synthetic model option is not a real downstream config option either: a set on
+	// its reserved id translates to the downstream's UNSTABLE session/set_model, and the
+	// confirmed model is adopted into the synthetic option's currentValue. The set_model
+	// response is stateless and no model-update notification exists, so the requested id
+	// is authoritative — nothing to relay, unlike the mode path's current_mode_update.
+	if configID == AgentModelConfigOptionID {
+		if _, err := handle.Conn.SetSessionModel(ctx, libacp.SetSessionModelRequest{
+			SessionID: downstreamID,
+			ModelID:   value.AsString(),
+		}); err != nil {
+			return err
+		}
+		bridge.applyModel(value.AsString())
+		// Persist the merged set (synthetic mode + model folded in) so a session/load
+		// reflects the new model even before the next prompt respawns the downstream.
 		bridge.persistConfigOptions(ctx, bridge.snapshotConfigOptions())
 		return nil
 	}
@@ -924,12 +1044,15 @@ func (t *Transport) spawnExternal(ctx context.Context, upstreamID libacp.Session
 		return nil, "", nil, libacp.InternalError(fmt.Sprintf("acpsvc: session/new against agent %q: %v", agentName, err))
 	}
 	// Capture the downstream agent's own advertised config options AND its session
-	// modes so the upstream session/new response carries them synchronously (no timing
-	// gap) and externalDriver.ConfigOptions can surface the agent's real pickers plus
-	// the synthetic mode select. Seeding yields to any config_option_update /
-	// current_mode_update the downstream read-loop already delivered.
+	// modes AND its UNSTABLE model-picker state so the upstream session/new response
+	// carries them synchronously (no timing gap) and externalDriver.ConfigOptions can
+	// surface the agent's real pickers plus the synthetic mode and model selects.
+	// Seeding the config options / modes yields to any config_option_update /
+	// current_mode_update the downstream read-loop already delivered; the model seed has
+	// no such race (no model-update kind exists on the stream).
 	bridge.seedConfigOptions(downstream.ConfigOptions)
 	bridge.seedModes(downstream.Modes)
+	bridge.seedModels(downstream.Models)
 	// Persist the current live option set (the seed — synthetic mode option folded in —
 	// or a concurrently-received update; snapshot returns whichever is live) so a
 	// session/load before the first prompt can restore the pickers. Every (re)spawn
@@ -1114,8 +1237,9 @@ func (t *Transport) markExternalIfPersisted(ctx context.Context, store runtimety
 // reloadedConfigOptions returns the config options to advertise on a session/load or
 // session/resume response. A native session dispatches to its driver (the chain-engine
 // selects). An external session's downstream is NOT respawned during load, so its
-// downstream surface (synthetic mode select + the agent's own pickers) comes from the
-// set persisted at session/new (and each later update/set), and contenox's own HITL
+// downstream surface (synthetic mode select + synthetic model select + the agent's own
+// pickers) comes from the set persisted at session/new (and each later update/set), and
+// contenox's own HITL
 // policy select rides AFTER it — its CurrentValue restored from the persisted
 // per-session selection (see markExternalIfPersisted, which runs before this) so the
 // reopened toolbar's picker survives the reload without waiting for a respawn.

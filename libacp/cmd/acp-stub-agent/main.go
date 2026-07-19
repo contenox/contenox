@@ -57,6 +57,20 @@
 //     empty — the same byte-identical default the other flags observe.
 //
 // A sixth opt-in flag, same precedent (default off, byte-identical), exercises
+// acpsvc's downstream UNSTABLE model-picker pass-through:
+//
+//   - ACP_STUB_ADVERTISE_MODELS=1: NewSession carries a deterministic
+//     SessionModelState (a Fast/Smart pair, Fast current) in its session/new response —
+//     the way claude-code-acp advertises its `models` state. This drives acpsvc's
+//     mapping of the downstream models onto its synthetic "contenox.agent-model" config
+//     option, and (with the SetSessionModel handler below adopting the requested model)
+//     the upstream set round-trip. Unlike modes there is NO confirming session/update to
+//     emit — the ACP stream carries no model-update kind. With the flag unset the
+//     session/new response carries no models and SetSessionModel reports MethodNotFound
+//     (matching claude-code-acp's unadvertised-capability behavior), the same
+//     byte-identical default the other flags observe.
+//
+// A seventh opt-in flag, same precedent (default off, byte-identical), exercises
 // acpsvc's downstream terminal/* pass-through:
 //
 //   - ACP_STUB_USE_TERMINAL=1: every plain prompt runs a full terminal/* round trip
@@ -104,6 +118,9 @@ const (
 	stubModeCode = "code"
 	stubModeAsk  = "ask"
 
+	stubModelFast  = "stub-model-fast"
+	stubModelSmart = "stub-model-smart"
+
 	stubConfigVerbosityID = "stub-verbosity"
 	stubVerbosityLow      = "low"
 	stubVerbosityHigh     = "high"
@@ -113,6 +130,9 @@ type stubSession struct {
 	cwd                   string
 	additionalDirectories []string
 	modeID                string
+	// modelID is the current value of the stub's deterministic UNSTABLE model picker,
+	// mutated by SetSessionModel. Meaningful only when the stub advertises models.
+	modelID string
 	// verbosity is the current value of the stub's deterministic config option,
 	// mutated by SetSessionConfigOption. Meaningful only when the stub advertises
 	// config options.
@@ -154,6 +174,14 @@ type stubAgent struct {
 	// unless the flag is set. The SetSessionMode handler stays registered regardless.
 	advertiseModes bool
 
+	// advertiseModels (ACP_STUB_ADVERTISE_MODELS=1) opts the stub into carrying a
+	// deterministic SessionModelState (the UNSTABLE Zed model-picker surface) in its
+	// session/new response, so acpsvc's downstream-model → synthetic-config-option
+	// mapping is exercised. Default off: the session/new response then carries no models
+	// (byte-identical output) and SetSessionModel reports MethodNotFound, matching
+	// claude-code-acp's behavior when it advertises no `models` state.
+	advertiseModels bool
+
 	// useTerminal (ACP_STUB_USE_TERMINAL=1) opts the stub into running a full
 	// terminal/* round trip on every plain prompt: create a terminal, wait for it
 	// to exit, read its output, release it, then report the result as an
@@ -175,6 +203,7 @@ func newStubAgent(c *libacp.AgentSideConnection) *stubAgent {
 		advertiseConfigOptions:         os.Getenv("ACP_STUB_ADVERTISE_CONFIG_OPTIONS") == "1",
 		advertiseConfigOptionsAfterNew: os.Getenv("ACP_STUB_CONFIG_OPTIONS_AFTER_NEW") == "1",
 		advertiseModes:                 os.Getenv("ACP_STUB_ADVERTISE_MODES") == "1",
+		advertiseModels:                os.Getenv("ACP_STUB_ADVERTISE_MODELS") == "1",
 		useTerminal:                    os.Getenv("ACP_STUB_USE_TERMINAL") == "1",
 	}
 }
@@ -195,6 +224,20 @@ func stubModeState() *libacp.SessionModeState {
 		AvailableModes: []libacp.SessionMode{
 			{ID: stubModeCode, Name: "Code", Description: "Full tool access"},
 			{ID: stubModeAsk, Name: "Ask", Description: "Read-only, asks before acting"},
+		},
+	}
+}
+
+// stubModelState is the deterministic SessionModelState the stub advertises when
+// ACP_STUB_ADVERTISE_MODELS=1 — a Fast/Smart pair (Fast current) standing in for a
+// real downstream agent's (e.g. claude-code-acp's) UNSTABLE model-picker state. The
+// entries carry only id/name/description — the surface has no effort/fast-mode facet.
+func stubModelState() *libacp.SessionModelState {
+	return &libacp.SessionModelState{
+		CurrentModelID: stubModelFast,
+		AvailableModels: []libacp.ModelInfo{
+			{ID: stubModelFast, Name: "Fast", Description: "Lower latency, smaller model"},
+			{ID: stubModelSmart, Name: "Smart", Description: "Higher quality, slower model"},
 		},
 	}
 }
@@ -301,6 +344,7 @@ func (a *stubAgent) NewSession(ctx context.Context, req libacp.NewSessionRequest
 		cwd:                   req.Cwd,
 		additionalDirectories: req.AdditionalDirectories,
 		modeID:                stubModeCode,
+		modelID:               stubModelFast,
 		verbosity:             stubVerbosityLow,
 	}
 	a.mu.Unlock()
@@ -343,6 +387,12 @@ func (a *stubAgent) NewSession(ctx context.Context, req libacp.NewSessionRequest
 	// its modes; drives acpsvc's synthetic mode-config-option mapping.
 	if a.advertiseModes {
 		resp.Modes = stubModeState()
+	}
+	// UNSTABLE model-picker state carried IN the session/new response — opt-in (default
+	// off, byte-identical), the way claude-code-acp advertises its `models`; drives
+	// acpsvc's synthetic model-config-option mapping.
+	if a.advertiseModels {
+		resp.Models = stubModelState()
 	}
 	// Config options carried IN the session/new response — the synchronous path a
 	// real agent (were it to advertise pickers) uses, seeding acpsvc's cache with no
@@ -422,6 +472,33 @@ func (a *stubAgent) SetSessionMode(ctx context.Context, req libacp.SetSessionMod
 	return libacp.SetSessionModeResponse{}, nil
 }
 
+// SetSessionModel honors the stub's deterministic UNSTABLE model picker when opted in:
+// it validates the id/value, updates the session's stored model, and returns the empty
+// response — no confirming session/update, since the ACP stream carries no model-update
+// kind (the requested model is authoritative). With models not advertised it reports
+// MethodNotFound, matching claude-code-acp's behavior when no `models` state exists and
+// keeping the default (unadvertised) output byte-identical.
+func (a *stubAgent) SetSessionModel(_ context.Context, req libacp.SetSessionModelRequest) (libacp.SetSessionModelResponse, error) {
+	if !a.advertiseModels {
+		return libacp.SetSessionModelResponse{}, libacp.MethodNotFound(libacp.MethodSessionSetModel)
+	}
+	if req.ModelID != stubModelFast && req.ModelID != stubModelSmart {
+		return libacp.SetSessionModelResponse{}, libacp.InvalidParams("unknown modelId: " + req.ModelID)
+	}
+
+	a.mu.Lock()
+	sess, ok := a.sessions[req.SessionID]
+	if ok {
+		sess.modelID = req.ModelID
+	}
+	a.mu.Unlock()
+	if !ok {
+		return libacp.SetSessionModelResponse{}, libacp.InvalidParams("unknown sessionId: " + string(req.SessionID))
+	}
+
+	return libacp.SetSessionModelResponse{}, nil
+}
+
 func (a *stubAgent) sessionCwd(id libacp.SessionID) string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -471,9 +548,11 @@ func (a *stubAgent) promptTerminal(ctx context.Context, req libacp.PromptRequest
 
 	createResp, err := a.conn.CreateTerminal(ctx, libacp.CreateTerminalRequest{
 		SessionID: req.SessionID,
-		Command:   "sh",
-		// Compute the marker in the shell so the literal is in the OUTPUT only.
-		Args: []string{"-c", "echo stub-terminal-$((6*7))"},
+		// Real adapters (claude-code-acp) put the FULL shell command line in
+		// `command` with NO args. Use that shape — a piped line — so the round trip
+		// proves word-splitting and pipes survive the bridge's bash -c wrapping.
+		// The marker is computed in the shell so the literal appears in OUTPUT only.
+		Command: "echo stub-terminal-$((6*7)) | cat",
 	})
 	if err != nil {
 		return a.terminalReport(req, "termcap=true create-error="+err.Error())

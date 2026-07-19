@@ -74,6 +74,45 @@ short real session and encode to webm (`libvpx-vp9 -crf 40`).
 - Triaged/showable chat sessions already exist (RevOps/HubSpot tool-call runs, etc.).
 - `beam serve` embeds a prebuilt SPA; if it 404s, `make build-ui` first.
 
+**Approval gate: modal → inline card (selector change, cost real time).** The old
+approval gate was a modal (`[role="dialog"], [role="alertdialog"]`). It is now an
+**inline `PermissionCard`** in the transcript (`packages/beam/.../PermissionCard.tsx`):
+its wrapper is **`role="group"`** with `aria-label` "Permission required"
+(`i18n` key `acp_chat.permission_card_title`; German "Berechtigung erforderlich").
+A capture that waits on a dialog role now stalls forever. Wait on the card and click
+its option button instead:
+
+```js
+const card = page.getByRole('group', { name: /permission required|berechtigung erforderlich/i });
+await card.waitFor({ state: 'visible', timeout: 60000 });
+await card.getByRole('button', { name: /allow|erlauben/i }).first().click(); // no click-outside/Escape shortcut — the buttons are the only path
+```
+
+Note: `record-beam.mjs` still waits on `[role="dialog"], [role="alertdialog"]`
+(`record-beam.mjs:94`) and its `y`-keypress approval — retarget both to the card
+before re-recording the hero, per `docs/development/recording-shot-list.md`.
+
+**Agent-picker + external-agent chat flow.** To capture chatting with a registered
+external agent, seed one first (fast cloud creds still apply — see step 1 above):
+
+```bash
+contenox agent add claude-acp                 # registry form (or: add <name> -- <cmd>)
+contenox agent check claude-acp "say hello"   # confirm it answers before recording
+```
+
+Then, in Beam: the sessions sidebar shows a chevron next to **New session** with
+`aria-label` "New chat with an agent" (`acp_sidebar.new_session_with_agent`). Click
+it to open the `AgentPicker` dropdown — **Contenox (default)** at the top, registered
+agents below. Pick one; the empty chat stages it ("Say hello — you are talking to
+{name}, live") and the session row is labelled `Agent: {name}` after the first
+prompt. The chevron is hidden when no enabled external agent is registered, so seed
+the agent *before* opening Beam.
+
+- Seed a **meaningful sidebar** first (real triaged sessions, no husks) — the agent
+  session should sit among believable neighbours, per the no-trash-sessions rule.
+- For the permission-card shot, drive the registered agent into a gated write so the
+  inline card renders against a *foreign* agent's action.
+
 ---
 
 ## 3. VS Code extension (CDP)
