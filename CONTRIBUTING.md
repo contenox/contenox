@@ -92,8 +92,8 @@ The `contenox` binary is the main entrypoint. Current commands include `setup`,
 `version`.
 
 All AI workflow packages live under `runtime/`. Infrastructure libraries
-(`libauth`, `libbus`, `libcipher`, `libdbexec`, `libkvstore`, `libroutine`,
-`libtracker`) stay at the module root.
+(`libauth`, `libbus`, `libcipher`, `libdbexec`, `libkvstore`, `libprocess`,
+`libroutine`, `libtracker`) stay at the module root.
 
 ```text
 cmd/contenox/          contenox binary entry point

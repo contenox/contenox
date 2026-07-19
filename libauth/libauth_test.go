@@ -2,10 +2,11 @@ package libauth_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
-	"github.com/contenox/authz"
+	"github.com/contenox/runtime/libauth"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -16,12 +17,12 @@ func TestUnit_AuthClaims_Valid(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		claims  authz.AuthClaims[TestPermissions]
+		claims  libauth.AuthClaims[TestPermissions]
 		wantErr bool
 	}{
 		{
 			name: "valid claims",
-			claims: authz.AuthClaims[TestPermissions]{
+			claims: libauth.AuthClaims[TestPermissions]{
 				RegisteredClaims: jwt.RegisteredClaims{
 					ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
 					IssuedAt:  jwt.NewNumericDate(now),
@@ -33,7 +34,7 @@ func TestUnit_AuthClaims_Valid(t *testing.T) {
 		},
 		{
 			name: "expired token",
-			claims: authz.AuthClaims[TestPermissions]{
+			claims: libauth.AuthClaims[TestPermissions]{
 				RegisteredClaims: jwt.RegisteredClaims{
 					ExpiresAt: jwt.NewNumericDate(past),
 					IssuedAt:  jwt.NewNumericDate(past),
@@ -45,7 +46,7 @@ func TestUnit_AuthClaims_Valid(t *testing.T) {
 		},
 		{
 			name: "missing expiration",
-			claims: authz.AuthClaims[TestPermissions]{
+			claims: libauth.AuthClaims[TestPermissions]{
 				RegisteredClaims: jwt.RegisteredClaims{
 					IssuedAt: jwt.NewNumericDate(now),
 				},
@@ -56,7 +57,7 @@ func TestUnit_AuthClaims_Valid(t *testing.T) {
 		},
 		{
 			name: "future issued at",
-			claims: authz.AuthClaims[TestPermissions]{
+			claims: libauth.AuthClaims[TestPermissions]{
 				RegisteredClaims: jwt.RegisteredClaims{
 					ExpiresAt: jwt.NewNumericDate(future),
 					IssuedAt:  jwt.NewNumericDate(future),
@@ -68,7 +69,7 @@ func TestUnit_AuthClaims_Valid(t *testing.T) {
 		},
 		{
 			name: "missing identity",
-			claims: authz.AuthClaims[TestPermissions]{
+			claims: libauth.AuthClaims[TestPermissions]{
 				RegisteredClaims: jwt.RegisteredClaims{
 					ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
 					IssuedAt:  jwt.NewNumericDate(now),
@@ -82,35 +83,35 @@ func TestUnit_AuthClaims_Valid(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.claims.Valid()
+			err := tt.claims.Validate()
 			if (err != nil) != tt.wantErr {
-				t.Errorf("AuthClaims.Valid() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("AuthClaims.Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
 }
 
 func TestUnit_CreateToken_Success(t *testing.T) {
-	cfg := authz.CreateTokenArgs{
+	cfg := libauth.CreateTokenArgs{
 		JWTSecret: "testsecret",
 		JWTExpiry: time.Hour,
 	}
 	identity := "testuser"
 	perms := TestPermissions{}
 
-	tokenStr, _, err := authz.CreateToken(cfg, identity, perms)
+	tokenStr, _, err := libauth.CreateToken(cfg, identity, perms)
 	if err != nil {
 		t.Fatalf("CreateToken failed: %v", err)
 	}
 
-	token, err := jwt.ParseWithClaims(tokenStr, &authz.AuthClaims[TestPermissions]{}, func(t *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &libauth.AuthClaims[TestPermissions]{}, func(t *jwt.Token) (interface{}, error) {
 		return []byte(cfg.JWTSecret), nil
 	})
 	if err != nil {
 		t.Fatalf("Failed to parse token: %v", err)
 	}
 
-	if claims, ok := token.Claims.(*authz.AuthClaims[TestPermissions]); ok && token.Valid {
+	if claims, ok := token.Claims.(*libauth.AuthClaims[TestPermissions]); ok && token.Valid {
 		if claims.Identity != identity {
 			t.Errorf("Expected identity %q, got %q", identity, claims.Identity)
 		}
@@ -120,13 +121,13 @@ func TestUnit_CreateToken_Success(t *testing.T) {
 }
 
 func TestUnit_ValidateToken_Valid(t *testing.T) {
-	cfg := authz.CreateTokenArgs{
+	cfg := libauth.CreateTokenArgs{
 		JWTSecret: "valid_secret",
 		JWTExpiry: time.Hour,
 	}
-	tokenStr, _, _ := authz.CreateToken(cfg, "user1", TestPermissions{})
+	tokenStr, _, _ := libauth.CreateToken(cfg, "user1", TestPermissions{})
 
-	claims, err := authz.ValidateToken[TestPermissions](context.Background(), tokenStr, cfg.JWTSecret)
+	claims, err := libauth.ValidateToken[TestPermissions](context.Background(), tokenStr, cfg.JWTSecret)
 	if err != nil {
 		t.Fatalf("ValidateToken failed: %v", err)
 	}
@@ -136,31 +137,31 @@ func TestUnit_ValidateToken_Valid(t *testing.T) {
 }
 
 func TestUnit_ValidateToken_InvalidSignature(t *testing.T) {
-	cfg := authz.CreateTokenArgs{
+	cfg := libauth.CreateTokenArgs{
 		JWTSecret: "valid_secret",
 		JWTExpiry: time.Hour,
 	}
-	tokenStr, _, _ := authz.CreateToken(cfg, "user1", TestPermissions{})
+	tokenStr, _, _ := libauth.CreateToken(cfg, "user1", TestPermissions{})
 
-	_, err := authz.ValidateToken[TestPermissions](context.Background(), tokenStr, "wrong_secret")
+	_, err := libauth.ValidateToken[TestPermissions](context.Background(), tokenStr, "wrong_secret")
 	if err == nil {
 		t.Error("Expected error for invalid signature")
 	}
 }
 func TestUnit_RefreshToken_Success(t *testing.T) {
-	cfg := authz.CreateTokenArgs{
+	cfg := libauth.CreateTokenArgs{
 		JWTSecret: "refresh_secret",
 		JWTExpiry: time.Hour,
 	}
-	oldToken, _, _ := authz.CreateToken(cfg, "user1", TestPermissions{})
+	oldToken, _, _ := libauth.CreateToken(cfg, "user1", TestPermissions{})
 
-	newToken, _, err := authz.RefreshToken[TestPermissions](cfg, oldToken)
+	newToken, _, err := libauth.RefreshToken[TestPermissions](cfg, oldToken)
 	if err != nil {
 		t.Fatalf("RefreshToken failed: %v", err)
 	}
 
 	// Parse new token to verify claims
-	claims, err := authz.ValidateToken[TestPermissions](context.Background(), newToken, cfg.JWTSecret)
+	claims, err := libauth.ValidateToken[TestPermissions](context.Background(), newToken, cfg.JWTSecret)
 	if err != nil {
 		t.Fatalf("Validating refreshed token failed: %v", err)
 	}
@@ -189,4 +190,69 @@ type TestPermissions struct{}
 
 func (t TestPermissions) RequireAuthorisation(forResource string, permission int) (bool, error) {
 	return true, nil
+}
+
+// jwt/v5 dispatches custom claim validation on the ClaimsValidator interface
+// (Validate), not the v4-style Valid. Losing this assertion silently disables
+// every invariant AuthClaims enforces.
+var _ jwt.ClaimsValidator = libauth.AuthClaims[TestPermissions]{}
+
+// An expired session must be distinguishable from a malformed request:
+// apiframework maps ErrTokenExpired to 401 and parse failures to 400, so a
+// client can only know to re-authenticate if this sentinel survives.
+func TestUnit_ValidateToken_ExpiredSurfacesAsErrTokenExpired(t *testing.T) {
+	cfg := libauth.CreateTokenArgs{JWTSecret: "test_secret_test_secret", JWTExpiry: -time.Hour}
+	tokenStr, _, err := libauth.CreateToken(cfg, "user1", TestPermissions{})
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+
+	_, err = libauth.ValidateToken[TestPermissions](context.Background(), tokenStr, cfg.JWTSecret)
+	if !errors.Is(err, libauth.ErrTokenExpired) {
+		t.Fatalf("expired token should surface ErrTokenExpired (401), got %v", err)
+	}
+	if errors.Is(err, libauth.ErrTokenParsingFailed) {
+		t.Fatalf("expired token must not read as a parse failure (400): %v", err)
+	}
+}
+
+// The identity invariant is only real if parsing actually enforces it.
+func TestUnit_ValidateToken_RejectsEmptyIdentity(t *testing.T) {
+	const secret = "test_secret_test_secret"
+	claims := libauth.AuthClaims[TestPermissions]{
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
+		},
+		Identity: "", // must be rejected
+	}
+	tokenStr, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+
+	if _, err := libauth.ValidateToken[TestPermissions](context.Background(), tokenStr, secret); !errors.Is(err, libauth.ErrIdentityMissing) {
+		t.Fatalf("empty identity should be rejected, got %v", err)
+	}
+}
+
+// Validation runs on hosts whose clocks disagree; a peer a few seconds ahead
+// must not have its freshly minted tokens rejected as issued in the future.
+func TestUnit_ValidateToken_ToleratesModestClockSkew(t *testing.T) {
+	const secret = "test_secret_test_secret"
+	claims := libauth.AuthClaims[TestPermissions]{
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now().UTC().Add(5 * time.Second)),
+		},
+		Identity: "user1",
+	}
+	tokenStr, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+
+	if _, err := libauth.ValidateToken[TestPermissions](context.Background(), tokenStr, secret); err != nil {
+		t.Fatalf("a 5s clock skew must not reject a valid token: %v", err)
+	}
 }

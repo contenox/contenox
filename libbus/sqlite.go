@@ -115,14 +115,28 @@ func (b *SQLiteBus) Stream(ctx context.Context, subject string, ch chan<- []byte
 	// Snapshot max(id) before returning so a caller Publish cannot be counted as
 	// "historical" (race: Publish before this query ran inside the goroutine used to
 	// set cursor == new row id and skip the event forever).
-	var cursor int64 = -1
+	//
+	// This must fail the whole call rather than fall back to a sentinel: a cursor
+	// below the smallest live row id makes the first poll match every historical
+	// row on the subject, replaying the entire backlog to a subscriber that asked
+	// only for new messages.
+	var cursor int64
 	rows, err := b.db.QueryContext(ctx,
 		`SELECT COALESCE(MAX(id), 0) FROM bus_events WHERE subject = ?`, subject)
+	if err != nil {
+		return nil, fmt.Errorf("%w: sqlite stream cursor: %w", ErrStreamSubscriptionFail, err)
+	}
+	if rows.Next() {
+		err = rows.Scan(&cursor)
+	}
+	if cerr := rows.Close(); err == nil {
+		err = cerr
+	}
 	if err == nil {
-		if rows.Next() {
-			_ = rows.Scan(&cursor)
-		}
-		_ = rows.Close()
+		err = rows.Err()
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%w: sqlite stream cursor: %w", ErrStreamSubscriptionFail, err)
 	}
 
 	subCtx, subCancel := context.WithCancel(ctx)

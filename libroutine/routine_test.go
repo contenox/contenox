@@ -147,9 +147,9 @@ func TestUnit_CircuitBreaker_LoopExecutesFunction(t *testing.T) {
 	defer cancel()
 
 	triggerChan := make(chan struct{})
-	callCount := 0
+	var callCount int32
 	fn := func(ctx context.Context) error {
-		callCount++
+		atomic.AddInt32(&callCount, 1)
 		return nil
 	}
 
@@ -163,7 +163,7 @@ func TestUnit_CircuitBreaker_LoopExecutesFunction(t *testing.T) {
 	// Give a moment for the loop to exit.
 	time.Sleep(150 * time.Millisecond)
 
-	if callCount < 2 {
+	if atomic.LoadInt32(&callCount) < 2 {
 		t.Errorf("expected loop to execute at least 2 calls, got %d", callCount)
 	}
 }

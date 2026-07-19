@@ -29,4 +29,22 @@
 // resilient to temporary failures without overwhelming either your application or
 // the dependencies they rely on. See `group.StartLoop` for the primary entry point
 // for running managed routines.
+//
+// # Job chains (Runner)
+//
+// Runner, Job, and Schedule build condition-gated, chainable operations on
+// top of a Routine: Runner wraps one Routine so a job chain gets the same
+// circuit-breaker protection as any other routine, adds a single-flight
+// guard so a slow run is never overlapped by its own next trigger, and
+// exposes three ways to fire that guarded execution — Run/Trigger directly,
+// StartSchedule on an arbitrary Schedule (interface-compatible with
+// robfig/cron/v3's cron.Schedule, so real cron syntax is a parser away
+// without libroutine depending on one), or SubscribeMessenger to react to a
+// github.com/contenox/runtime/libbus.Messenger subject.
+//
+// Condition and Operation are plain funcs, so a Job can drive anything
+// (including github.com/contenox/runtime/libprocess), and every trigger
+// path runs through the same Routine — a chain that starts failing
+// repeatedly opens its circuit and backs off instead of being retried every
+// tick or event forever.
 package libroutine

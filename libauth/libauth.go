@@ -70,8 +70,23 @@ type Authz interface {
 	RequireAuthorisation(forResource string, permission int) (bool, error)
 }
 
-// Valid implements the jwt.Claims interface, checking the validity of the claims.
-// It validates the expiration, issued-at, and identity claims.
+// clockSkewLeeway tolerates modest clock disagreement between the issuing and
+// validating hosts when checking issued-at. Without it, a validator whose
+// clock lags a peer's by even a second rejects that peer's freshly minted
+// tokens outright.
+const clockSkewLeeway = 60 * time.Second
+
+// Validate implements jwt.ClaimsValidator so that jwt/v5 runs these checks as
+// part of ParseWithClaims. The method must be named Validate: v5 dispatches on
+// the ClaimsValidator interface, and the v4-style Valid() name is silently
+// ignored, which leaves the identity and issued-at invariants unenforced.
+func (c AuthClaims[T]) Validate() error { return c.Valid() }
+
+// Valid checks the validity of the claims: expiration, issued-at, and identity.
+//
+// Deprecated: this is the jwt/v4 spelling and is not called by jwt/v5. It is
+// retained because it is part of this package's published surface; Validate is
+// what actually runs during parsing.
 func (c AuthClaims[T]) Valid() error {
 	exp, err := c.GetExpirationTime()
 	if err != nil {
@@ -88,7 +103,7 @@ func (c AuthClaims[T]) Valid() error {
 	if iat == nil {
 		return ErrIssuedAtMissing
 	}
-	if time.Now().UTC().Before(iat.Time) {
+	if time.Now().UTC().Add(clockSkewLeeway).Before(iat.Time) {
 		return ErrIssuedAtInFuture
 	}
 
@@ -129,17 +144,17 @@ func ValidateToken[T Authz](ctx context.Context, tokenStr string, jwtSecret stri
 		return []byte(jwtSecret), nil
 	})
 	if err != nil {
+		// Expiry is not a malformed token: callers distinguish "re-authenticate"
+		// from "this request was bad" on this sentinel (apiframework maps
+		// ErrTokenExpired to 401 and parse failures to 400), so it has to
+		// survive the wrap instead of being flattened into a parse error.
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return nil, fmt.Errorf("%w: %w", ErrTokenExpired, err)
+		}
 		return nil, fmt.Errorf("%w: %w", ErrTokenParsingFailed, err)
 	}
 	claims, ok := token.Claims.(*AuthClaims[T])
 	if !ok || !token.Valid {
-		return nil, ErrInvalidTokenClaims
-	}
-	if !token.Valid {
-		// If we get here and the token isn't valid, check if it's due to expiration
-		if time.Now().UTC().After(claims.ExpiresAt.Time) {
-			return nil, ErrTokenExpired
-		}
 		return nil, ErrInvalidTokenClaims
 	}
 

@@ -86,9 +86,11 @@ func (p *group) StartLoop(ctx context.Context, cfg *LoopConfig) {
 	defer p.mu.Unlock()
 
 	// Create a new Routine if none exists for the key.
-	if _, exists := p.managers[cfg.Key]; !exists {
+	manager, exists := p.managers[cfg.Key]
+	if !exists {
 		log.Printf("Creating new routine manager for key: %s", cfg.Key)
-		p.managers[cfg.Key] = NewRoutine(cfg.Threshold, cfg.ResetTimeout)
+		manager = NewRoutine(cfg.Threshold, cfg.ResetTimeout)
+		p.managers[cfg.Key] = manager
 	}
 
 	// If a loop for this key is already active, do nothing.
@@ -104,10 +106,13 @@ func (p *group) StartLoop(ctx context.Context, cfg *LoopConfig) {
 	// Mark the loop as active.
 	p.loops[cfg.Key] = true
 
-	// Start the loop in a new goroutine.
+	// Start the loop in a new goroutine. manager is captured here, while
+	// still holding p.mu, rather than re-read from p.managers[cfg.Key]
+	// inside the goroutine — that read would race against another
+	// StartLoop's concurrent write to the same map.
 	go func() {
 		log.Printf("Loop started for key: %s", cfg.Key)
-		p.managers[cfg.Key].Loop(ctx, cfg.Interval, triggerChan, cfg.Operation, func(err error) {
+		manager.Loop(ctx, cfg.Interval, triggerChan, cfg.Operation, func(err error) {
 			if err != nil {
 				log.Printf("Error in loop for key %s: %v", cfg.Key, err)
 			}
