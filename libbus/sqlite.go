@@ -3,6 +3,7 @@ package libbus
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -32,6 +33,11 @@ type SQLiteBus struct {
 	db     sqlExec
 	mu     sync.Mutex
 	closed bool
+	// ctx bounds the lifetime of every background goroutine this bus owns; it is
+	// cancelled by Close. Subscriptions take the caller's context AND this one,
+	// so Close (which waits on wg) can never be held hostage by a subscription
+	// whose caller context outlives the bus.
+	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
@@ -44,6 +50,10 @@ const (
 	defaultEventPoll   = 200 * time.Millisecond
 	defaultRequestPoll = 100 * time.Millisecond
 	defaultTimeout     = 10 * time.Second
+	// drainTimeout caps how long Unsubscribe will try to hand pending events to
+	// a consumer that is not reading. Without a cap, one wedged consumer makes
+	// Unsubscribe — and therefore Close — block forever.
+	drainTimeout = time.Second
 )
 
 // SQLiteBusOptions overrides poll intervals (e.g. tests use 1ms so request/reply is deterministic).
@@ -71,6 +81,7 @@ func NewSQLiteWithOptions(exec sqlExec, opt SQLiteBusOptions) *SQLiteBus {
 	}
 	b := &SQLiteBus{
 		db:          exec,
+		ctx:         ctx,
 		cancel:      cancel,
 		eventPoll:   ep,
 		requestPoll: rp,
@@ -105,6 +116,12 @@ func (b *SQLiteBus) Publish(ctx context.Context, subject string, data []byte) er
 // Stream starts a polling goroutine that delivers new bus_events for subject to ch.
 // The subscription goroutine stops when ctx is cancelled.
 func (b *SQLiteBus) Stream(ctx context.Context, subject string, ch chan<- []byte) (Subscription, error) {
+	// An already-cancelled context must not yield a live subscription; every
+	// backend rejects this case so callers can rely on it uniformly.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	b.mu.Lock()
 	if b.closed {
 		b.mu.Unlock()
@@ -140,6 +157,7 @@ func (b *SQLiteBus) Stream(ctx context.Context, subject string, ch chan<- []byte
 	}
 
 	subCtx, subCancel := context.WithCancel(ctx)
+	b.bindToBusLifetime(subCtx, subCancel)
 	sub := &sqliteSubscription{
 		cancel: subCancel,
 		drain:  make(chan struct{}),
@@ -167,9 +185,12 @@ func (b *SQLiteBus) Stream(ctx context.Context, subject string, ch chan<- []byte
 				if err := rows.Scan(&id, &payload); err != nil {
 					continue
 				}
-				cursor = id
 				select {
 				case ch <- payload:
+					// Advance only on a successful hand-off, so an event abandoned
+					// because the context ended is retried on the next pass instead
+					// of being skipped forever.
+					cursor = id
 				case <-qCtx.Done():
 					return false
 				}
@@ -177,14 +198,31 @@ func (b *SQLiteBus) Stream(ctx context.Context, subject string, ch chan<- []byte
 			return true
 		}
 
+		// finalDrain delivers events that were published before Unsubscribe.
+		// It is bounded: Unsubscribe waits for this goroutine, so an unbounded
+		// drain against a consumer that never reads would hang the caller.
+		finalDrain := func() {
+			dCtx, dCancel := context.WithTimeout(context.Background(), drainTimeout)
+			defer dCancel()
+			drainOnce(dCtx)
+		}
+
 		ticker := time.NewTicker(b.eventPoll)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-subCtx.Done():
+				// Unsubscribe cancels subCtx to interrupt a delivery that is
+				// blocked on a full consumer channel, so a pending drain request
+				// may be racing this branch — honour it before leaving.
+				select {
+				case <-sub.drain:
+					finalDrain()
+				default:
+				}
 				return
 			case <-sub.drain:
-				drainOnce(context.Background())
+				finalDrain()
 				return
 			case <-ticker.C:
 				drainOnce(subCtx)
@@ -206,6 +244,7 @@ func (b *SQLiteBus) Serve(ctx context.Context, subject string, handler Handler) 
 	b.mu.Unlock()
 
 	subCtx, subCancel := context.WithCancel(ctx)
+	b.bindToBusLifetime(subCtx, subCancel)
 	sub := &sqliteSubscription{cancel: subCancel}
 
 	b.wg.Add(1)
@@ -226,6 +265,20 @@ func (b *SQLiteBus) Serve(ctx context.Context, subject string, handler Handler) 
 	}()
 
 	return sub, nil
+}
+
+// bindToBusLifetime cancels a subscription context when the bus is closed, even
+// if the caller's context never ends. Close waits for every subscription
+// goroutine, so without this a subscription created with context.Background()
+// would make Close block forever.
+func (b *SQLiteBus) bindToBusLifetime(subCtx context.Context, subCancel context.CancelFunc) {
+	go func() {
+		select {
+		case <-b.ctx.Done():
+			subCancel()
+		case <-subCtx.Done():
+		}
+	}()
 }
 
 func (b *SQLiteBus) processRequests(ctx context.Context, subject string, handler Handler) {
@@ -264,7 +317,9 @@ func (b *SQLiteBus) processRequests(ctx context.Context, subject string, handler
 		reply, err := handler(ctx, r.data)
 		replyData := reply
 		if err != nil {
-			replyData = fmt.Appendf(nil, `{"error":%q}`, err.Error())
+			// Same wire shape as the NATS and in-memory backends so a caller
+			// inspecting a reply body does not have to know the backend.
+			replyData = fmt.Appendf(nil, "error: %s", err.Error())
 		}
 		_, _ = b.db.ExecContext(ctx,
 			`INSERT OR REPLACE INTO bus_replies (request_id, data) VALUES (?, ?)`,
@@ -280,6 +335,11 @@ func (b *SQLiteBus) Request(ctx context.Context, subject string, data []byte) ([
 	b.mu.Unlock()
 	if closed {
 		return nil, ErrConnectionClosed
+	}
+	// Report cancellation as cancellation rather than letting it surface as an
+	// opaque driver error from the INSERT below.
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	id := uuid.New().String()
@@ -306,6 +366,12 @@ func (b *SQLiteBus) Request(ctx context.Context, subject string, data []byte) ([
 		select {
 		case <-ctx.Done():
 			_, _ = b.db.ExecContext(context.Background(), `DELETE FROM bus_requests WHERE id = ?`, id)
+			// Distinguish "the deadline passed" from "the caller cancelled":
+			// NATS already reports cancellation as context.Canceled, and a caller
+			// that aborted on purpose must not be told the peer was too slow.
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return nil, ctx.Err()
+			}
 			return nil, ErrRequestTimeout
 		case <-ticker.C:
 			if time.Now().After(deadline) {
@@ -390,6 +456,10 @@ func (s *sqliteSubscription) Unsubscribe() error {
 	s.drained = true
 	close(s.drain)
 	s.closeMu.Unlock()
+	// Cancel as well: the subscriber goroutine may be parked on a send to a
+	// consumer channel nobody is reading, in which case it would never observe
+	// the drain signal and this wait would deadlock.
+	s.cancel()
 	<-s.done
 	return nil
 }

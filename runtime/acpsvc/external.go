@@ -716,12 +716,16 @@ func (b *externalBridge) SessionUpdate(ctx context.Context, n libacp.SessionNoti
 		b.mu.Lock()
 		b.configReceived = true
 		b.configOptions = n.Update.ConfigOptions
-		merged := b.buildConfigOptionsLocked()
 		relay := b.bound
 		if !relay {
 			b.configOptionsPending = true
 		}
 		b.mu.Unlock()
+		// The advertised surface has exactly ONE owner per path (see
+		// configOptionsSurface): the local fold above on the connCtx path, the kernel's
+		// already-merged capture on the Instances path. Read outside b.mu — the
+		// Instances read reaches into the Manager.
+		merged := b.configOptionsSurface()
 		// Persist the pickers (live truth, synthetic mode option folded in) so a later
 		// session/load can carry them in its response before the downstream respawns.
 		b.persistConfigOptions(ctx, merged)
@@ -748,12 +752,12 @@ func (b *externalBridge) SessionUpdate(ctx context.Context, n libacp.SessionNoti
 			// Raced ahead of the session/new seed; remember the new current for seedModes.
 			b.pendingModeID = n.Update.CurrentModeID
 		}
-		merged := b.buildConfigOptionsLocked()
 		relay := b.bound
 		if !relay {
 			b.configOptionsPending = true
 		}
 		b.mu.Unlock()
+		merged := b.configOptionsSurface()
 		b.persistConfigOptions(ctx, merged)
 		if relay {
 			b.relayUpstream(ctx, libacp.SessionUpdate{
@@ -792,11 +796,11 @@ func (b *externalBridge) markBound(ctx context.Context) {
 	b.bound = true
 	cmds := b.cachedCommands
 	flushConfig := b.configOptionsPending
+	b.mu.Unlock()
 	var configOpts []libacp.SessionConfigOption
 	if flushConfig {
-		configOpts = b.buildConfigOptionsLocked()
+		configOpts = b.configOptionsSurface()
 	}
-	b.mu.Unlock()
 	if cmds != nil {
 		b.relayUpstream(ctx, libacp.SessionUpdate{
 			SessionUpdate:     libacp.SessionUpdateAvailableCommands,
@@ -926,10 +930,45 @@ func (b *externalBridge) buildConfigOptionsLocked() []libacp.SessionConfigOption
 // snapshotConfigOptions returns the driver's current upstream option set: the
 // synthetic downstream-mode select first (when present), then the synthetic
 // downstream-model select (when present), then the downstream agent's own options.
+// It is the connCtx path's builder — on the Instances path the surface belongs to
+// the kernel, so read configOptionsSurface instead of this.
 func (b *externalBridge) snapshotConfigOptions() []libacp.SessionConfigOption {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.buildConfigOptionsLocked()
+}
+
+// configOptionsSurface returns the DOWNSTREAM-derived config-option surface this
+// session advertises upstream. It is the single read every advertisement path goes
+// through, because the surface has exactly ONE owner and which one depends on the
+// path:
+//
+//   - connCtx path (no Manager): the BRIDGE owns it. It seeds from the session/new
+//     response and folds in its own synthetic mode/model selects — snapshotConfigOptions.
+//   - Instances path (viewer of a Manager instance): the KERNEL owns it. OpenSession
+//     returns only a session id; the session/new response's options/modes/models were
+//     captured into the instance's per-session state, and Manager.SessionConfigOptions
+//     already returns them WITH the synthetic mode + model selects folded in. Re-seeding
+//     the bridge from that merged set would make the bridge synthesize a second time
+//     (mode/model options duplicated on top of an already-merged set), so the bridge
+//     simply does not maintain a surface there and defers.
+//
+// Live config_option_update / current_mode_update notifications keep BOTH owners
+// current — the kernel captures them BEFORE fanning out to viewers, so a read taken
+// right after the bridge observed an update already reflects it. An unknown/stopped
+// instance yields nil (nothing to advertise), never the bridge's empty local state.
+func (b *externalBridge) configOptionsSurface() []libacp.SessionConfigOption {
+	b.relayMu.Lock()
+	mgr, instanceID := b.mgr, b.instanceID
+	b.relayMu.Unlock()
+	if mgr == nil || instanceID == "" {
+		return b.snapshotConfigOptions()
+	}
+	opts, err := mgr.SessionConfigOptions(instanceID, b.downstream())
+	if err != nil {
+		return nil
+	}
+	return opts
 }
 
 // persistCommands durably records the latest downstream command menu keyed by this
@@ -1043,10 +1082,16 @@ type externalDriver struct {
 	// at construction, never mutated.
 	upstreamID libacp.SessionID
 
-	// mu guards the live downstream connection state: set when the session attaches
-	// and re-set lazily on the first prompt after a session/load. A nil conn means
-	// not currently attached.
-	mu   sync.Mutex
+	// mu guards the live downstream state: set when the session attaches and re-set
+	// lazily on the first prompt after a session/load. The attached/not-attached
+	// sentinel is BRIDGE (nil = not attached) — not conn, which is nil on the
+	// Instances path by design.
+	mu sync.Mutex
+	// conn is the raw downstream connection — set ONLY on the connCtx-owned path,
+	// where the driver owns the process. On the Instances path it stays nil: the
+	// Manager owns the connection and every downstream operation is driven through
+	// its session API (OpenSession/Prompt/Cancel/SetConfigOption), so this transport
+	// holds no connection at all.
 	conn *libacp.ClientSideConnection
 	// handle is the connCtx-owned subprocess handle — set ONLY on the nil-Instances
 	// path (the driver owns the process); nil when the connection is a Manager
@@ -1090,7 +1135,7 @@ func (d *externalDriver) ConfigOptions(_ context.Context, sess *sessionEntry) []
 	d.mu.Unlock()
 	var base []libacp.SessionConfigOption
 	if bridge != nil {
-		base = bridge.snapshotConfigOptions()
+		base = bridge.configOptionsSurface()
 	}
 	// A fresh slice avoids aliasing the bridge's backing array (snapshotConfigOptions
 	// may return it directly), so appending here never corrupts the bridge's set.
@@ -1126,9 +1171,25 @@ func (d *externalDriver) SetConfigOption(ctx context.Context, sess *sessionEntry
 	}
 
 	d.mu.Lock()
-	conn, downstreamID, bridge := d.conn, d.downstreamID, d.bridge
+	conn, instanceID, downstreamID, bridge := d.conn, d.instanceID, d.downstreamID, d.bridge
 	d.mu.Unlock()
-	if conn == nil || bridge == nil {
+	if bridge == nil {
+		return libacp.NewError(libacp.ErrInvalidParams, "external agent session is not active")
+	}
+	// Instances path: the KERNEL performs this exact mapping (the synthetic mode/model
+	// ids to session/set_mode / session/set_model, everything else to
+	// session/set_config_option) and adopts the confirmed value into its per-session
+	// state — the surface it owns here (see configOptionsSurface). So the three
+	// branches below collapse to one call, and only the transport-side DB persistence
+	// (the runtime's rows, not the kernel's) stays here.
+	if instanceID != "" {
+		if err := d.t.deps.Instances.SetConfigOption(ctx, instanceID, downstreamID, configID, value); err != nil {
+			return err
+		}
+		bridge.persistConfigOptions(ctx, bridge.configOptionsSurface())
+		return nil
+	}
+	if conn == nil {
 		return libacp.NewError(libacp.ErrInvalidParams, "external agent session is not active")
 	}
 	// The synthetic mode option is not a real downstream config option: a set on its
@@ -1305,13 +1366,14 @@ func filterMcpForCaps(servers []libacp.McpServer, caps libacp.McpCapabilities) (
 }
 
 // externalAttach is the result of bringing up a downstream connection for an
-// external session: the live connection plus whichever ownership token applies —
-// handle (connCtx-owned subprocess, nil-Instances path) XOR instanceID
-// (Manager-owned instance). teardown reverses exactly the one that was set.
+// external session: whichever ownership token applies — handle + conn (connCtx-owned
+// subprocess, nil-Instances path) XOR instanceID (Manager-owned instance, which owns
+// the connection itself, so conn stays nil here). teardown reverses exactly the one
+// that was set.
 type externalAttach struct {
-	conn         *libacp.ClientSideConnection
-	handle       *agenthost.Handle // set on the nil-Instances path
-	instanceID   string            // set on the Instances path
+	conn         *libacp.ClientSideConnection // set on the nil-Instances path only
+	handle       *agenthost.Handle            // set on the nil-Instances path
+	instanceID   string                       // set on the Instances path
 	downstreamID libacp.SessionID
 	bridge       *externalBridge
 }
@@ -1328,30 +1390,78 @@ func (ea *externalAttach) teardown(t *Transport) {
 	}
 }
 
+// resolveMcpAllowlist resolves a declared external agent's mcp_servers ALLOWLIST
+// (names) against the store into the ACP session/new wire shapes to forward. It stays
+// on the transport on BOTH paths: resolution needs the DB, which the kernel
+// deliberately does not have — agentinstance.SessionSpec.McpServers takes an
+// already-resolved set for exactly this reason.
+func (t *Transport) resolveMcpAllowlist(ctx context.Context, cfg *runtimetypes.ExternalACPConfig, agentName string) ([]libacp.McpServer, error) {
+	store := runtimetypes.New(t.deps.DB.WithoutTransaction())
+	servers, err := agenthost.ResolveForwardedMcpServers(ctx, storeMcpResolver{store: store}, cfg.McpServers)
+	if err != nil {
+		return nil, libacp.InternalError(fmt.Sprintf("acpsvc: resolve mcp allowlist for agent %q: %v", agentName, err))
+	}
+	return servers, nil
+}
+
+// openInstanceSession drives the downstream handshake for a MANAGER-OWNED instance —
+// the Instances-path counterpart of initExternalConn. It holds no connection: the
+// kernel owns the initialize-once negotiation, session/new, and the capture of the
+// response's advertised surface (config options / modes / models), returning only the
+// downstream session id. This transport keeps the two things that are genuinely its
+// own: resolving the mcp allowlist against the DB (see resolveMcpAllowlist) and
+// persisting the advertised option set into ITS rows so a session/load before the next
+// prompt can restore the pickers.
+//
+// SessionSpec.Terminal is deliberately FALSE. Advertising the terminal client
+// capability here would be a lie: the instance's own journaling harness is the wired
+// libacp.Client and answers terminal/* with MethodNotFound — the bridge, a mere
+// Viewer, is never called for it — so the downstream would route shell commands to a
+// dead surface. Withholding it is a documented regression of this slice (the connCtx
+// path, where the bridge IS the wired client, still serves terminals).
+//
+// The caller owns teardown on failure (Stop the instance).
+func (t *Transport) openInstanceSession(ctx context.Context, instanceID string, bridge *externalBridge, cfg *runtimetypes.ExternalACPConfig, cwd, agentName string) (libacp.SessionID, error) {
+	mcpServers, err := t.resolveMcpAllowlist(ctx, cfg, agentName)
+	if err != nil {
+		return "", err
+	}
+	downstreamID, err := t.deps.Instances.OpenSession(ctx, instanceID, agentinstance.SessionSpec{
+		Cwd:        cwd,
+		McpServers: mcpServers,
+		Terminal:   false,
+	})
+	if err != nil {
+		return "", libacp.InternalError(fmt.Sprintf("acpsvc: open session on agent %q instance: %v", agentName, err))
+	}
+	bridge.setDownstreamID(downstreamID)
+	// Persist the kernel's captured surface (synthetic mode + model selects folded in
+	// by Manager.SessionConfigOptions) so a session/load before the first prompt can
+	// restore the pickers. Every (re)open overwrites it with fresh downstream truth.
+	bridge.persistConfigOptions(ctx, bridge.configOptionsSurface())
+	return downstreamID, nil
+}
+
 // initExternalConn drives the downstream ACP handshake (initialize + session/new) on
 // an already-connected downstream connection wired to bridge, seeding the bridge's
 // advertised surface and recording the downstream session id ON the bridge (so a
-// reconnect recovers it). Shared by the connCtx-spawn path and the Manager-instance
-// path. On any failure the CALLER owns teardown of the connection (close the handle,
-// or stop the instance).
+// reconnect recovers it). It is the connCtx-spawn path ONLY — the driver owns the
+// connection there; the Manager-instance path drives the same handshake through the
+// kernel instead (openInstanceSession), holding no connection. On any failure the
+// CALLER owns teardown of the connection (close the handle).
 func (t *Transport) initExternalConn(ctx context.Context, conn *libacp.ClientSideConnection, bridge *externalBridge, cfg *runtimetypes.ExternalACPConfig, cwd, agentName string, terminalCapable bool) (libacp.SessionID, error) {
-	store := runtimetypes.New(t.deps.DB.WithoutTransaction())
-	mcpServers, err := agenthost.ResolveForwardedMcpServers(ctx, storeMcpResolver{store: store}, cfg.McpServers)
+	mcpServers, err := t.resolveMcpAllowlist(ctx, cfg, agentName)
 	if err != nil {
-		return "", libacp.InternalError(fmt.Sprintf("acpsvc: resolve mcp allowlist for agent %q: %v", agentName, err))
+		return "", err
 	}
 
 	// Advertise the terminal client capability to the downstream agent ONLY when this
-	// path can actually service terminal/* — i.e. a shell manager is present AND the
-	// bridge is the wired libacp.Client (the connCtx path). On the Instances path the
-	// instance's own journaling harness is the wired client and answers terminal/* with
-	// MethodNotFound (the bridge, a mere Viewer, is never called for it), so advertising
-	// there would be a lie: the downstream would route shell commands to a dead surface.
-	// terminalCapable folds both conditions, withholding the capability on the Instances
-	// path — a documented regression of this slice (see the terminal-bridge note). With
-	// it advertised (connCtx path), a downstream agent (e.g. claude-code-acp) routes its
-	// shell commands through the runtime's terminals (external_terminal.go) so beam's
-	// terminal panel shows them live.
+	// path can actually service terminal/* — i.e. a shell manager is present (the bridge
+	// IS the wired libacp.Client here, so it answers the family in person). With it
+	// advertised, a downstream agent (e.g. claude-code-acp) routes its shell commands
+	// through the runtime's terminals (external_terminal.go) so beam's terminal panel
+	// shows them live. The Instances path withholds it for the reason spelled out on
+	// openInstanceSession.
 	clientCaps := libacp.ClientCapabilities{}
 	if terminalCapable {
 		clientCaps.Terminal = true
@@ -1420,20 +1530,18 @@ func (t *Transport) bringUpExternal(ctx context.Context, upstreamID libacp.Sessi
 	if t.deps.Instances != nil {
 		// Manager-owned: the subprocess is bound to the Manager's root ctx, so it
 		// outlives this connection. The instance owns its own journaling harness (it
-		// spawned wired to it); this driver DRIVES the downstream via Conn and OBSERVES
-		// it by Attaching the bridge as a viewer. Any failure Stops the instance so
-		// nothing leaks. Terminal is withheld — the instance's harness, not the bridge,
-		// answers terminal/* (as MethodNotFound).
+		// spawned wired to it); this driver DRIVES the downstream through the Manager's
+		// session API and OBSERVES it by Attaching the bridge as a viewer — it holds NO
+		// connection. Any failure Stops the instance so nothing leaks.
 		instanceID, err := t.deps.Instances.Start(ctx, agentName)
 		if err != nil {
 			return nil, libacp.InternalError(fmt.Sprintf("acpsvc: start agent %q instance: %v", agentName, err))
 		}
-		conn, err := t.deps.Instances.Conn(instanceID)
-		if err != nil {
-			_ = t.deps.Instances.Stop(instanceID)
-			return nil, libacp.InternalError(fmt.Sprintf("acpsvc: agent %q instance connection: %v", agentName, err))
-		}
-		downstreamID, err := t.initExternalConn(ctx, conn, bridge, cfg, cwd, agentName, false)
+		// Bind BEFORE the handshake: openInstanceSession persists the kernel-owned
+		// config-option surface, which the bridge can only read once it knows which
+		// instance it is a viewer of.
+		bridge.bindInstance(t.deps.Instances, instanceID)
+		downstreamID, err := t.openInstanceSession(ctx, instanceID, bridge, cfg, cwd, agentName)
 		if err != nil {
 			_ = t.deps.Instances.Stop(instanceID)
 			return nil, err
@@ -1443,12 +1551,11 @@ func (t *Transport) bringUpExternal(ctx context.Context, upstreamID libacp.Sessi
 		// first viewer becomes the session's controller and thereby answers the
 		// downstream's permission requests. A fresh instance's journal is empty, so the
 		// replay is a no-op; no suppression is needed.
-		bridge.bindInstance(t.deps.Instances, instanceID)
 		if _, err := t.deps.Instances.Attach(ctx, instanceID, downstreamID, bridge); err != nil {
 			_ = t.deps.Instances.Stop(instanceID)
 			return nil, libacp.InternalError(fmt.Sprintf("acpsvc: attach to agent %q instance: %v", agentName, err))
 		}
-		return &externalAttach{conn: conn, instanceID: instanceID, downstreamID: downstreamID, bridge: bridge}, nil
+		return &externalAttach{instanceID: instanceID, downstreamID: downstreamID, bridge: bridge}, nil
 	}
 
 	// connCtx-owned (fallback): the subprocess dies with this connection, and the
@@ -1467,19 +1574,36 @@ func (t *Transport) bringUpExternal(ctx context.Context, upstreamID libacp.Sessi
 	return &externalAttach{conn: handle.Conn, handle: handle, downstreamID: downstreamID, bridge: bridge}, nil
 }
 
-// ensureAttached returns the driver's live downstream connection, acquiring it lazily
-// on first use. On the Manager path a session/load persisted the instanceID, so the
-// first prompt after a load RE-ATTACHES to the still-running instance (Attach) — the
+// externalTarget names the LIVE downstream a driver call drives. It carries exactly
+// one of the two ownership modes (see externalDriver): a raw connection the driver
+// owns (connCtx path, instanceID ""), or a Manager instance id to drive THROUGH (the
+// Instances path, conn nil — the connection belongs to the kernel and no consumer
+// holds it). Every downstream operation branches on instanceID exactly once, in the
+// drive* helpers below.
+type externalTarget struct {
+	conn         *libacp.ClientSideConnection
+	instanceID   string
+	downstreamID libacp.SessionID
+	bridge       *externalBridge
+}
+
+// ensureAttached returns the driver's live downstream target, acquiring it lazily on
+// first use. On the Manager path a session/load persisted the instanceID, so the first
+// prompt after a load RE-ATTACHES to the still-running instance (Attach) — the
 // downstream agent's context is PRESERVED — falling back to a fresh bring-up only when
 // that instance is gone. On the nil-Instances (connCtx) path there is no instance to
 // re-attach to: the first prompt after a load freshly respawns, restarting the
 // downstream's context (a documented v1 limit of that path).
-func (d *externalDriver) ensureAttached(ctx context.Context, upstreamID libacp.SessionID, sess *sessionEntry) (*libacp.ClientSideConnection, libacp.SessionID, *externalBridge, error) {
+//
+// The attached/not-attached sentinel is the BRIDGE, not the connection: the Instances
+// path holds no connection at all, so a nil conn there means "kernel-owned", not
+// "detached".
+func (d *externalDriver) ensureAttached(ctx context.Context, upstreamID libacp.SessionID, sess *sessionEntry) (*externalTarget, error) {
 	d.mu.Lock()
-	if d.conn != nil {
-		conn, downstreamID, bridge := d.conn, d.downstreamID, d.bridge
+	if d.bridge != nil {
+		tgt := &externalTarget{conn: d.conn, instanceID: d.instanceID, downstreamID: d.downstreamID, bridge: d.bridge}
 		d.mu.Unlock()
-		return conn, downstreamID, bridge, nil
+		return tgt, nil
 	}
 	instanceID, downstreamID := d.instanceID, d.downstreamID
 	d.mu.Unlock()
@@ -1487,25 +1611,24 @@ func (d *externalDriver) ensureAttached(ctx context.Context, upstreamID libacp.S
 	// Re-attach to a still-running Manager instance first (survives reconnect). Under the
 	// R1 kernel the bridge no longer survives on the instance, so a reconnect builds a
 	// FRESH viewer: it recovers the downstream session id (persisted at bring-up, restored
-	// onto the driver by markExternalIfPersisted), fetches the instance's live connection
-	// (Conn), attaches a new bridge as a viewer keyed by that downstream session id, and
-	// drives prompts against the SAME downstream session — preserving the agent's context.
+	// onto the driver by markExternalIfPersisted), attaches a new bridge as a viewer keyed
+	// by that downstream session id, and drives prompts against the SAME downstream
+	// session — preserving the agent's context. No connection is fetched: the instance
+	// keeps it and is driven through the Manager's session API.
 	// The journal REPLAY is suppressed: the durable chatservice transcript already replayed
 	// the pre-drop turn at session/load, so relaying the backlog too would double-emit it.
 	if d.t.deps.Instances != nil && instanceID != "" && downstreamID != "" {
 		if st, err := d.t.deps.Instances.Get(instanceID); err == nil && st.State == agentinstance.StateRunning {
-			if conn, err := d.t.deps.Instances.Conn(instanceID); err == nil {
-				bridge := newExternalBridge(d.t, upstreamID, true)
-				bridge.setDownstreamID(downstreamID)
-				bridge.suppressReplay()
-				bridge.bindInstance(d.t.deps.Instances, instanceID)
-				if _, err := d.t.deps.Instances.Attach(ctx, instanceID, downstreamID, bridge); err == nil {
-					return d.commitReattach(ctx, conn, instanceID, downstreamID, bridge)
-				}
-				// Attach failed: drop this redundant bridge and fall through to a fresh
-				// bring-up (which restarts the downstream's context — the documented loss).
-				bridge.detachFrom(d.t)
+			bridge := newExternalBridge(d.t, upstreamID, true)
+			bridge.setDownstreamID(downstreamID)
+			bridge.suppressReplay()
+			bridge.bindInstance(d.t.deps.Instances, instanceID)
+			if _, err := d.t.deps.Instances.Attach(ctx, instanceID, downstreamID, bridge); err == nil {
+				return d.commitReattach(instanceID, downstreamID, bridge), nil
 			}
+			// Attach failed: drop this redundant bridge and fall through to a fresh
+			// bring-up (which restarts the downstream's context — the documented loss).
+			bridge.detachFrom(d.t)
 		}
 		// Instance gone/stopped/errored: fall through to a fresh bring-up below.
 	}
@@ -1516,35 +1639,34 @@ func (d *externalDriver) ensureAttached(ctx context.Context, upstreamID libacp.S
 
 	att, err := d.t.bringUpExternal(ctx, upstreamID, cwd, d.agentName, true)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, err
 	}
 	return d.commitBringUp(ctx, upstreamID, att)
 }
 
-// commitReattach adopts a re-attached Manager instance's live connection and fresh
-// viewer bridge onto the driver. It re-enables the (suppressed) relay now that Attach's
-// backlog replay has drained, so subsequent LIVE downstream updates reach this
-// connection. No config push is needed: session/load already restored the reopened
-// toolbar from the persisted config-option set (reloadedConfigOptions), and a fresh
-// bridge's live surface is empty until the downstream re-advertises.
-func (d *externalDriver) commitReattach(ctx context.Context, conn *libacp.ClientSideConnection, instanceID string, downstreamID libacp.SessionID, bridge *externalBridge) (*libacp.ClientSideConnection, libacp.SessionID, *externalBridge, error) {
+// commitReattach adopts a re-attached Manager instance and its fresh viewer bridge onto
+// the driver. It re-enables the (suppressed) relay now that Attach's backlog replay has
+// drained, so subsequent LIVE downstream updates reach this connection. No config push
+// is needed: session/load already restored the reopened toolbar from the persisted
+// config-option set (reloadedConfigOptions), and the kernel's captured surface is the
+// live truth from here on.
+func (d *externalDriver) commitReattach(instanceID string, downstreamID libacp.SessionID, bridge *externalBridge) *externalTarget {
 	bridge.resumeRelay()
 	d.mu.Lock()
-	if d.conn != nil {
+	if d.bridge != nil {
 		// Lost a race: another prompt re-attached first. Detach our redundant viewer
 		// (distinct bridge id, so it is a real second attachment) and use the winner.
-		conn2, ds2, b2 := d.conn, d.downstreamID, d.bridge
+		won := &externalTarget{conn: d.conn, instanceID: d.instanceID, downstreamID: d.downstreamID, bridge: d.bridge}
 		d.mu.Unlock()
 		bridge.detachViewer()
 		bridge.detachFrom(d.t)
-		return conn2, ds2, b2, nil
+		return won
 	}
-	d.conn = conn
 	d.bridge = bridge
 	d.instanceID = instanceID
 	d.downstreamID = downstreamID
 	d.mu.Unlock()
-	return conn, downstreamID, bridge, nil
+	return &externalTarget{instanceID: instanceID, downstreamID: downstreamID, bridge: bridge}
 }
 
 // commitBringUp adopts a freshly brought-up downstream onto the driver (winner logic
@@ -1552,14 +1674,14 @@ func (d *externalDriver) commitReattach(ctx context.Context, conn *libacp.Client
 // session id so a later reconnect re-attaches to THIS instance's SAME session, and pushes
 // the reconnected downstream's config options to restore the reloaded toolbar (the lazy
 // bring-up case).
-func (d *externalDriver) commitBringUp(ctx context.Context, upstreamID libacp.SessionID, att *externalAttach) (*libacp.ClientSideConnection, libacp.SessionID, *externalBridge, error) {
+func (d *externalDriver) commitBringUp(ctx context.Context, upstreamID libacp.SessionID, att *externalAttach) (*externalTarget, error) {
 	d.mu.Lock()
-	if d.conn != nil {
+	if d.bridge != nil {
 		// Lost a race: keep the winner, discard (close/stop) ours.
-		conn2, ds2, b2 := d.conn, d.downstreamID, d.bridge
+		won := &externalTarget{conn: d.conn, instanceID: d.instanceID, downstreamID: d.downstreamID, bridge: d.bridge}
 		d.mu.Unlock()
 		att.teardown(d.t)
-		return conn2, ds2, b2, nil
+		return won, nil
 	}
 	d.conn = att.conn
 	d.handle = att.handle
@@ -1571,13 +1693,39 @@ func (d *externalDriver) commitBringUp(ctx context.Context, upstreamID libacp.Se
 		d.t.persistSessionInstance(ctx, upstreamID, att.instanceID)
 		d.t.persistSessionDownstream(ctx, upstreamID, att.downstreamID)
 	}
-	if opts := att.bridge.snapshotConfigOptions(); len(opts) > 0 {
+	if opts := att.bridge.configOptionsSurface(); len(opts) > 0 {
 		d.t.relayExternalUpdate(ctx, upstreamID, libacp.SessionUpdate{
 			SessionUpdate: libacp.SessionUpdateConfigOption,
 			ConfigOptions: opts,
 		})
 	}
-	return att.conn, att.downstreamID, att.bridge, nil
+	return &externalTarget{conn: att.conn, instanceID: att.instanceID, downstreamID: att.downstreamID, bridge: att.bridge}, nil
+}
+
+// promptDownstream drives one downstream prompt turn against tgt and returns its stop
+// reason. On the Instances path the kernel owns the connection, so the turn goes
+// through Manager.Prompt (which is itself cancellation-aware and resolves a cancelled
+// turn as StopReasonCancelled with a nil error, exactly as the caller's error branch
+// does for the raw path).
+func (d *externalDriver) promptDownstream(ctx context.Context, tgt *externalTarget, prompt []libacp.ContentBlock) (libacp.StopReason, error) {
+	if tgt.instanceID != "" {
+		return d.t.deps.Instances.Prompt(ctx, tgt.instanceID, tgt.downstreamID, prompt)
+	}
+	resp, err := tgt.conn.Prompt(ctx, libacp.PromptRequest{SessionID: tgt.downstreamID, Prompt: prompt})
+	if err != nil {
+		return "", err
+	}
+	return resp.StopReason, nil
+}
+
+// cancelDownstream cancels tgt's in-flight downstream turn (session/cancel plus the
+// prompt-turn permission auto-resolve). Best-effort on both paths.
+func (d *externalDriver) cancelDownstream(tgt *externalTarget) {
+	if tgt.instanceID != "" {
+		_ = d.t.deps.Instances.Cancel(tgt.instanceID, tgt.downstreamID)
+		return
+	}
+	_ = tgt.conn.CancelPrompt(tgt.downstreamID)
 }
 
 // Prompt forwards a prompt to the session's downstream agent, bypassing
@@ -1591,7 +1739,7 @@ func (d *externalDriver) Prompt(ctx context.Context, req libacp.PromptRequest, s
 	reportErr, reportChange, end := t.tracker().Start(ctx, "prompt", "acp_external_session", "session_id", string(req.SessionID))
 	defer end()
 
-	conn, downstreamID, bridge, err := d.ensureAttached(ctx, req.SessionID, sess)
+	tgt, err := d.ensureAttached(ctx, req.SessionID, sess)
 	if err != nil {
 		reportErr(err)
 		return libacp.PromptResponse{}, err
@@ -1602,20 +1750,17 @@ func (d *externalDriver) Prompt(ctx context.Context, req libacp.PromptRequest, s
 	// it; the sync.Once keeps the deferred unregister from ever sending a stray
 	// cancel after a normal completion.
 	var cancelOnce sync.Once
-	cancelDownstream := func() {
-		cancelOnce.Do(func() { _ = conn.CancelPrompt(downstreamID) })
+	cancel := func() {
+		cancelOnce.Do(func() { d.cancelDownstream(tgt) })
 	}
-	promptReg := t.registerPromptCancel(req.SessionID, cancelDownstream)
+	promptReg := t.registerPromptCancel(req.SessionID, cancel)
 	defer t.unregisterPromptCancel(req.SessionID, promptReg)
 
-	bridge.beginCapture()
-	resp, promptErr := conn.Prompt(ctx, libacp.PromptRequest{
-		SessionID: downstreamID,
-		Prompt:    req.Prompt,
-	})
-	assistantText := bridge.finishCapture()
+	tgt.bridge.beginCapture()
+	stopReason, promptErr := d.promptDownstream(ctx, tgt, req.Prompt)
+	assistantText := tgt.bridge.finishCapture()
 
-	userText, _ := flattenPromptBlocks(req.Prompt)
+	userText, _ := libacp.FlattenContent(req.Prompt)
 	t.persistExternalTurn(ctx, sess.InternalSessionID, userText, assistantText)
 
 	if promptErr != nil {
@@ -1645,8 +1790,8 @@ func (d *externalDriver) Prompt(ctx context.Context, req libacp.PromptRequest, s
 		t.sendUpdate(ctx, libacp.SessionNotification{SessionID: req.SessionID, Update: update})
 	})
 
-	reportChange(string(req.SessionID), map[string]any{"stop_reason": string(resp.StopReason)})
-	return libacp.PromptResponse{StopReason: resp.StopReason}, nil
+	reportChange(string(req.SessionID), map[string]any{"stop_reason": string(stopReason)})
+	return libacp.PromptResponse{StopReason: stopReason}, nil
 }
 
 // persistExternalTurn records the user prompt and the downstream agent's reply

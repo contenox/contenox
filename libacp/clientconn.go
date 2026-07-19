@@ -8,6 +8,7 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // ClientSideConnection is the editor-side mirror of AgentSideConnection
@@ -56,9 +57,61 @@ type ClientSideConnection struct {
 	extRequest      ExtRequestHandler
 	extNotification ExtNotificationHandler
 
+	// handlerMu / draining / handlers mirror AgentSideConnection's handler
+	// tracking (conn.go): they make admission of a new handler goroutine and
+	// "shutdown has begun" a single atomic step, so handlers.Add can never
+	// race handlers.Wait.
+	handlerMu sync.Mutex
+	draining  bool
+	handlers  sync.WaitGroup
+
 	closeOnce sync.Once
 	closed    chan struct{}
 	closeErr  error
+}
+
+// goHandler spawns fn as a tracked handler goroutine and reports whether it
+// was started. Mirrors AgentSideConnection.goHandler (conn.go); see there for
+// why admission closes before shutdown sweeps the cancel registrations.
+func (c *ClientSideConnection) goHandler(fn func()) bool {
+	c.handlerMu.Lock()
+	if c.draining {
+		c.handlerMu.Unlock()
+		return false
+	}
+	c.handlers.Add(1)
+	c.handlerMu.Unlock()
+	go func() {
+		defer c.handlers.Done()
+		fn()
+	}()
+	return true
+}
+
+// waitHandlers blocks until every handler goroutine spawned by goHandler has
+// RETURNED, not merely observed cancellation. Call it only after shutdown, so
+// that everything a handler could be parked on (its context, a pending
+// outbound call, the transport) has already been released. The wait is
+// deliberately unbounded, for the reasons documented on
+// AgentSideConnection.waitHandlers (conn.go).
+func (c *ClientSideConnection) waitHandlers() error {
+	c.handlerMu.Lock()
+	c.draining = true
+	c.handlerMu.Unlock()
+
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		c.handlers.Wait()
+	}()
+	timer := time.NewTimer(HandlerDrainTimeout)
+	defer timer.Stop()
+	select {
+	case <-drained:
+		return nil
+	case <-timer.C:
+		return ErrHandlerDrainTimeout
+	}
 }
 
 // clientPromptTurn tracks whether CancelPrompt has marked a session's
@@ -116,7 +169,15 @@ func (c *ClientSideConnection) SetExtNotificationHandler(h ExtNotificationHandle
 	c.extNotification = h
 }
 
-func (c *ClientSideConnection) Run(ctx context.Context) error {
+func (c *ClientSideConnection) Run(ctx context.Context) (err error) {
+	// Deferred first so it runs LAST: cancel and unblock everything in
+	// shutdown, only then join. By the time Run returns, no handler goroutine
+	// is still executing. Mirrors AgentSideConnection.Run (conn.go).
+	defer func() {
+		if derr := c.waitHandlers(); derr != nil {
+			err = errors.Join(err, derr)
+		}
+	}()
 	defer c.shutdown(nil)
 
 	go func() {
@@ -160,6 +221,14 @@ func (c *ClientSideConnection) CloseErr() error {
 func (c *ClientSideConnection) shutdown(err error) {
 	c.closeOnce.Do(func() {
 		c.closeErr = err
+
+		// Admission closes before the cancel sweep below, so every handler
+		// that will ever run has its cancel func already registered when the
+		// sweep happens (see AgentSideConnection.shutdown in conn.go).
+		c.handlerMu.Lock()
+		c.draining = true
+		c.handlerMu.Unlock()
+
 		_ = c.closer.Close()
 
 		c.pendingMu.Lock()
@@ -207,18 +276,24 @@ func (c *ClientSideConnection) dispatch(ctx context.Context, line []byte) {
 			pp = c.registerPendingPerm(msg.Request)
 		}
 
-		go func() {
-			defer func() {
-				c.reqCancelMu.Lock()
-				delete(c.requestCancels, key)
-				c.reqCancelMu.Unlock()
-				cancelReq()
-				if pp != nil {
-					c.unregisterPendingPerm(pp)
-				}
-			}()
+		release := func() {
+			c.reqCancelMu.Lock()
+			delete(c.requestCancels, key)
+			c.reqCancelMu.Unlock()
+			cancelReq()
+			if pp != nil {
+				c.unregisterPendingPerm(pp)
+			}
+		}
+		if !c.goHandler(func() {
+			defer release()
 			c.handleRequest(reqCtx, msg.Request, pp)
-		}()
+		}) {
+			// Shutdown is already under way; the transport is closed, so no
+			// response could reach the agent anyway. Drop the request and undo
+			// the registrations dispatch just made.
+			release()
+		}
 	case IncomingKindNotification:
 		// "$/cancel_request" is applied inline on the read loop so wire order
 		// is preserved, mirroring AgentSideConnection.dispatch: a cancel that

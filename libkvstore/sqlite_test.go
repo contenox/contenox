@@ -3,6 +3,11 @@ package libkvstore_test
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
+	"slices"
+	"sort"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -176,5 +181,126 @@ func TestUnit_SQLiteKVOverwrite(t *testing.T) {
 	json.Unmarshal(got, &val)
 	if val != "second" {
 		t.Errorf("expected 'second' after overwrite, got %q", val)
+	}
+}
+
+// openSQLiteKVFile opens a file-backed SQLite KV store. Concurrency tests must not
+// use ":memory:" because every pooled connection would get its own private database.
+func openSQLiteKVFile(t *testing.T) libkvstore.KVExecutor {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "kv.db")
+	db, err := libdbexec.NewSQLiteDBManager(context.Background(), path, libkvstore.SQLiteSchema)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	mgr := libkvstore.NewSQLiteManager(db)
+	exec, err := mgr.Executor(context.Background())
+	if err != nil {
+		t.Fatalf("executor: %v", err)
+	}
+	return exec
+}
+
+func TestUnit_SQLiteKVConcurrentListPushKeepsEveryElement(t *testing.T) {
+	ctx := context.Background()
+	exec := openSQLiteKVFile(t)
+
+	const n = 32
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if err := exec.ListPush(ctx, "concurrent", json.RawMessage(strconv.Itoa(i))); err != nil {
+				t.Errorf("ListPush(%d): %v", i, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	items, err := exec.ListRange(ctx, "concurrent", 0, -1)
+	if err != nil {
+		t.Fatalf("ListRange: %v", err)
+	}
+	if len(items) != n {
+		t.Fatalf("lost updates: expected %d items, got %d", n, len(items))
+	}
+	seen := map[int]bool{}
+	for _, it := range items {
+		var v int
+		if err := json.Unmarshal(it, &v); err != nil {
+			t.Fatalf("unmarshal %q: %v", it, err)
+		}
+		seen[v] = true
+	}
+	for i := range n {
+		if !seen[i] {
+			t.Errorf("element %d was lost", i)
+		}
+	}
+}
+
+func TestUnit_SQLiteKVConcurrentSetAddKeepsEveryMember(t *testing.T) {
+	ctx := context.Background()
+	exec := openSQLiteKVFile(t)
+
+	const n = 32
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if err := exec.SetAdd(ctx, "concurrentset", json.RawMessage(strconv.Itoa(i))); err != nil {
+				t.Errorf("SetAdd(%d): %v", i, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	members, err := exec.SetMembers(ctx, "concurrentset")
+	if err != nil {
+		t.Fatalf("SetMembers: %v", err)
+	}
+	if len(members) != n {
+		t.Fatalf("lost updates: expected %d members, got %d", n, len(members))
+	}
+}
+
+func TestUnit_SQLiteKVKeysWithLikeSpecialCharacters(t *testing.T) {
+	ctx := context.Background()
+	exec := openSQLiteKV(t)
+
+	all := []string{`a%b`, `a_b`, `axb`, `a\b`, `plain`}
+	for _, k := range all {
+		if err := exec.Set(ctx, k, json.RawMessage(`1`)); err != nil {
+			t.Fatalf("Set(%q): %v", k, err)
+		}
+	}
+
+	cases := []struct {
+		pattern string
+		want    []string
+	}{
+		{`a%b`, []string{`a%b`}},
+		{`a_b`, []string{`a_b`}},
+		{`a\b`, []string{`a\b`}},
+		{`a*`, []string{`a%b`, `a_b`, `axb`, `a\b`}},
+		{`*`, all},
+		{`plain`, []string{`plain`}},
+	}
+	for _, tc := range cases {
+		keys, err := exec.Keys(ctx, tc.pattern)
+		if err != nil {
+			t.Fatalf("Keys(%q): %v", tc.pattern, err)
+		}
+		got := make([]string, len(keys))
+		copy(got, keys)
+		sort.Strings(got)
+		want := append([]string(nil), tc.want...)
+		sort.Strings(want)
+		if !slices.Equal(got, want) {
+			t.Errorf("Keys(%q) = %v, want %v", tc.pattern, got, want)
+		}
 	}
 }

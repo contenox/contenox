@@ -256,3 +256,41 @@ func TestUnit_ValidateToken_ToleratesModestClockSkew(t *testing.T) {
 		t.Fatalf("a 5s clock skew must not reject a valid token: %v", err)
 	}
 }
+
+// An alg:none token must be rejected identically by validation and by both
+// refresh paths.
+//
+// Honest scope: this currently passes with or without the explicit
+// SigningMethodHMAC check, because jwt/v5 already refuses alg:none unless the
+// keyfunc hands back its UnsafeAllowNoneSignatureType sentinel, and ours
+// returns a []byte secret. The explicit pin is defence in depth — it is what
+// keeps this true if the keyfunc ever changes shape. The test pins the
+// property, not the mechanism, and is deliberately kept for that reason.
+func TestUnit_SigningMethodIsPinnedOnEveryParsePath(t *testing.T) {
+	const secret = "test_secret_test_secret"
+
+	// "alg: none" is the classic downgrade. jwt/v5 requires an explicit
+	// sentinel key for it, so this is the strongest form of the attack.
+	unsigned, err := jwt.NewWithClaims(jwt.SigningMethodNone, libauth.AuthClaims[TestPermissions]{
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
+		},
+		Identity: "attacker",
+	}).SignedString(jwt.UnsafeAllowNoneSignatureType)
+	if err != nil {
+		t.Fatalf("sign none: %v", err)
+	}
+
+	cfg := libauth.CreateTokenArgs{JWTSecret: secret, JWTExpiry: time.Hour}
+
+	if _, err := libauth.ValidateToken[TestPermissions](context.Background(), unsigned, secret); err == nil {
+		t.Fatal("ValidateToken accepted an alg:none token")
+	}
+	if _, _, err := libauth.RefreshToken[TestPermissions](cfg, unsigned); err == nil {
+		t.Fatal("RefreshToken accepted an alg:none token")
+	}
+	if _, _, _, err := libauth.RefreshTokenWithGracePeriod[TestPermissions](cfg, unsigned, time.Minute); err == nil {
+		t.Fatal("RefreshTokenWithGracePeriod accepted an alg:none token")
+	}
+}

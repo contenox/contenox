@@ -44,7 +44,8 @@ client may choose.
    Beam never calls it. This is the file-explorer data source, already built.
 4. **The @-mention carrier exists.** libacp has `resource_link` and embedded
    `resource` content blocks (`libacp/content.go`), initialize advertises
-   `embeddedContext: true`, and `flattenPromptBlocks` (`acpsvc/content.go:9-58`)
+   `embeddedContext: true`, and `libacp.FlattenContent` (`libacp/flatten.go`;
+   formerly acpsvc's `flattenPromptBlocks`)
    already consumes them: inline resource text is appended to the prompt;
    a `resource_link` becomes a `name: uri` line the agent can follow with
    `local_fs`. No new protocol needed.
@@ -80,7 +81,7 @@ A browser choosing arbitrary host paths is a capability grant; treat it so:
   file access goes through the same sandboxed, policy-visible tool path
   (HITL can see and gate it), and there is exactly one way content enters
   context. The protocol keeps *accepting* embedded resources from external
-  ACP clients for conformance (`flattenPromptBlocks` behavior unchanged),
+  ACP clients for conformance (`libacp.FlattenContent` behavior unchanged),
   but beam never emits them and no embed/attach affordance is built.
 - **Root picker UX:** pre-session config-options row (same surface as
   model/think, shipped 2026-07-16) listing allowlisted roots; free-text only

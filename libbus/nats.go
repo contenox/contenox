@@ -17,6 +17,11 @@ type natsSubscription struct {
 	sub *nats.Subscription
 }
 
+// maxHandlerConcurrency caps how many Serve handlers may run at once per
+// subscription. High enough that normal request/reply traffic never queues,
+// low enough that a stuck handler cannot exhaust the process.
+const maxHandlerConcurrency = 256
+
 type Config struct {
 	NATSURL      string
 	NATSPassword string
@@ -36,6 +41,27 @@ func NewPubSub(ctx context.Context, cfg *Config) (Messenger, error) {
 		}),
 		nats.ReconnectHandler(func(nc *nats.Conn) {
 			log.Printf("NATS reconnected to %s", nc.ConnectedUrl())
+		}),
+		// Without this, asynchronous errors — above all nats.ErrSlowConsumer, which
+		// is how this backend reports that it DISCARDED messages for a subscriber
+		// whose buffer overflowed — are swallowed by the client. Data loss would be
+		// completely invisible: no log line, no error return, nothing to alert on.
+		nats.ErrorHandler(func(_ *nats.Conn, sub *nats.Subscription, err error) {
+			subject := "<unknown>"
+			if sub != nil {
+				subject = sub.Subject
+			}
+			if errors.Is(err, nats.ErrSlowConsumer) {
+				dropped := -1
+				if sub != nil {
+					if d, derr := sub.Dropped(); derr == nil {
+						dropped = d
+					}
+				}
+				log.Printf("NATS slow consumer on subject %s: messages are being dropped (dropped so far: %d)", subject, dropped)
+				return
+			}
+			log.Printf("NATS async error on subject %s: %v", subject, err)
 		}),
 	}
 
@@ -163,8 +189,24 @@ func (p *ps) Serve(ctx context.Context, subject string, handler Handler) (Subscr
 		return nil, ErrConnectionClosed
 	}
 
+	// Bound in-flight handlers. Previously every message spawned an unbounded
+	// goroutine, so a burst (or a handler that blocks on a downstream dependency)
+	// could grow the goroutine count without limit until the process died — a
+	// failure mode that only ever appears in production, since the in-memory and
+	// SQLite backends run handlers one at a time. Acquiring the slot inside the
+	// NATS callback applies backpressure to the subscription instead: at the cap,
+	// dispatch stalls and, if it stays stalled, the client reports a slow consumer
+	// through the ErrorHandler registered in natsOpts.
+	sem := make(chan struct{}, maxHandlerConcurrency)
+
 	sub, err := p.nc.QueueSubscribe(subject, subject, func(msg *nats.Msg) {
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			return
+		}
 		go func() {
+			defer func() { <-sem }()
 			// Add recovery for panics in handler
 			defer func() {
 				if r := recover(); r != nil {

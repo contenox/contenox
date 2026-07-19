@@ -314,11 +314,14 @@ func TestLoopback_ExternalInstance_DeleteStopsInstance(t *testing.T) {
 	require.Equal(t, 0, liveInstances(t, f.mgr), "DeleteSession must stop the Manager instance")
 	_, gerr := f.mgr.Get(instanceID)
 	require.ErrorIs(t, gerr, agentinstance.ErrNotFound)
-	// Truly gone, not merely detached: Attach and Conn both fail now.
+	// Truly gone, not merely detached: every Manager entry point that resolves the
+	// instance id fails — observing it (Attach) AND driving it (OpenSession). The
+	// Manager exposes no raw-connection accessor to probe; these are the surfaces a
+	// consumer actually holds.
 	_, aerr := f.mgr.Attach(ctx, instanceID, "any-session", newExternalBridge(c1.tr, "any-session", true))
 	require.ErrorIs(t, aerr, agentinstance.ErrNotFound)
-	_, cerr := f.mgr.Conn(instanceID)
-	require.ErrorIs(t, cerr, agentinstance.ErrNotFound)
+	_, oerr := f.mgr.OpenSession(ctx, instanceID, agentinstance.SessionSpec{Cwd: "/tmp/loopback-ext-delete"})
+	require.ErrorIs(t, oerr, agentinstance.ErrNotFound)
 }
 
 // TestLoopback_ExternalInstance_NilInstancesFallsBackToConnCtxSpawn pins the fallback

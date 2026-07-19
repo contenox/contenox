@@ -53,11 +53,20 @@ func IsStartupError(err error) bool {
 // a context deadline or an idle-watchdog trip. Split from IsRetryableError so a
 // driver can, like hash (errors.go:36), treat "slow/stuck" differently from a
 // hard protocol error.
+//
+// Two recovery paths, because a deadline that crosses JSON-RPC loses its Go
+// identity: a local error (including one AsError wrapped but that never left
+// the process) is matched by sentinel, while an error that a remote peer
+// serialized is matched only by its ErrRequestTimeout code.
 func IsTimeoutError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrIdleTimeout)
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrIdleTimeout) {
+		return true
+	}
+	var rpcErr *Error
+	return errors.As(err, &rpcErr) && rpcErr.Code == ErrRequestTimeout
 }
 
 // IsRetryableError reports whether retrying the turn (typically after respawning

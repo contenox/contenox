@@ -3,6 +3,7 @@ package libprocess
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/contenox/runtime/liblease"
@@ -76,35 +77,52 @@ func LeaseLock(path string, ttl time.Duration) Lock {
 }
 
 type leaseLock struct {
-	path  string
-	ttl   time.Duration
+	path string
+	ttl  time.Duration
+
+	// mu guards the lease handle itself. Lock's contract requires
+	// implementations to be safe for concurrent use — a Process renews from its
+	// own goroutine while a caller's Stop can release — and liblease's internal
+	// mutex protects the *Lease, not this pointer to it.
+	mu    sync.Mutex
 	lease *liblease.Lease
 }
 
-func (l *leaseLock) Acquire(context.Context) error {
-	lease, err := liblease.Acquire(l.path, l.ttl)
+func (l *leaseLock) Acquire(ctx context.Context) error {
+	lease, err := liblease.AcquireContext(ctx, l.path, l.ttl)
 	if err != nil {
 		if errors.Is(err, liblease.ErrHeld) {
 			return errors.Join(ErrLockUnavailable, err)
 		}
+		// ErrAcquireTimeout deliberately does NOT map to ErrLockUnavailable:
+		// it means the holder could not be determined, not that someone else
+		// holds it, and reporting a stalled filesystem as "held elsewhere"
+		// would send a supervisor down the wrong branch.
 		return err
 	}
+	l.mu.Lock()
 	l.lease = lease
+	l.mu.Unlock()
 	return nil
 }
 
-func (l *leaseLock) Renew(context.Context) error {
-	if l.lease == nil {
+func (l *leaseLock) Renew(ctx context.Context) error {
+	l.mu.Lock()
+	lease := l.lease
+	l.mu.Unlock()
+	if lease == nil {
 		return ErrLockLost
 	}
-	return l.lease.Renew()
+	return lease.RenewContext(ctx)
 }
 
-func (l *leaseLock) Release(context.Context) error {
-	if l.lease == nil {
+func (l *leaseLock) Release(ctx context.Context) error {
+	l.mu.Lock()
+	lease := l.lease
+	l.lease = nil
+	l.mu.Unlock()
+	if lease == nil {
 		return nil
 	}
-	err := l.lease.Release()
-	l.lease = nil
-	return err
+	return lease.ReleaseContext(ctx)
 }

@@ -62,7 +62,7 @@ func TestUnit_ToolCallLocations_NoneForCommandOnlyTool(t *testing.T) {
 }
 
 func TestUnit_FlattenPromptBlocks_TextAndResourceLink(t *testing.T) {
-	out, dropped := flattenPromptBlocks([]libacp.ContentBlock{
+	out, dropped := libacp.FlattenContent([]libacp.ContentBlock{
 		{Type: string(libacp.ContentKindText), Text: "hello"},
 		{Type: string(libacp.ContentKindResourceLink), Name: "spec", URI: "file:///spec.md"},
 		{Type: string(libacp.ContentKindResourceLink), URI: "https://x.test"},
@@ -72,7 +72,7 @@ func TestUnit_FlattenPromptBlocks_TextAndResourceLink(t *testing.T) {
 }
 
 func TestUnit_FlattenPromptBlocks_DropsUnsupportedAndReportsKinds(t *testing.T) {
-	out, dropped := flattenPromptBlocks([]libacp.ContentBlock{
+	out, dropped := libacp.FlattenContent([]libacp.ContentBlock{
 		{Type: string(libacp.ContentKindText), Text: "keep"},
 		libacp.NewImageContent("base64", "image/png"),
 		libacp.NewImageContent("more", "image/png"),
@@ -83,7 +83,7 @@ func TestUnit_FlattenPromptBlocks_DropsUnsupportedAndReportsKinds(t *testing.T) 
 }
 
 func TestUnit_FlattenPromptBlocks_ResourceTextIncluded(t *testing.T) {
-	out, dropped := flattenPromptBlocks([]libacp.ContentBlock{
+	out, dropped := libacp.FlattenContent([]libacp.ContentBlock{
 		libacp.NewResourceContent(libacp.EmbeddedResource{URI: "u", Text: "embedded body"}),
 	})
 	require.Equal(t, "embedded body", out)
@@ -132,7 +132,7 @@ func TestUnit_Initialize_EmbeddedContextNotGatedOnClientFS(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, resp.AgentCapabilities.PromptCapabilities.EmbeddedContext,
-		"embeddedContext is the agent's ability to consume embedded resources in prompts (flattenPromptBlocks always does); it must NOT be gated on the client's fs.readTextFile, or clients without fs read are wrongly told they cannot send @-mention/file context")
+		"embeddedContext is the agent's ability to consume embedded resources in prompts (libacp.FlattenContent always does); it must NOT be gated on the client's fs.readTextFile, or clients without fs read are wrongly told they cannot send @-mention/file context")
 }
 
 func transportWithMeta(meta string) *Transport {

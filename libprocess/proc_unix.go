@@ -3,6 +3,7 @@
 package libprocess
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"syscall"
@@ -42,4 +43,35 @@ func killProcessTree(cmd *exec.Cmd) {
 	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
 		_ = cmd.Process.Kill()
 	}
+}
+
+// exitFromKill reports whether waitErr records death by SIGKILL — the only
+// exit Stop's kill escalation can actually have caused. The distinction
+// matters because "the kill branch ran" does not imply "the kill did it": on a
+// loaded machine the Wait reaper can lag past the grace period for a process
+// that already exited on its own, and that process's genuine exit status is a
+// real failure the caller must still see. Suppressing every exit error after
+// the kill branch would silently swallow it.
+func exitFromKill(waitErr error) bool {
+	var exitErr *exec.ExitError
+	if !errors.As(waitErr, &exitErr) {
+		return false
+	}
+	ws, ok := exitErr.Sys().(syscall.WaitStatus)
+	return ok && ws.Signaled() && ws.Signal() == syscall.SIGKILL
+}
+
+// exitFromGracefulSignal reports whether waitErr records death by the signal
+// signalGraceful sends. It is consulted only when the default graceful
+// strategy is in use (see SignalGroup): a command that dies from the interrupt
+// we ourselves delivered did what we asked, and reporting "signal: interrupt"
+// as Stop's outcome would turn every successful shutdown of a command that
+// does not install a SIGINT handler into an error.
+func exitFromGracefulSignal(waitErr error) bool {
+	var exitErr *exec.ExitError
+	if !errors.As(waitErr, &exitErr) {
+		return false
+	}
+	ws, ok := exitErr.Sys().(syscall.WaitStatus)
+	return ok && ws.Signaled() && ws.Signal() == syscall.SIGINT
 }

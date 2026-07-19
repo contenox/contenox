@@ -167,6 +167,12 @@ func ValidateToken[T Authz](ctx context.Context, tokenStr string, jwtSecret stri
 func RefreshTokenWithGracePeriod[T Authz](cfg CreateTokenArgs, oldToken string, gracePeriod time.Duration) (string, bool, time.Time, error) {
 	// Parse the old token
 	token, err := jwt.ParseWithClaims(oldToken, &AuthClaims[T]{}, func(token *jwt.Token) (any, error) {
+		// Pin HMAC here exactly as ValidateToken does: a refresh path that
+		// accepts algorithms the validation path rejects is a hole waiting to
+		// open the next time either side's algorithm policy changes.
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, ErrUnexpectedSigningMethod
+		}
 		return []byte(cfg.JWTSecret), nil
 	})
 	if err != nil {
@@ -201,6 +207,12 @@ func RefreshTokenWithGracePeriod[T Authz](cfg CreateTokenArgs, oldToken string, 
 func RefreshToken[T Authz](cfg CreateTokenArgs, oldToken string) (string, time.Time, error) {
 	// Parse the old token
 	token, err := jwt.ParseWithClaims(oldToken, &AuthClaims[T]{}, func(token *jwt.Token) (any, error) {
+		// Pin HMAC here exactly as ValidateToken does: a refresh path that
+		// accepts algorithms the validation path rejects is a hole waiting to
+		// open the next time either side's algorithm policy changes.
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, ErrUnexpectedSigningMethod
+		}
 		return []byte(cfg.JWTSecret), nil
 	})
 	if err != nil {

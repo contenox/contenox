@@ -8,6 +8,7 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 var (
@@ -96,9 +97,80 @@ type AgentSideConnection struct {
 	extRequest      ExtRequestHandler
 	extNotification ExtNotificationHandler
 
+	// handlerMu guards draining and gates handlers: it makes "is shutdown
+	// running?" and "register one more handler goroutine" a single atomic
+	// step, which is what keeps handlers.Add from racing handlers.Wait (an
+	// Add that starts after the counter has hit zero is a data race by the
+	// WaitGroup contract, not merely a lost goroutine).
+	handlerMu sync.Mutex
+	draining  bool
+	handlers  sync.WaitGroup
+
 	closeOnce sync.Once
 	closed    chan struct{}
 	closeErr  error
+}
+
+// goHandler spawns fn as a tracked handler goroutine and reports whether it
+// was started. It refuses once shutdown has begun: at that point the transport
+// is already closed, so the handler could neither write a response nor touch
+// connection state safely, and admitting it would also race the join in
+// waitHandlers.
+func (c *AgentSideConnection) goHandler(fn func()) bool {
+	c.handlerMu.Lock()
+	if c.draining {
+		c.handlerMu.Unlock()
+		return false
+	}
+	c.handlers.Add(1)
+	c.handlerMu.Unlock()
+	go func() {
+		defer c.handlers.Done()
+		fn()
+	}()
+	return true
+}
+
+// waitHandlers blocks until every handler goroutine spawned by goHandler has
+// RETURNED. It must be called only after shutdown, which cancels every
+// in-flight request context, closes the transport, and fails every pending
+// outbound call — otherwise a handler parked on a peer response, a channel
+// send, or its own context would never be released and this join would
+// deadlock.
+//
+// The contract this puts on Agent implementations is: every handler must
+// return once its context is cancelled. Returning early is genuinely unsafe —
+// Run's caller tears down the state the handlers are still touching (sessions,
+// drivers, DB handles) the moment Run returns — so the join is bounded only as
+// a last resort, by HandlerDrainTimeout, and reports ErrHandlerDrainTimeout
+// rather than pretending it succeeded.
+//
+// The bound exists because the alternative is worse in the one place it bites:
+// an unbounded join makes a single misbehaving handler wedge process shutdown
+// forever, with no diagnosis. A caller that sees ErrHandlerDrainTimeout knows
+// a handler ignored its cancellation, and knows not to trust that teardown was
+// clean.
+func (c *AgentSideConnection) waitHandlers() error {
+	c.handlerMu.Lock()
+	// shutdown has normally already set this; assert it here so a caller that
+	// somehow reaches the join first still closes the admission gate before
+	// waiting.
+	c.draining = true
+	c.handlerMu.Unlock()
+
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		c.handlers.Wait()
+	}()
+	timer := time.NewTimer(HandlerDrainTimeout)
+	defer timer.Stop()
+	select {
+	case <-drained:
+		return nil
+	case <-timer.C:
+		return ErrHandlerDrainTimeout
+	}
 }
 
 // requestCancelKey disambiguates the JSON-RPC id namespace: a string id "1"
@@ -149,7 +221,16 @@ func (c *AgentSideConnection) SetExtNotificationHandler(h ExtNotificationHandler
 	c.extNotification = h
 }
 
-func (c *AgentSideConnection) Run(ctx context.Context) error {
+func (c *AgentSideConnection) Run(ctx context.Context) (err error) {
+	// Deferred first, so it runs LAST: shutdown must cancel and unblock
+	// everything before the join, never the other way around. By the time Run
+	// returns, no handler goroutine is still executing — callers routinely
+	// close the transport and tear down session state immediately afterwards.
+	defer func() {
+		if derr := c.waitHandlers(); derr != nil {
+			err = errors.Join(err, derr)
+		}
+	}()
 	defer c.shutdown(nil)
 
 	go func() {
@@ -193,6 +274,19 @@ func (c *AgentSideConnection) CloseErr() error {
 func (c *AgentSideConnection) shutdown(err error) {
 	c.closeOnce.Do(func() {
 		c.closeErr = err
+
+		// Close the admission gate FIRST. A handler admitted by goHandler has,
+		// by then, already had its cancel func registered in requestCancels by
+		// dispatch (same read-loop goroutine, before the spawn), so barring
+		// admission here guarantees the cancel loops below see every handler
+		// that will ever run. Closing the gate afterwards would leave a window
+		// where a handler is admitted after its registration was already
+		// swept, and would run to completion with a live context while
+		// waitHandlers joins on it.
+		c.handlerMu.Lock()
+		c.draining = true
+		c.handlerMu.Unlock()
+
 		_ = c.closer.Close()
 
 		c.pendingMu.Lock()
@@ -243,15 +337,24 @@ func (c *AgentSideConnection) dispatch(ctx context.Context, line []byte) {
 		if msg.Request.Method == MethodSessionPrompt {
 			pc = c.registerPromptCancel(reqCtx, msg.Request.Params)
 		}
-		go func() {
-			defer func() {
-				c.reqCancelMu.Lock()
-				delete(c.requestCancels, key)
-				c.reqCancelMu.Unlock()
-				cancelReq()
-			}()
+		release := func() {
+			c.reqCancelMu.Lock()
+			delete(c.requestCancels, key)
+			c.reqCancelMu.Unlock()
+			cancelReq()
+		}
+		if !c.goHandler(func() {
+			defer release()
 			c.handleRequest(reqCtx, msg.Request, pc)
-		}()
+		}) {
+			// Shutdown is already under way; the transport is closed, so no
+			// response could reach the peer anyway. Drop the request and undo
+			// the registrations dispatch just made.
+			release()
+			if pc != nil {
+				c.unregisterPromptCancel(pc)
+			}
+		}
 	case IncomingKindNotification:
 		// session/cancel and $/cancel_request are applied inline on the read
 		// loop so wire order is preserved: a cancel that arrives after its
@@ -263,7 +366,11 @@ func (c *AgentSideConnection) dispatch(ctx context.Context, line []byte) {
 		case MethodCancelRequest:
 			c.applyCancelRequest(msg.Notification.Params)
 		}
-		go c.handleNotification(ctx, msg.Notification)
+		// Tracked like a request handler: Agent.Cancel and extension
+		// notification handlers touch the same state Run's caller tears down,
+		// so Run must not return while one is still running. Dropped outright
+		// once shutdown has begun — a notification has no response to owe.
+		_ = c.goHandler(func() { c.handleNotification(ctx, msg.Notification) })
 	}
 }
 

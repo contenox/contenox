@@ -83,7 +83,7 @@ func (d *nativeDriver) Prompt(ctx context.Context, req libacp.PromptRequest, ses
 		return libacp.PromptResponse{}, err
 	}
 
-	input, droppedContentKinds := flattenPromptBlocks(req.Prompt)
+	input, droppedContentKinds := libacp.FlattenContent(req.Prompt)
 	if input == "" {
 		err := libacp.NewError(libacp.ErrInvalidParams, "empty prompt")
 		reportErr(err)

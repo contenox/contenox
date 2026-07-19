@@ -99,6 +99,34 @@ func TestUnit_SQLiteBus_Publish_Stream(t *testing.T) {
 	assert.Equal(t, []string{"hello", "world"}, received)
 }
 
+func TestUnit_SQLiteBus_Stream_CursorQueryFailureFailsClosed(t *testing.T) {
+	ctx := t.Context()
+
+	// A database without the bus_events table makes the subscribe-time cursor
+	// query fail deterministically.
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "bus_test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	b := libbus.NewSQLiteWithOptions(db, libbus.SQLiteBusOptions{
+		EventPoll: 5 * time.Millisecond,
+	})
+	t.Cleanup(func() { _ = b.Close() })
+
+	ch := make(chan []byte, 4)
+	sub, err := b.Stream(ctx, "test.subject", ch)
+	require.ErrorIs(t, err, libbus.ErrStreamSubscriptionFail)
+	require.Nil(t, sub)
+
+	// Fail-closed means no subscription was registered: nothing may ever be
+	// delivered to the channel.
+	select {
+	case msg := <-ch:
+		t.Fatalf("received event %q from a subscription that was never created", msg)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
 func TestUnit_SQLiteBus_Publish_NoSubscriberIsNoError(t *testing.T) {
 	ctx := t.Context()
 	b := newTestBus(t)

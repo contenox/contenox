@@ -69,8 +69,36 @@ type RestartPolicy struct {
 	// Always restart loop is expected to run indefinitely.
 	Limit int
 	// Delay is waited before each automatic restart. Zero restarts
-	// immediately.
+	// immediately. Superseded by Backoff when that is set.
 	Delay time.Duration
+
+	// Backoff returns the delay before restart attempt n (1-based). When set
+	// it supersedes Delay entirely. A fixed delay is the wrong shape for the
+	// failure it usually has to survive: a dependency that is down stays down
+	// for a while, and a supervisor that retries at a constant interval turns
+	// one outage into a hot loop against it. Restart delays are honoured
+	// interruptibly — Stop and context cancellation both cut them short.
+	Backoff func(attempt int) time.Duration
+
+	// ShouldRestart classifies an exit and decides whether it is worth
+	// restarting. When set it replaces the exit-code rules above (Enabled and
+	// Always are not consulted); Limit still caps the attempts, so a
+	// classifier that says "yes" forever is still bounded if the caller wants
+	// it to be. Setting it is itself the opt-in to restarting.
+	//
+	// It receives the command's exit error: nil for a clean exit, otherwise
+	// the *exec.ExitError. The point of the seam is that an exit code is a
+	// poor classifier for a protocol peer — "the agent failed to initialize"
+	// and "the agent lost its connection" can share an exit code while
+	// deserving opposite answers — so the caller, which knows the protocol,
+	// decides. A caller that speaks a protocol typically ignores the exit
+	// error here and consults its own session outcome instead.
+	//
+	// A failure to *start* is never routed here and never retried: a retry
+	// cannot cure a missing or broken binary, and looping on it only hides
+	// the misconfiguration. Such a failure takes the process straight to
+	// Crashed and is returned from Start.
+	ShouldRestart func(exitErr error) bool
 }
 
 // Config describes how to start and supervise a process.
@@ -84,15 +112,51 @@ type Config struct {
 	// spawned process.
 	Env []string
 
+	// Stdout/Stdin are sinks and sources: the command's output is copied to
+	// Stdout and its input read from Stdin, exactly as with exec.Cmd. They are
+	// mutually exclusive with PipeStdio, which claims both for the caller to
+	// converse over instead; configuring both is a New error rather than a
+	// silent precedence rule, because either could plausibly be the one meant.
 	Stdout io.Writer // defaults to io.Discard
 	Stderr io.Writer // defaults to io.Discard
 	Stdin  io.Reader // defaults to nil (no stdin)
 
+	// PipeStdio makes the supervisor own the command's stdin and stdout and
+	// hand them to the caller as a single io.ReadWriteCloser (see
+	// Process.Stdio and the Stdio type). Use it when the subprocess is a
+	// protocol peer to talk to — a JSON-RPC agent over stdio — rather than a
+	// job whose output is merely collected. Stderr still goes to Config.Stderr
+	// either way, which is what keeps a crashed peer's diagnostics reachable
+	// (Config.Stderr: &LockedBuffer{}) while its stdout carries framed
+	// protocol traffic that must not be interleaved with log lines.
+	PipeStdio bool
+
 	Restart RestartPolicy
 
-	// StopGrace bounds how long Stop waits after signaling the process
+	// GracefulStop asks the running command to shut down, before Stop's grace
+	// period and kill escalation. Nil means SignalGroup, which interrupts the
+	// process group. There is no universally right request to make here: a
+	// daemon wants SIGINT, a stdio protocol peer wants its stdin closed
+	// (CloseStdin) and would be killed mid-request by a signal it never
+	// installed a handler for. Whichever is chosen, Stop's escalation is
+	// unchanged — a command that ignores the request is still killed after
+	// StopGrace.
+	GracefulStop GracefulStopFunc
+
+	// StopGrace bounds how long Stop waits after asking the process to stop
 	// before force-killing it. Defaults to 5s.
 	StopGrace time.Duration
+
+	// KillReapGrace bounds how long Stop waits, after killing the process
+	// group, for the command to actually be reaped. Defaults to 5s.
+	//
+	// It exists because the kill is not guaranteed to end the wait: a
+	// double-forked daemon that escaped the process group still holds the
+	// inherited stdout/stderr pipes, and os/exec's Wait does not return until
+	// those are drained to EOF. Blocking a caller forever on a process we
+	// provably cannot reach is worse than a loud error, so Stop gives up and
+	// says so (see Stop for what that error means for the Process).
+	KillReapGrace time.Duration
 }
 
 // StateChange is delivered to a state-change hook (see WithStateHook) every
@@ -172,6 +236,8 @@ type Process struct {
 	mu       sync.Mutex
 	state    State
 	cmd      *exec.Cmd
+	stdio    *Stdio // non-nil while a PipeStdio command is spawned
+	exitErr  error  // last exit error observed by watch; Stop's raw outcome
 	restarts int
 	stopping bool          // Stop was called; suppresses auto-restart for the in-flight exit
 	done     chan struct{} // closed when the process reaches a terminal state (Stopped or Crashed) with no restart pending
@@ -208,6 +274,12 @@ func New(cfg Config, opts ...Option) (*Process, error) {
 	if cfg.StopGrace <= 0 {
 		cfg.StopGrace = 5 * time.Second
 	}
+	if cfg.KillReapGrace <= 0 {
+		cfg.KillReapGrace = 5 * time.Second
+	}
+	if cfg.PipeStdio && (cfg.Stdin != nil || cfg.Stdout != nil) {
+		return nil, errors.New("libprocess: Config.PipeStdio is mutually exclusive with Config.Stdin/Config.Stdout")
+	}
 	p := &Process{
 		cfg:     cfg,
 		state:   Stopped,
@@ -235,6 +307,14 @@ func New(cfg Config, opts ...Option) (*Process, error) {
 // and applying the restart policy. Start returns ErrAlreadyRunning if the
 // process is already Starting or Running.
 //
+// ctx governs the whole supervised lifetime, not just the spawn: if it is
+// cancelled while a command is running (or waiting out a restart delay), the
+// supervisor shuts that command down exactly as Stop would — graceful
+// request, grace period, then kill — rather than leaving a subprocess running
+// past the context that authorised it. A cancelled context that merely
+// abandoned the supervisor would leak an OS process, which no later caller
+// can clean up because nothing holds its handle any more.
+//
 // When a Lock is configured (see WithLock) Start claims it before spawning
 // and returns the acquisition error — leaving the Process Stopped and no
 // command running — if another supervisor holds it.
@@ -260,6 +340,7 @@ func (p *Process) Start(ctx context.Context) error {
 	p.stopping = false
 	p.restarts = 0
 	p.lostErr = nil
+	p.exitErr = nil
 	p.done = make(chan struct{})
 	p.stop = make(chan struct{})
 	done, stop := p.done, p.stop
@@ -270,7 +351,29 @@ func (p *Process) Start(ctx context.Context) error {
 		go p.renew(ctx, lock, done, stop)
 	}
 
-	return p.spawn(ctx)
+	if err := p.spawn(ctx); err != nil {
+		return err
+	}
+
+	// Tie the supervised lifetime to ctx (see Start's doc). The shutdown runs
+	// on a context derived from ctx but detached from its cancellation:
+	// cancellation is the trigger here, so a stop that inherited it would be
+	// born already expired and skip straight to the kill, defeating the
+	// graceful request the caller configured.
+	go func() {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.cfg.StopGrace)
+			defer cancel()
+			// ErrNotRunning is the benign race where the command reached a
+			// terminal state on its own between the two select cases.
+			if err := p.Stop(stopCtx); err != nil && !errors.Is(err, ErrNotRunning) {
+				p.reportErr(ctx, fmt.Errorf("libprocess: shutdown on context cancellation: %w", err))
+			}
+		}
+	}()
+	return nil
 }
 
 // renew keeps the supervision claim alive for one supervised lifetime and
@@ -323,27 +426,55 @@ func (p *Process) spawn(ctx context.Context) error {
 	if len(p.cfg.Env) > 0 {
 		cmd.Env = append(os.Environ(), p.cfg.Env...)
 	}
-	cmd.Stdout = p.cfg.Stdout
 	cmd.Stderr = p.cfg.Stderr
-	cmd.Stdin = p.cfg.Stdin
+
+	// In PipeStdio mode the supervisor claims the pipes so the caller can
+	// converse over them; otherwise the caller's sinks are wired directly, as
+	// with a bare exec.Cmd. New has already rejected asking for both.
+	var stdio *Stdio
+	if p.cfg.PipeStdio {
+		in, err := cmd.StdinPipe()
+		if err != nil {
+			return p.failStart(ctx, fmt.Errorf("libprocess: stdin pipe for %q: %w", p.cfg.Command, err))
+		}
+		out, err := cmd.StdoutPipe()
+		if err != nil {
+			_ = in.Close()
+			return p.failStart(ctx, fmt.Errorf("libprocess: stdout pipe for %q: %w", p.cfg.Command, err))
+		}
+		stdio = &Stdio{in: in, out: out}
+	} else {
+		cmd.Stdout = p.cfg.Stdout
+		cmd.Stdin = p.cfg.Stdin
+	}
 	setProcessGroup(cmd)
 
 	if err := cmd.Start(); err != nil {
-		p.mu.Lock()
-		p.cmd = nil
-		restarts := p.restarts
-		p.mu.Unlock()
-		p.finish(ctx, Crashed, fmt.Errorf("libprocess: start %q: %w", p.cfg.Command, err), -1, restarts)
-		return err
+		return p.failStart(ctx, fmt.Errorf("libprocess: start %q: %w", p.cfg.Command, err))
 	}
 
 	p.mu.Lock()
 	p.cmd = cmd
+	p.stdio = stdio
 	p.mu.Unlock()
 	p.setState(ctx, Running, nil, -1)
 
 	go p.watch(ctx)
 	return nil
+}
+
+// failStart concludes a spawn that never produced a running command. Such a
+// failure is terminal by design and is never retried — a retry cannot cure a
+// missing binary or a pipe the OS refused, and looping on it only hides the
+// misconfiguration — so it goes straight to Crashed and back to the caller.
+func (p *Process) failStart(ctx context.Context, err error) error {
+	p.mu.Lock()
+	p.cmd = nil
+	p.stdio = nil
+	restarts := p.restarts
+	p.mu.Unlock()
+	p.finish(ctx, Crashed, err, -1, restarts)
+	return err
 }
 
 // watch waits for the running command to exit and applies the restart
@@ -367,14 +498,22 @@ func (p *Process) watch(ctx context.Context) {
 	p.mu.Lock()
 	stopping := p.stopping
 	p.cmd = nil
+	// Recorded for Stop, which reports the outcome of the command it shut
+	// down and therefore needs the exit error this goroutine owns.
+	p.exitErr = err
 	p.mu.Unlock()
 
 	// Crashed is reserved for "the restart policy gave up" (limit reached);
 	// a nonzero exit with no restart policy configured is still just
 	// Stopped, with ExitCode carrying the detail.
-	restart := !stopping && p.cfg.Restart.Enabled && (p.cfg.Restart.Always || exitCode != 0)
+	restart := !stopping && p.wantsRestart(err, exitCode)
 
-	if restart && !p.cfg.Restart.Always && p.cfg.Restart.Limit > 0 {
+	// A classifier decides on its own terms, so Limit is the only remaining
+	// cap on it — unlike the exit-code rules, where Always deliberately means
+	// "loop forever".
+	unlimited := p.cfg.Restart.ShouldRestart == nil && p.cfg.Restart.Always
+
+	if restart && !unlimited && p.cfg.Restart.Limit > 0 {
 		p.mu.Lock()
 		limitReached := p.restarts >= p.cfg.Restart.Limit
 		if !limitReached {
@@ -397,7 +536,7 @@ func (p *Process) watch(ctx context.Context) {
 		return
 	}
 
-	if p.cfg.Restart.Delay > 0 {
+	if delay := p.restartDelay(); delay > 0 {
 		p.mu.Lock()
 		stopCh := p.stop
 		p.mu.Unlock()
@@ -406,7 +545,7 @@ func (p *Process) watch(ctx context.Context) {
 		p.setState(ctx, Starting, nil, exitCode)
 
 		select {
-		case <-time.After(p.cfg.Restart.Delay):
+		case <-time.After(delay):
 		case <-stopCh:
 			// Stop arrived while no command was running: it is blocked on
 			// done, and only this goroutine can close it.
@@ -437,6 +576,29 @@ func (p *Process) watch(ctx context.Context) {
 	if serr := p.spawn(ctx); serr != nil {
 		p.reportErr(ctx, fmt.Errorf("libprocess: restart %q: %w", p.cfg.Command, serr))
 	}
+}
+
+// wantsRestart applies the restart policy to one exit: the caller's
+// classifier if it set one, otherwise the exit-code rules. The classifier
+// wins outright rather than being ANDed with Enabled/Always, because the two
+// answer the same question and a caller that supplied a classifier has said
+// which one it trusts.
+func (p *Process) wantsRestart(exitErr error, exitCode int) bool {
+	if p.cfg.Restart.ShouldRestart != nil {
+		return p.cfg.Restart.ShouldRestart(exitErr)
+	}
+	return p.cfg.Restart.Enabled && (p.cfg.Restart.Always || exitCode != 0)
+}
+
+// restartDelay returns how long to wait before the pending restart attempt.
+// Backoff supersedes the fixed Delay when set (see RestartPolicy.Backoff);
+// p.restarts has already been incremented, so it is the 1-based attempt
+// number the backoff function is documented to receive.
+func (p *Process) restartDelay() time.Duration {
+	if p.cfg.Restart.Backoff == nil {
+		return p.cfg.Restart.Delay
+	}
+	return p.cfg.Restart.Backoff(p.Restarts())
 }
 
 // finish publishes the terminal transition, releases the supervision lock,
@@ -485,16 +647,41 @@ func (p *Process) finish(ctx context.Context, to State, err error, exitCode, res
 	trackEnd()
 }
 
-// Stop signals the running process to exit gracefully, waiting up to
-// Config.StopGrace before force-killing it, and suppresses any pending
-// auto-restart. It blocks until the process has fully exited. Stop returns
-// ErrNotRunning if the process is not Starting or Running. It is safe to
-// call Stop more than once concurrently; only the first has effect.
+// Stop asks the running process to exit gracefully (see Config.GracefulStop),
+// waits up to Config.StopGrace before force-killing its process group, and
+// suppresses any pending auto-restart. It blocks until the process has fully
+// exited. Stop returns ErrNotRunning if the process is not Starting or
+// Running. It is safe to call Stop more than once concurrently; only the
+// first has effect.
 //
 // ctx bounds only the graceful wait: cancelling it escalates straight to
 // killing the process group instead of abandoning the shutdown, so Stop
 // always leaves the process actually stopped rather than returning while an
 // orphan keeps running. It still blocks until the process has exited.
+//
+// Stop's error reports the shutdown's outcome:
+//
+//   - nil when the command exited cleanly, or when it died in a way this
+//     shutdown itself caused (our SIGKILL after the grace period, or the
+//     interrupt the default strategy sent). Those are Stop working, not
+//     failing.
+//   - the command's exit error when it died of something else. "The kill
+//     branch ran" does not imply "the kill did it" — on a loaded machine the
+//     reaper can lag past the grace period for a command that already exited
+//     with a genuine failure — and that failure is the caller's to see (see
+//     exitFromKill).
+//   - a non-reap error when the command survived the kill for
+//     Config.KillReapGrace. This means the OS process is beyond our reach,
+//     typically because a descendant escaped the process group and still holds
+//     the inherited pipes that Wait is draining. The Process is then wedged
+//     for good: its supervised lifetime can never conclude, Done will not
+//     fire, and Start will keep reporting ErrAlreadyRunning — discard it and
+//     escalate to an operator, because there is nothing in-process left to try.
+//
+// Stop returns nil when no command was running to shut down (it arrived
+// between Starting and the spawn, or during a restart delay): there is no
+// shutdown outcome to report, and the exit that preceded the pending restart
+// was not this call's doing.
 func (p *Process) Stop(ctx context.Context) error {
 	p.mu.Lock()
 	if p.state != Starting && p.state != Running {
@@ -504,6 +691,7 @@ func (p *Process) Stop(ctx context.Context) error {
 	first := !p.stopping
 	p.stopping = true
 	cmd := p.cmd
+	stdio := p.stdio
 	done := p.done
 	stopCh := p.stop
 	if first && stopCh != nil {
@@ -521,28 +709,82 @@ func (p *Process) Stop(ctx context.Context) error {
 		return nil
 	}
 
-	if err := signalGraceful(cmd); err != nil {
-		// Signal not supported (e.g. some platforms) or process already
-		// gone: fall through to the grace-timeout kill path, which handles
-		// both.
+	graceful := p.cfg.GracefulStop
+	if graceful == nil {
+		graceful = SignalGroup
+	}
+	if err := graceful(ctx, Instance{Cmd: cmd, Stdio: stdio}); err != nil {
+		// The mechanism is unavailable (no signals for an arbitrary process on
+		// Windows), or the process is already gone: fall through to the
+		// grace-timeout kill path, which handles both. A graceful stop is a
+		// request, and a request that could not be delivered is not a failure
+		// of Stop — the escalation below is what makes the outcome certain.
 		_ = err
 	}
 
 	select {
 	case <-done:
-		return nil
+		return p.stopOutcome(false)
 	case <-ctx.Done():
 		// The caller is out of patience before StopGrace elapsed: stop
 		// waiting politely and escalate immediately.
 	case <-time.After(p.cfg.StopGrace):
 	}
 
-	// Kill the whole group: a wrapper that ignored the graceful signal would
+	// Kill the whole group: a wrapper that ignored the graceful request would
 	// otherwise leave its real workload running and holding our pipes, which
 	// blocks the Wait reaper and so blocks done forever.
 	killProcessTree(cmd)
-	<-done
-	return nil
+
+	select {
+	case <-done:
+	case <-time.After(p.cfg.KillReapGrace):
+		// The kill did not end the wait, so something outside the process
+		// group is holding the command's pipes open. Close our ends to unwedge
+		// any caller blocked reading the transport, and return loudly rather
+		// than block this one forever on a process we cannot reach.
+		_ = stdio.Close()
+		return fmt.Errorf("libprocess: %q (pid %d) was not reaped %s after kill: a descendant outside its process group may be holding its pipes",
+			p.cfg.Command, cmd.Process.Pid, p.cfg.KillReapGrace)
+	}
+	return p.stopOutcome(true)
+}
+
+// stopOutcome turns the command's exit into Stop's return value, suppressing
+// the deaths Stop's own sequence caused. See Stop's doc for the rules and
+// exitFromKill/exitFromGracefulSignal for why "we killed it" is decided from
+// the wait status rather than from having taken the kill branch.
+func (p *Process) stopOutcome(killed bool) error {
+	p.mu.Lock()
+	err := p.exitErr
+	custom := p.cfg.GracefulStop != nil
+	p.mu.Unlock()
+
+	switch {
+	case err == nil:
+		return nil
+	case killed && exitFromKill(err):
+		return nil
+	case !custom && exitFromGracefulSignal(err):
+		// Only attributable when the default strategy is what ran; a caller's
+		// own strategy sends no signal, so a signalled death came from
+		// elsewhere and is real news.
+		return nil
+	}
+	return err
+}
+
+// Stdio returns the transport for the currently spawned command, or nil when
+// Config.PipeStdio is unset or no command is spawned. The value is bound to
+// one spawn — see the Stdio type for why a restart necessarily invalidates it
+// and what a conversing caller must do about that.
+func (p *Process) Stdio() *Stdio {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.cmd == nil {
+		return nil
+	}
+	return p.stdio
 }
 
 // State returns the current operational state.

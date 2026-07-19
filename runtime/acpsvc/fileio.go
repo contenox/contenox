@@ -61,17 +61,21 @@ func (a *acpFileIO) WriteFile(ctx context.Context, path string, data []byte) err
 }
 
 func mapACPNotExist(err error) error {
-	if err == nil {
-		return nil
+	// The typed classification AND the os.ErrNotExist wrapping are generic and
+	// live in libacp: a *libacp.Error whose code says the resource is missing,
+	// or whose code leaves the request's subject open and whose message says so.
+	if mapped := libacp.AsNotExist(err); errors.Is(mapped, os.ErrNotExist) {
+		return mapped
 	}
-	var e *libacp.Error
-	if errors.As(err, &e) {
-		if e.Code == libacp.ErrResourceNotFound || strings.Contains(strings.ToLower(e.Message), "not found") {
-			return fmt.Errorf("%w: %v", os.ErrNotExist, err)
-		}
-		return err
-	}
-	if strings.Contains(strings.ToLower(err.Error()), "not found") {
+	// Compat shim, deliberately NOT promoted to libacp: match "not found" in a
+	// BARE Go error's text. As library behaviour this is unsafe — it would
+	// swallow an agent-not-found startup failure and report a dead binary as a
+	// missing file. It is kept here because a downstream that answers fs/* with
+	// an untyped error still has to be understood, and fs.go's new-file-write
+	// path branches on os.ErrNotExist. Scoped to errors that are NOT a
+	// *libacp.Error, so a typed error's classification is libacp's alone.
+	var typed *libacp.Error
+	if err != nil && !errors.As(err, &typed) && strings.Contains(strings.ToLower(err.Error()), "not found") {
 		return fmt.Errorf("%w: %v", os.ErrNotExist, err)
 	}
 	return err

@@ -3,6 +3,7 @@
 package libprocess
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 )
@@ -30,3 +31,17 @@ func killProcessTree(cmd *exec.Cmd) {
 	}
 	_ = cmd.Process.Kill()
 }
+
+// exitFromKill on Windows cannot distinguish death-by-our-Kill from other
+// abnormal exits (TerminateProcess reports a plain exit code, with no
+// "signalled" bit to inspect), so any ExitError observed after the kill branch
+// ran is treated as kill-induced — weaker than the unix build, in the same way
+// killProcessTree above is.
+func exitFromKill(waitErr error) bool {
+	var exitErr *exec.ExitError
+	return errors.As(waitErr, &exitErr)
+}
+
+// exitFromGracefulSignal is always false on Windows: signalGraceful cannot
+// actually deliver an interrupt here, so no exit is ever attributable to one.
+func exitFromGracefulSignal(error) bool { return false }

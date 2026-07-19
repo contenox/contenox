@@ -9,7 +9,9 @@ import (
 	"io"
 	"log/slog"
 	"reflect"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -22,25 +24,57 @@ const (
 
 // logActivityTracker is a simple implementation of ActivityTracker that logs events using slog.
 type logActivityTracker struct {
-	logger *slog.Logger
+	logger   *slog.Logger
+	redactor *fieldRedactor
+}
+
+// LogOption customizes a log-backed ActivityTracker.
+type LogOption func(*logActivityTracker)
+
+// WithRedactedFields REPLACES the built-in sensitive field-name list (see
+// DefaultRedactedFields) used to scrub values before they are logged. Names are
+// matched case-insensitively as substrings, so "key" would scrub "api_key" and
+// "keyring" alike. Passing no names disables redaction entirely, which is only
+// appropriate where the caller can prove no credential ever reaches the tracker.
+func WithRedactedFields(names ...string) LogOption {
+	return func(t *logActivityTracker) { t.redactor = newFieldRedactor(names) }
 }
 
 // NewTextActivityTracker returns an ActivityTracker that emits structured text
 // logs to w at Info level. It owns its slog wiring so callers (e.g. command
 // entrypoints) don't have to import log/slog just to obtain a tracker.
-func NewTextActivityTracker(w io.Writer) ActivityTracker {
-	return NewLogActivityTracker(slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelInfo})))
+func NewTextActivityTracker(w io.Writer, opts ...LogOption) ActivityTracker {
+	return NewLogActivityTracker(slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelInfo})), opts...)
 }
 
 // NewLogActivityTracker creates a new instance of logActivityTracker.
-func NewLogActivityTracker(logger *slog.Logger) ActivityTracker {
+//
+// Values are scrubbed by field name before being logged (see redact.go): this
+// tracker is the shared instrumentation point for packages that handle tokens
+// and keys, so redaction is on by default rather than something each caller has
+// to remember.
+func NewLogActivityTracker(logger *slog.Logger, opts ...LogOption) ActivityTracker {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &logActivityTracker{
-		logger: logger,
+	t := &logActivityTracker{
+		logger:   logger,
+		redactor: newFieldRedactor(defaultRedactedFields),
 	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(t)
+		}
+	}
+	return t
 }
+
+// opSeq disambiguates operations that start within the same millisecond. The
+// timestamp alone collides under any concurrency at all, which silently merges
+// two unrelated operations' log lines under a single op_id and destroys the
+// correlation the field exists for. The counter is process-local; across
+// processes request_id/trace_id remain the correlation keys.
+var opSeq atomic.Uint64
 
 // Start implements the ActivityTracker interface.
 func (t *logActivityTracker) Start(
@@ -51,8 +85,8 @@ func (t *logActivityTracker) Start(
 ) (reportErr func(error), reportChange func(string, any), end func()) {
 	startTime := time.Now()
 
-	// Generate an operation ID
-	opID := "op-" + formatTimestamp(startTime)
+	// Generate an operation ID: timestamp for readability, counter for uniqueness.
+	opID := "op-" + formatTimestamp(startTime) + "-" + strconv.FormatUint(opSeq.Add(1), 36)
 	attrs := []slog.Attr{
 		slog.String("operation", operation),
 		slog.String("subject", subject),
@@ -79,7 +113,7 @@ func (t *logActivityTracker) Start(
 	if len(spanID) > 0 {
 		attrs = append(attrs, slog.String("span_id", spanID))
 	}
-	arrs := append(attrs, toSlogAttrs(kvArgs...)...)
+	arrs := append(attrs, toSlogAttrs(t.redactor, kvArgs...)...)
 	// Initial log entry: start of the operation
 	t.logger.LogAttrs(ctx, slog.LevelInfo, "Operation started",
 		arrs...,
@@ -114,7 +148,7 @@ func (t *logActivityTracker) Start(
 			slog.String("subject", subject),
 			slog.String("op_id", opID),
 			slog.String("change_id", id),
-			slog.Any("change_data", boundedLogValue(data)),
+			slog.Any("change_data", boundedLogValue(data, t.redactor)),
 		}
 		if len(spanID) > 0 {
 			attr = append(attr, slog.String("span_id", spanID))
@@ -151,7 +185,14 @@ func (t *logActivityTracker) Start(
 	return reportErrFunc, reportChangeFunc, endFunc
 }
 
-func boundedLogValue(v any) any {
+// boundedLogValue prepares an arbitrary payload for logging: it scrubs
+// credential-looking fields, then caps the result so one oversized change never
+// floods the log.
+//
+// Redaction happens BEFORE the size cap so the truncated summary — preview and
+// sha256 alike — is derived from already-scrubbed bytes; otherwise a secret
+// could survive in the preview of a payload that was too big to log in full.
+func boundedLogValue(v any, red *fieldRedactor) any {
 	if v == nil {
 		return nil
 	}
@@ -161,6 +202,12 @@ func boundedLogValue(v any) any {
 			"truncated":     true,
 			"reason":        "json_marshal_error: " + capLogString(err.Error(), 512),
 			"original_type": logTypeName(v),
+		}
+	}
+	if scrubbed, changed := red.redactMarshaled(raw, v); changed {
+		v = scrubbed
+		if b, mErr := json.Marshal(scrubbed); mErr == nil {
+			raw = b
 		}
 	}
 	if len(raw) <= logChangeDataMaxJSONBytes {
@@ -201,15 +248,24 @@ func logTypeName(v any) string {
 	return t.String()
 }
 
-// Helper: Convert key-value pairs into slog attributes
-func toSlogAttrs(kvArgs ...any) []slog.Attr {
+// Helper: Convert key-value pairs into slog attributes.
+//
+// kvArgs is the same leak path as change_data — callers pass "api_key", value
+// just as readily — so it gets the same scrubbing, keyed on the attribute name
+// as well as on any nested field names inside the value.
+func toSlogAttrs(red *fieldRedactor, kvArgs ...any) []slog.Attr {
 	var attrs []slog.Attr
 	for i := 0; i < len(kvArgs); i += 2 {
 		key, ok := kvArgs[i].(string)
 		if !ok || i+1 >= len(kvArgs) {
 			continue
 		}
-		attrs = append(attrs, slog.Any(key, kvArgs[i+1]))
+		if red.sensitive(key) {
+			attrs = append(attrs, slog.String(key, redactedPlaceholder))
+			continue
+		}
+		val, _ := red.redactValue(kvArgs[i+1])
+		attrs = append(attrs, slog.Any(key, val))
 	}
 	return attrs
 }

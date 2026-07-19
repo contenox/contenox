@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"time"
 
 	libacp "github.com/contenox/runtime/libacp"
 	"github.com/contenox/runtime/runtime/localtools"
@@ -66,95 +65,60 @@ func (a *acpCommandRunner) Run(ctx context.Context, spec localtools.CommandSpec,
 		t.sessionMu.Unlock()
 	}
 
-	createResp, err := t.conn.CreateTerminal(ctx, req)
-	if err != nil {
-		return -1, fmt.Errorf("acpsvc terminal: create: %w", err)
-	}
-	termID := createResp.TerminalID
-	defer func() {
-		rctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_, _ = t.conn.ReleaseTerminal(rctx, libacp.ReleaseTerminalRequest{SessionID: req.SessionID, TerminalID: termID})
-	}()
-
-	if sid != "" {
+	// The protocol dance — create, wait, kill-on-cancel, fetch output on a
+	// detached context, release, reconcile the exit code from both sources —
+	// is generic and lives in libacp. Everything below it is service policy:
+	// which terminal to surface upstream, how to render the outcome for beam,
+	// and how a truncated output maps onto the tool budget.
+	res, err := libacp.RunTerminal(ctx, t.conn, req, func(terminalID string) {
+		if sid == "" {
+			return
+		}
 		if tcID := toolCallIDFromCtx(ctx); tcID != "" {
-			t.sendUpdate(ctx, terminalAttachNotification(sid, tcID, termID, title))
+			t.sendUpdate(ctx, terminalAttachNotification(sid, tcID, terminalID, title))
 		}
+	})
+	if err != nil && !res.Cancelled && !res.TimedOut {
+		return -1, fmt.Errorf("acpsvc terminal: %w", err)
 	}
 
-	exitResp, waitErr := t.conn.WaitForTerminalExit(ctx, libacp.WaitForTerminalExitRequest{SessionID: req.SessionID, TerminalID: termID})
-
-	// Distinguish why the wait ended early: a deadline is a timeout, a plain
-	// cancellation is the user (session/cancel) stopping the turn. Reporting
-	// user cancellation as "timeout exceeded" gives the model and the user a
-	// wrong causal story about what happened to the command.
-	timedOut := false
-	cancelled := false
-	if waitErr != nil {
-		switch {
-		case errors.Is(ctx.Err(), context.DeadlineExceeded):
-			timedOut = true
-		case ctx.Err() != nil:
-			cancelled = true
-		default:
-			return -1, fmt.Errorf("acpsvc terminal: wait: %w", waitErr)
-		}
-		kctx, kcancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer kcancel()
-		_, _ = t.conn.KillTerminal(kctx, libacp.KillTerminalRequest{SessionID: req.SessionID, TerminalID: termID})
-	}
-
-	octx, ocancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer ocancel()
-	outputResp, oerr := t.conn.TerminalOutput(octx, libacp.TerminalOutputRequest{SessionID: req.SessionID, TerminalID: termID})
-	if oerr != nil {
-		if cancelled {
+	// A cancelled or timed-out command still reports why it stopped, even when
+	// the output fetch itself failed — the cause is more useful than the fetch
+	// error, and the model must not be told a user cancellation was a timeout.
+	if err != nil {
+		if res.Cancelled {
 			return -1, fmt.Errorf("acpsvc terminal: command cancelled: %w", context.Canceled)
 		}
-		if timedOut {
-			return -1, fmt.Errorf("acpsvc terminal: command timed out")
-		}
-		return -1, fmt.Errorf("acpsvc terminal: output: %w", oerr)
+		return -1, fmt.Errorf("acpsvc terminal: command timed out")
 	}
 
-	if outputResp.Truncated {
+	if res.Truncated {
 		return -1, localtools.ErrOutputBudgetExceeded
 	}
 
-	if outputResp.Output != "" {
+	if res.Output != "" {
 		// Trim excessive trailing newlines from terminal output to avoid UI padding.
 		// Preserve at most 2 trailing newlines (common for command output).
-		output := outputResp.Output
+		output := res.Output
 		for strings.HasSuffix(output, "\n\n\n") {
 			output = strings.TrimSuffix(output, "\n")
 		}
 		_, _ = io.WriteString(stdout, output)
 	}
 
-	if cancelled {
+	if res.Cancelled {
 		_, _ = io.WriteString(stdout, "\n[command killed: cancelled by user]")
 		return -1, fmt.Errorf("acpsvc terminal: command cancelled: %w", context.Canceled)
 	}
-	if timedOut {
+	if res.TimedOut {
 		_, _ = io.WriteString(stdout, "\n[command killed: timeout exceeded]")
 		return -1, fmt.Errorf("acpsvc terminal: command timed out")
 	}
 
-	exitCode := 0
-	switch {
-	case exitResp.ExitCode != nil:
-		exitCode = *exitResp.ExitCode
-	case outputResp.ExitStatus != nil && outputResp.ExitStatus.ExitCode != nil:
-		exitCode = *outputResp.ExitStatus.ExitCode
+	if res.Signal != nil {
+		_, _ = io.WriteString(stdout, fmt.Sprintf("\n[terminated by signal %s]", *res.Signal))
 	}
-	if exitResp.Signal != nil {
-		_, _ = io.WriteString(stdout, fmt.Sprintf("\n[terminated by signal %s]", *exitResp.Signal))
-		if exitCode == 0 {
-			exitCode = -1
-		}
-	}
-	return exitCode, nil
+	return res.ExitCode, nil
 }
 
 func (a *acpCommandRunner) terminalCommand(spec localtools.CommandSpec) (command string, args []string, title string) {
