@@ -27,6 +27,51 @@ func (t TaskHandler) String() string {
 	return string(t)
 }
 
+// IsAssistantProseHandler reports whether a TaskEventStepChunk carrying this
+// handler's streamed output is USER-VISIBLE ASSISTANT NARRATION — text and
+// reasoning a chat surface should render into the reply — as opposed to control
+// flow that merely happens to stream.
+//
+// This package owns the handler vocabulary, so the judgement lives here and every
+// event translator consumes it (runtime/acpsvc and runtime/vscodeagent both do).
+// It used to be spelled twice: once as a BLOCKLIST ("drop route") and once as an
+// ALLOWLIST ("forward only chat_completion"). Empirically the two agree today —
+// only route (via Prompt) and chat_completion (via executeLLM) reach
+// SimpleExec.publishStepChunk at all — but the allowlist is the correct spelling
+// and is what this predicate implements: a handler added tomorrow is NOT assistant
+// prose until someone decides it is, rather than leaking its internals into the
+// transcript by default. A route task's streamed output is its routing label
+// ("general", "coding_change", ...), which once leaked into replies as a prefix.
+//
+// The complement is not "invisible": a chunk this rejects is still journaled, and
+// tool activity reaches both surfaces through the dedicated tool-call events.
+func IsAssistantProseHandler(handler string) bool {
+	return TaskHandler(handler) == HandleChatCompletion
+}
+
+// IsToolBearingHandler reports whether this handler already reports its own work
+// through the dedicated tool-call events (TaskEventToolCallPending /
+// TaskEventToolCall) or through a chat surface's own tool rendering.
+//
+// Event translators use it to suppress the GENERIC step-lifecycle card
+// (TaskEventStepStarted / StepCompleted / StepFailed) for those handlers, which
+// would otherwise double-render one action as both a step card and a tool card.
+// Call-site polarity differs by surface — acpsvc returns early when it is true,
+// vscodeagent emits when it is false — which is the same judgement spelled two
+// ways, not a divergence.
+//
+// chat_completion is included because its tool calls surface as tool events of
+// their own, and route because its step is a routing decision no surface renders
+// as a step.
+func IsToolBearingHandler(handler string) bool {
+	switch TaskHandler(handler) {
+	case HandleExecuteToolCalls, HandleTools, HandleChatCompletion, HandleRoute:
+		return true
+	default:
+		return false
+	}
+}
+
 // Transition-eval tokens are the control values a handler emits as its
 // transition "eval"; a TransitionBranch matches them via its When field (with
 // the default Operator, exact string equality). These are part of the DSL

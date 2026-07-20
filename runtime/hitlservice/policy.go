@@ -33,6 +33,20 @@ type ApprovalRequest struct {
 	Diff       string
 	DiffOld    string
 	DiffNew    string
+
+	// PolicyName, MatchedRule, TimeoutS, and OnTimeout carry the policy
+	// verdict (hitlservice.EvaluationResult) that produced this ask.
+	// HITLWrapper.Exec populates them from the same Evaluate() call it
+	// already makes; RequestApproval persists them onto the durable row so an
+	// operator can always name which rule gated an action, and so it knows
+	// how long to wait and what to do if nobody answers in time. Zero values
+	// are safe: TimeoutS<=0 means "the matched rule set no timeout of its
+	// own" and OnTimeout=="" means "default deny". The attached-session path
+	// (acpsvc.Transport.AskApproval) ignores these fields.
+	PolicyName  string
+	MatchedRule *int
+	TimeoutS    int
+	OnTimeout   Action
 }
 
 // ConditionOp is the comparison operator for a rule condition.

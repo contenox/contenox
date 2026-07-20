@@ -1,6 +1,7 @@
 package vfs
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 )
@@ -93,6 +94,74 @@ func (f *Factory) Allows(root string) (string, bool) {
 		return "", false
 	}
 	return resolved, true
+}
+
+// ErrCwdNotPermitted is the ONE sentinel every session-cwd refusal wraps (see
+// ResolveSessionCwd). Callers translate it into their own transport error —
+// apiframework.InvalidParameterValue for the REST surface,
+// libacp.ErrInvalidParams for the ACP surface — via errors.Is, and take the
+// user-facing text from Error(). The sentinel exists so the DECISION lives here
+// while the WIRE SHAPE stays each transport's own concern.
+var ErrCwdNotPermitted = errors.New("session cwd is not permitted")
+
+// cwdError carries a refusal message verbatim while still matching
+// ErrCwdNotPermitted under errors.Is. A plain fmt.Errorf("%w: ...") would splice
+// the sentinel's text into the message every caller forwards to a user; this
+// keeps the message exactly what the operator should read.
+type cwdError struct{ msg string }
+
+func (e *cwdError) Error() string { return e.msg }
+func (e *cwdError) Is(target error) bool {
+	return target == ErrCwdNotPermitted
+}
+
+func cwdRefusal(format string, args ...any) error {
+	return &cwdError{msg: fmt.Sprintf(format, args...)}
+}
+
+// ResolveSessionCwd is the ONE decision procedure for "which concrete directory
+// does this session run in". Every surface that opens or re-roots a session — the
+// ACP session/new, session/load and session/resume paths, and the REST fleet
+// dispatch — resolves through here so the workspace-root envelope cannot be
+// enforced in one place and skipped in another. Its rules, in order:
+//
+//  1. A non-empty cwd MUST be absolute. A relative path is refused outright,
+//     before any allowlist is consulted, because a relative cwd is meaningless
+//     to a session that will run in some other process's working directory —
+//     and, with no allowlist configured, would otherwise be adopted verbatim.
+//     An empty cwd is not a path but the ABSENCE of one, and falls through to
+//     rule 2.
+//  2. The sentinel "/" and an empty cwd mean "unspecified". With an allowlist
+//     configured they resolve to its default root (the compat story for clients
+//     that always send cwd:"/"). With none configured, an empty cwd resolves to
+//     fallback — the caller's own default root, "" for a caller that has none.
+//  3. With an allowlist configured, any other value must resolve to an
+//     allowlisted root; otherwise the request is refused.
+//  4. With NO allowlist configured (f nil — the stdio ACP path), an absolute cwd
+//     is returned unchanged: there is no server-side envelope to enforce and the
+//     editor owns the filesystem.
+//
+// The nil-allowlist default is deliberately the CALLER's (fallback) rather than a
+// value invented here: "unspecified" means different things to a transport that
+// has no notion of a project root (ACP stdio, which passes "" and leaves the cwd
+// unspecified for the editor to interpret) and to one that does (fleet dispatch,
+// which passes its configured project root). One procedure, one parameter, no
+// second implementation.
+func ResolveSessionCwd(f *Factory, cwd, fallback string) (string, error) {
+	if cwd != "" && !filepath.IsAbs(cwd) {
+		return "", cwdRefusal("cwd must be an absolute path, got %q", cwd)
+	}
+	if f == nil {
+		if cwd == "" {
+			return fallback, nil
+		}
+		return cwd, nil
+	}
+	resolved, err := f.Resolve(cwd)
+	if err != nil {
+		return "", cwdRefusal("workspace directory %q is not permitted; choose one of the configured workspace roots", cwd)
+	}
+	return resolved, nil
 }
 
 // Open returns a View rooted at root, which must be allowlisted (via Resolve

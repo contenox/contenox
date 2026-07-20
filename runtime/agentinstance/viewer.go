@@ -298,14 +298,21 @@ func (h *viewerHub) closeSession(sessionID libacp.SessionID) {
 	}
 }
 
-// counts reports the number of sessions with at least one attached viewer and the
-// total attached viewers across them — the viewer/session counts List surfaces.
-func (h *viewerHub) counts() (sessions, viewers int) {
+// viewerCount reports the total attached viewers across every session — the WATCHER
+// half of InstanceStatus, and the only status fact the hub is authoritative for.
+//
+// It deliberately does not also report a session count. The hub materializes a
+// session's state lazily (on its first delivered update or first attach — see
+// session), so its session set answers "who is being watched", not "what is open";
+// the latter comes from the driver, which OpenSession seeds and CloseSession drops
+// (sessionDriver.sessionIDs). Reporting a session count from here once meant an open
+// but silent session was invisible in InstanceStatus.
+func (h *viewerHub) viewerCount() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	viewers := 0
 	for _, s := range h.sessions {
-		sessions++
 		viewers += len(s.viewers)
 	}
-	return sessions, viewers
+	return viewers
 }

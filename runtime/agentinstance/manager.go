@@ -96,7 +96,30 @@ type Manager interface {
 	// a chain (native) agent it creates a process-less instance. Returns the
 	// generated instance id, or an error if the agent cannot be resolved or
 	// spawned (in which case nothing is registered and no process is leaked).
+	//
+	// It is Start-by-NAME: a convenience over StartResolved for a caller that has
+	// only a name and no policy to apply. A caller that ALREADY resolved the agent —
+	// because it had a policy decision to make about the record, as every spawn path
+	// with an Enabled check does — must call StartResolved instead; see there.
 	Start(ctx context.Context, agentName string) (instanceID string, err error)
+
+	// StartResolved spawns an instance from an ALREADY-RESOLVED declared agent and
+	// performs NO registry read of its own. Start is implemented as resolve +
+	// StartResolved, so there is exactly one spawn implementation and this is it.
+	//
+	// It exists because the service layer above resolves the record anyway in order
+	// to make a policy decision about it (agentregistryservice.ResolveForSpawn — the
+	// one shared "refuse a disabled agent" judgement). Having the kernel then re-read
+	// the same row was both a wasted query per spawn and a TOCTOU window: the Enabled
+	// check was made against the first read while the spawn proceeded from the second,
+	// so an agent disabled in between still spawned. Handing the kernel the record the
+	// decision was made about closes the window by construction — the bytes that were
+	// judged are the bytes that are spawned.
+	//
+	// This is also the correct shape for the layering: the kernel is policy-free and
+	// spawns what it is handed; it has no business re-deriving what the service layer
+	// already established. Returns an error for a nil agent or an unsupported kind.
+	StartResolved(ctx context.Context, agent *runtimetypes.Agent) (instanceID string, err error)
 
 	// Attach registers viewer against (instanceID, sessionID): it replays that
 	// session's journal to the viewer, then joins it to the live fan-out. The
@@ -151,6 +174,16 @@ type Manager interface {
 	// drops the session's kernel state (its captured surface and its journal + viewers). It
 	// does NOT stop the instance — an instance multiplexes many sessions over one connection.
 	// Returns ErrNotFound for an unknown instance.
+	//
+	// WHO CALLS IT: whoever OPENED the session, and nobody else. No transport does today, and
+	// acpsvc's session/close deliberately must not (see acpsvc.Transport.CloseSession): an ACP
+	// client closing a session is a VIEWER detaching, and a viewer may not end a session it did
+	// not open — a supervisor closing their tab on an adopted fleet dispatch would otherwise
+	// make the still-running unit's session invisible to Cancel and to adopt. The verb belongs
+	// to the consumer that called OpenSession; the only one that does today (fleetservice
+	// Dispatch) ends its units with Stop, which subsumes this. It stays on the interface as the
+	// kernel's counterpart to OpenSession — a kernel that can open a session and not end one is
+	// an incomplete kernel — and is exercised by the fleetservice cancel-contract tests.
 	CloseSession(instanceID string, sessionID libacp.SessionID) error
 
 	// SetConfigOption forwards an upstream config-option change to the downstream and adopts
@@ -268,7 +301,14 @@ func (m *manager) Start(ctx context.Context, agentName string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("agentinstance: resolve agent %q: %w", agentName, err)
 	}
+	return m.StartResolved(ctx, agent)
+}
 
+func (m *manager) StartResolved(ctx context.Context, agent *runtimetypes.Agent) (string, error) {
+	_ = ctx // no registry read happens here; ctx is kept for interface uniformity.
+	if agent == nil {
+		return "", fmt.Errorf("agentinstance: agent is required")
+	}
 	switch agent.Kind {
 	case runtimetypes.AgentKindExternalACP:
 		cfg, err := agent.ExternalACPConfig()
@@ -284,7 +324,7 @@ func (m *manager) Start(ctx context.Context, agentName string) (string, error) {
 	case runtimetypes.AgentKindChain:
 		return m.bringUp(agent, nil)
 	default:
-		return "", fmt.Errorf("agentinstance: agent %q has unsupported kind %q", agentName, agent.Kind)
+		return "", fmt.Errorf("agentinstance: agent %q has unsupported kind %q", agent.Name, agent.Kind)
 	}
 }
 

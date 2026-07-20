@@ -207,6 +207,13 @@ export const fleetKeys = {
   list: () => [...fleetKeys.all, 'list'] as const,
 };
 
+export const missionKeys = {
+  all: ['missions'] as const,
+  list: () => [...missionKeys.all, 'list'] as const,
+  detail: (id: string) => [...missionKeys.all, id] as const,
+  reports: (id: string) => [...missionKeys.all, id, 'reports'] as const,
+};
+
 export const planKeys = {
   all: ['plans'] as const,
   list: () => [...planKeys.all, 'list'] as const,

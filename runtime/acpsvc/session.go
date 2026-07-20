@@ -21,6 +21,7 @@ import (
 	"github.com/contenox/runtime/runtime/chatservice"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/taskengine"
+	"github.com/contenox/runtime/runtime/vfs"
 )
 
 // sessionListTitleMaxLen bounds SessionInfo.Title derived from a session's
@@ -292,54 +293,38 @@ func errSetupRequired() error {
 	return libacp.NewError(libacp.ErrAuthRequired, "contenox is not configured yet: no default-model is set. Run the \"Setup Contenox\" auth method, set the CONTENOX_DEFAULT_* environment variables (or run `contenox acp --setup`), then reconnect.")
 }
 
-// resolveWorkspaceCwd validates a requested session cwd against the workspace
-// allowlist and returns the concrete root the session will use. When no
-// allowlist is configured (Deps.WorkspaceRoots nil — the stdio ACP path) the
-// cwd is returned unchanged, preserving the editor-owns-the-filesystem
-// behavior. When an allowlist IS configured (serve), the sentinel cwd "/" (what
-// beam sends today) and an empty cwd resolve to the default root so existing
-// clients keep working; any other value must be an allowlisted root, else the
-// request is refused with an actionable error.
+// resolveWorkspaceCwd maps a requested session cwd onto the concrete root the
+// session will use, delegating the DECISION to vfs.ResolveSessionCwd — the one
+// implementation shared with fleetservice's dispatch path — and owning only the
+// translation of its refusal into this transport's wire error. The fallback is
+// "": the ACP transport has no project root of its own, so an unspecified cwd on
+// the stdio path (no allowlist configured) stays unspecified and the editor's own
+// working directory governs. See vfs.ResolveSessionCwd for the full rule set.
 func (t *Transport) resolveWorkspaceCwd(cwd string) (string, error) {
-	f := t.deps.WorkspaceRoots
-	if f == nil {
-		return cwd, nil
-	}
-	resolved, err := f.Resolve(cwd)
+	resolved, err := vfs.ResolveSessionCwd(t.deps.WorkspaceRoots, cwd, "")
 	if err != nil {
-		return "", libacp.NewErrorf(libacp.ErrInvalidParams,
-			"workspace directory %q is not permitted; choose one of the configured workspace roots", cwd)
+		return "", libacp.NewError(libacp.ErrInvalidParams, err.Error())
 	}
 	return resolved, nil
 }
 
 // resolveExistingSessionCwd resolves the cwd for session/load and session/resume
-// on an existing session. A concrete requested cwd is validated and adopted (a
-// client may re-root a session it owns to another allowlisted directory). The
-// sentinel "/" or empty cwd — what beam sends on every load/resume — must NOT
-// clobber the session's stored workspace back to the default; it preserves the
-// persisted cwd (when still allowlisted), falling back to the default only when
-// the session has none. When no allowlist is configured the requested cwd is
-// returned unchanged (stdio behavior).
+// on an existing session. It is resolveWorkspaceCwd plus exactly ONE extra rule,
+// which is a transport policy and not a filesystem judgement: the sentinel "/" or
+// empty cwd — what beam sends on every load/resume — must NOT clobber the
+// session's stored workspace back to the default, so the persisted cwd wins when
+// it is still allowlisted. Everything else (the absolute-path guard, the
+// allowlist check, the default for an unspecified cwd, the no-allowlist
+// passthrough) is the shared procedure, reached through resolveWorkspaceCwd.
 func (t *Transport) resolveExistingSessionCwd(ctx context.Context, store runtimetypes.Store, sid libacp.SessionID, cwd string) (string, error) {
-	f := t.deps.WorkspaceRoots
-	if f == nil {
-		return cwd, nil
-	}
-	if cwd != "" && cwd != "/" {
-		resolved, err := f.Resolve(cwd)
-		if err != nil {
-			return "", libacp.NewErrorf(libacp.ErrInvalidParams,
-				"workspace directory %q is not permitted; choose one of the configured workspace roots", cwd)
-		}
-		return resolved, nil
-	}
-	if existing := t.sessionCwd(ctx, store, sid); existing != "" {
-		if resolved, ok := f.Allows(existing); ok {
-			return resolved, nil
+	if f := t.deps.WorkspaceRoots; f != nil && (cwd == "" || cwd == "/") {
+		if existing := t.sessionCwd(ctx, store, sid); existing != "" {
+			if resolved, ok := f.Allows(existing); ok {
+				return resolved, nil
+			}
 		}
 	}
-	return f.Default(), nil
+	return t.resolveWorkspaceCwd(cwd)
 }
 
 func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest) (libacp.NewSessionResponse, error) {
@@ -368,6 +353,22 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 	workspaceID := t.workspaceID()
 
 	store := runtimetypes.New(t.deps.DB.WithoutTransaction())
+
+	// A client ADOPTS an ALREADY-RUNNING instance+session (typically one a fleet
+	// dispatch created and left unwatched) via the contenox.adopt `_meta` key. It sits
+	// beside contenox.agent in this one routing switch and takes precedence over it:
+	// adopt names a concrete live instance, so an accompanying agent name would be at
+	// best redundant and at worst a mislabel (attribution comes from the instance — see
+	// newAdoptedSession). Nothing is spawned. Absent/malformed, this falls through to the
+	// two paths below unchanged.
+	if ref, ok := parseAdoptMeta(req.Meta); ok {
+		resp, adoptErr := t.newAdoptedSession(ctx, internalID, sessionID, sessionCwd, workspaceID, store, ref, reportChange)
+		if adoptErr != nil {
+			reportErr(adoptErr)
+			return libacp.NewSessionResponse{}, adoptErr
+		}
+		return resp, nil
+	}
 
 	// A client binds this session to a REGISTERED external ACP agent via the
 	// contenox.agent `_meta` key; absent, the native chain path below runs
@@ -627,6 +628,26 @@ func (t *Transport) SetSessionModel(_ context.Context, _ libacp.SetSessionModelR
 // CloseSession releases the connection-local resources of a session without
 // touching its stored history. Closing an unknown session succeeds: the
 // desired state (not open here) already holds.
+//
+// It deliberately does NOT call agentinstance.Manager.CloseSession, and the
+// kernel's per-session state (its captured surface, its journal) is deliberately
+// LEFT BEHIND. That is not an oversight and not a leak:
+//
+//   - close DETACHES, delete STOPS. An instance outlives a closed session on
+//     purpose so a reconnect can re-attach and keep the downstream agent's
+//     context (externalDriver.ensureAttached); the retained state is what that
+//     path and session/load read. Dropping it would leave the subprocess running
+//     while the kernel forgot the session it is still driving.
+//   - InstanceStatus.SessionIDs is sourced from that state, and it is what
+//     fleetservice.Cancel fans out over and what resolveAdoptTarget validates
+//     against. A supervisor closing their tab on an ADOPTED dispatch must not
+//     make the running unit's session un-cancellable and un-adoptable — see
+//     adopt.go's "Honest limitations".
+//
+// The retention is bounded: at most one open session per instance in every path
+// that exists today, a journal that is a fixed-size ring, and a viewer registry
+// this close empties via the driver's detach. All of it is reclaimed when the
+// instance stops — which is exactly what DeleteSession does.
 func (t *Transport) CloseSession(ctx context.Context, req libacp.CloseSessionRequest) (libacp.CloseSessionResponse, error) {
 	_, reportChange, end := t.tracker().Start(ctx, "close", "acp_session", "session_id", string(req.SessionID))
 	defer end()

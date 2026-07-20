@@ -15,8 +15,14 @@ The browser is a **pure-cookie backend-for-frontend**: it never handles the toke
 in JavaScript. The single operator token is the credential; the server wraps a
 successful login into a signed session JWT held in an HttpOnly cookie the page
 cannot read. Programmatic clients (scripts, other machines) authenticate with the
-raw token directly. The local `contenox` CLI is **not** an HTTP client of serve —
-it talks to the SQLite/engine directly — so none of this applies to it.
+raw token directly. Most of the local `contenox` CLI is **not** an HTTP client of
+serve — it talks to the SQLite/engine directly — so none of this applies to it.
+The exception is state that lives only inside a running `contenox serve` process,
+not the database — a pending human-in-the-loop approval is a goroutine parked in
+serve's memory, a fleet instance is a subprocess serve's Manager owns. `contenox
+approvals` reaches serve exactly like any other programmatic client, over
+`/api/*` with `Authorization: Bearer <TOKEN>`, via a small reusable client meant
+for other state-lives-in-serve verbs to share (`runtime/contenoxcli/serveclient.go`).
 
 ## Flow
 

@@ -31,7 +31,7 @@ export default function HookPoliciesFields({ task, onChange }: HookPoliciesField
     // Drop provider entries that have NO fields at all — keeps JSON tidy and
     // hides `tools_policies: {}` for tasks that don't need any. Transient
     // partially-filled rows (empty key OR empty value) survive so editing
-    // doesn't fight the user; matches the HookFields args pattern.
+    // doesn't fight the user.
     const cleaned: Record<string, Record<string, string>> = {};
     for (const [hook, fields] of Object.entries(next)) {
       if (Object.keys(fields).length === 0) continue;
@@ -50,7 +50,7 @@ export default function HookPoliciesFields({ task, onChange }: HookPoliciesField
     const nextHook = { ...(policies[hook] || {}) };
     if (key === '' && value === '') {
       // Empty-key, empty-value pair is the "Add field" placeholder — keep it
-      // visible so the user can type into it. Same trick as HookFields.addArg.
+      // visible so the user can type into it.
       nextHook[''] = '';
     } else {
       nextHook[key] = value;

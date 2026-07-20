@@ -65,7 +65,14 @@ func TestUnit_Evaluate_MalformedBraceGlobFailsClosed(t *testing.T) {
 
 func TestUnit_RequestApproval_FailsFastWhenEventSinkErrors(t *testing.T) {
 	t.Parallel()
-	svc := hitlservice.New(hitlservice.NewFSPolicySource(t.TempDir()), testTenant, nopKVReader{}, libtracker.NoopTracker{})
+	// A durable store is required (see durable_approval_test.go's
+	// newDurableService): RequestApproval persists the pending row before it
+	// ever reaches the publish call this test means to exercise, so a bare
+	// KVReader fake (nopKVReader, used by this package's Evaluate()-only
+	// tests) would fail one step earlier, on "durable approval store not
+	// configured", never reaching erroringSink at all.
+	_, store, _ := setupHITLDB(t)
+	svc := newDurableService(t, store)
 
 	done := make(chan error, 1)
 	go func() {

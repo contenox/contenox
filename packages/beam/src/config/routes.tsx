@@ -1,4 +1,4 @@
-import { Cpu, Database, Radar, Settings, type LucideIcon } from 'lucide-react';
+import { Cpu, Database, Radar, Rocket, Settings, type LucideIcon } from 'lucide-react';
 import { lazy } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import i18n, { type TranslationKey } from '../i18n';
@@ -8,6 +8,9 @@ import { LOGIN_ROUTE } from './routeConstants.ts';
 const AcpChatPage = lazy(() => import('../pages/chat/AcpChatPage.tsx'));
 const BackendsPage = lazy(() => import('../pages/admin/backends/BackendPage.tsx'));
 const FleetPage = lazy(() => import('../pages/admin/fleet/FleetPage.tsx'));
+const MissionListPage = lazy(() => import('../pages/admin/missions/MissionListPage.tsx'));
+const MissionDetailPage = lazy(() => import('../pages/admin/missions/MissionDetailPage.tsx'));
+const MissionDispatchPage = lazy(() => import('../pages/admin/missions/MissionDispatchPage.tsx'));
 const ControlPlanePage = lazy(() => import('../pages/admin/control/ControlPlanePage.tsx'));
 const SettingsPage = lazy(() => import('../pages/admin/settings/SettingsPage.tsx'));
 const ByePage = lazy(() => import('../pages/public/bye/Bye.tsx'));
@@ -51,6 +54,13 @@ type AdminRouteDefinition = {
 
 const adminRouteDefinitions: AdminRouteDefinition[] = [
   { path: '/fleet', element: FleetPage, labelKey: 'navbar.fleet', Icon: Radar },
+  // Missions sit next to Fleet, not off in a separate group: mission mode is
+  // the fleet's headless twin (docs/development/blueprints/acp/
+  // fleet-consolidation.md, "Mission mode") — same units, the other way of
+  // driving them. /missions/new and /missions/:id are NOT nav items (they
+  // are reached FROM this list, not from the control-plane menu), so they
+  // are registered directly on `routes` below instead of here.
+  { path: '/missions', element: MissionListPage, labelKey: 'navbar.missions', Icon: Rocket },
   { path: '/backends', element: BackendsPage, labelKey: 'navbar.backends', Icon: Database },
   { path: '/settings', element: SettingsPage, labelKey: 'navbar.settings', Icon: Settings },
 ];
@@ -173,6 +183,25 @@ export const routes: RouteConfig[] = [
     showInShelf: false,
   },
   ...adminRoutes,
+  {
+    // Reached from the mission list's "Fire a mission" button, not from nav.
+    path: '/missions/new',
+    element: MissionDispatchPage,
+    label: '',
+    showInNav: false,
+    protected: true,
+    showInShelf: false,
+  },
+  {
+    // Reached from a mission list row, a board row's intent link, or the
+    // dispatch form's on-success redirect — never from nav.
+    path: '/missions/:id',
+    element: MissionDetailPage,
+    label: '',
+    showInNav: false,
+    protected: true,
+    showInShelf: false,
+  },
   {
     path: LOGIN_ROUTE,
     element: AuthPage,

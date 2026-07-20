@@ -1,92 +1,68 @@
-// Package fleetapi exposes the live agent-instance fleet
-// (runtime/agentinstance) over REST: the config+runtime join of every declared
-// agent annotated with its running instances, per-instance status lookup, and
-// dispatch (bring an instance up, open a session, and — for a supplied prompt —
-// run the first turn detached).
+// Package fleetapi exposes runtime/fleetservice — the fleet's operational
+// surface — over REST: the config+runtime join of every declared agent
+// annotated with its running instances, per-instance status lookup, dispatch
+// (bring an instance up, open a session, and run the intent as the unit's
+// first turn detached — every dispatch is a mission), and now stop/cancel as
+// first-class operations.
 //
-// The read routes are deliberately the only lifecycle-free half; dispatch is the
-// one write path (the "future scheduler (cron/bus → Start)" seam the kernel docs
-// reserve), and Stop/restart stay with the Manager's owner, `contenox serve`.
+// Every handler here is THIN: it decodes the request, calls straight into
+// fleetservice.Service, and maps the result/error onto the wire. All
+// lifecycle POLICY (the Enabled check, teardown-on-failure, cancel fan-out,
+// ...) lives in fleetservice so it cannot drift between this REST path and
+// the `contenox fleet` CLI (a follow-up slice) mounted on the same Service.
 //
 // The route/handler shape mirrors runtime/internal/agentregistryapi and
 // runtime/internal/missionapi (the declared and durable halves of the same
-// fleet), and the `// @request` / `// @response` annotations are what the OpenAPI
-// generator (tools/openapi-gen) scans for.
+// fleet), and the `// @request` / `// @response` annotations are what the
+// OpenAPI generator (tools/openapi-gen) scans for.
 package fleetapi
 
 import (
-	"context"
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
-	"strings"
 
 	apiframework "github.com/contenox/runtime/apiframework"
-	"github.com/contenox/runtime/libacp"
-	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/agentinstance"
-	"github.com/contenox/runtime/runtime/missionservice"
-	"github.com/contenox/runtime/runtime/vfs"
+	"github.com/contenox/runtime/runtime/fleetservice"
 )
 
-// DispatchRequest is the POST /fleet/dispatch body: the declared agent to bring
-// up, an optional first prompt, an optional one-line mission intent, and an
-// optional session working directory (validated against the workspace-root
-// allowlist).
-type DispatchRequest struct {
-	AgentName     string `json:"agentName"`
-	Prompt        string `json:"prompt,omitempty"`
-	MissionIntent string `json:"missionIntent,omitempty"`
-	Cwd           string `json:"cwd,omitempty"`
+// DispatchRequest is the POST /fleet/dispatch body. It is a type alias onto
+// fleetservice.DispatchRequest — fleetservice is the single source of truth
+// for the shape; this package never re-declares it.
+type DispatchRequest = fleetservice.DispatchRequest
+
+// DispatchResponse is the 202 body: the ids the dispatch created. It is a
+// type alias onto fleetservice.DispatchResult.
+type DispatchResponse = fleetservice.DispatchResult
+
+// CancelRequest is the optional POST /fleet/{instanceID}/cancel body. An
+// absent body or an empty/omitted sessionId cancels every session currently
+// attached to the instance (see fleetservice.Service.Cancel).
+type CancelRequest struct {
+	SessionID string `json:"sessionId,omitempty"`
 }
 
-// DispatchResponse is the 202 body: the ids the dispatch created. MissionID is
-// present only when a mission intent was supplied (explicit-only in v1).
-type DispatchResponse struct {
-	InstanceID string `json:"instanceId"`
-	SessionID  string `json:"sessionId"`
-	MissionID  string `json:"missionId,omitempty"`
-}
-
-// AddRoutes registers the fleet routes on mux. missions, workspaceRoots and
-// projectRoot are dispatch-only and may be zero: dispatch still works with a nil
-// mission registry as long as no missionIntent is supplied (validated per
-// request). A nil tracker degrades to a Noop, so the async first-prompt outcome
-// is simply not recorded rather than panicking.
-func AddRoutes(
-	mux *http.ServeMux,
-	instances agentinstance.Manager,
-	missions missionservice.Service,
-	workspaceRoots *vfs.Factory,
-	projectRoot string,
-	tracker libtracker.ActivityTracker,
-) {
-	if tracker == nil {
-		tracker = libtracker.NoopTracker{}
-	}
-	h := &fleetHandler{
-		instances:      instances,
-		missions:       missions,
-		workspaceRoots: workspaceRoots,
-		projectRoot:    projectRoot,
-		tracker:        tracker,
-	}
+// AddRoutes registers the fleet routes on mux.
+func AddRoutes(mux *http.ServeMux, fleet fleetservice.Service) {
+	h := &fleetHandler{fleet: fleet}
 
 	mux.HandleFunc("GET /fleet", h.list)
 	mux.HandleFunc("POST /fleet/dispatch", h.dispatch)
 	mux.HandleFunc("GET /fleet/{instanceID}", h.get)
+	mux.HandleFunc("DELETE /fleet/{instanceID}", h.stop)
+	mux.HandleFunc("POST /fleet/{instanceID}/cancel", h.cancel)
 }
 
 type fleetHandler struct {
-	instances      agentinstance.Manager
-	missions       missionservice.Service
-	workspaceRoots *vfs.Factory
-	projectRoot    string
-	tracker        libtracker.ActivityTracker
+	fleet fleetservice.Service
 }
 
 func (h *fleetHandler) list(w http.ResponseWriter, r *http.Request) {
-	entries, err := h.instances.List(r.Context())
+	entries, err := h.fleet.List(r.Context())
 	if err != nil {
 		_ = apiframework.Error(w, r, err, apiframework.ListOperation)
 		return
@@ -96,7 +72,7 @@ func (h *fleetHandler) list(w http.ResponseWriter, r *http.Request) {
 
 func (h *fleetHandler) get(w http.ResponseWriter, r *http.Request) {
 	id := apiframework.GetPathParam(r, "instanceID", "The unique ID of the instance.")
-	status, err := h.instances.Get(id)
+	status, err := h.fleet.Get(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, agentinstance.ErrNotFound) {
 			err = apiframework.NotFound(err.Error())
@@ -107,12 +83,10 @@ func (h *fleetHandler) get(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, status) // @response agentinstance.InstanceStatus
 }
 
-// dispatch allocates a unit: it brings up an instance for a declared agent, opens
-// a session, optionally records a mission bound to both ids, and — for a supplied
-// prompt — runs the first turn on a detached context, returning 202 with the ids
-// immediately (async-after-OpenSession; the prompt's outcome is observable on the
-// board). It is allocation, not operation: no restart policy, no adoption into a
-// beam chat session (a documented v1 limitation).
+// dispatch allocates a unit via fleetservice.Dispatch and returns 202 with the
+// ids as soon as the session is open; the orchestration (Enabled check,
+// teardown-on-failure, the mission record, the detached first turn) lives
+// entirely in the service now.
 func (h *fleetHandler) dispatch(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -121,104 +95,57 @@ func (h *fleetHandler) dispatch(w http.ResponseWriter, r *http.Request) {
 		_ = apiframework.Error(w, r, err, apiframework.CreateOperation)
 		return
 	}
-	if strings.TrimSpace(req.AgentName) == "" {
-		_ = apiframework.Error(w, r, apiframework.MissingParameter("agentName", "agentName is required"), apiframework.CreateOperation)
-		return
-	}
-	// Explicit-only missions in v1: an intent is meaningless without a wired
-	// registry to record it, so reject the combination rather than silently
-	// dropping the intent.
-	if req.MissionIntent != "" && h.missions == nil {
-		_ = apiframework.Error(w, r, apiframework.BadRequest("missionIntent given but the mission registry is not configured"), apiframework.CreateOperation)
-		return
-	}
-	// cwd envelope discipline: a requested cwd must resolve within an allowlisted
-	// workspace root; an absent one defaults to the same root the session path
-	// uses. This mirrors acpsvc.Transport.resolveWorkspaceCwd.
-	cwd, err := h.resolveCwd(req.Cwd)
+
+	result, err := h.fleet.Dispatch(ctx, req)
 	if err != nil {
 		_ = apiframework.Error(w, r, err, apiframework.CreateOperation)
 		return
 	}
-
-	// 1. Bring up an instance for the declared agent. Start wraps libdb.ErrNotFound
-	// for an unknown agent, which the error mapper renders as 404 — the same idiom
-	// the read path's Get relies on.
-	instanceID, err := h.instances.Start(ctx, req.AgentName)
-	if err != nil {
-		_ = apiframework.Error(w, r, err, apiframework.CreateOperation)
-		return
-	}
-
-	// 2. Open a session on the instance. On failure tear the fresh instance down so
-	// a failed dispatch never leaks a running subprocess (the acpsvc contract).
-	sessionID, err := h.instances.OpenSession(ctx, instanceID, agentinstance.SessionSpec{Cwd: cwd})
-	if err != nil {
-		_ = h.instances.Stop(instanceID)
-		_ = apiframework.Error(w, r, err, apiframework.CreateOperation)
-		return
-	}
-
-	resp := DispatchResponse{InstanceID: instanceID, SessionID: string(sessionID)}
-
-	// 3. Explicit mission: create the record, then bind both ids to it.
-	if req.MissionIntent != "" {
-		m := &missionservice.Mission{Intent: req.MissionIntent, AgentName: req.AgentName}
-		if err := h.missions.Create(ctx, m); err != nil {
-			_ = h.instances.Stop(instanceID)
-			_ = apiframework.Error(w, r, err, apiframework.CreateOperation)
-			return
-		}
-		if _, err := h.missions.Bind(ctx, m.ID, string(sessionID), instanceID); err != nil {
-			_ = h.instances.Stop(instanceID)
-			_ = apiframework.Error(w, r, err, apiframework.CreateOperation)
-			return
-		}
-		resp.MissionID = m.ID
-	}
-
-	// 4. First prompt runs detached: dispatch ACCEPTS and returns ids; the turn's
-	// outcome is observable on the board and recorded through the tracker (never
-	// swallowed). context.WithoutCancel keeps request-scoped values (request id)
-	// while surviving the handler's return. Payload discipline: ids and stop
-	// reason only, never prompt content.
-	if strings.TrimSpace(req.Prompt) != "" {
-		detached := context.WithoutCancel(ctx)
-		blocks := []libacp.ContentBlock{libacp.NewTextContent(req.Prompt)}
-		go func() {
-			reportErr, reportChange, end := h.tracker.Start(detached, "prompt", "fleet_dispatch",
-				"instance_id", instanceID, "session_id", string(sessionID), "agent_name", req.AgentName)
-			defer end()
-			stop, err := h.instances.Prompt(detached, instanceID, sessionID, blocks)
-			if err != nil {
-				reportErr(err)
-				return
-			}
-			reportChange(string(sessionID), string(stop))
-		}()
-	}
-
-	_ = apiframework.Encode(w, r, http.StatusAccepted, resp) // @response fleetapi.DispatchResponse
+	_ = apiframework.Encode(w, r, http.StatusAccepted, result) // @response fleetapi.DispatchResponse
 }
 
-// resolveCwd validates a requested session cwd against the workspace-root
-// allowlist and returns the concrete root the session will use, mirroring the
-// minimal shape of acpsvc.Transport.resolveWorkspaceCwd. When an allowlist is
-// configured (serve), the sentinel "/" and an empty cwd resolve to the default
-// root, and any other value must be an allowlisted root (else a 400). When none
-// is configured, an explicit cwd is kept as-is and an absent one defaults to the
-// fixed project root — the same default the session path uses.
-func (h *fleetHandler) resolveCwd(cwd string) (string, error) {
-	if h.workspaceRoots != nil {
-		resolved, err := h.workspaceRoots.Resolve(cwd)
-		if err != nil {
-			return "", apiframework.InvalidParameterValue("cwd",
-				fmt.Sprintf("workspace directory %q is not permitted; choose one of the configured workspace roots", cwd))
+// stop tears an instance down via fleetservice.Stop, which is idempotent by
+// kernel contract: stopping an unknown or already-stopped instance is a no-op
+// 200, not a 404 — mirrors the delete-response idiom missionapi/mcpserverapi
+// use (a plain "deleted" string body).
+func (h *fleetHandler) stop(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := apiframework.GetPathParam(r, "instanceID", "The unique ID of the instance.")
+	if err := h.fleet.Stop(ctx, id); err != nil {
+		_ = apiframework.Error(w, r, err, apiframework.DeleteOperation)
+		return
+	}
+	_ = apiframework.Encode(w, r, http.StatusOK, "deleted") // @response string
+}
+
+// cancel cancels an in-flight prompt turn via fleetservice.Cancel. The body
+// is OPTIONAL: an absent body, an empty body, or an omitted/empty sessionId
+// all mean "cancel every session on this instance" (see CancelRequest and
+// fleetservice.Service.Cancel) — read manually rather than through
+// apiframework.Decode so a caller need not send `{}` for the common case.
+func (h *fleetHandler) cancel(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := apiframework.GetPathParam(r, "instanceID", "The unique ID of the instance.")
+
+	var req CancelRequest // @request fleetapi.CancelRequest
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		_ = apiframework.Error(w, r, fmt.Errorf("read request body: %w", err), apiframework.UpdateOperation)
+		return
+	}
+	if len(bytes.TrimSpace(raw)) > 0 {
+		if err := json.Unmarshal(raw, &req); err != nil {
+			_ = apiframework.Error(w, r, fmt.Errorf("%w: %w", apiframework.ErrDecodeInvalidJSON, err), apiframework.UpdateOperation)
+			return
 		}
-		return resolved, nil
 	}
-	if strings.TrimSpace(cwd) == "" {
-		return h.projectRoot, nil
+
+	if err := h.fleet.Cancel(ctx, id, req.SessionID); err != nil {
+		if errors.Is(err, agentinstance.ErrNotFound) {
+			err = apiframework.NotFound(err.Error())
+		}
+		_ = apiframework.Error(w, r, err, apiframework.UpdateOperation)
+		return
 	}
-	return cwd, nil
+	_ = apiframework.Encode(w, r, http.StatusOK, "cancelled") // @response string
 }

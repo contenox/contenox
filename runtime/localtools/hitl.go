@@ -129,6 +129,13 @@ func (h *HITLWrapper) Exec(
 			Diff:       rendered,
 			DiffOld:    oldContent,
 			DiffNew:    newContent,
+			// Carry the policy verdict along so a durable-store implementation
+			// of AskApproval (hitlservice.RequestApproval) can record which
+			// rule gated this and how long to wait; see ApprovalRequest's doc.
+			PolicyName:  result.PolicyName,
+			MatchedRule: result.MatchedRule,
+			TimeoutS:    result.TimeoutS,
+			OnTimeout:   result.OnTimeout,
 		}
 		h.publishDecision(ctx, tools.Name, toolName, args, result, true)
 

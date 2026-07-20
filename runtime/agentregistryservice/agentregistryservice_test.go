@@ -195,6 +195,53 @@ func TestUnit_AgentRegistryService_CreateRejectsChainKind(t *testing.T) {
 	require.Error(t, err)
 }
 
+// ─── ResolveForSpawn ────────────────────────────────────────────────────────
+//
+// fleetservice.Dispatch and acpsvc's external bring-up both resolve their
+// agent through this one function (see its doc comment) instead of each
+// re-deriving the Enabled check — these tests pin the contract both callers
+// rely on: an enabled agent resolves, a disabled one is refused with a
+// message naming the remedy and a sentinel callers can branch on, and a
+// resolution failure (unknown agent) passes through un-mangled.
+
+func TestUnit_ResolveForSpawn_EnabledAgentResolves(t *testing.T) {
+	ctx, db := setupAgentRegistryDB(t)
+	svc := New(db)
+
+	agent := newExternalACPAgent("spawn-enabled")
+	require.NoError(t, svc.Create(ctx, agent))
+
+	got, err := ResolveForSpawn(ctx, svc, "spawn-enabled")
+	require.NoError(t, err)
+	require.Equal(t, agent.ID, got.ID)
+}
+
+func TestUnit_ResolveForSpawn_DisabledAgentRefused(t *testing.T) {
+	ctx, db := setupAgentRegistryDB(t)
+	svc := New(db)
+
+	agent := newExternalACPAgent("spawn-disabled")
+	agent.Enabled = false
+	require.NoError(t, svc.Create(ctx, agent))
+
+	_, err := ResolveForSpawn(ctx, svc, "spawn-disabled")
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrAgentDisabled), "a disabled agent's error must wrap ErrAgentDisabled")
+	require.Contains(t, err.Error(), "disabled")
+	require.Contains(t, err.Error(), `contenox agent enable "spawn-disabled"`,
+		"the refusal must name the remedy verbatim, matching every caller's expected wording")
+}
+
+func TestUnit_ResolveForSpawn_UnknownAgentPropagatesNotFound(t *testing.T) {
+	ctx, db := setupAgentRegistryDB(t)
+	svc := New(db)
+
+	_, err := ResolveForSpawn(ctx, svc, "ghost")
+	require.Error(t, err)
+	require.True(t, errors.Is(err, libdb.ErrNotFound))
+	require.False(t, errors.Is(err, ErrAgentDisabled), "an unknown agent is not the disabled case")
+}
+
 func TestUnit_AgentRegistryService_GetRequiresID(t *testing.T) {
 	ctx, db := setupAgentRegistryDB(t)
 	svc := New(db)

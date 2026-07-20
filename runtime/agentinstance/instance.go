@@ -32,14 +32,33 @@ const (
 // InstanceStatus is a point-in-time snapshot of one instance. It is a value
 // copy: mutating it never affects the live instance.
 type InstanceStatus struct {
-	ID        string    `json:"id"`
-	AgentID   string    `json:"agentId"`
-	AgentName string    `json:"agentName"`
-	Kind      string    `json:"kind"`
-	State     string    `json:"state"`
-	Sessions  int       `json:"sessions"`
+	ID        string `json:"id"`
+	AgentID   string `json:"agentId"`
+	AgentName string `json:"agentName"`
+	Kind      string `json:"kind"`
+	State     string `json:"state"`
+	// Sessions is how many downstream sessions are OPEN on the instance — always
+	// len(SessionIDs), read from the same snapshot so the two can never disagree.
+	Sessions int `json:"sessions"`
+	// Viewers is how many viewers are attached across all of those sessions. It is
+	// an independent fact from Sessions: an open session with nobody watching
+	// contributes to Sessions and not to Viewers (that is precisely the dispatched,
+	// unsupervised session adopt exists to repair).
 	Viewers   int       `json:"viewers"`
 	StartedAt time.Time `json:"startedAt"`
+	// SessionIDs lists every session currently OPEN on the instance — opened by
+	// OpenSession and not yet ended by CloseSession — sorted for a deterministic
+	// snapshot (the driver's session map has no natural order). Attachment is NOT a
+	// condition: a session nobody is watching, and one that has emitted no update
+	// yet, are both listed.
+	//
+	// It is the fleet surface's substrate for session-scoped operations — a CLI or
+	// REST caller resolves "cancel everything on this instance" by fanning out over
+	// these ids (see fleetservice.Cancel), and acpsvc's adopt validates a requested
+	// session against them. Both need the quiet sessions: a cold-loading or
+	// long-reasoning session has emitted nothing yet and is exactly the one a
+	// caller most wants to cancel or take control of.
+	SessionIDs []string `json:"sessionIds"`
 }
 
 // journalingHarness is the instance's INTERNAL libacp.Client — the harness wired
@@ -344,21 +363,33 @@ func (i *instance) conn() *libacp.ClientSideConnection {
 	return i.handle.Conn
 }
 
+// status snapshots the instance, reading each fact from whichever half OWNS it: the
+// SESSION facts from the driver, which is authoritative for what is open (its entry is
+// seeded by OpenSession and dropped by CloseSession), and the VIEWER fact from the hub,
+// which is authoritative for who is watching. Sourcing sessions from the hub — whose
+// per-session state materializes lazily on a first update or first attach — used to hide
+// every open-but-silent session from the fleet surface.
+//
+// The two are read as separate snapshots under separate locks, so a session opening or a
+// viewer attaching concurrently may land on either side of the boundary. That is fine: a
+// status is a point-in-time report, not a transaction, and taking one lock across both
+// would couple the fan-out path to the status path for no gain.
 func (i *instance) status() InstanceStatus {
 	i.mu.Lock()
 	state := i.state
 	started := i.startedAt
 	i.mu.Unlock()
-	sessions, viewers := i.hub.counts()
+	sessionIDs := i.driver.sessionIDs()
 	return InstanceStatus{
-		ID:        i.id,
-		AgentID:   i.agentID,
-		AgentName: i.agentName,
-		Kind:      i.kind,
-		State:     state,
-		Sessions:  sessions,
-		Viewers:   viewers,
-		StartedAt: started,
+		ID:         i.id,
+		AgentID:    i.agentID,
+		AgentName:  i.agentName,
+		Kind:       i.kind,
+		State:      state,
+		Sessions:   len(sessionIDs),
+		Viewers:    i.hub.viewerCount(),
+		StartedAt:  started,
+		SessionIDs: sessionIDs,
 	}
 }
 

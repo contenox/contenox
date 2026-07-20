@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/contenox/runtime/libacp"
@@ -161,6 +162,31 @@ func (sd *sessionDriver) drop(sid libacp.SessionID) {
 	sd.mu.Lock()
 	delete(sd.sessions, sid)
 	sd.mu.Unlock()
+}
+
+// sessionIDs returns the ids of every session the driver currently holds, sorted for a
+// deterministic snapshot (sd.sessions is a map, so iteration order is otherwise unstable).
+// Always non-nil, so InstanceStatus.SessionIDs serializes as `[]`, never `null`.
+//
+// This is the AUTHORITATIVE answer to "which sessions are open on this instance": the
+// entry is created by OpenSession's seed (or by a captured update on the read loop —
+// whichever wins the race, see get) and removed by CloseSession's drop. It deliberately
+// does NOT go through the viewer hub, whose per-session state materializes only on a
+// session's first delivered update or first attach: a session that is open but has emitted
+// nothing yet is absent from the hub and present here, which is the point — a
+// cancel-everything fan-out (fleetservice.Cancel) and an adopt (acpsvc) must both see it.
+//
+// Same mutex discipline as get/peek/drop: sd.mu guards the map, which is written from BOTH
+// the request path (OpenSession/CloseSession) and the downstream read loop (capture).
+func (sd *sessionDriver) sessionIDs() []string {
+	sd.mu.Lock()
+	defer sd.mu.Unlock()
+	ids := make([]string, 0, len(sd.sessions))
+	for id := range sd.sessions {
+		ids = append(ids, string(id))
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // capture folds a downstream session/update into the session's captured state. It is called

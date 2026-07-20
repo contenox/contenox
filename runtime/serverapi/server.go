@@ -13,12 +13,13 @@ import (
 	libbus "github.com/contenox/runtime/libbus"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/libtracker"
-	"github.com/contenox/runtime/runtime/agentinstance"
 	"github.com/contenox/runtime/runtime/agentregistryservice"
 	"github.com/contenox/runtime/runtime/agentservice"
 	"github.com/contenox/runtime/runtime/backendservice"
+	"github.com/contenox/runtime/runtime/fleetservice"
 	"github.com/contenox/runtime/runtime/hitlservice"
 	"github.com/contenox/runtime/runtime/internal/agentregistryapi"
+	"github.com/contenox/runtime/runtime/internal/approvalapi"
 	"github.com/contenox/runtime/runtime/internal/backendapi"
 	"github.com/contenox/runtime/runtime/internal/fleetapi"
 	"github.com/contenox/runtime/runtime/internal/hitlpolicyapi"
@@ -71,6 +72,13 @@ type Config struct {
 	// extend the allowlist. Also settable via `--workspace-root` flags and the
 	// `contenox serve [dir]` positional arguments.
 	WorkspaceRoots string `json:"workspace_roots"`
+	// HITLApprovalTimeout is the serve-level ceiling (a Go duration string,
+	// e.g. "1h") that bounds a pending human-in-the-loop approval when the
+	// policy rule that gated it set no TimeoutS of its own. Empty keeps
+	// hitlservice's built-in default (hitlservice.DefaultApprovalCeiling, 1
+	// hour) — see runtime/contenoxcli/serve_cmd.go's
+	// parseHITLApprovalCeiling.
+	HITLApprovalTimeout string `json:"hitl_approval_timeout"`
 }
 
 // Dependencies are the services the product routes are mounted on. All fields
@@ -84,16 +92,26 @@ type Dependencies struct {
 	Auth                 middleware.AuthZReader
 	Agent                agentservice.Agent
 	Chains               taskchainservice.Service
-	// Instances is serve's live agent-instance manager; the /fleet routes surface
-	// its config+runtime join (declared agents annotated with running instances).
-	Instances agentinstance.Manager
+	// Fleet is serve's fleet-lifecycle-policy layer (runtime/fleetservice), built
+	// on top of serve's live agent-instance Manager. The /fleet routes are a thin
+	// wrapper around it — List/Get/Dispatch/Stop/Cancel — so the orchestration
+	// (Enabled policy, teardown-on-failure, cancel fan-out) lives once, in
+	// fleetservice, not here.
+	Fleet fleetservice.Service
 	// Missions is the durable mission registry; the /missions routes surface it.
 	// The other half of the manifest — one-line intents bound to fleet work.
 	Missions missionservice.Service
-	// Tracker records after-the-fact fleet facts — currently the outcome of a
-	// dispatch's detached first prompt (POST /fleet/dispatch). Optional: nil
-	// degrades to a Noop, matching the passive-telemetry gate the rest of the
-	// fleet rides.
+	// HITL is the human-in-the-loop approval service (runtime/hitlservice) whose
+	// durable pending-ask store (slice C1) the /approvals routes surface: the
+	// inbox an operator reads and answers without attaching to the session that
+	// raised the ask (docs/development/blueprints/acp/fleet-consolidation.md
+	// slice C2). Distinct from HITLPolicySource/HITLDefaultPolicyName below,
+	// which feed only the /files `agent` view filter's own throwaway evaluator.
+	HITL hitlservice.Service
+	// Tracker is currently unused by registerProductRoutes (fleetservice.New
+	// takes its own tracker at construction, in serve_cmd.go); kept on
+	// Dependencies as the general activity-tracking seam for future route
+	// groups. Optional: nil degrades to a Noop where consumed.
 	Tracker     libtracker.ActivityTracker
 	WorkspaceID string
 	ProjectRoot string
@@ -243,19 +261,25 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 	}
 
 	// Live-fleet counterpart of the declared-agents registry above: the
-	// config+runtime join lives only in serve's Manager, so the routes exist
-	// only when serve passes it. Dispatch additionally uses the mission registry,
-	// the workspace-root allowlist, the project root, and the tracker — all
-	// optional (dispatch validates a missionIntent against a nil registry, and a
-	// nil tracker degrades to a Noop).
-	if deps.Instances != nil {
-		fleetapi.AddRoutes(mux, deps.Instances, deps.Missions, deps.WorkspaceRoots, deps.ProjectRoot, deps.Tracker)
+	// config+runtime join lives only in serve's Manager (wrapped by
+	// fleetservice), so the routes exist only when serve passes a Fleet.
+	if deps.Fleet != nil {
+		fleetapi.AddRoutes(mux, deps.Fleet)
 	}
 
 	// Durable manifest half of the fleet: mission records. Registered only when
 	// serve builds the service, mirroring the other nil-gated route groups.
 	if deps.Missions != nil {
 		missionapi.AddRoutes(mux, deps.Missions)
+	}
+
+	// The inbox: pending human-in-the-loop approvals an operator can read and
+	// answer without attaching to the session that raised them (slice C2 of
+	// fleet-consolidation.md, closing the loop C1's durable store opened).
+	// Registered only when serve builds an HITL service, mirroring the other
+	// nil-gated route groups.
+	if deps.HITL != nil {
+		approvalapi.AddRoutes(mux, deps.HITL)
 	}
 
 	if deps.PubSub != nil {

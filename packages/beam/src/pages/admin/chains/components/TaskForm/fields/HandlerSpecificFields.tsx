@@ -4,15 +4,11 @@ import {
   FormTask,
   HandleChatCompletion,
   HandleExecuteToolCalls,
-  HandleHook,
   HandleNoop,
-  HandleParseNumber,
-  HandlePromptToString,
   HandleRaiseError,
   HandleRoute,
   HandleTools,
 } from '../../../../../../lib/types';
-import HookFields from './HookFields';
 import LLMConfigFields from './LLMConfigFields';
 
 interface HandlerSpecificFieldsProps {
@@ -38,43 +34,11 @@ export default function HandlerSpecificFields({ task, onChange }: HandlerSpecifi
     </div>
   );
 
-  // hook
-  if (task.handler === HandleHook) {
-    return (
-      <Panel variant="surface" className="p-4">
-        <HookFields task={task} onChange={onChange} />
-      </Panel>
-    );
-  }
-
   // LLM-like
   if (task.handler === HandleChatCompletion || task.handler === HandleExecuteToolCalls) {
     return (
       <Panel variant="surface" className="p-4">
         <LLMConfigFields task={task} onChange={onChange} expanded />
-      </Panel>
-    );
-  }
-
-  // parsing / raw
-  if (task.handler === HandleParseNumber || task.handler === HandlePromptToString) {
-    const placeholders: Record<string, string> = {
-      [HandleParseNumber]: 'Extract the numeric value from: {{.input}}',
-      [HandlePromptToString]: 'Enter your prompt template...',
-    };
-
-    // const helps: Record<string, string> = {
-    //   [HandleParseNumber]: 'chains.task_form.prompt_template_number_help',
-    //   [HandleParseScore]: 'chains.task_form.prompt_template_score_help',
-    //   [HandleParseRange]: 'chains.task_form.prompt_template_range_help',
-    //   [HandleParseKeyValue]: 'chains.task_form.prompt_template_keyvalue_help',
-    //   [HandleRawString]: 'chains.task_form.prompt_template_default_help',
-    // };
-
-    return (
-      <Panel variant="surface" className="space-y-4 p-4">
-        {renderPromptBlock(placeholders[task.handler])}
-        <LLMConfigFields task={task} onChange={onChange} />
       </Panel>
     );
   }

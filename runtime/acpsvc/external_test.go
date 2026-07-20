@@ -215,6 +215,46 @@ func TestLoopback_ExternalAgent_UnknownAgentRejected(t *testing.T) {
 	require.Zero(t, n, "a rejected external agent must not create a session")
 }
 
+// TestLoopback_ExternalAgent_DisabledAgentRejected proves the connCtx-owned
+// (nil-Instances / stdio `contenox acp`) spawn path refuses a disabled agent
+// through the shared agentregistryservice.ResolveForSpawn judgment used by
+// resolveExternalAgent — the actual C5 gap fleet-consolidation.md's D6 named:
+// before this change only fleetservice.Dispatch enforced Enabled, and a
+// disabled agent's session/new straight against acpsvc would have spawned its
+// subprocess anyway. Uses /bin/true as the command: resolution is refused
+// before anything is ever spawned, so no real stub binary is needed.
+func TestLoopback_ExternalAgent_DisabledAgentRejected(t *testing.T) {
+	h := newLoopbackHarness(t)
+	ctx := context.Background()
+
+	const agentName = "claude-stub-disabled"
+	svc := agentregistryservice.New(h.tr.deps.DB)
+	agent := &runtimetypes.Agent{Name: agentName, Enabled: false}
+	require.NoError(t, agent.SetExternalACPConfig(runtimetypes.ExternalACPConfig{
+		Transport: runtimetypes.ExternalACPTransportStdio,
+		Command:   "/bin/true",
+	}))
+	require.NoError(t, svc.Create(ctx, agent))
+
+	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
+	require.NoError(t, err)
+
+	_, err = h.client.NewSession(ctx, libacp.NewSessionRequest{
+		Cwd:        "/tmp/loopback-external-disabled",
+		McpServers: []libacp.McpServer{},
+		Meta:       agentMetaJSON(agentName),
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "disabled")
+	require.Contains(t, err.Error(), "contenox agent enable",
+		"the ACP-level error must name the remedy, matching fleetservice's dispatch-path wording")
+
+	h.tr.sessionMu.Lock()
+	n := len(h.tr.sessions)
+	h.tr.sessionMu.Unlock()
+	require.Zero(t, n, "a refused agent must not create a session")
+}
+
 // TestLoopback_ExternalAgent_NoMetaKeyIsNative is the regression guard at this
 // layer: a session/new without the contenox.agent key takes the native chain
 // path unchanged — it holds no external handle and advertises the usual config

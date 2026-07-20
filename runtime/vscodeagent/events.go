@@ -29,7 +29,10 @@ func (s *Server) publishTaskEvent(ctx context.Context, ev taskengine.TaskEvent) 
 	}
 	switch ev.Kind {
 	case taskengine.TaskEventStepChunk:
-		if !isUserVisibleChunk(ev) {
+		// Only a handler whose streamed output IS assistant narration reaches the
+		// chat delta stream — the same judgement acpsvc applies, owned by the
+		// package that owns the handler vocabulary.
+		if !taskengine.IsAssistantProseHandler(ev.TaskHandler) {
 			return
 		}
 		if ev.Content != "" || ev.Thinking != "" {
@@ -59,15 +62,15 @@ func (s *Server) publishTaskEvent(ctx context.Context, ev taskengine.TaskEvent) 
 	case taskengine.TaskEventHITLDecision:
 		_ = s.notify("hitlDecision", s.hitlDecisionEventFromTaskEvent(ctx, turn, ev))
 	case taskengine.TaskEventStepStarted:
-		if !isToolBearingHandler(ev.TaskHandler) {
+		if !taskengine.IsToolBearingHandler(ev.TaskHandler) {
 			_ = s.notify("toolCall", toolCallEventFromTaskEvent(turn, ev, "started"))
 		}
 	case taskengine.TaskEventStepCompleted:
-		if !isToolBearingHandler(ev.TaskHandler) {
+		if !taskengine.IsToolBearingHandler(ev.TaskHandler) {
 			_ = s.notify("toolCall", toolCallEventFromTaskEvent(turn, ev, "completed"))
 		}
 	case taskengine.TaskEventStepFailed:
-		if !isToolBearingHandler(ev.TaskHandler) {
+		if !taskengine.IsToolBearingHandler(ev.TaskHandler) {
 			_ = s.notify("toolCall", toolCallEventFromTaskEvent(turn, ev, "failed"))
 		}
 	case taskengine.TaskEventTokenUsage:
@@ -109,19 +112,6 @@ func (s *Server) hitlDecisionEventFromTaskEvent(ctx context.Context, turn turnIn
 		MatchedRule:       ev.HITLMatchedRule,
 		TimeoutS:          ev.HITLTimeoutS,
 		ApprovalRequested: approvalRequested,
-	}
-}
-
-func isUserVisibleChunk(ev taskengine.TaskEvent) bool {
-	return taskengine.TaskHandler(ev.TaskHandler) == taskengine.HandleChatCompletion
-}
-
-func isToolBearingHandler(handler string) bool {
-	switch taskengine.TaskHandler(handler) {
-	case taskengine.HandleExecuteToolCalls, taskengine.HandleTools, taskengine.HandleChatCompletion, taskengine.HandleRoute:
-		return true
-	default:
-		return false
 	}
 }
 

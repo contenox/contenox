@@ -50,14 +50,6 @@ export default function TaskForm({
       const newFormData = { ...formData, ...updates };
       setFormData(newFormData);
 
-      // Ensure hook has required tool_name if present
-      const hook = newFormData.hook
-        ? {
-            ...newFormData.hook,
-            tool_name: newFormData.hook.tool_name || '', // Required by backend
-          }
-        : undefined;
-
       const chainTask: ChainTask = {
         id: newFormData.id!,
         description: newFormData.description || '',
@@ -66,7 +58,6 @@ export default function TaskForm({
         transition: newFormData.transition!,
         system_instruction: newFormData.system_instruction,
         execute_config: newFormData.execute_config,
-        hook,
         tools: newFormData.tools,
         print: newFormData.print,
         output_template: newFormData.output_template,

@@ -11,13 +11,14 @@ import (
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/agentinstance"
 	"github.com/contenox/runtime/runtime/agentregistryservice"
+	"github.com/contenox/runtime/runtime/fleetservice"
 	"github.com/contenox/runtime/runtime/runtimestate"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 )
 
 // fleetGatingMux builds the product mux the way serve does, with or without the
-// instance Manager dependency.
-func fleetGatingMux(t *testing.T, withInstances bool) *http.ServeMux {
+// Fleet service dependency.
+func fleetGatingMux(t *testing.T, withFleet bool) *http.ServeMux {
 	t.Helper()
 	ctx := context.Background()
 	db, err := libdb.NewSQLiteDBManager(ctx, filepath.Join(t.TempDir(), "serverapi.db"), runtimetypes.SchemaSQLite)
@@ -31,10 +32,11 @@ func fleetGatingMux(t *testing.T, withInstances bool) *http.ServeMux {
 	}
 
 	deps := Dependencies{DB: db, State: state}
-	if withInstances {
-		instances := agentinstance.New(agentregistryservice.New(db))
+	if withFleet {
+		agents := agentregistryservice.New(db)
+		instances := agentinstance.New(agents)
 		t.Cleanup(func() { _ = instances.Close() })
-		deps.Instances = instances
+		deps.Fleet = fleetservice.New(instances, agents, nil, nil, "", nil)
 	}
 
 	mux := http.NewServeMux()
@@ -45,19 +47,19 @@ func fleetGatingMux(t *testing.T, withInstances bool) *http.ServeMux {
 }
 
 // TestServe_FleetRoutesGatedOnInstances proves /fleet is registered only when
-// serve passes its instance Manager, mirroring the other nil-gated route groups.
+// serve passes a Fleet service, mirroring the other nil-gated route groups.
 func TestServe_FleetRoutesGatedOnInstances(t *testing.T) {
 	withFleet := fleetGatingMux(t, true)
 	rr := httptest.NewRecorder()
 	withFleet.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/fleet", nil))
 	if rr.Code != http.StatusOK {
-		t.Fatalf("with instances: /fleet = %d, want 200 (body %s)", rr.Code, rr.Body.String())
+		t.Fatalf("with fleet: /fleet = %d, want 200 (body %s)", rr.Code, rr.Body.String())
 	}
 
 	withoutFleet := fleetGatingMux(t, false)
 	rr = httptest.NewRecorder()
 	withoutFleet.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/fleet", nil))
 	if rr.Code != http.StatusNotFound {
-		t.Fatalf("without instances: /fleet = %d, want 404", rr.Code)
+		t.Fatalf("without fleet: /fleet = %d, want 404", rr.Code)
 	}
 }

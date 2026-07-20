@@ -36,9 +36,7 @@ function getPolicy(task: ChainTask, toolsName: string): Record<string, string> |
 
 /**
  * Only `chat_completion` tasks make LLM calls; rules about retry / compaction
- * apply only to them. `prompt_to_*` handlers also call the LLM but go through
- * a different code path and have their own (less-frequent) failure modes; we
- * skip them in the initial rule set to keep the lint focused.
+ * apply only to them.
  */
 function isChatCompletion(task: ChainTask): boolean {
   return task.handler === 'chat_completion';

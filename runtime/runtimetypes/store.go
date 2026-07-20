@@ -232,6 +232,18 @@ type Store interface {
 	ListAgents(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*Agent, error)
 	EstimateAgentCount(ctx context.Context) (int64, error)
 
+	// CreateHITLApproval, GetHITLApproval, ResolveHITLApproval,
+	// ListExpiredHITLApprovals, ListHITLApprovals, and
+	// EstimateHITLApprovalCount back runtime/hitlservice's durable pending-ask
+	// table (see runtime/runtimetypes/hitl_approvals.go and
+	// docs/development/blueprints/acp/fleet-consolidation.md slice C1).
+	CreateHITLApproval(ctx context.Context, a *HITLApproval) error
+	GetHITLApproval(ctx context.Context, id string) (*HITLApproval, error)
+	ResolveHITLApproval(ctx context.Context, id string, state HITLApprovalState, resolution json.RawMessage, resolvedAt time.Time) error
+	ListExpiredHITLApprovals(ctx context.Context, asOf time.Time, limit int) ([]*HITLApproval, error)
+	ListHITLApprovals(ctx context.Context, state HITLApprovalState, createdAtCursor *time.Time, limit int) ([]*HITLApproval, error)
+	EstimateHITLApprovalCount(ctx context.Context) (int64, error)
+
 	EnforceMaxRowCount(ctx context.Context, count int64) error
 }
 
@@ -259,6 +271,7 @@ var sqliteCountableTables = map[string]bool{
 	"job_queue_v2": true, "kv": true, "remote_tools": true,
 	"ollama_models": true, "llm_affinity_group": true, "llm_backends": true,
 	"mcp_servers": true, "llm_model_registry": true, "agents": true,
+	"hitl_approvals": true,
 }
 
 func (s *store) estimateCount(ctx context.Context, table string) (int64, error) {

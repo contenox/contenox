@@ -4,6 +4,7 @@ import (
 	"context"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -359,6 +360,75 @@ func TestManager_Start_UnknownAgent(t *testing.T) {
 
 	_, err := mgr.Start(ctx, "does-not-exist")
 	require.Error(t, err)
+}
+
+// countingRegistry counts GetByName calls so a test can pin how many registry
+// reads a spawn costs.
+type countingRegistry struct {
+	agentregistryservice.Service
+	mu     sync.Mutex
+	byName int
+}
+
+func (r *countingRegistry) GetByName(ctx context.Context, name string) (*runtimetypes.Agent, error) {
+	r.mu.Lock()
+	r.byName++
+	r.mu.Unlock()
+	return r.Service.GetByName(ctx, name)
+}
+
+func (r *countingRegistry) reads() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.byName
+}
+
+// TestManager_StartResolved_PerformsNoRegistryRead is the kernel half of closing
+// the spawn-path TOCTOU. The service layer above resolves the declared agent to
+// make its Enabled decision; the kernel must then spawn THAT record rather than
+// re-reading the row, or the check is made against one read and the spawn proceeds
+// from another. StartResolved therefore reads nothing at all, and Start — kept as
+// resolve-plus-StartResolved so there is exactly one spawn implementation — reads
+// exactly once, not twice.
+func TestManager_StartResolved_PerformsNoRegistryRead(t *testing.T) {
+	ctx, _, svc := setupRegistry(t)
+	stub := buildStubAgent(t)
+	agent := registerExternal(t, ctx, svc, "ext-agent", stub)
+
+	counting := &countingRegistry{Service: svc}
+	mgr := New(counting)
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	id, err := mgr.StartResolved(ctx, agent)
+	require.NoError(t, err)
+	require.Zero(t, counting.reads(), "the kernel spawns what it is handed; it must not re-resolve it")
+
+	st, err := mgr.Get(id)
+	require.NoError(t, err)
+	require.Equal(t, StateRunning, st.State)
+	require.Equal(t, agent.ID, st.AgentID)
+	require.Equal(t, agent.Name, st.AgentName)
+
+	// Start is the by-name convenience over the same spawn: exactly one read.
+	_, err = mgr.Start(ctx, "ext-agent")
+	require.NoError(t, err)
+	require.Equal(t, 1, counting.reads(), "Start resolves once and delegates; it is not a second spawn implementation")
+}
+
+// TestManager_StartResolved_RejectsUnusableRecords pins the two ways a handed-over
+// record can be unusable. Neither is a registry lookup failure — an unknown agent
+// is Start's error to report, because only Start does a lookup.
+func TestManager_StartResolved_RejectsUnusableRecords(t *testing.T) {
+	ctx, _, svc := setupRegistry(t)
+	mgr := New(svc)
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	_, err := mgr.StartResolved(ctx, nil)
+	require.Error(t, err)
+
+	_, err = mgr.StartResolved(ctx, &runtimetypes.Agent{Name: "weird", Kind: "no-such-kind"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported kind")
 }
 
 func TestManager_Get_UnknownID(t *testing.T) {
@@ -1128,6 +1198,84 @@ func TestManager_CloseSession_DropsStateNotInstance(t *testing.T) {
 	// The instance can open a fresh session afterwards.
 	sid2 := openSession(t, mgr, id)
 	require.NotEqual(t, sid, sid2)
+}
+
+// TestManager_Status_SessionIDsReflectOpenSessions proves InstanceStatus.SessionIDs
+// surfaces exactly the sessions that are OPEN — sourced from the session driver, not the
+// viewer hub — sorted, and drops an id only when the session is CLOSED. Attachment is
+// explicitly not a condition: an opened session appears immediately, before it has emitted
+// any update and before any viewer attaches, and detaching that viewer does not remove it.
+//
+// This is the substrate a session-scoped Cancel-all fans out over (fleetservice.Cancel)
+// and the set adopt validates against (acpsvc.resolveAdoptTarget). Both must see a session
+// that is open but silent — a cold-loading or long-reasoning agent has emitted nothing yet
+// and is exactly the one an operator most wants to cancel or take control of.
+func TestManager_Status_SessionIDsReflectOpenSessions(t *testing.T) {
+	ctx, _, svc := setupRegistry(t)
+	stub := buildStubAgent(t)
+	registerExternal(t, ctx, svc, "ext-agent", stub)
+
+	mgr := New(svc)
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	id, err := mgr.Start(ctx, "ext-agent")
+	require.NoError(t, err)
+
+	// No sessions opened yet: an empty, non-nil slice.
+	st, err := mgr.Get(id)
+	require.NoError(t, err)
+	require.NotNil(t, st.SessionIDs)
+	require.Empty(t, st.SessionIDs)
+
+	// THE REGRESSION: an opened session is reported IMMEDIATELY — no prompt has run, so
+	// it has emitted no update, and no viewer has attached. Both are what used to
+	// materialize the hub state this list was once derived from.
+	sidA := openSession(t, mgr, id)
+	st, err = mgr.Get(id)
+	require.NoError(t, err)
+	require.Equal(t, []string{string(sidA)}, st.SessionIDs,
+		"an open-but-silent, unwatched session must still be listed")
+	require.Equal(t, 1, st.Sessions)
+	require.Equal(t, 0, st.Viewers, "nobody is watching it yet")
+
+	// Attaching a viewer changes the VIEWER count and nothing about the session set.
+	_, err = mgr.Attach(ctx, id, sidA, newMockViewer("A"))
+	require.NoError(t, err)
+
+	st, err = mgr.Get(id)
+	require.NoError(t, err)
+	require.Equal(t, []string{string(sidA)}, st.SessionIDs)
+	require.Equal(t, 1, st.Sessions)
+	require.Equal(t, 1, st.Viewers, "attach is still what makes a viewer")
+
+	sidB := openSession(t, mgr, id)
+	_, err = mgr.Attach(ctx, id, sidB, newMockViewer("B"))
+	require.NoError(t, err)
+
+	st, err = mgr.Get(id)
+	require.NoError(t, err)
+	require.Len(t, st.SessionIDs, 2, "both open sessions are reported")
+	require.Contains(t, st.SessionIDs, string(sidA))
+	require.Contains(t, st.SessionIDs, string(sidB))
+	require.True(t, sort.StringsAreSorted(st.SessionIDs), "session ids are sorted for a deterministic snapshot")
+	require.Equal(t, 2, st.Sessions)
+	require.Equal(t, 2, st.Viewers)
+
+	// Detaching the only viewer of a session leaves the SESSION open — the session is
+	// still there to be cancelled or re-adopted; only the viewer count drops.
+	require.NoError(t, mgr.Detach(id, sidA, "A"))
+	st, err = mgr.Get(id)
+	require.NoError(t, err)
+	require.Len(t, st.SessionIDs, 2, "detaching a viewer does not close a session")
+	require.Contains(t, st.SessionIDs, string(sidA))
+	require.Equal(t, 1, st.Viewers, "only the viewer went away")
+
+	// CLOSING it is what removes it.
+	require.NoError(t, mgr.CloseSession(id, sidA))
+	st, err = mgr.Get(id)
+	require.NoError(t, err)
+	require.Equal(t, []string{string(sidB)}, st.SessionIDs, "a closed session is dropped")
+	require.Equal(t, 1, st.Sessions)
 }
 
 // -----------------------------------------------------------------------------

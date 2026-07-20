@@ -109,6 +109,51 @@ func (s *service) List(ctx context.Context, createdAtCursor *time.Time, limit in
 	return s.store().ListAgents(ctx, createdAtCursor, limit)
 }
 
+// ErrAgentDisabled is the sentinel identifying a ResolveForSpawn refusal
+// caused by a declared agent that exists but is administratively disabled
+// (Enabled == false). Callers branch on it via errors.Is to apply their own
+// transport's "refused" mapping (apiframework.Conflict for a REST caller, a
+// libacp ACP-level error for an ACP caller) while reusing the wrapping
+// error's message, which already names the remedy — see ResolveForSpawn.
+var ErrAgentDisabled = errors.New("agentregistryservice: agent is disabled")
+
+// disabledAgentError pairs ErrAgentDisabled with a ready-to-display message
+// that already names the remedy, so every caller shows the same wording
+// instead of each reconstructing it — which is how the fleet-dispatch message
+// and the acpsvc chat-path message drifted apart before ResolveForSpawn
+// existed (docs/development/blueprints/acp/fleet-consolidation.md, slice C5).
+type disabledAgentError struct{ name string }
+
+func (e *disabledAgentError) Error() string {
+	return fmt.Sprintf("agent %q is disabled; enable it with 'contenox agent enable %q'", e.name, e.name)
+}
+
+func (e *disabledAgentError) Unwrap() error { return ErrAgentDisabled }
+
+// ResolveForSpawn resolves the declared agent named agentName via svc and
+// refuses to hand it back when it is administratively disabled. It is the
+// ONE judgment every agent-spawn path makes before bringing an instance up —
+// fleetservice.Dispatch and acpsvc's external bring-up (bringUpExternal, via
+// resolveExternalAgent) both call it, so "disabled" cannot drift into two
+// different checks or two different messages between them again.
+// agentinstance.Manager.Start deliberately stays unaware of Enabled (see its
+// doc comment): this is the service-layer policy the kernel is not allowed
+// to hold (fleet-consolidation.md's "kernel stays policy-free" invariant).
+//
+// A not-found or other resolution failure from svc.GetByName is returned
+// wrapped (fmt.Errorf %w), so a sentinel check like errors.Is(err,
+// libdb.ErrNotFound) still works through it.
+func ResolveForSpawn(ctx context.Context, svc Service, agentName string) (*runtimetypes.Agent, error) {
+	agent, err := svc.GetByName(ctx, agentName)
+	if err != nil {
+		return nil, fmt.Errorf("resolve agent %q: %w", agentName, err)
+	}
+	if !agent.Enabled {
+		return nil, &disabledAgentError{name: agentName}
+	}
+	return agent, nil
+}
+
 // checkNameAvailable returns a libdb.ErrUniqueViolation-wrapping error if an
 // agent with name already exists under a different ID than excludeID.
 func (s *service) checkNameAvailable(ctx context.Context, name, excludeID string) error {

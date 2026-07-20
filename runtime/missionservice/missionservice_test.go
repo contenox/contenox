@@ -5,7 +5,9 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
+	apiframework "github.com/contenox/runtime/apiframework"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/google/uuid"
@@ -21,8 +23,10 @@ func setupMissionDB(t *testing.T) (context.Context, libdb.DBManager) {
 	return ctx, db
 }
 
+const testPolicy = "hitl-policy-default.json"
+
 func newMission(intent string) *Mission {
-	return &Mission{Intent: intent, AgentName: "runner"}
+	return &Mission{Intent: intent, AgentName: "runner", HITLPolicyName: testPolicy}
 }
 
 // ─── validate() table test ─────────────────────────────────────────────────
@@ -33,13 +37,15 @@ func TestUnit_Validate(t *testing.T) {
 		mission *Mission
 		wantErr bool
 	}{
-		{name: "valid open mission", mission: &Mission{Intent: "ship the board", Status: StatusOpen}},
-		{name: "valid landed mission", mission: &Mission{Intent: "ship the board", Status: StatusLanded}},
-		{name: "empty intent is rejected", mission: &Mission{Intent: "", Status: StatusOpen}, wantErr: true},
-		{name: "whitespace intent is rejected", mission: &Mission{Intent: "   ", Status: StatusOpen}, wantErr: true},
-		{name: "multi-line intent is rejected", mission: &Mission{Intent: "line one\nline two", Status: StatusOpen}, wantErr: true},
-		{name: "unknown status is rejected", mission: &Mission{Intent: "ok", Status: "bogus"}, wantErr: true},
-		{name: "empty status is rejected", mission: &Mission{Intent: "ok", Status: ""}, wantErr: true},
+		{name: "valid open mission", mission: &Mission{Intent: "ship the board", Status: StatusOpen, HITLPolicyName: testPolicy}},
+		{name: "valid landed mission", mission: &Mission{Intent: "ship the board", Status: StatusLanded, HITLPolicyName: testPolicy}},
+		{name: "empty intent is rejected", mission: &Mission{Intent: "", Status: StatusOpen, HITLPolicyName: testPolicy}, wantErr: true},
+		{name: "whitespace intent is rejected", mission: &Mission{Intent: "   ", Status: StatusOpen, HITLPolicyName: testPolicy}, wantErr: true},
+		{name: "multi-line intent is rejected", mission: &Mission{Intent: "line one\nline two", Status: StatusOpen, HITLPolicyName: testPolicy}, wantErr: true},
+		{name: "unknown status is rejected", mission: &Mission{Intent: "ok", Status: "bogus", HITLPolicyName: testPolicy}, wantErr: true},
+		{name: "empty status is rejected", mission: &Mission{Intent: "ok", Status: "", HITLPolicyName: testPolicy}, wantErr: true},
+		{name: "empty envelope is rejected", mission: &Mission{Intent: "ok", Status: StatusOpen, HITLPolicyName: ""}, wantErr: true},
+		{name: "whitespace envelope is rejected", mission: &Mission{Intent: "ok", Status: StatusOpen, HITLPolicyName: "   "}, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -69,8 +75,22 @@ func TestUnit_MissionService_CreateAssignsIDAndOpenStatus(t *testing.T) {
 	require.Equal(t, StatusOpen, m.Status)
 	require.False(t, m.CreatedAt.IsZero())
 	require.Equal(t, m.CreatedAt, m.UpdatedAt)
-	require.NotNil(t, m.SessionIDs)
-	require.NotNil(t, m.InstanceIDs)
+}
+
+// Create leaves the single-bind and liveness fields at their zero values: no
+// session/instance is bound yet, and a mission that has never reported has no
+// heartbeat or recorded error.
+func TestUnit_MissionService_CreateLeavesBindAndLivenessFieldsZero(t *testing.T) {
+	ctx, db := setupMissionDB(t)
+	svc := New(db)
+
+	m := newMission("fresh mission")
+	require.NoError(t, svc.Create(ctx, m))
+
+	require.Empty(t, m.SessionID)
+	require.Empty(t, m.InstanceID)
+	require.Nil(t, m.LastHeartbeat)
+	require.Empty(t, m.LastError)
 }
 
 func TestUnit_MissionService_CreateRejectsInvalidIntent(t *testing.T) {
@@ -79,6 +99,16 @@ func TestUnit_MissionService_CreateRejectsInvalidIntent(t *testing.T) {
 
 	require.Error(t, svc.Create(ctx, newMission("")))
 	require.Error(t, svc.Create(ctx, newMission("two\nlines")))
+}
+
+// A mission without an envelope has no bounds, which mission mode must not
+// permit: Create rejects a missing or blank HITLPolicyName.
+func TestUnit_MissionService_CreateRejectsMissingEnvelope(t *testing.T) {
+	ctx, db := setupMissionDB(t)
+	svc := New(db)
+
+	require.Error(t, svc.Create(ctx, &Mission{Intent: "no envelope"}))
+	require.Error(t, svc.Create(ctx, &Mission{Intent: "blank envelope", HITLPolicyName: "   "}))
 }
 
 func TestUnit_MissionService_CreateGetUpdateDelete(t *testing.T) {
@@ -92,6 +122,7 @@ func TestUnit_MissionService_CreateGetUpdateDelete(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, m.Intent, got.Intent)
 	require.Equal(t, "runner", got.AgentName)
+	require.Equal(t, testPolicy, got.HITLPolicyName)
 	require.Equal(t, StatusOpen, got.Status)
 
 	got.Intent = "crud mission (edited)"
@@ -131,9 +162,9 @@ func TestUnit_MissionService_ListEmptyIsNonNil(t *testing.T) {
 	require.Empty(t, items)
 }
 
-// A mission outlives the sessions it referenced: it is never deleted on session
+// A mission outlives the session it referenced: it is never deleted on session
 // teardown here, so it remains listed and open.
-func TestUnit_MissionService_MissionOutlivesSessionsAndStaysListed(t *testing.T) {
+func TestUnit_MissionService_MissionOutlivesSessionAndStaysListed(t *testing.T) {
 	ctx, db := setupMissionDB(t)
 	svc := New(db)
 
@@ -181,7 +212,7 @@ func TestUnit_MissionService_UpdateUnknownReturnsNotFound(t *testing.T) {
 	ctx, db := setupMissionDB(t)
 	svc := New(db)
 
-	orphan := &Mission{ID: "no-such-id", Intent: "ghost", Status: StatusOpen}
+	orphan := &Mission{ID: "no-such-id", Intent: "ghost", Status: StatusOpen, HITLPolicyName: testPolicy}
 	err := svc.Update(ctx, orphan)
 	require.Error(t, err)
 	require.True(t, errors.Is(err, libdb.ErrNotFound))
@@ -198,7 +229,7 @@ func TestUnit_MissionService_GetUnknownReturnsNotFound(t *testing.T) {
 
 // ─── Bind ───────────────────────────────────────────────────────────────────
 
-func TestUnit_MissionService_BindAppendsAndDedups(t *testing.T) {
+func TestUnit_MissionService_BindSetsSessionAndInstance(t *testing.T) {
 	ctx, db := setupMissionDB(t)
 	svc := New(db)
 
@@ -207,23 +238,74 @@ func TestUnit_MissionService_BindAppendsAndDedups(t *testing.T) {
 
 	bound, err := svc.Bind(ctx, m.ID, "session-1", "instance-1")
 	require.NoError(t, err)
-	require.Equal(t, []string{"session-1"}, bound.SessionIDs)
-	require.Equal(t, []string{"instance-1"}, bound.InstanceIDs)
-
-	bound, err = svc.Bind(ctx, m.ID, "session-2", "")
-	require.NoError(t, err)
-	require.Equal(t, []string{"session-1", "session-2"}, bound.SessionIDs)
-
-	// Re-binding an already-present id is a no-op.
-	bound, err = svc.Bind(ctx, m.ID, "session-1", "instance-1")
-	require.NoError(t, err)
-	require.Equal(t, []string{"session-1", "session-2"}, bound.SessionIDs)
-	require.Equal(t, []string{"instance-1"}, bound.InstanceIDs)
+	require.Equal(t, "session-1", bound.SessionID)
+	require.Equal(t, "instance-1", bound.InstanceID)
 
 	persisted, err := svc.Get(ctx, m.ID)
 	require.NoError(t, err)
-	require.Equal(t, []string{"session-1", "session-2"}, persisted.SessionIDs)
-	require.Equal(t, []string{"instance-1"}, persisted.InstanceIDs)
+	require.Equal(t, "session-1", persisted.SessionID)
+	require.Equal(t, "instance-1", persisted.InstanceID)
+}
+
+// Binding the same id a mission already carries is idempotent: it succeeds
+// and leaves the mission unchanged rather than erroring or duplicating.
+func TestUnit_MissionService_BindSameIDIsIdempotentNoOp(t *testing.T) {
+	ctx, db := setupMissionDB(t)
+	svc := New(db)
+
+	m := newMission("idempotent bind")
+	require.NoError(t, svc.Create(ctx, m))
+
+	first, err := svc.Bind(ctx, m.ID, "session-1", "instance-1")
+	require.NoError(t, err)
+	firstUpdatedAt := first.UpdatedAt
+
+	again, err := svc.Bind(ctx, m.ID, "session-1", "instance-1")
+	require.NoError(t, err)
+	require.Equal(t, "session-1", again.SessionID)
+	require.Equal(t, "instance-1", again.InstanceID)
+	require.Equal(t, firstUpdatedAt, again.UpdatedAt, "a true no-op must not restamp UpdatedAt")
+}
+
+// Binding a mission is single-shot: rebinding a session id different from the
+// one already carried is a conflict, not an append.
+func TestUnit_MissionService_BindConflictingSessionIsRejected(t *testing.T) {
+	ctx, db := setupMissionDB(t)
+	svc := New(db)
+
+	m := newMission("conflicting session bind")
+	require.NoError(t, svc.Create(ctx, m))
+
+	_, err := svc.Bind(ctx, m.ID, "session-1", "")
+	require.NoError(t, err)
+
+	_, err = svc.Bind(ctx, m.ID, "session-2", "")
+	require.Error(t, err)
+	require.True(t, errors.Is(err, apiframework.ErrConflict))
+
+	// The original binding must survive the rejected attempt.
+	persisted, err := svc.Get(ctx, m.ID)
+	require.NoError(t, err)
+	require.Equal(t, "session-1", persisted.SessionID)
+}
+
+func TestUnit_MissionService_BindConflictingInstanceIsRejected(t *testing.T) {
+	ctx, db := setupMissionDB(t)
+	svc := New(db)
+
+	m := newMission("conflicting instance bind")
+	require.NoError(t, svc.Create(ctx, m))
+
+	_, err := svc.Bind(ctx, m.ID, "", "instance-1")
+	require.NoError(t, err)
+
+	_, err = svc.Bind(ctx, m.ID, "", "instance-2")
+	require.Error(t, err)
+	require.True(t, errors.Is(err, apiframework.ErrConflict))
+
+	persisted, err := svc.Get(ctx, m.ID)
+	require.NoError(t, err)
+	require.Equal(t, "instance-1", persisted.InstanceID)
 }
 
 func TestUnit_MissionService_BindRequiresAnID(t *testing.T) {
@@ -244,4 +326,228 @@ func TestUnit_MissionService_BindUnknownReturnsNotFound(t *testing.T) {
 	_, err := svc.Bind(ctx, "no-such-id", "session-1", "")
 	require.Error(t, err)
 	require.True(t, errors.Is(err, libdb.ErrNotFound))
+}
+
+// ─── Heartbeat ──────────────────────────────────────────────────────────────
+
+func TestUnit_MissionService_HeartbeatUpdatesLastHeartbeatAndBumpsUpdatedAt(t *testing.T) {
+	ctx, db := setupMissionDB(t)
+	svc := New(db)
+
+	m := newMission("heartbeat mission")
+	require.NoError(t, svc.Create(ctx, m))
+	require.Nil(t, m.LastHeartbeat)
+	preUpdatedAt := m.UpdatedAt
+
+	time.Sleep(1 * time.Millisecond)
+	beat, err := svc.Heartbeat(ctx, m.ID, "")
+	require.NoError(t, err)
+	require.NotNil(t, beat.LastHeartbeat)
+	require.True(t, beat.UpdatedAt.After(preUpdatedAt))
+
+	persisted, err := svc.Get(ctx, m.ID)
+	require.NoError(t, err)
+	require.NotNil(t, persisted.LastHeartbeat)
+	require.WithinDuration(t, *beat.LastHeartbeat, *persisted.LastHeartbeat, 0)
+}
+
+// Setting and clearing LastError round-trips through the same Heartbeat call.
+func TestUnit_MissionService_HeartbeatSetsAndClearsLastError(t *testing.T) {
+	ctx, db := setupMissionDB(t)
+	svc := New(db)
+
+	m := newMission("erroring mission")
+	require.NoError(t, svc.Create(ctx, m))
+	require.Empty(t, m.LastError)
+
+	errored, err := svc.Heartbeat(ctx, m.ID, "tool exec failed: boom")
+	require.NoError(t, err)
+	require.Equal(t, "tool exec failed: boom", errored.LastError)
+
+	persisted, err := svc.Get(ctx, m.ID)
+	require.NoError(t, err)
+	require.Equal(t, "tool exec failed: boom", persisted.LastError)
+
+	cleared, err := svc.Heartbeat(ctx, m.ID, "")
+	require.NoError(t, err)
+	require.Empty(t, cleared.LastError)
+
+	persisted, err = svc.Get(ctx, m.ID)
+	require.NoError(t, err)
+	require.Empty(t, persisted.LastError)
+}
+
+func TestUnit_MissionService_HeartbeatUnknownReturnsNotFound(t *testing.T) {
+	ctx, db := setupMissionDB(t)
+	svc := New(db)
+
+	_, err := svc.Heartbeat(ctx, "no-such-id", "")
+	require.Error(t, err)
+	require.True(t, errors.Is(err, libdb.ErrNotFound))
+}
+
+// ─── validateReport() table test ───────────────────────────────────────────
+
+func TestUnit_ValidateReport(t *testing.T) {
+	tests := []struct {
+		name    string
+		report  *Report
+		wantErr bool
+	}{
+		{name: "valid progress report", report: &Report{Kind: ReportKindProgress, Summary: "halfway done"}},
+		{name: "valid finding report", report: &Report{Kind: ReportKindFinding, Summary: "found the bug"}},
+		{name: "valid blocker report", report: &Report{Kind: ReportKindBlocker, Summary: "need credentials"}},
+		{name: "valid result report", report: &Report{Kind: ReportKindResult, Summary: "shipped"}},
+		{name: "unknown kind is rejected", report: &Report{Kind: "bogus", Summary: "ok"}, wantErr: true},
+		{name: "empty kind is rejected", report: &Report{Kind: "", Summary: "ok"}, wantErr: true},
+		{name: "empty summary is rejected", report: &Report{Kind: ReportKindProgress, Summary: ""}, wantErr: true},
+		{name: "whitespace summary is rejected", report: &Report{Kind: ReportKindProgress, Summary: "   "}, wantErr: true},
+		{name: "multi-line summary is rejected", report: &Report{Kind: ReportKindProgress, Summary: "line one\nline two"}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateReport(tt.report)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// ─── AddReport / ListReports ────────────────────────────────────────────────
+
+func TestUnit_MissionService_AddReportAssignsIDAndCreatedAt(t *testing.T) {
+	ctx, db := setupMissionDB(t)
+	svc := New(db)
+
+	m := newMission("reported mission")
+	require.NoError(t, svc.Create(ctx, m))
+
+	rep := &Report{Kind: ReportKindProgress, Summary: "started work"}
+	require.NoError(t, svc.AddReport(ctx, m.ID, rep))
+
+	require.NotEmpty(t, rep.ID)
+	_, err := uuid.Parse(rep.ID)
+	require.NoError(t, err)
+	require.Equal(t, m.ID, rep.MissionID)
+	require.False(t, rep.CreatedAt.IsZero())
+}
+
+// AddReport overrides whatever MissionID the caller supplied in the report
+// body: the missionID argument is authoritative.
+func TestUnit_MissionService_AddReportOverridesSuppliedMissionID(t *testing.T) {
+	ctx, db := setupMissionDB(t)
+	svc := New(db)
+
+	m := newMission("authoritative mission id")
+	require.NoError(t, svc.Create(ctx, m))
+
+	rep := &Report{MissionID: "some-other-mission", Kind: ReportKindProgress, Summary: "started work"}
+	require.NoError(t, svc.AddReport(ctx, m.ID, rep))
+	require.Equal(t, m.ID, rep.MissionID)
+}
+
+func TestUnit_MissionService_AddReportRejectsInvalidKind(t *testing.T) {
+	ctx, db := setupMissionDB(t)
+	svc := New(db)
+
+	m := newMission("bad kind mission")
+	require.NoError(t, svc.Create(ctx, m))
+
+	err := svc.AddReport(ctx, m.ID, &Report{Kind: "bogus", Summary: "ok"})
+	require.Error(t, err)
+}
+
+func TestUnit_MissionService_AddReportRejectsMultiLineSummary(t *testing.T) {
+	ctx, db := setupMissionDB(t)
+	svc := New(db)
+
+	m := newMission("multi-line summary mission")
+	require.NoError(t, svc.Create(ctx, m))
+
+	err := svc.AddReport(ctx, m.ID, &Report{Kind: ReportKindProgress, Summary: "line one\nline two"})
+	require.Error(t, err)
+}
+
+// A report against an unknown mission must surface as not-found, never a
+// silent insert — the report KV namespace has no foreign key to catch this
+// otherwise.
+func TestUnit_MissionService_AddReportUnknownMissionReturnsNotFound(t *testing.T) {
+	ctx, db := setupMissionDB(t)
+	svc := New(db)
+
+	err := svc.AddReport(ctx, "no-such-mission", &Report{Kind: ReportKindProgress, Summary: "orphan report"})
+	require.Error(t, err)
+	require.True(t, errors.Is(err, libdb.ErrNotFound))
+
+	items, listErr := svc.ListReports(ctx, "no-such-mission", 100)
+	require.NoError(t, listErr)
+	require.Empty(t, items, "a rejected AddReport must not have inserted anything")
+}
+
+func TestUnit_MissionService_ListReportsEmptyIsNonNil(t *testing.T) {
+	ctx, db := setupMissionDB(t)
+	svc := New(db)
+
+	m := newMission("no reports yet")
+	require.NoError(t, svc.Create(ctx, m))
+
+	items, err := svc.ListReports(ctx, m.ID, 100)
+	require.NoError(t, err)
+	require.NotNil(t, items)
+	require.Empty(t, items)
+}
+
+func TestUnit_MissionService_ListReportsNewestFirst(t *testing.T) {
+	ctx, db := setupMissionDB(t)
+	svc := New(db)
+
+	m := newMission("multi-report mission")
+	require.NoError(t, svc.Create(ctx, m))
+
+	summaries := []string{"first", "second", "third"}
+	for _, summary := range summaries {
+		require.NoError(t, svc.AddReport(ctx, m.ID, &Report{Kind: ReportKindProgress, Summary: summary}))
+		time.Sleep(1 * time.Millisecond) // force distinct createdAt for a stable newest-first order
+	}
+
+	items, err := svc.ListReports(ctx, m.ID, 100)
+	require.NoError(t, err)
+	require.Len(t, items, 3)
+	require.Equal(t, "third", items[0].Summary)
+	require.Equal(t, "second", items[1].Summary)
+	require.Equal(t, "first", items[2].Summary)
+}
+
+// A mission's reports must be scoped to it alone: another mission's reports
+// (stored under a sibling KV key) must never leak into this one's list. This
+// is the load-bearing property of the missionReportKVPrefix key layout.
+func TestUnit_MissionService_ListReportsScopedToOwnMission(t *testing.T) {
+	ctx, db := setupMissionDB(t)
+	svc := New(db)
+
+	a := newMission("mission a")
+	require.NoError(t, svc.Create(ctx, a))
+	b := newMission("mission b")
+	require.NoError(t, svc.Create(ctx, b))
+
+	require.NoError(t, svc.AddReport(ctx, a.ID, &Report{Kind: ReportKindProgress, Summary: "a-report-1"}))
+	require.NoError(t, svc.AddReport(ctx, b.ID, &Report{Kind: ReportKindProgress, Summary: "b-report-1"}))
+	require.NoError(t, svc.AddReport(ctx, b.ID, &Report{Kind: ReportKindResult, Summary: "b-report-2"}))
+
+	aReports, err := svc.ListReports(ctx, a.ID, 100)
+	require.NoError(t, err)
+	require.Len(t, aReports, 1)
+	require.Equal(t, "a-report-1", aReports[0].Summary)
+
+	bReports, err := svc.ListReports(ctx, b.ID, 100)
+	require.NoError(t, err)
+	require.Len(t, bReports, 2)
+
+	// Listing missions must never surface report rows as missions.
+	missions, err := svc.List(ctx, nil, 100)
+	require.NoError(t, err)
+	require.Len(t, missions, 2)
 }

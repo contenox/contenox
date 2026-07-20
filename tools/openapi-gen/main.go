@@ -46,6 +46,7 @@ var typeScanDirs = []string{
 	"runtime/taskengine/llmretry",
 	"runtime/agentinstance",
 	"runtime/agentservice",
+	"runtime/fleetservice",
 	"runtime/missionservice",
 	"runtime/runtimetypes",
 	"runtime/stateservice",

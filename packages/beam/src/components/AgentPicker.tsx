@@ -58,8 +58,14 @@ export function AgentPicker({ value, onSelect, trigger, hideWhenEmpty = true }: 
   const { t } = useTranslation();
   const { data } = useAgents();
 
-  // Enabled agents only; a registry entry literally named "contenox" would
-  // duplicate the native option, so drop it.
+  // Enabled agents only. This is UX only, belt-and-braces on top of the
+  // server-side refusal (agentregistryservice.ResolveForSpawn, enforced on
+  // both the fleet-dispatch and the ACP chat spawn path — see
+  // docs/development/blueprints/acp/fleet-consolidation.md slice C5): it
+  // keeps a disabled agent out of the dropdown, but a client that sends
+  // session/new with `contenox.agent` set directly is refused server-side
+  // regardless of what this filter does. Also drops a registry entry
+  // literally named "contenox", which would duplicate the native option.
   const agents = (data ?? []).filter(a => a.enabled && a.name.toLowerCase() !== 'contenox');
 
   if (hideWhenEmpty && agents.length === 0 && value == null) return null;

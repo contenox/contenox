@@ -164,12 +164,16 @@ func TestUnit_NormalizeToolCallNotification_DoesNotDowngradeStatus(t *testing.T)
 	require.JSONEq(t, `{"command":"go","args":["test"]}`, string(pending.Update.RawInput))
 }
 
+// TestUnit_IsToolBearingHandler pins THIS translator's use of the shared
+// predicate. The predicate itself (and the full handler matrix) is owned and
+// exhaustively tested in taskengine, which is the point of moving it there: a new
+// handler is now covered for both translators at once instead of only this one.
 func TestUnit_IsToolBearingHandler(t *testing.T) {
-	require.True(t, isToolBearingHandler(string(taskengine.HandleChatCompletion)))
-	require.True(t, isToolBearingHandler(string(taskengine.HandleExecuteToolCalls)))
-	require.True(t, isToolBearingHandler(string(taskengine.HandleTools)))
-	require.True(t, isToolBearingHandler(string(taskengine.HandleRoute)))
-	require.False(t, isToolBearingHandler(string(taskengine.HandleNoop)))
+	require.True(t, taskengine.IsToolBearingHandler(string(taskengine.HandleChatCompletion)))
+	require.True(t, taskengine.IsToolBearingHandler(string(taskengine.HandleExecuteToolCalls)))
+	require.True(t, taskengine.IsToolBearingHandler(string(taskengine.HandleTools)))
+	require.True(t, taskengine.IsToolBearingHandler(string(taskengine.HandleRoute)))
+	require.False(t, taskengine.IsToolBearingHandler(string(taskengine.HandleNoop)))
 }
 
 func TestUnit_ReplayToolCall_FromAssistantMessage(t *testing.T) {

@@ -19,11 +19,6 @@ interface ExecuteConfigDisplay {
   max_tokens?: number;
 }
 
-interface HookConfigDisplay {
-  name?: string;
-  args?: Record<string, unknown>;
-}
-
 const TaskDetailsPanel: React.FC<TaskDetailsPanelProps> = ({
   task,
   onClose,
@@ -153,26 +148,6 @@ const TaskDetailsPanel: React.FC<TaskDetailsPanelProps> = ({
     </div>
   );
 
-  const renderHookConfig = (value: HookConfigDisplay | null | undefined) => (
-    <div className="space-y-2">
-      {value?.name && (
-        <div>
-          <strong>Hook Name:</strong> {value.name}
-        </div>
-      )}
-      {value?.args && Object.keys(value.args).length > 0 && (
-        <div>
-          <strong>Arguments:</strong>
-          <Panel variant="surface" className="p-2">
-            <pre className="text-text dark:text-dark-text overflow-auto font-mono text-xs">
-              {JSON.stringify(value.args, null, 2)}
-            </pre>
-          </Panel>
-        </div>
-      )}
-    </div>
-  );
-
   const extendedFields = [
     ...fields,
     {
@@ -186,12 +161,6 @@ const TaskDetailsPanel: React.FC<TaskDetailsPanelProps> = ({
       label: t('chains.execute_configuration'),
       type: 'custom' as const,
       render: (value: unknown) => renderExecuteConfig(value as ExecuteConfigDisplay | null | undefined),
-    },
-    {
-      key: 'hook',
-      label: t('chains.hook_configuration'),
-      type: 'custom' as const,
-      render: (value: unknown) => renderHookConfig(value as HookConfigDisplay | null | undefined),
     },
   ];
 
@@ -220,7 +189,6 @@ const TaskDetailsPanel: React.FC<TaskDetailsPanelProps> = ({
       transition: d.transition || editedTask.transition,
       system_instruction: d.system_instruction,
       execute_config: d.execute_config,
-      hook: d.hook,
       print: d.print,
       output_template: d.output_template,
       input_var: d.input_var,

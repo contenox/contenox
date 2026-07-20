@@ -457,6 +457,18 @@ type externalBridge struct {
 	// turn; resumeRelay (called right after Attach, before any prompt) re-enables live
 	// relay. A fresh bring-up never sets it — its instance's journal is empty.
 	relaySuppressed bool
+	// relayHeld + relayQueue BUFFER the relay instead of dropping it, the inverse of
+	// relaySuppressed. It exists for ADOPT (see adopt.go): an adopted session's journal
+	// replay is its ONLY history — there is no durable transcript to re-emit it from —
+	// but Attach replays synchronously, i.e. before the session/new response reaches the
+	// client, and a client drops updates for a session id it has not learned yet (the
+	// reason `bound` exists). So the replay is queued in arrival order and flushed by
+	// releaseRelay once the response is on the wire. Live updates arriving during the
+	// hold queue behind it, so nothing is lost or reordered. Bounded in practice by the
+	// journal size plus whatever the downstream emits inside one session/new — the hold
+	// is always released by the same handler that took it.
+	relayHeld  bool
+	relayQueue []libacp.SessionUpdate
 	// mgr + instanceID name the Manager-owned instance this bridge is a viewer of
 	// (Instances path); both "" / nil on the connCtx path. Set by bindInstance before
 	// Attach so the connCtx watcher and driver.Close can self-detach the viewer.
@@ -597,6 +609,43 @@ func (b *externalBridge) resumeRelay() {
 	b.relayMu.Unlock()
 }
 
+// holdRelay queues upstream relays instead of sending them, so an Attach that replays a
+// journal BEFORE this connection's session/new response is on the wire loses nothing (see
+// relayHeld). Paired with releaseRelay, which MUST be called — from libacp.AfterResponse —
+// or the queued backlog never reaches the client.
+func (b *externalBridge) holdRelay() {
+	b.relayMu.Lock()
+	b.relayHeld = true
+	b.relayMu.Unlock()
+}
+
+// releaseRelay flushes the held backlog in arrival order and returns the bridge to live
+// relay. It drains under repeated locking rather than clearing the flag first, so an
+// update produced concurrently with the flush either joins the tail of the queue (still
+// held) or relays live strictly AFTER it — the held and live streams can never interleave
+// out of order. A no-op when nothing was held.
+func (b *externalBridge) releaseRelay(ctx context.Context) {
+	for {
+		b.relayMu.Lock()
+		if len(b.relayQueue) == 0 {
+			b.relayHeld = false
+			b.relayMu.Unlock()
+			return
+		}
+		batch := b.relayQueue
+		b.relayQueue = nil
+		t := b.relayT
+		suppressed := b.relaySuppressed
+		b.relayMu.Unlock()
+		if t == nil || suppressed {
+			continue // nothing to relay to; keep draining until the queue is empty
+		}
+		for _, upd := range batch {
+			t.relayExternalUpdate(ctx, b.upstreamID, upd)
+		}
+	}
+}
+
 // attach binds the bridge's relay target to t and arms a watcher that detaches
 // when t's connection ends. Used at construction. Detach is wired to connCtx
 // cancellation, not Transport.Close, because a bare WebSocket drop fires connCtx and
@@ -650,9 +699,15 @@ func (b *externalBridge) transport() *Transport {
 
 // relayUpstream forwards a downstream update to the currently-attached upstream
 // client, remapping onto upstreamID. A no-op when detached (no upstream) or while the
-// re-attach replay is suppressed (the backlog is the chatservice transcript's job).
+// re-attach replay is suppressed (the backlog is the chatservice transcript's job); while
+// the relay is HELD (adopt) it is queued instead, and releaseRelay sends it.
 func (b *externalBridge) relayUpstream(ctx context.Context, upd libacp.SessionUpdate) {
 	b.relayMu.Lock()
+	if b.relayHeld && !b.relaySuppressed {
+		b.relayQueue = append(b.relayQueue, upd)
+		b.relayMu.Unlock()
+		return
+	}
 	t := b.relayT
 	suppressed := b.relaySuppressed
 	b.relayMu.Unlock()
@@ -1290,18 +1345,6 @@ func (d *externalDriver) Close() error {
 	return nil
 }
 
-// stopInstance stops the Manager-owned instance backing this session, if any. Called
-// only from DeleteSession — a delete ends the instance, unlike a plain close/detach.
-// A no-op on the connCtx-owned path (instanceID "").
-func (d *externalDriver) stopInstance() {
-	d.mu.Lock()
-	instanceID := d.instanceID
-	d.mu.Unlock()
-	if instanceID != "" && d.t.deps.Instances != nil {
-		_ = d.t.deps.Instances.Stop(instanceID)
-	}
-}
-
 // storeMcpResolver adapts a runtimetypes.Store to agenthost.McpServerResolver so
 // an external agent's mcp_servers allowlist can be resolved to ACP session/new
 // wire shapes without acpsvc depending on mcpserverservice.
@@ -1313,31 +1356,46 @@ func (r storeMcpResolver) GetByName(ctx context.Context, name string) (*runtimet
 	return r.store.GetMCPServerByName(ctx, name)
 }
 
-// resolveExternalAgent resolves a registered agent by name and returns its
-// external_acp config, rejecting an unknown or disabled agent with a clear
-// JSON-RPC error (the client's session/new fails cleanly). The registry service
-// is constructed from the existing DB dep — declared external agents are a
-// polymorphic resource over the same store the transport already holds.
-func (t *Transport) resolveExternalAgent(ctx context.Context, name string) (*runtimetypes.ExternalACPConfig, error) {
+// resolveExternalAgent resolves a registered agent by name and returns BOTH the
+// declared record and its external_acp config, rejecting an unknown or disabled
+// agent with a clear JSON-RPC error (the client's session/new fails cleanly). The
+// registry service is constructed from the existing DB dep — declared external
+// agents are a polymorphic resource over the same store the transport already
+// holds.
+//
+// The record is returned, not just the config, so the Manager-owned branch of
+// bringUpExternal can spawn from THIS read (Instances.StartResolved) instead of
+// making the kernel re-read the same row: the Enabled check below and the spawn
+// must be made against the same bytes, or an agent disabled in between still
+// spawns.
+func (t *Transport) resolveExternalAgent(ctx context.Context, name string) (*runtimetypes.Agent, *runtimetypes.ExternalACPConfig, error) {
 	if t.deps.DB == nil {
-		return nil, libacp.InternalError("acpsvc: no database configured for external agents")
+		return nil, nil, libacp.InternalError("acpsvc: no database configured for external agents")
 	}
 	reg := agentregistryservice.New(t.deps.DB)
-	agent, err := reg.GetByName(ctx, name)
+	// Refuse a disabled agent via the ONE shared judgment
+	// agentregistryservice.ResolveForSpawn makes for every agent-spawn path
+	// (see its doc comment): fleetservice.Dispatch calls the same helper, so
+	// "disabled" cannot drift into two different checks or two different
+	// messages between the REST dispatch path and this chat path. Called
+	// here — before EITHER of bringUpExternal's two branches (Manager-owned
+	// or connCtx-owned/stdio) — so a disabled agent is refused regardless of
+	// which one this Transport is configured for.
+	agent, err := agentregistryservice.ResolveForSpawn(ctx, reg, name)
 	if err != nil {
-		if errors.Is(err, libdb.ErrNotFound) {
-			return nil, libacp.NewErrorf(libacp.ErrInvalidParams, "unknown contenox.agent %q", name)
+		if errors.Is(err, agentregistryservice.ErrAgentDisabled) {
+			return nil, nil, libacp.NewErrorf(libacp.ErrInvalidParams, "%v", err)
 		}
-		return nil, libacp.InternalError(fmt.Sprintf("acpsvc: resolve agent %q: %v", name, err))
-	}
-	if !agent.Enabled {
-		return nil, libacp.NewErrorf(libacp.ErrInvalidParams, "contenox.agent %q is disabled", name)
+		if errors.Is(err, libdb.ErrNotFound) {
+			return nil, nil, libacp.NewErrorf(libacp.ErrInvalidParams, "unknown contenox.agent %q", name)
+		}
+		return nil, nil, libacp.InternalError(fmt.Sprintf("acpsvc: resolve agent %q: %v", name, err))
 	}
 	cfg, err := agent.ExternalACPConfig()
 	if err != nil {
-		return nil, libacp.NewErrorf(libacp.ErrInvalidParams, "contenox.agent %q: %v", name, err)
+		return nil, nil, libacp.NewErrorf(libacp.ErrInvalidParams, "contenox.agent %q: %v", name, err)
 	}
-	return cfg, nil
+	return agent, cfg, nil
 }
 
 // filterMcpForCaps mirrors agenthost's filter semantics: stdio is the protocol
@@ -1521,7 +1579,7 @@ func (t *Transport) initExternalConn(ctx context.Context, conn *libacp.ClientSid
 // for a lazy bring-up on the first prompt after a session/load (the upstream session
 // already exists, so a live relay reaches the client directly).
 func (t *Transport) bringUpExternal(ctx context.Context, upstreamID libacp.SessionID, cwd, agentName string, bound bool) (*externalAttach, error) {
-	cfg, err := t.resolveExternalAgent(ctx, agentName)
+	agent, cfg, err := t.resolveExternalAgent(ctx, agentName)
 	if err != nil {
 		return nil, err
 	}
@@ -1533,7 +1591,12 @@ func (t *Transport) bringUpExternal(ctx context.Context, upstreamID libacp.Sessi
 		// spawned wired to it); this driver DRIVES the downstream through the Manager's
 		// session API and OBSERVES it by Attaching the bridge as a viewer — it holds NO
 		// connection. Any failure Stops the instance so nothing leaks.
-		instanceID, err := t.deps.Instances.Start(ctx, agentName)
+		//
+		// StartResolved, not Start(agentName): the record resolveExternalAgent just
+		// read is the one the Enabled check was made against, so spawning from it
+		// closes the TOCTOU window Start's second read would open — and saves a query
+		// per bring-up. (The connCtx branch below already spawns from this same read.)
+		instanceID, err := t.deps.Instances.StartResolved(ctx, agent)
 		if err != nil {
 			return nil, libacp.InternalError(fmt.Sprintf("acpsvc: start agent %q instance: %v", agentName, err))
 		}

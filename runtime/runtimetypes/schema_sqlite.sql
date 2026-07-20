@@ -199,6 +199,44 @@ CREATE TABLE IF NOT EXISTS agents (
 CREATE INDEX IF NOT EXISTS idx_agents_created_at ON agents(created_at);
 CREATE INDEX IF NOT EXISTS idx_agents_kind ON agents(kind);
 
+-- hitl_approvals: durable pending-and-resolved human-in-the-loop approval
+-- asks (runtime/hitlservice). RequestApproval writes the row here BEFORE
+-- publishing the approval_requested TaskEvent, so a `contenox serve` restart
+-- mid-ask still shows it pending instead of losing it outright — the
+-- previous implementation held every ask in an in-process map only (see
+-- docs/development/blueprints/acp/fleet-consolidation.md, slice C1, defect
+-- D3). state starts 'pending' and ends exactly once, at 'approved'/'denied'
+-- (via Respond) or 'expired' (the sweeper, once expires_at passes with
+-- nobody having answered, applying on_timeout — default deny).
+-- diff is nullable: most tool calls have none. policy_name/matched_rule
+-- mirror hitlservice.EvaluationResult so an operator can always name which
+-- rule gated a given action (matched_rule NULL means the policy's
+-- default_action applied, not a named rule).
+-- resolution is deliberately TEXT (JSON), not BOOLEAN: today Respond only
+-- ever writes an approve/deny answer, but a permission ask is answered
+-- yes/no while a later ask kind (e.g. mission-mode "ask for attention")
+-- answers with data instead ("which of these three?", "what value should I
+-- use?"). Narrowing this column to a boolean now would force a migration the
+-- moment that lands. state (below) stays the queryable lifecycle fact the
+-- sweeper and any inbox filter on; resolution is just the payload beside it.
+CREATE TABLE IF NOT EXISTS hitl_approvals (
+    id           VARCHAR(255) PRIMARY KEY,
+    tools_name   VARCHAR(255) NOT NULL,
+    tool_name    VARCHAR(255) NOT NULL,
+    args_summary TEXT NOT NULL DEFAULT '',
+    diff         TEXT,
+    policy_name  VARCHAR(255) NOT NULL DEFAULT '',
+    matched_rule INT,
+    on_timeout   VARCHAR(20) NOT NULL DEFAULT 'deny',
+    state        VARCHAR(20) NOT NULL DEFAULT 'pending',
+    resolution   TEXT,
+    created_at   TIMESTAMP NOT NULL,
+    expires_at   TIMESTAMP NOT NULL,
+    resolved_at  TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_hitl_approvals_state_created ON hitl_approvals(state, created_at);
+CREATE INDEX IF NOT EXISTS idx_hitl_approvals_state_expires ON hitl_approvals(state, expires_at);
+
 CREATE TABLE IF NOT EXISTS llm_model_registry (
     id          VARCHAR(255) PRIMARY KEY,
     name        VARCHAR(512) NOT NULL UNIQUE,

@@ -41,10 +41,21 @@ type instancesFixture struct {
 
 func newInstancesFixture(t *testing.T) *instancesFixture {
 	t.Helper()
+	return newInstancesFixtureWith(t, func(db libdb.DBManager) agentinstance.Manager {
+		return agentinstance.New(agentregistryservice.New(db))
+	})
+}
+
+// newInstancesFixtureWith is newInstancesFixture with the Manager supplied by the
+// caller — so a test can wire kernel Options (an event sink, a journal size) or swap in
+// a double whose Get/Attach it fully controls. build receives the fixture's DB because
+// the real Manager resolves declared agents against it.
+func newInstancesFixtureWith(t *testing.T, build func(libdb.DBManager) agentinstance.Manager) *instancesFixture {
+	t.Helper()
 	db, err := libdb.NewSQLiteDBManager(context.Background(), filepath.Join(t.TempDir(), "instances.db"), runtimetypes.SchemaSQLite)
 	require.NoError(t, err)
 	bus := libbus.NewInMem()
-	mgr := agentinstance.New(agentregistryservice.New(db))
+	mgr := build(db)
 	factory := New(Deps{
 		Engine:           &enginesvc.Engine{Bus: bus},
 		DB:               db,
@@ -362,4 +373,41 @@ func TestLoopback_ExternalInstance_NilInstancesFallsBackToConnCtxSpawn(t *testin
 	mgrEd := c.externalDriver(mgrResp.SessionID)
 	require.NotEmpty(t, extInstanceID(mgrEd), "a Manager => the session records its instance id")
 	require.Nil(t, extHandle(mgrEd), "a Manager => the driver does not own the process")
+}
+
+// TestLoopback_ExternalInstance_DisabledAgentRejected proves the Manager-owned
+// spawn path refuses a disabled agent through the same shared judgment
+// (agentregistryservice.ResolveForSpawn, called from resolveExternalAgent) the
+// connCtx-owned path and fleetservice.Dispatch use — the actual C5 gap
+// fleet-consolidation.md's D6 named: before this change
+// agentinstance.Manager.Start had no notion of Enabled, so a disabled agent's
+// session/new against a Manager-backed acpsvc would have reached Start and
+// spawned anyway. Uses /bin/true as the command: resolution is refused before
+// anything is ever spawned, so no real stub binary is needed.
+func TestLoopback_ExternalInstance_DisabledAgentRejected(t *testing.T) {
+	f := newInstancesFixture(t)
+	ctx := context.Background()
+
+	const agentName = "claude-stub-disabled-mgr"
+	svc := agentregistryservice.New(f.db)
+	agent := &runtimetypes.Agent{Name: agentName, Enabled: false}
+	require.NoError(t, agent.SetExternalACPConfig(runtimetypes.ExternalACPConfig{
+		Transport: runtimetypes.ExternalACPTransportStdio,
+		Command:   "/bin/true",
+	}))
+	require.NoError(t, svc.Create(ctx, agent))
+
+	c := f.connect()
+	_, err := c.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
+	require.NoError(t, err)
+
+	_, err = c.client.NewSession(ctx, libacp.NewSessionRequest{
+		Cwd:        "/tmp/loopback-ext-disabled-mgr",
+		McpServers: []libacp.McpServer{},
+		Meta:       agentMetaJSON(agentName),
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "disabled")
+	require.Equal(t, 0, liveInstances(t, f.mgr),
+		"a refused agent must never reach agentinstance.Manager.Start")
 }

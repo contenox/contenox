@@ -464,6 +464,8 @@ export type InstanceStatus = {
   sessions: number;
   viewers: number;
   startedAt: string;
+  /** Ids of every session with at least one attached viewer, sorted. */
+  sessionIds: string[];
 };
 
 /**
@@ -476,6 +478,93 @@ export type FleetEntry = {
   agentName: string;
   kind: string;
   instances: InstanceStatus[] | null;
+};
+
+/**
+ * Mission mode's lifecycle state; mirrors missionservice.Status
+ * (runtime/missionservice/missionservice.go). A mission stays "open" for its
+ * entire run — LastHeartbeat/LastError on {@link Mission}, not Status, carry
+ * unattended liveness.
+ */
+export type MissionStatus = 'open' | 'landed' | 'derailed' | 'abandoned';
+
+/**
+ * The headless interaction model's durable record (see
+ * docs/development/blueprints/acp/fleet-consolidation.md, "Mission mode"): a
+ * one-line intent fired at a declared agent, bound to exactly one session and
+ * one instance, and bounded by an envelope — a named HITL policy — that
+ * governs what the unit may do while unattended. Mirrors missionservice.Mission
+ * JSON (GET/POST /api/missions).
+ *
+ * LastHeartbeat and LastError are liveness facts, not status: they are how a
+ * caller tells a unit that is quietly working apart from one that has gone
+ * dark or is erroring, without attaching to its session. Both are absent
+ * until the unit's first Heartbeat call — nothing calls it yet, it arrives
+ * with the mission-tools slice — so a mission that has never reported and one
+ * that reported long ago must render differently, not collapse into the same
+ * "no time shown" blank.
+ */
+export type Mission = {
+  id: string;
+  intent: string;
+  agentName: string;
+  hitlPolicyName: string;
+  sessionId?: string;
+  instanceId?: string;
+  status: MissionStatus;
+  lastHeartbeat?: string;
+  lastError?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/**
+ * The closed set a mission report's Kind is drawn from; mirrors
+ * missionservice.ReportKind. Deliberately closed rather than free text — the
+ * set IS the hint to an unattended agent about what is worth reporting at
+ * all (see missionservice's package doc, "Reports").
+ */
+export type MissionReportKind = 'progress' | 'finding' | 'blocker' | 'result';
+
+/**
+ * A single dispatch from a unit on a mission, filed under a Kind that hints
+ * how much it matters. Mirrors missionservice.Report JSON (GET/POST
+ * /api/missions/{id}/reports). Refs is by reference only (paths, URLs) — a
+ * report never carries artifact content.
+ */
+export type MissionReport = {
+  id: string;
+  missionId: string;
+  kind: MissionReportKind;
+  summary: string;
+  detail?: string;
+  refs?: string[];
+  createdAt: string;
+};
+
+/**
+ * POST /api/fleet/dispatch body — fire a mission: bring a declared agent up,
+ * open a session, and run `intent` as its first turn, detached. Mirrors
+ * fleetservice.DispatchRequest. Every dispatch is a mission (see
+ * {@link Mission}), so intent and hitlPolicyName are both required — there is
+ * no separate prompt field, and no dispatch with no envelope.
+ */
+export type DispatchRequest = {
+  agentName: string;
+  intent: string;
+  hitlPolicyName: string;
+  cwd?: string;
+};
+
+/**
+ * The 202 body from POST /api/fleet/dispatch: the ids the dispatch created.
+ * Mirrors fleetservice.DispatchResult. missionId is always present — every
+ * dispatch is a mission.
+ */
+export type DispatchResult = {
+  instanceId: string;
+  sessionId: string;
+  missionId: string;
 };
 
 /** Persisted MCP server config; matches runtimetypes.MCPServer JSON. */
@@ -655,7 +744,6 @@ export interface ChainTask {
   handler: TaskHandler;
   system_instruction?: string;
   execute_config?: ExecuteConfig;
-  hook?: HookCall;
   tools?: HookCall;
   print?: string;
   prompt_template: string;
@@ -1037,23 +1125,20 @@ export interface DraggableProvided {
   } | null;
 }
 
+// Matches the engine's closed handler set exactly (runtime/taskengine/tasktype.go:15-24).
+// An unknown handler is hard-rejected at chain validation, so this union must never
+// declare a value the engine does not also accept.
 export type TaskHandler =
+  | 'raise_error'
   | 'route'
   | 'chat_completion'
   | 'execute_tool_calls'
-  | 'tools'
-  | 'hook'
-  | 'prompt_to_string'
-  | 'prompt_to_int'
-  | 'raise_error'
-  | 'noop';
+  | 'noop'
+  | 'tools';
 
-export const HandleRoute: TaskHandler = 'route';
-export const HandlePromptToString: TaskHandler = 'prompt_to_string';
-export const HandleParseNumber: TaskHandler = 'prompt_to_int';
 export const HandleRaiseError: TaskHandler = 'raise_error';
+export const HandleRoute: TaskHandler = 'route';
 export const HandleChatCompletion: TaskHandler = 'chat_completion';
 export const HandleExecuteToolCalls: TaskHandler = 'execute_tool_calls';
 export const HandleNoop: TaskHandler = 'noop';
 export const HandleTools: TaskHandler = 'tools';
-export const HandleHook: TaskHandler = 'hook';

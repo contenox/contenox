@@ -11,10 +11,14 @@ import {
   CLIConfigUpdateResponse,
   CloudProviderType,
   ConfigureProviderInput,
+  DispatchRequest,
+  DispatchResult,
   FleetEntry,
   HITLPolicy,
   LocalHook,
   MCPServer,
+  Mission,
+  MissionReport,
   ModeldCapacityResponse,
   ModelDescriptor,
   ModeldLoadResponse,
@@ -134,10 +138,59 @@ export const api = {
     apiFetch<Agent>(`/api/agents/by-name/${encodeURIComponent(name)}`),
 
   // Fleet — the live agent-instance board: the config+runtime join of every
-  // declared agent annotated with its running instances. Read-only; instance
-  // lifecycle stays with `contenox serve`. Truthful under polling because
-  // Manager.List is an in-memory join (see runtime/internal/fleetapi).
+  // declared agent annotated with its running instances, plus the two
+  // lifecycle verbs the board is allowed to drive. Truthful under polling
+  // because Manager.List is an in-memory join (see runtime/internal/fleetapi).
   getFleet: () => apiFetch<FleetEntry[]>('/api/fleet'),
+  /**
+   * Stops an instance: kills the agent subprocess and drops it from the
+   * registry. Idempotent by kernel contract — an unknown or already-stopped id
+   * answers 200, not 404 — which is what lets Stop double as the reap action
+   * for a crashed row. There is no restart counterpart anywhere in the API.
+   * The response body is the plain string "deleted".
+   */
+  stopInstance: (instanceId: string) =>
+    apiFetch<string>(`/api/fleet/${encodeURIComponent(instanceId)}`, options('DELETE')),
+  /**
+   * Cancels in-flight turn(s) on an instance. The body is sent ONLY when a
+   * sessionId is supplied: the server reads an absent body as "cancel every
+   * session attached to this instance", so omitting it is the deliberate
+   * cancel-all call, not a degraded per-session one. Safe with no turn in
+   * flight. Unknown instance → 404. Response body is the string "cancelled".
+   */
+  cancelInstance: (instanceId: string, sessionId?: string) =>
+    apiFetch<string>(
+      `/api/fleet/${encodeURIComponent(instanceId)}/cancel`,
+      sessionId ? options('POST', { sessionId }) : options('POST'),
+    ),
+
+  // Missions — mission mode's durable record (see runtime/missionservice and
+  // docs/development/blueprints/acp/fleet-consolidation.md, "Mission mode").
+  // list/get/reports are read-only surfaces for M2; dispatchMission is the
+  // one write, and it lives here (not a POST /api/missions passthrough)
+  // because firing a mission also brings an agent up and opens a session —
+  // fleetservice.Dispatch does all three atomically, which is why its route
+  // is POST /api/fleet/dispatch even though the result is fundamentally a
+  // mission.
+  listMissions: (params?: { limit?: number; cursor?: string }) => {
+    const search = new URLSearchParams();
+    if (params?.limit !== undefined) search.set('limit', params.limit.toString());
+    if (params?.cursor) search.set('cursor', params.cursor);
+    const qs = search.toString() ? `?${search.toString()}` : '';
+    return apiFetch<Mission[]>(`/api/missions${qs}`);
+  },
+  getMission: (id: string) => apiFetch<Mission>(`/api/missions/${encodeURIComponent(id)}`),
+  listMissionReports: (missionId: string) =>
+    apiFetch<MissionReport[]>(`/api/missions/${encodeURIComponent(missionId)}/reports`),
+  /**
+   * Fires a mission: brings `agentName` up, opens a session, and runs
+   * `intent` as its first turn, detached. 202 with the ids as soon as the
+   * session is open (see fleetservice.Service.Dispatch) — the unit's own
+   * first-turn outcome is observable later, on the board or the mission's
+   * reports, not in this response.
+   */
+  dispatchMission: (data: DispatchRequest) =>
+    apiFetch<DispatchResult>('/api/fleet/dispatch', options('POST', data)),
 
   // Backends
   getBackends: () => apiFetch<Backend[]>('/api/backends'),

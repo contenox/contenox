@@ -22,11 +22,12 @@ func (t *Transport) publishEvent(ctx context.Context, sid libacp.SessionID, payl
 	}
 	switch ev.Kind {
 	case taskengine.TaskEventStepChunk:
-		// A route task's streamed output is its routing decision ("general",
-		// "coding_change", ...) — control flow, not assistant prose. It used to
-		// leak into the reply text as a prefix; progress is visible via the
-		// tool-call cards and streamed chunks instead.
-		if isRoutingHandler(ev.TaskHandler) {
+		// Only a handler whose streamed output IS assistant narration reaches the
+		// transcript. A route task's streamed output, for instance, is its routing
+		// decision ("general", "coding_change", ...) — control flow, not prose — and
+		// used to leak into the reply text as a prefix. taskengine owns the handler
+		// vocabulary and therefore this judgement; vscodeagent consumes the same one.
+		if !taskengine.IsAssistantProseHandler(ev.TaskHandler) {
 			return
 		}
 		if ev.Content != "" {
@@ -42,17 +43,17 @@ func (t *Transport) publishEvent(ctx context.Context, sid libacp.SessionID, payl
 			})
 		}
 	case taskengine.TaskEventStepStarted:
-		if isToolBearingHandler(ev.TaskHandler) {
+		if taskengine.IsToolBearingHandler(ev.TaskHandler) {
 			return
 		}
 		t.sendUpdate(ctx, toolCallNotification(sid, ev, libacp.ToolCallStatusInProgress))
 	case taskengine.TaskEventStepCompleted:
-		if isToolBearingHandler(ev.TaskHandler) {
+		if taskengine.IsToolBearingHandler(ev.TaskHandler) {
 			return
 		}
 		t.sendUpdate(ctx, toolCallNotification(sid, ev, libacp.ToolCallStatusCompleted))
 	case taskengine.TaskEventStepFailed:
-		if isToolBearingHandler(ev.TaskHandler) {
+		if taskengine.IsToolBearingHandler(ev.TaskHandler) {
 			return
 		}
 		t.sendUpdate(ctx, toolCallNotification(sid, ev, libacp.ToolCallStatusFailed))
@@ -93,18 +94,6 @@ func (t *Transport) publishEvent(ctx context.Context, sid libacp.SessionID, payl
 			})
 		}
 	}
-}
-
-func isRoutingHandler(handler string) bool {
-	return taskengine.TaskHandler(handler) == taskengine.HandleRoute
-}
-
-func isToolBearingHandler(handler string) bool {
-	switch taskengine.TaskHandler(handler) {
-	case taskengine.HandleExecuteToolCalls, taskengine.HandleTools, taskengine.HandleChatCompletion, taskengine.HandleRoute:
-		return true
-	}
-	return false
 }
 
 func toolCallInProgressNotification(sid libacp.SessionID, ev taskengine.TaskEvent) libacp.SessionNotification {

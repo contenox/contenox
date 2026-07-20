@@ -129,3 +129,74 @@ func TestUnit_View_ResolveAndContains(t *testing.T) {
 	_, err = f.Open(t.TempDir())
 	require.Error(t, err, "opening a non-allowlisted root must fail")
 }
+
+// TestUnit_ResolveSessionCwd pins the ONE decision procedure every session
+// bring-up shares — the ACP session/new, session/load and session/resume paths
+// and the REST fleet dispatch. Three variants of it used to exist and had
+// already drifted: only the ACP entry points guarded against a relative cwd, and
+// the two no-allowlist branches disagreed about what an absent cwd means.
+func TestUnit_ResolveSessionCwd(t *testing.T) {
+	allowed := t.TempDir()
+	other := t.TempDir()
+	f, err := vfs.NewFactory(allowed)
+	require.NoError(t, err)
+	resolvedAllowed, err := vfs.ResolveRoot(allowed)
+	require.NoError(t, err)
+
+	t.Run("relative cwd is refused with or without an allowlist", func(t *testing.T) {
+		for _, factory := range []*vfs.Factory{nil, f} {
+			for _, cwd := range []string{"../..", ".", "relative/path"} {
+				_, err := vfs.ResolveSessionCwd(factory, cwd, "/fallback")
+				require.Error(t, err, "cwd %q", cwd)
+				require.ErrorIs(t, err, vfs.ErrCwdNotPermitted)
+				require.Contains(t, err.Error(), "absolute path")
+			}
+		}
+	})
+
+	t.Run("no allowlist: an absolute cwd passes through, an absent one takes the caller's fallback", func(t *testing.T) {
+		got, err := vfs.ResolveSessionCwd(nil, "/anywhere/at/all", "/fallback")
+		require.NoError(t, err)
+		assert.Equal(t, "/anywhere/at/all", got, "the editor owns the filesystem on the stdio path")
+
+		// The sentinel is still a path when nothing constrains it.
+		got, err = vfs.ResolveSessionCwd(nil, "/", "/fallback")
+		require.NoError(t, err)
+		assert.Equal(t, "/", got)
+
+		got, err = vfs.ResolveSessionCwd(nil, "", "/fallback")
+		require.NoError(t, err)
+		assert.Equal(t, "/fallback", got, "unspecified means the CALLER's default root")
+
+		got, err = vfs.ResolveSessionCwd(nil, "", "")
+		require.NoError(t, err)
+		assert.Equal(t, "", got, "a caller with no default leaves it unspecified")
+	})
+
+	t.Run("allowlist: sentinel and empty resolve to the default root", func(t *testing.T) {
+		for _, cwd := range []string{"", "/"} {
+			got, err := vfs.ResolveSessionCwd(f, cwd, "/ignored")
+			require.NoError(t, err, "cwd %q", cwd)
+			assert.Equal(t, resolvedAllowed, got,
+				"a configured allowlist owns the default; the caller's fallback is not consulted")
+		}
+	})
+
+	t.Run("allowlist: an allowlisted root resolves, anything else is refused", func(t *testing.T) {
+		got, err := vfs.ResolveSessionCwd(f, allowed, "")
+		require.NoError(t, err)
+		assert.Equal(t, resolvedAllowed, got)
+
+		_, err = vfs.ResolveSessionCwd(f, other, "")
+		require.Error(t, err)
+		require.ErrorIs(t, err, vfs.ErrCwdNotPermitted)
+		require.Contains(t, err.Error(), "is not permitted")
+	})
+
+	t.Run("the refusal message is the operator-facing text, not the sentinel's", func(t *testing.T) {
+		_, err := vfs.ResolveSessionCwd(f, other, "")
+		require.Error(t, err)
+		assert.NotContains(t, err.Error(), vfs.ErrCwdNotPermitted.Error(),
+			"callers forward Error() to a user; the sentinel is for errors.Is, not for reading")
+	})
+}

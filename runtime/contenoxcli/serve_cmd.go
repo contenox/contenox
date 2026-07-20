@@ -25,6 +25,7 @@ import (
 	"github.com/contenox/runtime/runtime/agentregistryservice"
 	"github.com/contenox/runtime/runtime/agentservice"
 	"github.com/contenox/runtime/runtime/enginesvc"
+	"github.com/contenox/runtime/runtime/fleetservice"
 	"github.com/contenox/runtime/runtime/hitlservice"
 	internaltools "github.com/contenox/runtime/runtime/internal/tools"
 	internalweb "github.com/contenox/runtime/runtime/internal/web"
@@ -251,6 +252,18 @@ func runServe(cmd *cobra.Command, args []string) error {
 		taskengine.NewBusTaskEventSink(bus), kvMgr, tracker)
 	hitlSource := hitlPolicySource(contenoxDir)
 	hitlSvc := hitlservice.NewWithDefaultPolicy(hitlSource, runtimetypes.LocalTenantID, store, tracker, "")
+	approvalCeiling, err := parseHITLApprovalCeiling(config.HITLApprovalTimeout)
+	if err != nil {
+		return err
+	}
+	hitlservice.SetApprovalCeiling(hitlSvc, approvalCeiling)
+	// The durability backstop for pending approvals: resolves any row whose
+	// deadline (rule TimeoutS or the ceiling just above) has passed, applying
+	// its stored OnTimeout. Covers both a requester whose own bounded wait
+	// already returned without touching the row, and one whose process
+	// restarted before it could. Mirrors startTerminalReaper's shape below.
+	stopHITLApprovalSweeper := startHITLApprovalSweeper(ctx, hitlSvc, hitlApprovalSweepInterval)
+	defer stopHITLApprovalSweeper()
 
 	// serve runs many ACP WebSocket connections (each its own acpsvc.Transport)
 	// behind this SINGLE shared engine, so the engine's one AskApproval callback
@@ -273,8 +286,16 @@ func runServe(cmd *cobra.Command, args []string) error {
 		// Dispatch HITL approval per request: when the contenox session (from ctx)
 		// is bound to a live beam ACP WS transport, bridge to that connection's
 		// session/request_permission flow (beam's PermissionGate answers it).
-		// Otherwise fall back to the approval-API path for headless/API callers,
-		// which have no live ACP connection to prompt.
+		// Otherwise fall back to hitlSvc.RequestApproval for headless/API
+		// callers, which have no live ACP connection to prompt: it is durable
+		// (the ask survives a restart, see hitl_approvals in schema.sql) and
+		// bounded (a matched rule's own TimeoutS, or the HITL_APPROVAL_TIMEOUT
+		// ceiling below when it sets none), so this no longer hangs forever.
+		// A REST/CLI surface now answers it early — GET/POST /api/approvals,
+		// `contenox approvals list|answer` (fleet-consolidation.md slice C2,
+		// wired below via serverapi.Dependencies.HITL) — and until an operator
+		// uses it, an unanswered ask is still resolved automatically once its
+		// deadline passes (startHITLApprovalSweeper below).
 		AskApproval: func(ctx context.Context, req hitlservice.ApprovalRequest) (bool, error) {
 			if allowed, err := permissionRouter.AskApproval(ctx, req); !errors.Is(err, acpsvc.ErrNoBoundSession) {
 				return allowed, err
@@ -332,8 +353,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// unsupervised denies) are reported through the shared tracker for
 	// after-the-fact audit — recorded, triggering nothing. Noop unless tracing is
 	// enabled, like every other subsystem here.
+	//
+	// agentRegistry is shared between the Manager (agent resolution/spawn) and
+	// fleetservice (the Enabled policy check) below, rather than constructing a
+	// second agentregistryservice.Service over the same db.
+	agentRegistry := agentregistryservice.New(db)
 	instances := agentinstance.New(
-		agentregistryservice.New(db),
+		agentRegistry,
 		agentinstance.WithEventSink(newInstanceEventSink(tracker)),
 	)
 	defer func() { _ = instances.Close() }()
@@ -341,6 +367,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Durable mission records — the manifest's other half. Backed by the same DB;
 	// missions outlive the sessions/instances they reference.
 	missions := missionservice.New(db)
+
+	// The fleet's lifecycle-policy layer (runtime/fleetservice), wrapping
+	// instances: the /fleet REST routes below are a thin surface over this.
+	fleet := fleetservice.New(instances, agentRegistry, missions, workspaceFactory, workspaceRoot, tracker)
 
 	// /acp serves the same acpsvc agent `contenox acp` speaks over stdio, over
 	// a WebSocket instead — see acp_ws.go. It reuses the engine/db/workspace
@@ -389,15 +419,20 @@ func runServe(cmd *cobra.Command, args []string) error {
 		ToolsProviderService: toolsProviderSvc,
 		Agent:                agent,
 		Chains:               chains,
-		Instances:            instances,
+		Fleet:                fleet,
 		Missions:             missions,
-		Tracker:              tracker,
-		TerminalService:      terminalSvc,
-		TerminalEnabled:      terminalCfg.Enabled,
-		WorkspaceID:          workspaceID,
-		ProjectRoot:          workspaceRoot,
-		ContenoxDir:          contenoxDir,
-		WorkspaceRoots:       workspaceFactory,
+		// The /approvals inbox (fleet-consolidation.md slice C2): the same
+		// hitlSvc the engine's AskApproval falls back to above, so answering
+		// a pending ask over REST/CLI resolves the exact row a headless
+		// requester is (or was) parked on.
+		HITL:            hitlSvc,
+		Tracker:         tracker,
+		TerminalService: terminalSvc,
+		TerminalEnabled: terminalCfg.Enabled,
+		WorkspaceID:     workspaceID,
+		ProjectRoot:     workspaceRoot,
+		ContenoxDir:     contenoxDir,
+		WorkspaceRoots:  workspaceFactory,
 		// Feed the /files `agent` view filter the same HITL policy source serve
 		// uses so its verdicts match the live agent's gates. Fallback policy is ""
 		// (the service's built-in default), mirroring hitlSvc above.
@@ -541,6 +576,57 @@ func startTerminalReaper(ctx context.Context, svc terminalservice.Service, inter
 				return
 			case <-ticker.C:
 				_ = svc.ReapIdle(reaperCtx)
+			}
+		}
+	}()
+	return cancel
+}
+
+// hitlApprovalSweepInterval is how often startHITLApprovalSweeper resolves
+// pending approvals past their deadline. Fixed rather than configurable: a
+// rule's own TimeoutS (seen in existing tests as low as a few seconds) can be
+// far shorter than the HITL_APPROVAL_TIMEOUT ceiling, so this needs to stay
+// short regardless of the ceiling's value.
+const hitlApprovalSweepInterval = 30 * time.Second
+
+// parseHITLApprovalCeiling parses HITL_APPROVAL_TIMEOUT (a Go duration
+// string, e.g. "1h"). Empty keeps hitlservice's built-in
+// DefaultApprovalCeiling; SetApprovalCeiling(svc, 0) is a no-op, so returning
+// a zero duration for "unset" is safe. Mirrors terminalservice.ParseEnv's
+// validation style for a serve config setting.
+func parseHITLApprovalCeiling(raw string) (time.Duration, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		return 0, fmt.Errorf("invalid HITL_APPROVAL_TIMEOUT %q: must be a positive Go duration (e.g. 1h)", raw)
+	}
+	return d, nil
+}
+
+// startHITLApprovalSweeper periodically resolves pending human-in-the-loop
+// approvals whose deadline (a matched rule's own TimeoutS, or the serve-level
+// ceiling when the rule set none) has passed, applying the stored OnTimeout.
+// It is the durability backstop for a requester whose own bounded wait
+// already returned without touching its row, and for one whose process
+// restarted before it could — see hitlservice.Service.SweepExpired's doc.
+// Mirrors startTerminalReaper's ticker/shutdown shape immediately above.
+func startHITLApprovalSweeper(ctx context.Context, svc hitlservice.Service, interval time.Duration) func() {
+	if svc == nil || interval <= 0 {
+		return func() {}
+	}
+	sweepCtx, cancel := context.WithCancel(ctx)
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-sweepCtx.Done():
+				return
+			case <-ticker.C:
+				_, _ = svc.SweepExpired(sweepCtx)
 			}
 		}
 	}()
