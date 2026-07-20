@@ -17,7 +17,7 @@ import (
 const driverClientName = "contenox-runtime"
 
 // errNoConn is returned by every session-driving method when the instance has no
-// live downstream connection to drive (a native/process-less instance, or one whose
+// live downstream connection to drive (a process-less instance, or one whose
 // subprocess is not up). It is a sentinel so a consumer can branch on it.
 var errNoConn = errors.New("agentinstance: instance has no live downstream connection")
 

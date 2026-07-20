@@ -704,7 +704,7 @@ func TestE2E_Wire_SessionWorkspaceCwd(t *testing.T) {
 		string(bResp.SessionID),
 	).Scan(&internalID))
 
-	resolver := NewServeCwdResolver(db, factory.Default())
+	resolver := NewServeCwdResolver(db, factory)
 	toolCtx := context.WithValue(ctx, runtimetypes.SessionIDContextKey, internalID)
 	assert.Equal(t, resolvedB, resolver(toolCtx), "resolver must return the session's persisted cwd")
 
@@ -717,6 +717,18 @@ func TestE2E_Wire_SessionWorkspaceCwd(t *testing.T) {
 
 	// A session without a workspace in scope falls back to the default root.
 	assert.Equal(t, factory.Default(), resolver(context.Background()))
+
+	// 4b. A persisted cwd is re-checked against the CURRENT allowlist, not
+	// trusted because it was allowlisted when it was written. The record outlives
+	// the process that wrote it: the same database is read by a serve started
+	// with narrower roots (an operator dropping a --workspace-root, or a second
+	// instance serving only rootA). rootB is still named by the stored session,
+	// and must NOT be handed to the agent's filesystem tools or its PTY.
+	narrowed, err := vfs.NewFactory(rootA)
+	require.NoError(t, err)
+	narrowedResolver := NewServeCwdResolver(db, narrowed)
+	assert.Equal(t, resolvedA, narrowedResolver(toolCtx),
+		"a stored cwd outside the current allowlist must fall back to the default root, not be adopted verbatim")
 
 	// 5. Reloading the rootB session with the "/" sentinel (what beam sends)
 	// must PRESERVE its workspace, not clobber it back to the default root.

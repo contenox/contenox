@@ -43,9 +43,12 @@ var approvalsListCmd = &cobra.Command{
 	Short: "List pending approvals, newest first.",
 	Long: `Fetch the pending human-in-the-loop approvals from a running 'contenox serve'
 and print them as a table of id, tool, args summary, policy, matched rule,
-diff presence, and the created/expires timestamps — everything an operator
-needs to decide, and to always be able to name which policy rule escalated
-the ask.`,
+diff presence, the agent/mission/instance/session the ask came from, and the
+created/expires timestamps — everything an operator needs to decide, and to
+always be able to name both which policy rule escalated the ask and which unit
+it is holding up. The attribution columns are empty ("-") for an ask raised
+outside the fleet, and the mission column is empty for an unattended session
+that is not on a mission.`,
 	Args: cobra.NoArgs,
 	RunE: runApprovalsList,
 }
@@ -143,16 +146,24 @@ func runApprovalsList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// AGENT/MISSION/INSTANCE/SESSION are the attribution columns: with more than
+	// one unit running, "write_file" identifies nothing, and the row has to say
+	// WHOSE action is being gated. They are empty for an ask raised by a native
+	// chain turn with no fleet unit behind it, which renders as "-".
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tTOOL\tARGS\tPOLICY\tRULE\tDIFF\tCREATED\tEXPIRES")
+	fmt.Fprintln(w, "ID\tTOOL\tARGS\tPOLICY\tRULE\tDIFF\tAGENT\tMISSION\tINSTANCE\tSESSION\tCREATED\tEXPIRES")
 	for _, a := range approvals {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			a.ID,
 			a.ToolsName+"."+a.ToolName,
 			stringOrDash(a.ArgsSummary),
 			stringOrDash(a.PolicyName),
 			intPtrOrDash(a.MatchedRule),
 			approvalDiffColumn(a.Diff),
+			stringOrDash(a.AgentName),
+			stringPtrOrDash(a.MissionID),
+			stringOrDash(a.InstanceID),
+			stringOrDash(a.SessionID),
 			formatApprovalTime(a.CreatedAt),
 			formatApprovalTime(a.ExpiresAt),
 		)
@@ -203,6 +214,16 @@ func stringOrDash(s string) string {
 		return "-"
 	}
 	return s
+}
+
+// stringPtrOrDash renders a nullable attribution column (today: mission id),
+// where nil means the ask genuinely has no mission behind it rather than one
+// that could not be looked up — see runtimetypes.HITLApproval.MissionID.
+func stringPtrOrDash(v *string) string {
+	if v == nil {
+		return "-"
+	}
+	return stringOrDash(*v)
 }
 
 // intPtrOrDash renders a matched-rule index, or "-" when nil — which means

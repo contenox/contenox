@@ -21,6 +21,15 @@ func setupAgentRegistryDB(t *testing.T) (context.Context, libdb.DBManager) {
 	return ctx, db
 }
 
+// newChainAgent builds a chain-kind agent declaring chainPath, the sibling of
+// newExternalACPAgent for the second kind.
+func newChainAgent(t *testing.T, name, chainPath string) *runtimetypes.Agent {
+	t.Helper()
+	agent := &runtimetypes.Agent{Name: name, Enabled: true}
+	require.NoError(t, agent.SetChainConfig(runtimetypes.ChainConfig{Path: chainPath}))
+	return agent
+}
+
 func newExternalACPAgent(name string) *runtimetypes.Agent {
 	agent := &runtimetypes.Agent{Name: name, Enabled: true}
 	if err := agent.SetExternalACPConfig(runtimetypes.ExternalACPConfig{
@@ -61,9 +70,19 @@ func TestUnit_Validate(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "reserved chain kind is rejected (not implemented yet)",
+			name:    "chain kind without a chain path is rejected",
 			agent:   &runtimetypes.Agent{Name: "chain-agent", Kind: runtimetypes.AgentKindChain},
 			wantErr: true,
+		},
+		{
+			name:    "chain kind with a relative chain path is rejected",
+			agent:   newChainAgent(t, "relative-chain", "chains/agent-thing.json"),
+			wantErr: true,
+		},
+		{
+			name:    "chain kind with an absolute chain path is accepted",
+			agent:   newChainAgent(t, "chain-runner", filepath.Join(string(filepath.Separator), "chains", "agent-thing.json")),
+			wantErr: false,
 		},
 		{
 			name: "external_acp stdio without command is rejected",
@@ -187,12 +206,45 @@ func TestUnit_AgentRegistryService_UpdateKeepingOwnNameIsNotConflict(t *testing.
 	require.NoError(t, svc.Update(ctx, agent), "updating other fields while keeping the same name must not be a conflict")
 }
 
-func TestUnit_AgentRegistryService_CreateRejectsChainKind(t *testing.T) {
+// TestUnit_AgentRegistryService_ChainKindRoundTrips pins that the chain kind is
+// a first-class declared agent now: it persists through the same validated CRUD
+// as an external one and reads back through its typed accessor. The registry is
+// the single source of truth for what can be fired, so a chain that cannot be
+// stored here cannot be fired at all.
+func TestUnit_AgentRegistryService_ChainKindRoundTrips(t *testing.T) {
 	ctx, db := setupAgentRegistryDB(t)
 	svc := New(db)
 
-	err := svc.Create(ctx, &runtimetypes.Agent{Name: "future-chain-agent", Kind: runtimetypes.AgentKindChain})
+	chainPath := filepath.Join(t.TempDir(), "agent-reviewer.json")
+	agent := &runtimetypes.Agent{Name: "reviewer", Enabled: true}
+	require.NoError(t, agent.SetChainConfig(runtimetypes.ChainConfig{Path: chainPath, ChainID: "agent-reviewer"}))
+	require.NoError(t, svc.Create(ctx, agent))
+
+	got, err := svc.GetByName(ctx, "reviewer")
+	require.NoError(t, err)
+	require.Equal(t, runtimetypes.AgentKindChain, got.Kind)
+
+	cfg, err := got.ChainConfig()
+	require.NoError(t, err)
+	require.Equal(t, chainPath, cfg.Path)
+	require.Equal(t, "agent-reviewer", cfg.ChainID)
+
+	// And it resolves through the ONE spawn-path judgement, exactly like an
+	// external agent — no second lookup for the chain kind.
+	resolved, err := ResolveForSpawn(ctx, svc, "reviewer")
+	require.NoError(t, err)
+	require.Equal(t, got.ID, resolved.ID)
+}
+
+// TestUnit_AgentRegistryService_CreateRejectsChainWithoutPath keeps the kind
+// from being a hole: accepting "chain" is not accepting an unconfigured chain.
+func TestUnit_AgentRegistryService_CreateRejectsChainWithoutPath(t *testing.T) {
+	ctx, db := setupAgentRegistryDB(t)
+	svc := New(db)
+
+	err := svc.Create(ctx, &runtimetypes.Agent{Name: "pathless-chain-agent", Kind: runtimetypes.AgentKindChain})
 	require.Error(t, err)
+	require.Contains(t, err.Error(), "path is required")
 }
 
 // ─── ResolveForSpawn ────────────────────────────────────────────────────────

@@ -1391,6 +1391,26 @@ func (t *Transport) resolveExternalAgent(ctx context.Context, name string) (*run
 		}
 		return nil, nil, libacp.InternalError(fmt.Sprintf("acpsvc: resolve agent %q: %v", name, err))
 	}
+	// KIND-POLYMORPHIC from here on. A CHAIN-kind agent has no external_acp
+	// config to read — its config names a chain file, and the Manager builds the
+	// spawn from it (agentinstance.StartResolved's chain branch) — so asking for
+	// one would refuse a perfectly runnable agent with a kind-mismatch error.
+	// That is exactly what happened: a discovered chain agent was selectable in
+	// the picker and unusable in chat.
+	//
+	// The zero config is not a stand-in for a missing one: on the Manager path
+	// it is read for exactly one thing, the mcp_servers allowlist
+	// (resolveMcpAllowlist), and a chain unit declares none — it runs THIS
+	// runtime's tools, configured by the chain file, not a foreign agent's
+	// forwarded servers. An empty allowlist is therefore the truthful answer,
+	// not a degraded one.
+	//
+	// The connCtx branch of bringUpExternal, which spawns FROM this config
+	// directly, refuses chain kind in person rather than spawning something
+	// wrong out of these zero bytes.
+	if agent.Kind == runtimetypes.AgentKindChain {
+		return agent, &runtimetypes.ExternalACPConfig{}, nil
+	}
 	cfg, err := agent.ExternalACPConfig()
 	if err != nil {
 		return nil, nil, libacp.NewErrorf(libacp.ErrInvalidParams, "contenox.agent %q: %v", name, err)
@@ -1624,6 +1644,17 @@ func (t *Transport) bringUpExternal(ctx context.Context, upstreamID libacp.Sessi
 	// connCtx-owned (fallback): the subprocess dies with this connection, and the
 	// bridge IS the wired libacp.Client — so terminal/* is serviced here when a shell
 	// manager is present.
+	//
+	// This branch spawns from the external_acp config in person, and a chain agent
+	// has none (resolveExternalAgent hands back a deliberately zero one — see
+	// there). Building a subprocess out of those zero bytes would spawn nothing
+	// coherent, so refuse honestly and name the remedy. A chain unit needs the
+	// Manager, which owns the self-spawn that binds this binary to a chain file;
+	// `contenox serve` wires one, the bare stdio transport does not.
+	if agent.Kind == runtimetypes.AgentKindChain {
+		return nil, libacp.NewErrorf(libacp.ErrInvalidParams,
+			"contenox.agent %q is a chain agent, which this transport cannot run: chain units are spawned by the fleet manager (run them under `contenox serve`)", agentName)
+	}
 	host := &agenthost.ExternalACPAgent{Config: *cfg, KillGrace: externalKillGrace}
 	handle, err := host.Connect(t.connCtx, bridge)
 	if err != nil {

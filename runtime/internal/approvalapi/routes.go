@@ -12,9 +12,7 @@ package approvalapi
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
-	"strconv"
 
 	apiframework "github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/runtime/hitlservice"
@@ -44,10 +42,9 @@ type approvalHandler struct {
 func (h *approvalHandler) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	limitStr := apiframework.GetQueryParam(r, "limit", "100", "Maximum number of pending approvals to return.")
-	limit, err := strconv.Atoi(limitStr)
+	limit, err := apiframework.LimitParam(r, 100)
 	if err != nil {
-		_ = apiframework.Error(w, r, fmt.Errorf("invalid limit: %w", err), apiframework.ListOperation)
+		_ = apiframework.Error(w, r, err, apiframework.ListOperation)
 		return
 	}
 

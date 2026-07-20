@@ -47,6 +47,19 @@ type ApprovalRequest struct {
 	MatchedRule *int
 	TimeoutS    int
 	OnTimeout   Action
+
+	// InstanceID, SessionID, AgentName and MissionID attribute the ask to the
+	// fleet unit that raised it, and are persisted onto the durable row (see
+	// runtimetypes.HITLApproval's "Attribution" section for why an inbox needs
+	// them). All four are OPTIONAL: an ask raised by a native chain turn with
+	// no unit behind it leaves them empty, and MissionID is empty for an
+	// unattended session that is not on a mission. They are supplied by the
+	// unattended-permission answerer (fleetservice), which is the only caller
+	// that HAS this identity; the attached-session path ignores them.
+	InstanceID string
+	SessionID  string
+	AgentName  string
+	MissionID  string
 }
 
 // ConditionOp is the comparison operator for a rule condition.

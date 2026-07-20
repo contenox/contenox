@@ -17,6 +17,14 @@
 //     Cancelled permission outcome ends the turn gracefully instead of
 //     hanging; a session/cancel mid-call propagates context.Canceled so
 //     libacp's dispatcher resolves the turn with stopReason "cancelled".
+//   - trigger contains "gated_action": requests a permission for a NAMED tool
+//     call — identity in `_meta`, arguments in `rawInput`, both supplied by
+//     the ACP_STUB_GATED_* environment variables — and reports what the client
+//     answered, as one message chunk and (when ACP_STUB_GATED_REPORT_PATH is
+//     set) as a file, so a client can observe the outcome without attaching a
+//     viewer. It is the counterpart of "callbacks", which deliberately names
+//     nothing: together they cover both sides of a client that maps a
+//     permission request onto an approval policy. See promptGatedAction.
 //   - anything else: acks with a single message chunk and ends the turn. This
 //     is also the path exercised by acp-validator's unknown_method liveness
 //     check (trigger "ping").
@@ -85,6 +93,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -525,6 +534,8 @@ func (a *stubAgent) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 		return a.promptStreaming(ctx, req)
 	case strings.Contains(text, "callbacks"):
 		return a.promptCallbacks(ctx, req)
+	case strings.Contains(text, gatedActionTrigger):
+		return a.promptGatedAction(ctx, req)
 	case a.useTerminal:
 		return a.promptTerminal(ctx, req)
 	default:
@@ -646,6 +657,109 @@ func (a *stubAgent) terminalReport(req libacp.PromptRequest, msg string) (libacp
 		Update:    libacp.NewAgentMessageChunk("terminal-scenario " + msg),
 	}); err != nil {
 		return libacp.PromptResponse{}, err
+	}
+	return libacp.PromptResponse{StopReason: libacp.StopReasonEndTurn}, nil
+}
+
+// The gated-action scenario. It exists for one thing the other scenarios cannot
+// express: a permission request whose tool IDENTITY and ARGUMENTS are stated in
+// the `_meta`/`rawInput` envelope, so a client that evaluates an approval policy
+// against it has something real to evaluate. The `callbacks` scenario
+// deliberately sends neither, which makes it the unnamed-request case instead.
+//
+// The identity and arguments come from the environment rather than the trigger
+// text so a test can point one built binary at whatever tool it needs the
+// client's policy to judge, without teaching this stub any of those names.
+// Everything is opt-in: with the trigger absent, not one byte of behavior here
+// runs, so the conformance suites see identical output.
+const (
+	gatedActionTrigger = "gated_action"
+
+	envGatedToolsName = "ACP_STUB_GATED_TOOLS_NAME"
+	envGatedToolName  = "ACP_STUB_GATED_TOOL_NAME"
+	envGatedArgsJSON  = "ACP_STUB_GATED_ARGS_JSON"
+
+	// envGatedReportPath, when set, makes the scenario ALSO write its outcome
+	// line to that file. The session stream already carries it, but reading the
+	// stream requires attaching a viewer — and a client testing what happens
+	// when NOBODY is watching cannot attach one without changing the very thing
+	// it is testing. A file is the side channel that leaves the session
+	// unattended for the whole run.
+	envGatedReportPath = "ACP_STUB_GATED_REPORT_PATH"
+)
+
+// gatedActionReport is the prefix of the single agent_message_chunk the
+// scenario emits. A client-side test asserts on the whole line, so the outcome
+// of ITS answer is observable from the stream alone: the turn is blocked until
+// the client answers, and what it answered is right there in the text.
+const gatedActionReport = "gated-action outcome="
+
+// promptGatedAction requests permission for a NAMED tool call and reports what
+// the client answered. The request carries:
+//
+//   - `_meta` naming the tools namespace and tool (from the environment), the
+//     same envelope contenox's own agents attach, so a client can map the
+//     request back onto its policy vocabulary;
+//   - `rawInput` carrying the call's arguments, so condition-bearing policy
+//     rules have something to match against.
+//
+// A cancelled outcome (nobody could answer, or the wait was bounded away) ends
+// the turn with StopReasonRefusal, exactly as the callbacks scenario does — the
+// turn ends cleanly rather than faulting, which is what lets a test assert on
+// the reported outcome instead of on a transport error.
+func (a *stubAgent) promptGatedAction(ctx context.Context, req libacp.PromptRequest) (libacp.PromptResponse, error) {
+	toolsName := os.Getenv(envGatedToolsName)
+	toolName := os.Getenv(envGatedToolName)
+	meta, err := json.Marshal(map[string]string{"toolsName": toolsName, "toolName": toolName})
+	if err != nil {
+		return libacp.PromptResponse{}, err
+	}
+	var rawInput json.RawMessage
+	if args := strings.TrimSpace(os.Getenv(envGatedArgsJSON)); args != "" {
+		rawInput = json.RawMessage(args)
+	}
+
+	toolCallID := fmt.Sprintf("stub-gated-%d", a.nextToolID.Add(1))
+	permResp, err := a.conn.RequestPermission(ctx, libacp.RequestPermissionRequest{
+		SessionID: req.SessionID,
+		ToolCall: libacp.PermissionToolCall{
+			ToolCallID: toolCallID,
+			Title:      strings.TrimSpace(toolsName + "." + toolName),
+			Kind:       libacp.ToolKindEdit,
+			Status:     libacp.ToolCallStatusPending,
+			RawInput:   rawInput,
+			Meta:       meta,
+		},
+		Options: []libacp.PermissionOption{
+			{OptionID: "allow-once", Name: "Allow once", Kind: libacp.PermissionAllowOnce},
+			{OptionID: "reject-once", Name: "Reject once", Kind: libacp.PermissionRejectOnce},
+		},
+		Meta: meta,
+	})
+	if err != nil {
+		if ctx.Err() != nil {
+			return libacp.PromptResponse{}, ctx.Err()
+		}
+		return libacp.PromptResponse{}, err
+	}
+
+	report := gatedActionReport + string(permResp.Outcome.Outcome)
+	if permResp.Outcome.OptionID != "" {
+		report += " option=" + permResp.Outcome.OptionID
+	}
+	if path := strings.TrimSpace(os.Getenv(envGatedReportPath)); path != "" {
+		if err := os.WriteFile(path, []byte(report), 0o600); err != nil {
+			return libacp.PromptResponse{}, err
+		}
+	}
+	if err := a.conn.SessionUpdate(libacp.SessionNotification{
+		SessionID: req.SessionID,
+		Update:    libacp.NewAgentMessageChunk(report),
+	}); err != nil {
+		return libacp.PromptResponse{}, err
+	}
+	if permResp.Outcome.Outcome == libacp.PermissionOutcomeCancelled {
+		return libacp.PromptResponse{StopReason: libacp.StopReasonRefusal}, nil
 	}
 	return libacp.PromptResponse{StopReason: libacp.StopReasonEndTurn}, nil
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -13,15 +14,33 @@ import (
 	"github.com/google/uuid"
 )
 
-// Agent kinds. AgentKindExternalACP is the only kind implemented so far: a
-// declared agent that the runtime spawns/drives as an external ACP peer
-// (runtime/agenthost). AgentKindChain is reserved for a future kind where a
-// contenox task chain itself is addressable as an agent — it is intentionally
-// unimplemented; the schema and registry validation below already accept the
-// string so that kind can land later without a migration.
+// Agent kinds, both implemented.
+//
+//   - AgentKindExternalACP: a declared agent that the runtime spawns/drives as
+//     an external ACP peer (runtime/agenthost) — some other vendor's program.
+//   - AgentKindChain: one of the runtime's OWN task chains, addressable as an
+//     agent. It is spawned the same way an external one is, because the
+//     runtime's own ACP server (`contenox acp`) IS an ACP peer: the kernel
+//     re-executes this binary bound to the named chain file. See ChainConfig
+//     and runtime/agentinstance's chain branch.
 const (
 	AgentKindExternalACP = "external_acp"
-	AgentKindChain       = "chain" // reserved; no implementation yet
+	AgentKindChain       = "chain"
+)
+
+// Agent.Source values — system-managed provenance, never part of the
+// user-editable run spec (see Agent.Source).
+//
+//   - AgentSourceRegistry: seeded from the ACP agent catalog.
+//   - AgentSourceManual: registered by hand from a bare command.
+//   - AgentSourceDiscovered: seeded by chain-agent discovery from a chain file
+//     on disk (see runtime/chainagents). Discovery OWNS these rows: it
+//     re-upserts them on every startup and disables the ones whose chain file
+//     has gone away. A row with any other Source is never touched by it.
+const (
+	AgentSourceRegistry   = "registry"
+	AgentSourceManual     = "manual"
+	AgentSourceDiscovered = "discovered"
 )
 
 // ExternalACPConfig is the config_json shape for an AgentKindExternalACP
@@ -86,14 +105,56 @@ func (c ExternalACPConfig) Validate() error {
 	return nil
 }
 
+// ChainConfig is the config_json shape for an AgentKindChain agent: which of
+// the runtime's own task chains a unit launched from this template runs. It is
+// the sibling of ExternalACPConfig and deliberately much smaller, because a
+// chain unit has nothing to configure that the chain file does not already
+// say — no command, no credentials, no transport choice.
+//
+// Path, not a chain id or a name, is the field: the spawned runtime resolves
+// its chain from a FILE (runtime/acpsvc's chain registry reads a path), so a
+// name would only have to be resolved back into one, and the resolution would
+// then be a second implementation of the lookup discovery already performs.
+// It is required to be absolute for the same reason a session cwd is: the
+// spawned process's working directory is the session's, not the declarer's, so
+// a relative path would resolve somewhere neither of them intended.
+type ChainConfig struct {
+	Path string `json:"path" example:"/home/user/.contenox/agent-reviewer.json"`
+
+	// ChainID is the "id" field inside that chain file, recorded at declaration
+	// time so a listing can show WHICH chain a unit runs without reading every
+	// file. It is a display copy of a fact the file owns: nothing resolves
+	// through it, and an edit that changes the file's id leaves this stale
+	// until the next discovery pass rewrites it. Optional.
+	ChainID string `json:"chainId,omitempty" example:"agent-reviewer"`
+}
+
+// Validate checks a ChainConfig in isolation, in the same spirit as
+// ExternalACPConfig.Validate: it knows nothing about the owning Agent. It
+// deliberately does NOT stat the path — existence is a runtime condition that
+// can change between declaration and spawn, and a validator that pretended
+// otherwise would reject a perfectly good declaration made before its chain
+// file is written. A missing file surfaces at spawn, where the ACP chain
+// loader already fails closed with the path in the message.
+func (c ChainConfig) Validate() error {
+	if strings.TrimSpace(c.Path) == "" {
+		return fmt.Errorf("chain: path is required (the chain file this agent runs)")
+	}
+	if !filepath.IsAbs(c.Path) {
+		return fmt.Errorf("chain: path %q must be absolute", c.Path)
+	}
+	return nil
+}
+
 // Agent represents a persisted, declared agent resource: something the
-// runtime can spawn/drive as an ACP peer (kind "external_acp") or, in a
-// future kind, address in-process (kind "chain", reserved/unimplemented).
+// runtime can spawn/drive as an ACP peer — either somebody else's program
+// (kind "external_acp") or one of the runtime's own task chains (kind
+// "chain").
 //
 // ConfigJSON carries the kind-specific config as raw JSON rather than flat
 // columns — mcp_servers can use flat columns because it has exactly one
-// kind; agents is polymorphic from the start, so flat-columns-per-kind would
-// be a migration trap the moment a second kind (chain) is implemented.
+// kind; agents is polymorphic, so flat-columns-per-kind would have been a
+// migration trap the moment the second kind (chain) was implemented.
 type Agent struct {
 	ID          string          `json:"id" example:"a1b2c3d4-e5f6-7890-abcd-ef1234567890"`
 	Name        string          `json:"name" example:"local-claude-code"`
@@ -105,10 +166,10 @@ type Agent struct {
 
 	// Source, RegistryID, and RegistryVersion are system-managed provenance for
 	// display and updates — NOT part of the user-editable run spec (which lives
-	// in ConfigJSON). Source is "registry" for an agent seeded from the ACP
-	// registry catalog or "manual" for one registered from a bare command;
-	// RegistryID/RegistryVersion record the catalog entry it was seeded from.
-	// nil for agents predating provenance tracking.
+	// in ConfigJSON). Source is one of AgentSourceRegistry / AgentSourceManual /
+	// AgentSourceDiscovered; RegistryID/RegistryVersion record the catalog entry
+	// a registry-sourced agent was seeded from. nil for agents predating
+	// provenance tracking.
 	Source          *string `json:"source,omitempty"`
 	RegistryID      *string `json:"registryId,omitempty"`
 	RegistryVersion *string `json:"registryVersion,omitempty"`
@@ -143,6 +204,34 @@ func (a *Agent) SetExternalACPConfig(cfg ExternalACPConfig) error {
 		return fmt.Errorf("agent: marshal external_acp config: %w", err)
 	}
 	a.Kind = AgentKindExternalACP
+	a.ConfigJSON = raw
+	return nil
+}
+
+// ChainConfig unmarshals ConfigJSON as a ChainConfig, the AgentKindChain
+// counterpart of ExternalACPConfig() and identical in contract: it errors if
+// the agent's Kind is not AgentKindChain or the stored JSON doesn't parse.
+func (a *Agent) ChainConfig() (*ChainConfig, error) {
+	if a.Kind != AgentKindChain {
+		return nil, fmt.Errorf("agent %q: kind is %q, not %q", a.Name, a.Kind, AgentKindChain)
+	}
+	var cfg ChainConfig
+	if len(a.ConfigJSON) == 0 {
+		return &cfg, nil
+	}
+	if err := json.Unmarshal(a.ConfigJSON, &cfg); err != nil {
+		return nil, fmt.Errorf("agent %q: unmarshal chain config: %w", a.Name, err)
+	}
+	return &cfg, nil
+}
+
+// SetChainConfig marshals cfg into ConfigJSON and sets Kind to AgentKindChain.
+func (a *Agent) SetChainConfig(cfg ChainConfig) error {
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("agent: marshal chain config: %w", err)
+	}
+	a.Kind = AgentKindChain
 	a.ConfigJSON = raw
 	return nil
 }

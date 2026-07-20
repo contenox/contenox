@@ -155,13 +155,20 @@ func TestTerminalRoutes_CreateListGetDelete(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rr.Code)
 }
 
+// TestTerminalRoutes_InvalidInputs pins that malformed pagination parameters
+// are refused with 400. This route was the only one that ever rejected
+// limit < 1, and it did so with 422; parsing now goes through
+// apiframework.ListParams, which classifies every malformed pagination
+// parameter as ErrInvalidParameterValue and so answers 400 everywhere.
 func TestTerminalRoutes_InvalidInputs(t *testing.T) {
 	mux := http.NewServeMux()
 	AddRoutes(mux, newFakeTerminalService(), nil, true, "")
 
-	rr := httptest.NewRecorder()
-	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/terminal/sessions?limit=0", nil))
-	require.Equal(t, http.StatusUnprocessableEntity, rr.Code)
+	for _, query := range []string{"limit=0", "limit=-1", "limit=not-a-number", "cursor=garbage"} {
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/terminal/sessions?"+query, nil))
+		require.Equal(t, http.StatusBadRequest, rr.Code, "query %q", query)
+	}
 }
 
 type cappedTerminalService struct {

@@ -464,3 +464,87 @@ func TestUnit_RequestApproval_Respond_ConcurrentRoundTrips(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+// ─── attribution (slice M5 / C2's report) ───────────────────────────────────
+
+// RequestApproval persists the attribution the caller supplies onto the durable
+// row, so the inbox can name WHICH unit is asking — not just which tool it
+// called. The mission id is nullable on purpose: an unattended session that is
+// not on a mission must be distinguishable from one whose mission is unknown,
+// which an empty string could not express.
+func TestUnit_RequestApproval_PersistsAttribution(t *testing.T) {
+	ctx, store, _ := setupHITLDB(t)
+	svc := newDurableService(t, store)
+
+	published := make(chan string, 1)
+	reqCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		_, _ = svc.RequestApproval(reqCtx, hitlservice.ApprovalRequest{
+			ToolsName:  "local_fs",
+			ToolName:   "write_file",
+			PolicyName: "envelope.json",
+			InstanceID: "instance-1",
+			SessionID:  "session-1",
+			AgentName:  "reviewer",
+			MissionID:  "mission-1",
+		}, signalSink{published})
+	}()
+
+	var approvalID string
+	select {
+	case approvalID = <-published:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the pending row to be published")
+	}
+
+	row, err := store.GetHITLApproval(ctx, approvalID)
+	require.NoError(t, err)
+	require.Equal(t, "instance-1", row.InstanceID)
+	require.Equal(t, "session-1", row.SessionID)
+	require.Equal(t, "reviewer", row.AgentName)
+	require.NotNil(t, row.MissionID)
+	require.Equal(t, "mission-1", *row.MissionID)
+}
+
+func TestUnit_RequestApproval_NoMissionStoresNull(t *testing.T) {
+	ctx, store, _ := setupHITLDB(t)
+	svc := newDurableService(t, store)
+
+	published := make(chan string, 1)
+	reqCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		_, _ = svc.RequestApproval(reqCtx, hitlservice.ApprovalRequest{
+			ToolsName:  "local_fs",
+			ToolName:   "write_file",
+			InstanceID: "instance-1",
+		}, signalSink{published})
+	}()
+
+	var approvalID string
+	select {
+	case approvalID = <-published:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the pending row to be published")
+	}
+
+	row, err := store.GetHITLApproval(ctx, approvalID)
+	require.NoError(t, err)
+	require.Equal(t, "instance-1", row.InstanceID)
+	require.Nil(t, row.MissionID, "an ask with no mission must store NULL, not an empty string")
+	require.Empty(t, row.AgentName)
+}
+
+// PolicyNameFromContext is the exported reader half of WithPolicyName: a caller
+// that pins an envelope onto a request context can read back which one is in
+// force without reaching into this package.
+func TestUnit_PolicyNameFromContext_RoundTrips(t *testing.T) {
+	require.Empty(t, hitlservice.PolicyNameFromContext(context.Background()))
+
+	ctx := hitlservice.WithPolicyName(context.Background(), "  envelope.json  ")
+	require.Equal(t, "envelope.json", hitlservice.PolicyNameFromContext(ctx))
+
+	unchanged := hitlservice.WithPolicyName(context.Background(), "   ")
+	require.Empty(t, hitlservice.PolicyNameFromContext(unchanged), "a blank name pins nothing")
+}

@@ -134,7 +134,7 @@ export default function MissionListPage() {
                     }>
                     {heartbeatLabel(m.lastHeartbeat, i18n.language, {
                       never: t('missions.heartbeat_never'),
-                      justNow: t('fleet.just_now'),
+                      justNow: t('common.just_now'),
                     })}
                   </TableCell>
                 </TableRow>

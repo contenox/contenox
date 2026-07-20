@@ -28,9 +28,11 @@ import (
 )
 
 // agent source values persisted in agents.source (provenance, not run config).
+// Aliases, not copies: the values are owned by runtimetypes, which is also
+// where chain-agent discovery reads them from, so the two cannot drift.
 const (
-	agentSourceRegistry = "registry"
-	agentSourceManual   = "manual"
+	agentSourceRegistry = runtimetypes.AgentSourceRegistry
+	agentSourceManual   = runtimetypes.AgentSourceManual
 )
 
 var agentCmd = &cobra.Command{

@@ -167,21 +167,41 @@ func TestUnit_ApprovalAPI_ListDefaultLimitIs100(t *testing.T) {
 }
 
 // TestUnit_ApprovalAPI_ListInvalidLimitIsRejected pins that a non-numeric
-// limit is rejected rather than silently ignored. The status is 404, not
-// 400: this handler wraps the parse error in a bare fmt.Errorf and passes
-// apiframework.ListOperation, byte-for-byte the same construction
-// missionapi.list uses for its own "invalid limit" (routes.go:81) —
-// apiframework.mapErrorToStatus's fallback for ListOperation on an
-// unclassified error is 404, not 400. Kept consistent with that existing
-// idiom rather than special-cased here, so every list route in this fleet
-// answers a bad limit the same way.
+// limit is rejected rather than silently ignored, with 400 — a malformed
+// query parameter, not a missing resource.
+//
+// This used to assert 404, and the 404 was not a decision: the handler wrapped
+// the parse error in a bare fmt.Errorf and passed apiframework.ListOperation,
+// so apiframework.mapErrorToStatus fell through to its ListOperation default,
+// which is 404. Parsing now goes through apiframework.LimitParam, whose
+// classified ErrInvalidParameterValue maps to 400 whatever Operation the
+// handler passes.
 func TestUnit_ApprovalAPI_ListInvalidLimitIsRejected(t *testing.T) {
 	srv := setupApprovalAPI(t, &fakeApprovals{})
 
 	resp, err := http.Get(srv.URL + "/approvals?limit=not-a-number")
 	require.NoError(t, err)
 	defer resp.Body.Close()
-	require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+// TestUnit_ApprovalAPI_ListNonPositiveLimitIsRejected pins the tightening that
+// came with the shared parser: an explicit limit below 1 is now refused rather
+// than handed to hitlservice, which read it as "apply my own default". An
+// *absent* limit still means the handler's own default (100) — see
+// TestUnit_ApprovalAPI_ListDefaultLimitIs100 — so only an explicitly
+// nonsensical value is rejected.
+func TestUnit_ApprovalAPI_ListNonPositiveLimitIsRejected(t *testing.T) {
+	for _, limit := range []string{"0", "-1"} {
+		f := &fakeApprovals{}
+		srv := setupApprovalAPI(t, f)
+
+		resp, err := http.Get(srv.URL + "/approvals?limit=" + limit)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode, "limit=%s", limit)
+		require.Zero(t, f.listLimit, "limit=%s must not reach the service", limit)
+	}
 }
 
 // TestUnit_ApprovalAPI_ListServiceErrorPropagatesStatus proves the handler

@@ -22,6 +22,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/contenox/runtime/runtime/vfs"
 )
 
 const (
@@ -94,8 +96,12 @@ type Config struct {
 	// CwdResolver returns the workspace root a new shell should be rooted at,
 	// given the tool/request context (which carries the session id). Required.
 	CwdResolver func(ctx context.Context) string
-	// DefaultRoot is used when CwdResolver yields an empty string.
-	DefaultRoot string
+	// Workspace is the operator's workspace-root allowlist, enforced against
+	// whatever CwdResolver returns. It is the ONLY source of the default root:
+	// an unspecified cwd resolves to Workspace.Default(). Nil means no allowlist
+	// is configured, in which case an absolute cwd is taken as given — the same
+	// rule vfs.ResolveSessionCwd applies everywhere else.
+	Workspace *vfs.Factory
 	// Shell overrides the shell executable; empty picks a platform default.
 	Shell string
 	// ScrollbackBytes bounds retained output per shell (default 64 KiB).
@@ -141,15 +147,26 @@ func NewManager(cfg Config) Manager {
 	return m
 }
 
-func (m *manager) resolveCwd(ctx context.Context) string {
+// resolveCwd decides which directory a new shell is rooted at. A PTY is the
+// most consequential consumer of that decision in the process — it is a live
+// interactive foothold, not a single contained read — so this does not trust
+// CwdResolver's answer just because a resolver was supplied. CwdResolver is a
+// pluggable func(ctx) string with no contract that its result was ever checked
+// against anything; the check belongs where the consequence is.
+//
+// The rules are not re-derived here: vfs.ResolveSessionCwd is the ONE decision
+// procedure (absolute-path guard, then the ""/"/" sentinel for "unspecified",
+// then the allowlist), shared with the ACP session paths and fleet dispatch, so
+// the envelope cannot be enforced in one surface and skipped in this one. The
+// fallback is "" because Workspace already carries the default root; a manager
+// with no allowlist has no default of its own to offer, and an empty cwd then
+// leaves the shell in the serving process's working directory as before.
+func (m *manager) resolveCwd(ctx context.Context) (string, error) {
 	cwd := ""
 	if m.cfg.CwdResolver != nil {
 		cwd = m.cfg.CwdResolver(ctx)
 	}
-	if cwd == "" || cwd == "/" {
-		cwd = m.cfg.DefaultRoot
-	}
-	return cwd
+	return vfs.ResolveSessionCwd(m.cfg.Workspace, cwd, "")
 }
 
 func (m *manager) Run(ctx context.Context, sessionID, line string) (RunResult, error) {
@@ -247,7 +264,10 @@ func (m *manager) ensureShell(ctx context.Context, sessionID string) (*shell, bo
 	}
 	m.mu.Unlock()
 
-	cwd := m.resolveCwd(ctx)
+	cwd, err := m.resolveCwd(ctx)
+	if err != nil {
+		return nil, false, err
+	}
 	pty, err := startPTY(cwd, m.cfg.Shell)
 	if err != nil {
 		return nil, false, err
@@ -351,7 +371,7 @@ type shell struct {
 	emitted int64 // last offset fanned out (flushLoop-only)
 }
 
-func (s *shell) touch()                 { s.lastNs.Store(time.Now().UnixNano()) }
+func (s *shell) touch()                  { s.lastNs.Store(time.Now().UnixNano()) }
 func (s *shell) lastActivity() time.Time { return time.Unix(0, s.lastNs.Load()) }
 
 func (s *shell) submit(line string) error {

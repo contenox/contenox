@@ -262,6 +262,23 @@ exactly why the line is drawn here rather than left implicit.
 - **No silent drops on the ask path.** A report may be lost (documented, lossy
   by design). An ask that is lost is a hang or a wrongly-denied action, and
   must be either answered, expired by an explicit policy, or surfaced.
+- **Delivery semantics are backend-dependent, and one consumer already relies
+  on the difference.** DISCOVERED 2026-07-20 while fixing a flaky test: the
+  turn teardown in `runtime/acpsvc/prompt.go` is
+  `sub.Unsubscribe(); close(rawCh); <-translateDone`, which only delivers a
+  turn's trailing events on a backend that hands over what was published before
+  `Unsubscribe`. `libbus`'s own conformance suite records drain-on-unsubscribe
+  as **SQLite-only** and states plainly that callers must not assume it. Every
+  production wiring is SQLite today, so this is latent — but **wiring a
+  different backend as the engine bus would silently drop the tail of every
+  turn**, with no error anywhere. It presented as a load-dependent flake for
+  weeks, which is what a lost-event bug looks like from the outside.
+
+  Consequence for this blueprint: any slice that changes the bus backend, or
+  that adds a consumer depending on trailing delivery, must either keep the
+  SQLite guarantee or make `prompt.go`'s teardown drain explicitly rather than
+  by backend luck. Do not treat the backends as interchangeable because the
+  interface says they are.
 - Control-plane isolation holds: nothing here gives an agent fs-reach into its
   own governing policy.
 - Every new seam takes `context.Context` and returns `error`; no `lib*`

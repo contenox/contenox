@@ -42,6 +42,18 @@ const (
 // use?"). runtimetypes does not interpret its shape — that is hitlservice's
 // concern (see its approvalResolution type); this column is nil while State
 // is pending and set exactly once when it becomes terminal.
+// # Attribution
+//
+// InstanceID, SessionID, AgentName and MissionID name WHO is asking. Without
+// them the row says only which tool was called, which is enough to render an
+// inbox of one and useless for an inbox of many: at the plurality mission mode
+// exists for, identical-looking rows cannot be told apart, and an operator
+// cannot answer the one question an approval must always answer — what gated
+// this action, and on whose behalf. All four are best-effort: an ask raised by
+// a native chain turn with no fleet unit behind it carries none of them, and
+// MissionID is a pointer precisely because not every ask has a mission (a
+// non-mission unattended session, an API caller). Empty/nil means "not
+// applicable", never "unknown but exists".
 type HITLApproval struct {
 	ID          string            `json:"id" example:"3f9c6e2a-1b4d-4e8f-9a2c-7d5e6f8a9b0c"`
 	ToolsName   string            `json:"toolsName" example:"local_fs"`
@@ -53,10 +65,25 @@ type HITLApproval struct {
 	OnTimeout   string            `json:"onTimeout,omitempty" example:"deny"`
 	State       HITLApprovalState `json:"state" example:"pending"`
 	Resolution  json.RawMessage   `json:"resolution,omitempty" example:"{\"approved\":true}"`
-	CreatedAt   time.Time         `json:"createdAt" example:"2024-01-15T10:00:00Z"`
-	ExpiresAt   time.Time         `json:"expiresAt" example:"2024-01-15T11:00:00Z"`
-	ResolvedAt  *time.Time        `json:"resolvedAt,omitempty"`
+	// InstanceID, SessionID, AgentName and MissionID are the attribution set —
+	// see the type doc. InstanceID/SessionID are the fleet unit and the
+	// downstream session the ask was raised on; AgentName is the declared agent
+	// that unit runs; MissionID is the mission whose envelope escalated it.
+	InstanceID string     `json:"instanceId,omitempty" example:"7c1f9e4a-2b3d-4c5e-8f90-a1b2c3d4e5f6"`
+	SessionID  string     `json:"sessionId,omitempty" example:"sess_01H8XGJWBWBAQ4Z8"`
+	AgentName  string     `json:"agentName,omitempty" example:"reviewer"`
+	MissionID  *string    `json:"missionId,omitempty" example:"9d2e7f10-4c8b-4a1e-b3d6-0f5a7c9e1b24"`
+	CreatedAt  time.Time  `json:"createdAt" example:"2024-01-15T10:00:00Z"`
+	ExpiresAt  time.Time  `json:"expiresAt" example:"2024-01-15T11:00:00Z"`
+	ResolvedAt *time.Time `json:"resolvedAt,omitempty"`
 }
+
+// hitlApprovalColumns is the column list every HITLApproval read projects, in
+// the exact order scanHITLApproval / scanHITLApprovalRows bind. It is spelled
+// once so a column added to the table cannot be added to one query and
+// forgotten in another — the drift a hand-copied SELECT list invites.
+const hitlApprovalColumns = `id, tools_name, tool_name, args_summary, diff, policy_name, matched_rule, on_timeout, state, resolution, ` +
+	`instance_id, session_id, agent_name, mission_id, created_at, expires_at, resolved_at`
 
 func (s *store) CreateHITLApproval(ctx context.Context, a *HITLApproval) error {
 	if a.State == "" {
@@ -64,16 +91,17 @@ func (s *store) CreateHITLApproval(ctx context.Context, a *HITLApproval) error {
 	}
 	_, err := s.Exec.ExecContext(ctx, `
 		INSERT INTO hitl_approvals
-		(id, tools_name, tool_name, args_summary, diff, policy_name, matched_rule, on_timeout, state, resolution, created_at, expires_at, resolved_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-		a.ID, a.ToolsName, a.ToolName, a.ArgsSummary, a.Diff, a.PolicyName, a.MatchedRule, a.OnTimeout, string(a.State), nullableJSON(a.Resolution), a.CreatedAt, a.ExpiresAt, a.ResolvedAt,
+		(`+hitlApprovalColumns+`)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+		a.ID, a.ToolsName, a.ToolName, a.ArgsSummary, a.Diff, a.PolicyName, a.MatchedRule, a.OnTimeout, string(a.State), nullableJSON(a.Resolution),
+		a.InstanceID, a.SessionID, a.AgentName, a.MissionID, a.CreatedAt, a.ExpiresAt, a.ResolvedAt,
 	)
 	return err
 }
 
 func (s *store) GetHITLApproval(ctx context.Context, id string) (*HITLApproval, error) {
 	return s.scanHITLApproval(ctx, `
-		SELECT id, tools_name, tool_name, args_summary, diff, policy_name, matched_rule, on_timeout, state, resolution, created_at, expires_at, resolved_at
+		SELECT `+hitlApprovalColumns+`
 		FROM hitl_approvals WHERE id = $1`, id)
 }
 
@@ -87,7 +115,8 @@ func (s *store) scanHITLApproval(ctx context.Context, query string, arg any) (*H
 	// getKVScoped, which documents the same constraint).
 	var rawResolution []byte
 	err := s.Exec.QueryRowContext(ctx, query, arg).Scan(
-		&a.ID, &a.ToolsName, &a.ToolName, &a.ArgsSummary, &a.Diff, &a.PolicyName, &a.MatchedRule, &a.OnTimeout, &state, &rawResolution, &a.CreatedAt, &a.ExpiresAt, &a.ResolvedAt,
+		&a.ID, &a.ToolsName, &a.ToolName, &a.ArgsSummary, &a.Diff, &a.PolicyName, &a.MatchedRule, &a.OnTimeout, &state, &rawResolution,
+		&a.InstanceID, &a.SessionID, &a.AgentName, &a.MissionID, &a.CreatedAt, &a.ExpiresAt, &a.ResolvedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -144,7 +173,7 @@ func (s *store) ListExpiredHITLApprovals(ctx context.Context, asOf time.Time, li
 		limit = MAXLIMIT
 	}
 	rows, err := s.Exec.QueryContext(ctx, `
-		SELECT id, tools_name, tool_name, args_summary, diff, policy_name, matched_rule, on_timeout, state, resolution, created_at, expires_at, resolved_at
+		SELECT `+hitlApprovalColumns+`
 		FROM hitl_approvals
 		WHERE state = 'pending' AND expires_at <= $1
 		ORDER BY expires_at ASC
@@ -172,7 +201,7 @@ func (s *store) ListHITLApprovals(ctx context.Context, state HITLApprovalState, 
 		limit = MAXLIMIT
 	}
 	rows, err := s.Exec.QueryContext(ctx, `
-		SELECT id, tools_name, tool_name, args_summary, diff, policy_name, matched_rule, on_timeout, state, resolution, created_at, expires_at, resolved_at
+		SELECT `+hitlApprovalColumns+`
 		FROM hitl_approvals
 		WHERE state = $1 AND created_at < $2
 		ORDER BY created_at DESC, id DESC
@@ -191,7 +220,8 @@ func scanHITLApprovalRows(rows *sql.Rows) ([]*HITLApproval, error) {
 		var state string
 		var rawResolution []byte
 		if err := rows.Scan(
-			&a.ID, &a.ToolsName, &a.ToolName, &a.ArgsSummary, &a.Diff, &a.PolicyName, &a.MatchedRule, &a.OnTimeout, &state, &rawResolution, &a.CreatedAt, &a.ExpiresAt, &a.ResolvedAt,
+			&a.ID, &a.ToolsName, &a.ToolName, &a.ArgsSummary, &a.Diff, &a.PolicyName, &a.MatchedRule, &a.OnTimeout, &state, &rawResolution,
+			&a.InstanceID, &a.SessionID, &a.AgentName, &a.MissionID, &a.CreatedAt, &a.ExpiresAt, &a.ResolvedAt,
 		); err != nil {
 			return nil, fmt.Errorf("hitl_approvals: scan row: %w", err)
 		}

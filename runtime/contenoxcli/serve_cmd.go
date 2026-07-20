@@ -24,6 +24,7 @@ import (
 	"github.com/contenox/runtime/runtime/agentinstance"
 	"github.com/contenox/runtime/runtime/agentregistryservice"
 	"github.com/contenox/runtime/runtime/agentservice"
+	"github.com/contenox/runtime/runtime/chainagents"
 	"github.com/contenox/runtime/runtime/enginesvc"
 	"github.com/contenox/runtime/runtime/fleetservice"
 	"github.com/contenox/runtime/runtime/hitlservice"
@@ -216,7 +217,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		// transports (there is no single Transport to close over).
 		"local_fs": localtools.NewLocalFSToolsWith(
 			"", db, nil, "local_fs",
-			acpsvc.NewServeCwdResolver(db, workspaceFactory.Default()),
+			acpsvc.NewServeCwdResolver(db, workspaceFactory),
 		),
 	}
 	if opts.EffectiveEnableLocalExec {
@@ -236,8 +237,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 	var shellSessions shellsession.Manager
 	if opts.EffectiveEnableLocalExec {
 		shellSessions = shellsession.NewManager(shellsession.Config{
-			CwdResolver: acpsvc.NewServeCwdResolver(db, workspaceFactory.Default()),
-			DefaultRoot: workspaceFactory.Default(),
+			CwdResolver: acpsvc.NewServeCwdResolver(db, workspaceFactory),
+			Workspace:   workspaceFactory,
 		})
 		defer shellSessions.Shutdown()
 		localTools[shellsession.ToolsProviderName] = shellsession.NewTools(shellSessions)
@@ -358,15 +359,49 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// fleetservice (the Enabled policy check) below, rather than constructing a
 	// second agentregistryservice.Service over the same db.
 	agentRegistry := agentregistryservice.New(db)
+
+	// Durable mission records — the manifest's other half. Backed by the same DB;
+	// missions outlive the sessions/instances they reference. Built BEFORE the
+	// Manager because the unattended-permission answerer wired into it below
+	// resolves a unit's envelope from its mission.
+	missions := missionservice.New(db)
+
 	instances := agentinstance.New(
 		agentRegistry,
 		agentinstance.WithEventSink(newInstanceEventSink(tracker)),
+		// THE HITL PATH FOR UNATTENDED UNITS. A dispatched unit runs with no
+		// viewer attached by design, so its permission requests reach a session
+		// with no controller — which the kernel denies. That silently killed
+		// every mission at its first gated action and left the approval inbox
+		// empty. This fallback answers those requests instead: it resolves the
+		// unit's mission, evaluates that mission's HITL policy (its envelope),
+		// and either answers inside the bounds the operator declared or raises a
+		// durable ask that GET/POST /api/approvals and `contenox approvals`
+		// serve. The kernel learns nothing about approvals from this — it calls
+		// an injected function and returns what comes back.
+		agentinstance.WithPermissionFallback(fleetservice.NewUnattendedPermissionAnswerer(
+			fleetservice.UnattendedPermissionDeps{
+				HITL:     hitlSvc,
+				Missions: missions,
+				Sink:     taskEventSink,
+				// serve passes no fallbackPolicy to hitlservice above ("" = the
+				// service's own built-in default), so a unit with no mission
+				// behind it is governed by that same chain rather than by a
+				// second rule set invented here.
+				DefaultPolicyName: "",
+				Tracker:           tracker,
+			})),
 	)
 	defer func() { _ = instances.Close() }()
 
-	// Durable mission records — the manifest's other half. Backed by the same DB;
-	// missions outlive the sessions/instances they reference.
-	missions := missionservice.New(db)
+	// Seed the registry from the operator's own task chains, so the chains they
+	// already author are fireable as fleet units without a second registration
+	// step. It SEEDS ONLY: nothing in the spawn path learns a second lookup, so
+	// the registry stays the single source of truth for what can be fired.
+	// Workspace .contenox/ shadows ~/.contenox/, the precedence every other
+	// config file here follows. A failure must not take serve down — the fleet
+	// keeps working with whatever the registry already holds.
+	discoverChainAgents(ctx, agentRegistry, contenoxDir)
 
 	// The fleet's lifecycle-policy layer (runtime/fleetservice), wrapping
 	// instances: the /fleet REST routes below are a thin surface over this.
@@ -631,4 +666,36 @@ func startHITLApprovalSweeper(ctx context.Context, svc hitlservice.Service, inte
 		}
 	}()
 	return cancel
+}
+
+// discoverChainAgents runs one chain-agent discovery pass over the two
+// directories every other contenox config file is resolved through — the
+// workspace .contenox/ first, then ~/.contenox/ — so a chain named by the
+// agent-* convention in either, and the agent-shaped chains `contenox init`
+// ships, are declared as fleet-dispatchable agents without an operator
+// registering anything by hand.
+//
+// It is BEST EFFORT by design. Discovery only seeds the registry; the registry
+// is what the fleet actually resolves against, so a failed pass degrades to
+// "the fleet has whatever was already declared" rather than to a serve that
+// will not start. The outcome is logged either way, because an agent silently
+// failing to appear is exactly the kind of half-built surface this must not
+// manufacture.
+func discoverChainAgents(ctx context.Context, agents agentregistryservice.Service, contenoxDir string) {
+	roots := []string{contenoxDir}
+	if homeDir, err := globalContenoxDir(); err == nil {
+		roots = append(roots, homeDir)
+	}
+	res, err := chainagents.Discover(ctx, agents, roots...)
+	if err != nil {
+		slog.Warn("contenox serve: chain-agent discovery failed; the fleet keeps the agents already declared",
+			"error", err, "roots", roots)
+		return
+	}
+	if len(res.Created) > 0 || len(res.Updated) > 0 || len(res.Disabled) > 0 || len(res.Skipped) > 0 {
+		slog.Info("contenox serve: chain agents discovered",
+			"created", res.Created, "updated", res.Updated,
+			"disabled", res.Disabled, "skipped_name_taken", res.Skipped,
+			"unchanged", len(res.Unchanged))
+	}
 }

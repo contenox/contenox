@@ -315,7 +315,7 @@ export default function FleetPage() {
                             label={t('fleet.col_started')}
                             value={
                               <span title={absoluteTime(inst.startedAt)}>
-                                {relativeTime(inst.startedAt, i18n.language, t('fleet.just_now'))}
+                                {relativeTime(inst.startedAt, i18n.language, t('common.just_now'))}
                               </span>
                             }
                           />
@@ -397,7 +397,7 @@ export default function FleetPage() {
                                 <TableCell className="tabular-nums">{inst.sessions}</TableCell>
                                 <TableCell className="tabular-nums">{inst.viewers}</TableCell>
                                 <TableCell title={absoluteTime(inst.startedAt)}>
-                                  {relativeTime(inst.startedAt, i18n.language, t('fleet.just_now'))}
+                                  {relativeTime(inst.startedAt, i18n.language, t('common.just_now'))}
                                 </TableCell>
                                 <TableCell>
                                   <div className="flex flex-wrap items-center justify-end gap-2">

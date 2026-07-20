@@ -116,8 +116,11 @@ func TestHost_DriveTurn_StreamingUpdatesReachHarness(t *testing.T) {
 }
 
 // TestHost_DriveTurn_RejectsNonExternalKind locks in that DriveTurn refuses a
-// row whose kind it cannot drive (the reserved "chain" kind) with a clear
-// resolve error instead of attempting to spawn anything.
+// row whose kind it cannot drive with a clear resolve error instead of
+// attempting to spawn anything. DriveTurn is the one-shot driver that builds a
+// spawner FROM a declared record, and it builds only external_acp ones; a chain
+// unit is brought up by the instance kernel, which constructs its spawner
+// itself.
 func TestHost_DriveTurn_RejectsNonExternalKind(t *testing.T) {
 	agent := &runtimetypes.Agent{Name: "future-chain", Kind: runtimetypes.AgentKindChain}
 

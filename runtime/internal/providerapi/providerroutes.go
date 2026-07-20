@@ -2,10 +2,7 @@ package providerapi
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
-	"strconv"
-	"time"
 
 	apiframework "github.com/contenox/runtime/apiframework"
 	libdb "github.com/contenox/runtime/libdbexec"
@@ -104,23 +101,8 @@ func (p *providerManager) deleteConfig(w http.ResponseWriter, r *http.Request) {
 func (p *providerManager) listConfigs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	limitStr := apiframework.GetQueryParam(r, "limit", "100", "The maximum number of items to return per page.")
-	cursorStr := apiframework.GetQueryParam(r, "cursor", "", "An optional RFC3339Nano timestamp to fetch the next page of results.")
-
-	var cursor *time.Time
-	if cursorStr != "" {
-		t, err := time.Parse(time.RFC3339Nano, cursorStr)
-		if err != nil {
-			err = fmt.Errorf("%w: invalid cursor format, expected RFC3339Nano", apiframework.ErrUnprocessableEntity)
-			_ = apiframework.Error(w, r, err, apiframework.ListOperation)
-			return
-		}
-		cursor = &t
-	}
-
-	limit, err := strconv.Atoi(limitStr)
+	cursor, limit, err := apiframework.ListParams(r, 100)
 	if err != nil {
-		err = fmt.Errorf("%w: invalid limit format, expected integer", apiframework.ErrUnprocessableEntity)
 		_ = apiframework.Error(w, r, err, apiframework.ListOperation)
 		return
 	}

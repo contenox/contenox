@@ -206,8 +206,13 @@ func WithPolicyName(ctx context.Context, policyName string) context.Context {
 	return context.WithValue(ctx, policyNameContextKey{}, policyName)
 }
 
-// policyNameFromContext returns the context-scoped policy override, or "".
-func policyNameFromContext(ctx context.Context) string {
+// PolicyNameFromContext returns the context-scoped policy override WithPolicyName
+// pinned, or "" when none was. It is the reader half of that pair, exported so a
+// caller that BUILDS the context (the unattended-permission answerer, an ACP
+// prompt turn) can assert which envelope a request is carrying without reaching
+// into this package's internals — and so a PolicyEvaluator implementation other
+// than this one can honor the same override.
+func PolicyNameFromContext(ctx context.Context) string {
 	name, _ := ctx.Value(policyNameContextKey{}).(string)
 	return strings.TrimSpace(name)
 }
@@ -228,7 +233,7 @@ func (s *service) Evaluate(ctx context.Context, toolsName, toolName string, args
 	// service gate independently. Absent an override, fall through the existing
 	// global-KV -> constructor fallback -> built-in default chain (unchanged for
 	// single-session CLI callers).
-	policyPath := policyNameFromContext(ctx)
+	policyPath := PolicyNameFromContext(ctx)
 	if policyPath == "" {
 		policyPath = s.readActivePolicyName(ctx)
 	}
@@ -278,8 +283,18 @@ func (s *service) RequestApproval(ctx context.Context, req ApprovalRequest, sink
 		MatchedRule: req.MatchedRule,
 		OnTimeout:   string(onTimeout),
 		State:       runtimetypes.HITLApprovalPending,
+		InstanceID:  req.InstanceID,
+		SessionID:   req.SessionID,
+		AgentName:   req.AgentName,
 		CreatedAt:   now,
 		ExpiresAt:   now.Add(timeoutDur),
+	}
+	if req.MissionID != "" {
+		// Nullable by design: an ask with no mission stores NULL rather than an
+		// empty string, so "not on a mission" and "mission unknown" cannot be
+		// confused (see runtimetypes.HITLApproval).
+		missionID := req.MissionID
+		row.MissionID = &missionID
 	}
 	if req.Diff != "" {
 		diff := req.Diff

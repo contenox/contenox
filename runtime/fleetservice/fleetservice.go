@@ -63,6 +63,20 @@ type DispatchRequest struct {
 	// struct's defaulting logic is a decision, not an oversight.
 	HITLPolicyName string `json:"hitlPolicyName"`
 	Cwd            string `json:"cwd,omitempty"`
+
+	// ParentSessionID names the UPSTREAM session firing this mission — the
+	// supervision edge (see missionservice.Mission.ParentSessionID). It is set
+	// when one agent's session fires a mission from within a conversation, so
+	// the fired unit's reports can reach the caller that can act on them, and
+	// left empty when an operator fires directly, which routes reports to the
+	// operator inbox instead.
+	//
+	// Optional and unvalidated on purpose: this layer records the edge, it does
+	// not police it. Nothing consumes it yet — the `/mission` slash command and
+	// report routing arrive in the next slice — so it is populated where the
+	// information exists and empty everywhere else, rather than being backfilled
+	// with a guess.
+	ParentSessionID string `json:"parentSessionId,omitempty"`
 }
 
 // DispatchResult is Dispatch's output: the ids the dispatch created. MissionID
@@ -233,6 +247,10 @@ func (s *service) Dispatch(ctx context.Context, req DispatchRequest) (DispatchRe
 		Intent:         req.Intent,
 		AgentName:      req.AgentName,
 		HITLPolicyName: req.HITLPolicyName,
+		// The supervision edge, recorded at creation from the only place that
+		// knows it: whoever fired the dispatch. Empty when an operator fired it
+		// directly — see DispatchRequest.ParentSessionID.
+		ParentSessionID: req.ParentSessionID,
 	}
 	if err := s.missions.Create(ctx, m); err != nil {
 		_ = s.instances.Stop(instanceID)

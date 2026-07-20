@@ -282,3 +282,66 @@ func TestUnit_HITLApprovals_RowSurvivesReopeningTheDatabase(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, runtimetypes.HITLApprovalApproved, resolved.State)
 }
+
+// ─── attribution ───────────────────────────────────────────────────────────
+//
+// The attribution columns are what make an inbox usable past one unit: they
+// name WHO is asking, not just which tool was called. These pin that they
+// round-trip through every read path, and that the nullable one stays nullable
+// — an ask with no mission must be distinguishable from one whose mission is
+// unknown, which an empty string would not be.
+
+func TestUnit_HITLApprovals_AttributionRoundTrips(t *testing.T) {
+	t.Parallel()
+	ctx, s := setupHITLApprovalsStore(t)
+
+	missionID := uuid.NewString()
+	a := newPendingApproval()
+	a.InstanceID = "instance-42"
+	a.SessionID = "sess_downstream_1"
+	a.AgentName = "reviewer"
+	a.MissionID = &missionID
+	require.NoError(t, s.CreateHITLApproval(ctx, a))
+
+	got, err := s.GetHITLApproval(ctx, a.ID)
+	require.NoError(t, err)
+	require.Equal(t, "instance-42", got.InstanceID)
+	require.Equal(t, "sess_downstream_1", got.SessionID)
+	require.Equal(t, "reviewer", got.AgentName)
+	require.NotNil(t, got.MissionID)
+	require.Equal(t, missionID, *got.MissionID)
+
+	// The LIST paths project the same columns — the inbox reads through these,
+	// not through Get.
+	listed, err := s.ListHITLApprovals(ctx, runtimetypes.HITLApprovalPending, nil, 10)
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	require.Equal(t, "instance-42", listed[0].InstanceID)
+	require.Equal(t, "reviewer", listed[0].AgentName)
+	require.NotNil(t, listed[0].MissionID)
+	require.Equal(t, missionID, *listed[0].MissionID)
+
+	expired, err := s.ListExpiredHITLApprovals(ctx, a.ExpiresAt.Add(time.Minute), 10)
+	require.NoError(t, err)
+	require.Len(t, expired, 1)
+	require.Equal(t, "sess_downstream_1", expired[0].SessionID)
+	require.NotNil(t, expired[0].MissionID)
+}
+
+func TestUnit_HITLApprovals_UnattributedRowIsEmptyNotNull(t *testing.T) {
+	t.Parallel()
+	ctx, s := setupHITLApprovalsStore(t)
+
+	// An ask raised by a native chain turn with no fleet unit behind it: no
+	// attribution at all, which must store and read back cleanly rather than
+	// failing a NOT NULL constraint or scanning into a nil string.
+	a := newPendingApproval()
+	require.NoError(t, s.CreateHITLApproval(ctx, a))
+
+	got, err := s.GetHITLApproval(ctx, a.ID)
+	require.NoError(t, err)
+	require.Empty(t, got.InstanceID)
+	require.Empty(t, got.SessionID)
+	require.Empty(t, got.AgentName)
+	require.Nil(t, got.MissionID, "no mission must read back as NULL, not as an empty string")
+}

@@ -4,24 +4,61 @@ package shellsession
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/vfs"
 )
 
 func newTestManager(t *testing.T, idle time.Duration) *manager {
 	t.Helper()
 	root := t.TempDir()
+	roots, err := vfs.NewFactory(root)
+	if err != nil {
+		t.Fatalf("vfs.NewFactory(%q): %v", root, err)
+	}
 	m := NewManager(Config{
 		CwdResolver: func(context.Context) string { return root },
-		DefaultRoot: root,
+		Workspace:   roots,
 		IdleTimeout: idle,
 	}).(*manager)
 	t.Cleanup(m.Shutdown)
 	return m
+}
+
+// TestManager_RefusesCwdOutsideWorkspaceAllowlist pins the envelope at the PTY
+// boundary. CwdResolver is a pluggable func(ctx) string, so the manager cannot
+// assume its answer was checked by whoever supplied it; a shell is a live
+// interactive foothold, and rooting one outside the operator's configured
+// workspace roots is exactly the escape the allowlist exists to prevent. The
+// judgement is vfs.ResolveSessionCwd — the same one the ACP session paths and
+// fleet dispatch use — so it cannot drift from them.
+func TestManager_RefusesCwdOutsideWorkspaceAllowlist(t *testing.T) {
+	allowed := t.TempDir()
+	outside := t.TempDir()
+	roots, err := vfs.NewFactory(allowed)
+	if err != nil {
+		t.Fatalf("vfs.NewFactory(%q): %v", allowed, err)
+	}
+	m := NewManager(Config{
+		CwdResolver: func(context.Context) string { return outside },
+		Workspace:   roots,
+		IdleTimeout: time.Minute,
+	})
+	t.Cleanup(m.Shutdown)
+
+	if _, err := m.Run(ctxWithSession("sess-escape"), "sess-escape", "echo nope"); err == nil {
+		t.Fatalf("Run must refuse a cwd outside the workspace allowlist, got no error")
+	} else if !errors.Is(err, vfs.ErrCwdNotPermitted) {
+		t.Fatalf("refusal must wrap vfs.ErrCwdNotPermitted, got %v", err)
+	}
+	if r := m.Read("sess-escape", 0, 0); r.Exists {
+		t.Fatalf("no shell may be started for a refused cwd")
+	}
 }
 
 func ctxWithSession(id string) context.Context {

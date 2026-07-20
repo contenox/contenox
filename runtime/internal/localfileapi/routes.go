@@ -21,10 +21,10 @@ func AddRoutes(mux *http.ServeMux, service localfileservice.Service) {
 	mux.HandleFunc("GET /files/download", h.download)
 	mux.HandleFunc("POST /files", h.createFile)
 	mux.HandleFunc("PUT /files", h.updateFile)
-	mux.HandleFunc("DELETE /files", h.deletePath)
+	mux.HandleFunc("DELETE /files", h.deleteFile)
 	mux.HandleFunc("PUT /files/move", h.movePath)
 	mux.HandleFunc("POST /folders", h.createFolder)
-	mux.HandleFunc("DELETE /folders", h.deletePath)
+	mux.HandleFunc("DELETE /folders", h.deleteFolder)
 }
 
 type handler struct {
@@ -222,8 +222,30 @@ func (h *handler) movePath(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, entry) // @response localfileservice.Entry
 }
 
-func (h *handler) deletePath(w http.ResponseWriter, r *http.Request) {
-	path := apiframework.GetQueryParam(r, "path", "", "Path relative to the project root.")
+// Delete a file.
+//
+// Removes the file at the given path, relative to the project root.
+//
+// Deleting a folder is a separate operation (DELETE /folders). The two share an
+// implementation but not a handler: the generator derives one operationId and
+// one description per handler function, so two routes bound to a single handler
+// collide and their annotations attach order-dependently — see
+// docs/development/api_spec_generation.md.
+func (h *handler) deleteFile(w http.ResponseWriter, r *http.Request) {
+	path := apiframework.GetQueryParam(r, "path", "", "File path relative to the project root.")
+	if err := h.service.Delete(r.Context(), path); err != nil {
+		_ = apiframework.Error(w, r, err, apiframework.DeleteOperation)
+		return
+	}
+	_ = apiframework.Encode(w, r, http.StatusOK, apiframework.MessageResponse{Message: "path removed"}) // @response apiframework.MessageResponse
+}
+
+// Delete a folder.
+//
+// Removes the folder at the given path, relative to the project root, together
+// with everything beneath it.
+func (h *handler) deleteFolder(w http.ResponseWriter, r *http.Request) {
+	path := apiframework.GetQueryParam(r, "path", "", "Folder path relative to the project root.")
 	if err := h.service.Delete(r.Context(), path); err != nil {
 		_ = apiframework.Error(w, r, err, apiframework.DeleteOperation)
 		return

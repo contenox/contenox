@@ -551,3 +551,127 @@ func TestUnit_MissionService_ListReportsScopedToOwnMission(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, missions, 2)
 }
+
+// ─── GetByInstance: the mission-from-instance lookup ───────────────────────
+//
+// The unattended-permission path knows only which INSTANCE raised a request,
+// while the envelope that governs it lives on the MISSION. This is that lookup,
+// and it is a scan of the mission records rather than a secondary index — see
+// GetByInstance's own doc for why.
+
+func TestUnit_MissionService_GetByInstanceFindsTheBoundMission(t *testing.T) {
+	ctx, db := setupMissionDB(t)
+	svc := New(db)
+
+	other := newMission("unrelated work")
+	require.NoError(t, svc.Create(ctx, other))
+	_, err := svc.Bind(ctx, other.ID, "sess-other", "inst-other")
+	require.NoError(t, err)
+
+	m := newMission("the work we are asking about")
+	require.NoError(t, svc.Create(ctx, m))
+	_, err = svc.Bind(ctx, m.ID, "sess-1", "inst-1")
+	require.NoError(t, err)
+
+	got, err := svc.GetByInstance(ctx, "inst-1")
+	require.NoError(t, err)
+	require.Equal(t, m.ID, got.ID)
+	require.Equal(t, testPolicy, got.HITLPolicyName, "the envelope rides along on the lookup")
+}
+
+func TestUnit_MissionService_GetByInstanceUnknownIsNotFound(t *testing.T) {
+	ctx, db := setupMissionDB(t)
+	svc := New(db)
+
+	m := newMission("bound elsewhere")
+	require.NoError(t, svc.Create(ctx, m))
+	_, err := svc.Bind(ctx, m.ID, "sess-1", "inst-1")
+	require.NoError(t, err)
+
+	// A unit brought up outside a dispatch has no mission. That is a normal
+	// answer, not a failure — the caller falls back to a default envelope.
+	_, err = svc.GetByInstance(ctx, "inst-nobody-claimed")
+	require.ErrorIs(t, err, libdb.ErrNotFound)
+}
+
+func TestUnit_MissionService_GetByInstanceRequiresAnID(t *testing.T) {
+	ctx, db := setupMissionDB(t)
+	svc := New(db)
+
+	_, err := svc.GetByInstance(ctx, "")
+	require.Error(t, err)
+}
+
+// A unit claimed by TWO missions cannot arise through Dispatch (each dispatch
+// creates its own instance) but is reachable by hand-binding. The lookup
+// resolves it deterministically — newest claim wins — rather than returning an
+// arbitrary one, so an ask's envelope cannot flip between two evaluations.
+func TestUnit_MissionService_GetByInstanceDuplicateClaimIsDeterministic(t *testing.T) {
+	ctx, db := setupMissionDB(t)
+	svc := New(db)
+
+	first := newMission("first claim")
+	require.NoError(t, svc.Create(ctx, first))
+	_, err := svc.Bind(ctx, first.ID, "sess-a", "inst-shared")
+	require.NoError(t, err)
+
+	time.Sleep(10 * time.Millisecond) // distinct created_at ordering
+	second := newMission("second claim")
+	require.NoError(t, svc.Create(ctx, second))
+	_, err = svc.Bind(ctx, second.ID, "sess-b", "inst-shared")
+	require.NoError(t, err)
+
+	for i := 0; i < 3; i++ {
+		got, err := svc.GetByInstance(ctx, "inst-shared")
+		require.NoError(t, err)
+		require.Equal(t, second.ID, got.ID, "the most recently created claim wins, every time")
+	}
+}
+
+// The scan pages, so a mission past the first page is still found.
+func TestUnit_MissionService_GetByInstanceScansPastOnePage(t *testing.T) {
+	ctx, db := setupMissionDB(t)
+	svc := New(db)
+
+	target := newMission("the oldest mission")
+	require.NoError(t, svc.Create(ctx, target))
+	_, err := svc.Bind(ctx, target.ID, "sess-target", "inst-target")
+	require.NoError(t, err)
+
+	for i := 0; i < scanPageSize+5; i++ {
+		filler := newMission("filler")
+		require.NoError(t, svc.Create(ctx, filler))
+	}
+
+	got, err := svc.GetByInstance(ctx, "inst-target")
+	require.NoError(t, err)
+	require.Equal(t, target.ID, got.ID)
+}
+
+// ─── the supervision edge ──────────────────────────────────────────────────
+
+// ParentSessionID names the session that FIRED the mission, which is not the
+// session it spawned. It survives a round trip and stays empty when an operator
+// fired the mission directly.
+func TestUnit_MissionService_ParentSessionIDRoundTrips(t *testing.T) {
+	ctx, db := setupMissionDB(t)
+	svc := New(db)
+
+	fired := newMission("fired by an agent's session")
+	fired.ParentSessionID = "upstream-session-9"
+	require.NoError(t, svc.Create(ctx, fired))
+	_, err := svc.Bind(ctx, fired.ID, "spawned-session", "spawned-instance")
+	require.NoError(t, err)
+
+	got, err := svc.Get(ctx, fired.ID)
+	require.NoError(t, err)
+	require.Equal(t, "upstream-session-9", got.ParentSessionID, "who FIRED it")
+	require.Equal(t, "spawned-session", got.SessionID, "what it SPAWNED — a different fact")
+	require.NotEqual(t, got.ParentSessionID, got.SessionID)
+
+	direct := newMission("fired by an operator")
+	require.NoError(t, svc.Create(ctx, direct))
+	gotDirect, err := svc.Get(ctx, direct.ID)
+	require.NoError(t, err)
+	require.Empty(t, gotDirect.ParentSessionID, "no parent means an operator fired it directly")
+}

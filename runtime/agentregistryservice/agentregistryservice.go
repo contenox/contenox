@@ -1,11 +1,16 @@
 // Package agentregistryservice stores declared agent configurations — the
 // "bots table" concept (see the mvp core/serverops/store/schema.sql `bots`
 // table this generalizes) reborn as a polymorphic, kind-dispatched resource.
-// Today the only implemented kind is "external_acp" (an agent the runtime
-// spawns/drives as an external ACP peer via runtime/agenthost); "chain" is
-// reserved in the schema and validation below for a future kind where a
-// contenox task chain itself is addressable as an agent, but is not accepted
-// here yet.
+// Two kinds are implemented: "external_acp" (an agent the runtime
+// spawns/drives as an external ACP peer via runtime/agenthost) and "chain"
+// (one of the runtime's own task chains, addressable as an agent — the same
+// spawn, pointed at this binary's own ACP server; see
+// runtimetypes.ChainConfig).
+//
+// It stays the SINGLE source of truth for "what can I fire". Chain agents are
+// SEEDED into it by convention-based discovery (runtime/chainagents) rather
+// than resolved through a second lookup at spawn time, so ResolveForSpawn
+// keeps one implementation for both kinds.
 //
 // This package intentionally mirrors runtime/mcpserverservice's shape
 // (validated CRUD over a runtimetypes store, no HTTP routes) so the two
@@ -186,11 +191,18 @@ func validate(agent *runtimetypes.Agent) error {
 			return err
 		}
 	case runtimetypes.AgentKindChain:
-		return fmt.Errorf("agent kind %q is reserved and not implemented yet", runtimetypes.AgentKindChain)
+		cfg, err := agent.ChainConfig()
+		if err != nil {
+			return err
+		}
+		if err := cfg.Validate(); err != nil {
+			return err
+		}
 	case "":
 		return fmt.Errorf("kind is required")
 	default:
-		return fmt.Errorf("unknown agent kind %q: must be %q", agent.Kind, runtimetypes.AgentKindExternalACP)
+		return fmt.Errorf("unknown agent kind %q: must be %q or %q",
+			agent.Kind, runtimetypes.AgentKindExternalACP, runtimetypes.AgentKindChain)
 	}
 	return nil
 }

@@ -97,18 +97,30 @@ const missionReportKVPrefix = "fleet:mission_report:"
 // erroring, without attaching to its session. Neither is required on create;
 // both start zero (LastHeartbeat nil, LastError "") until Heartbeat is
 // called.
+// ParentSessionID is the SUPERVISION EDGE: the upstream session that FIRED
+// this mission, which is not the same thing as the session it spawned.
+// SessionID/InstanceID name the unit the mission created; nothing on the
+// record used to name who created it. A mission fired from a chat session (the
+// `/mission` slash command) is supervised by THAT session — the fired unit's
+// reports belong to the caller who can act on them, not to an operator inbox
+// nobody is reading. It is empty when an operator fired the mission directly,
+// which is also the "route reports to the operator inbox" case.
+//
+// It is the same missing edge C2 surfaced from the other side (an approval row
+// that cannot name who is asking): one absent relationship, two symptoms.
 type Mission struct {
-	ID             string     `json:"id"`
-	Intent         string     `json:"intent"`
-	AgentName      string     `json:"agentName"`
-	HITLPolicyName string     `json:"hitlPolicyName"`
-	SessionID      string     `json:"sessionId,omitempty"`
-	InstanceID     string     `json:"instanceId,omitempty"`
-	Status         Status     `json:"status"`
-	LastHeartbeat  *time.Time `json:"lastHeartbeat,omitempty"`
-	LastError      string     `json:"lastError,omitempty"`
-	CreatedAt      time.Time  `json:"createdAt"`
-	UpdatedAt      time.Time  `json:"updatedAt"`
+	ID              string     `json:"id"`
+	Intent          string     `json:"intent"`
+	AgentName       string     `json:"agentName"`
+	HITLPolicyName  string     `json:"hitlPolicyName"`
+	SessionID       string     `json:"sessionId,omitempty"`
+	InstanceID      string     `json:"instanceId,omitempty"`
+	ParentSessionID string     `json:"parentSessionId,omitempty"`
+	Status          Status     `json:"status"`
+	LastHeartbeat   *time.Time `json:"lastHeartbeat,omitempty"`
+	LastError       string     `json:"lastError,omitempty"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	UpdatedAt       time.Time  `json:"updatedAt"`
 }
 
 // ReportKind is the closed, small set of things a mission report may be. See
@@ -142,6 +154,19 @@ type Report struct {
 type Service interface {
 	Create(ctx context.Context, m *Mission) error
 	Get(ctx context.Context, id string) (*Mission, error)
+
+	// GetByInstance returns the mission bound to instanceID, or
+	// libdb.ErrNotFound when no mission claims it (a fleet unit brought up
+	// outside a dispatch — an ACP chat session's external agent, for
+	// instance — has none, and that is a normal answer, not a failure).
+	//
+	// It is the lookup the unattended-permission path needs: the kernel knows
+	// only which INSTANCE raised a request, while the envelope that governs it
+	// lives on the MISSION. See the implementation for why this scans rather
+	// than maintaining a secondary index, and what it does with a duplicate
+	// claim.
+	GetByInstance(ctx context.Context, instanceID string) (*Mission, error)
+
 	List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*Mission, error)
 	Update(ctx context.Context, m *Mission) error
 	Delete(ctx context.Context, id string) error
@@ -218,25 +243,109 @@ func (s *service) Get(ctx context.Context, id string) (*Mission, error) {
 	return &m, nil
 }
 
+// scanPageSize bounds one page of the mission prefix scan GetByInstance walks.
+// Missions are small records and the scan is off the hot path (once per
+// unattended permission request, not per token), so the page exists to keep one
+// query's result set bounded rather than to make the walk fast.
+const scanPageSize = 200
+
+// GetByInstance implements Service.GetByInstance by SCANNING the mission
+// records, newest-first, and returning the first whose InstanceID matches.
+//
+// # Why a scan and not a secondary key
+//
+// The alternative is a second KV entry (instance id -> mission id) written at
+// Bind time. It would be O(1) instead of O(n), and it would be a SECOND source
+// of truth for a fact the mission record already owns — one that can be written
+// and then not written (a Bind that half-succeeds), can outlive the mission it
+// points at, and would need its own repair path when the two disagree. That is
+// the shape of defect this subsystem already produced once (an index consumed
+// by a second slice before anything used it end to end), and the blueprint's
+// standing invariant is "no second mechanism".
+//
+// The cost is bounded by what n actually is: missions are dispatches, one per
+// unit of work an operator or an agent fired, on one workstation. A scan of a
+// few hundred small JSON records, performed once per unattended permission
+// request, is not a cost worth buying an index-consistency problem to avoid. If
+// n ever grows past that, the fix is a real indexed column on a real table, not
+// a hand-maintained KV pointer.
+//
+// # Two missions claiming one instance
+//
+// Bind refuses to move a mission from one instance to another, so a mission's
+// claim never changes once made — but nothing makes the claim EXCLUSIVE across
+// missions, and Dispatch creates a fresh instance per mission, so a duplicate
+// can only arise from a hand-written Bind against an already-claimed unit. The
+// scan resolves it deterministically rather than pretending it cannot happen:
+// the prefix scan is newest-first and the FIRST match wins, i.e. the most
+// recently created mission that claims the unit. That is the answer that
+// matches what a duplicate claim means in practice ("this unit was re-purposed
+// for newer work"), and it is stable — the same call returns the same mission
+// every time, so an ask's envelope cannot flip between two evaluations.
+func (s *service) GetByInstance(ctx context.Context, instanceID string) (*Mission, error) {
+	if instanceID == "" {
+		return nil, fmt.Errorf("instanceId is required")
+	}
+	var cursor *time.Time
+	for {
+		batch, next, err := s.listPage(ctx, cursor, scanPageSize)
+		if err != nil {
+			return nil, err
+		}
+		for _, m := range batch {
+			if m.InstanceID == instanceID {
+				return m, nil
+			}
+		}
+		if len(batch) < scanPageSize || next == nil {
+			return nil, libdb.ErrNotFound
+		}
+		// The strictly-decreasing-cursor guard defends against an
+		// identical-timestamp storm looping forever, at the cost of truncating
+		// such a tie — the same limitation every other prefix-scan pager in this
+		// codebase carries.
+		if cursor != nil && !next.Before(*cursor) {
+			return nil, libdb.ErrNotFound
+		}
+		cursor = next
+	}
+}
+
 // List returns missions newest-first via the store's prefix scan. The slice is
 // always non-nil so an empty fleet renders as [].
 func (s *service) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*Mission, error) {
 	if limit <= 0 {
 		limit = 100
 	}
+	missions, _, err := s.listPage(ctx, createdAtCursor, limit)
+	return missions, err
+}
+
+// listPage is List's implementation plus the cursor for the NEXT page: the
+// STORE-side created_at of the oldest row it returned. Paging on that rather
+// than on Mission.CreatedAt matters — the two are close but not equal (the
+// mission stamps its own CreatedAt just before the row is written), and feeding
+// the record's timestamp back into a scan ordered by the row's would silently
+// skip every mission written in the gap between them.
+func (s *service) listPage(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*Mission, *time.Time, error) {
 	kvs, err := s.store().ListKVPrefix(ctx, missionKVPrefix, createdAtCursor, limit)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	missions := make([]*Mission, 0, len(kvs))
 	for _, kv := range kvs {
 		var m Mission
 		if err := json.Unmarshal(kv.Value, &m); err != nil {
-			return nil, fmt.Errorf("mission %q: %w", kv.Key, err)
+			return nil, nil, fmt.Errorf("mission %q: %w", kv.Key, err)
 		}
 		missions = append(missions, &m)
 	}
-	return missions, nil
+	var next *time.Time
+	if len(kvs) > 0 {
+		last := kvs[len(kvs)-1].CreatedAt
+		next = &last
+	}
+	return missions, next, nil
 }
 
 // Update validates m and persists intent/status/envelope/reference changes to

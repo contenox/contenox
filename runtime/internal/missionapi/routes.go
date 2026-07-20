@@ -11,10 +11,7 @@
 package missionapi
 
 import (
-	"fmt"
 	"net/http"
-	"strconv"
-	"time"
 
 	apiframework "github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/runtime/missionservice"
@@ -64,21 +61,9 @@ func (h *missionHandler) create(w http.ResponseWriter, r *http.Request) {
 func (h *missionHandler) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	limitStr := apiframework.GetQueryParam(r, "limit", "100", "Maximum number of items to return.")
-	cursorStr := apiframework.GetQueryParam(r, "cursor", "", "RFC3339Nano timestamp for pagination cursor.")
-
-	var cursor *time.Time
-	if cursorStr != "" {
-		t, err := time.Parse(time.RFC3339Nano, cursorStr)
-		if err != nil {
-			_ = apiframework.Error(w, r, fmt.Errorf("invalid cursor: %w", err), apiframework.ListOperation)
-			return
-		}
-		cursor = &t
-	}
-	limit, err := strconv.Atoi(limitStr)
+	cursor, limit, err := apiframework.ListParams(r, 100)
 	if err != nil {
-		_ = apiframework.Error(w, r, fmt.Errorf("invalid limit: %w", err), apiframework.ListOperation)
+		_ = apiframework.Error(w, r, err, apiframework.ListOperation)
 		return
 	}
 
@@ -176,10 +161,9 @@ func (h *missionHandler) listReports(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := apiframework.GetPathParam(r, "id", "The unique ID of the mission.")
 
-	limitStr := apiframework.GetQueryParam(r, "limit", "100", "Maximum number of items to return.")
-	limit, err := strconv.Atoi(limitStr)
+	limit, err := apiframework.LimitParam(r, 100)
 	if err != nil {
-		_ = apiframework.Error(w, r, fmt.Errorf("invalid limit: %w", err), apiframework.ListOperation)
+		_ = apiframework.Error(w, r, err, apiframework.ListOperation)
 		return
 	}
 

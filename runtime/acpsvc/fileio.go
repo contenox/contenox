@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/localtools"
 	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/vfs"
 )
 
 var osFallback = localtools.NewOSFileIO()
@@ -103,27 +105,53 @@ func NewACPCwdResolver(transport func() *Transport) func(context.Context) string
 }
 
 // NewServeCwdResolver returns the cwd resolver for the serve path, where a
-// single shared local_fs tool is consulted by many per-connection transports —
-// so it cannot close over one transport the way the stdio path does. Instead it
-// resolves the session's persisted workspace cwd from the database (keyed by the
-// internal session id in ctx), falling back to defaultRoot when the session has
-// none, its stored cwd is the legacy "/" sentinel, or there is no session in
-// scope. The stored cwd is already validated against the allowlist at
-// session/new time, so this read is trusted; defaultRoot is the Factory default.
-func NewServeCwdResolver(db libdb.DBManager, defaultRoot string) func(context.Context) string {
+// single shared local_fs tool (and the shell-session manager) is consulted by
+// many per-connection transports — so it cannot close over one transport the way
+// the stdio path does. Instead it resolves the session's persisted workspace cwd
+// from the database, keyed by the internal session id in ctx.
+//
+// The stored cwd is re-checked against the CURRENT allowlist rather than trusted
+// because it was checked once at session/new time. Those are different claims:
+// the record outlives the process that wrote it, and roots is rebuilt from the
+// operator's serve arguments on every start. A session created while a root was
+// configured keeps naming that root after it is dropped from the allowlist, and
+// two serve instances sharing one database each read the other's session rows.
+// In both cases an unchecked read would root the agent's filesystem tools — and
+// its PTY — outside the envelope the running process was told to enforce. The
+// transport already treats the persisted value as untrusted for exactly this
+// reason on session/load and session/resume (see resolveExistingSessionCwd);
+// this is the same judgement on the tool-facing side of the same record.
+//
+// The judgement itself is vfs.ResolveSessionCwd — the ONE decision procedure the
+// session paths and fleet dispatch also resolve through — so the sentinel
+// handling ("" and "/" mean "unspecified" and select the default root) is not
+// re-derived here. A refusal degrades to the default root rather than
+// propagating: this resolver answers "which directory does this tool call run
+// in", not "may this request proceed", and it has no error channel to a caller
+// that could act on one. There is no live request to refuse — only a stale or
+// foreign session record — and the safe reading of it is the operator's own
+// default root.
+func NewServeCwdResolver(db libdb.DBManager, roots *vfs.Factory) func(context.Context) string {
+	defaultRoot := func() string {
+		if roots == nil {
+			return ""
+		}
+		return roots.Default()
+	}
 	return func(ctx context.Context) string {
-		if db == nil {
-			return defaultRoot
+		stored := ""
+		if db != nil {
+			if internalID := sessionIDFromCtx(ctx); internalID != "" {
+				stored = serveSessionCwd(ctx, db, internalID)
+			}
 		}
-		internalID := sessionIDFromCtx(ctx)
-		if internalID == "" {
-			return defaultRoot
+		resolved, err := vfs.ResolveSessionCwd(roots, stored, defaultRoot())
+		if err != nil {
+			slog.Warn("acpsvc: session workspace is outside the configured workspace roots; using the default root",
+				"stored_cwd", stored, "default_root", defaultRoot(), "error", err)
+			return defaultRoot()
 		}
-		cwd := serveSessionCwd(ctx, db, internalID)
-		if cwd == "" || cwd == "/" {
-			return defaultRoot
-		}
-		return cwd
+		return resolved
 	}
 }
 

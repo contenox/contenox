@@ -2,6 +2,7 @@ package agentinstance
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -71,15 +72,14 @@ func registerExternalEnv(t *testing.T, ctx context.Context, svc agentregistryser
 	return agent
 }
 
-// registerNativeChain seeds a chain (native) agent DIRECTLY into the store,
-// bypassing the registry service's validate() — which refuses to persist the
-// reserved chain kind. GetByName still resolves it (a plain store read), so the
-// Manager can bring up a process-less native instance for it.
-func registerNativeChain(t *testing.T, ctx context.Context, db libdb.DBManager, name string) *runtimetypes.Agent {
+// registerChain declares a chain-kind agent running chainPath, through the
+// normal registry path (the kind is a first-class declared agent now, so
+// nothing has to be smuggled past validate()).
+func registerChain(t *testing.T, ctx context.Context, svc agentregistryservice.Service, name, chainPath string) *runtimetypes.Agent {
 	t.Helper()
-	store := runtimetypes.New(db.WithoutTransaction())
-	agent := &runtimetypes.Agent{Name: name, Kind: runtimetypes.AgentKindChain, Enabled: true}
-	require.NoError(t, store.CreateAgent(ctx, agent))
+	agent := &runtimetypes.Agent{Name: name, Enabled: true}
+	require.NoError(t, agent.SetChainConfig(runtimetypes.ChainConfig{Path: chainPath, ChainID: "fixture-chain"}))
+	require.NoError(t, svc.Create(ctx, agent))
 	return agent
 }
 
@@ -330,14 +330,49 @@ func TestManager_External_StartGetStop(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
-func TestManager_Native_ProcessLess(t *testing.T) {
-	ctx, db, svc := setupRegistry(t)
-	registerNativeChain(t, ctx, db, "native-chain")
+// TestManager_Chain_SelfSpawnConfig pins HOW a chain agent becomes a running
+// unit: the kernel builds an ordinary external-ACP spawn whose command is THIS
+// binary, whose argv is its ACP subcommand, and whose only added environment
+// variable names the declared chain file. There is no second connection
+// mechanism and no in-process shim — that is the whole design, so it is asserted
+// on the spawner the kernel actually constructed.
+func TestManager_Chain_SelfSpawnConfig(t *testing.T) {
+	ctx, _, svc := setupRegistry(t)
+	stub := buildStubAgent(t)
+	chainPath := filepath.Join(t.TempDir(), "agent-fixture.json")
+	registerChain(t, ctx, svc, "chain-unit", chainPath)
 
-	mgr := New(svc)
+	mgr := New(svc, WithSelfExecutable(stub))
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "native-chain")
+	id, err := mgr.Start(ctx, "chain-unit")
+	require.NoError(t, err)
+
+	inst := instanceOf(t, mgr, id)
+	spawner, ok := inst.spawner.(*agenthost.ExternalACPAgent)
+	require.True(t, ok, "a chain agent spawns through the SAME agenthost primitive an external one does")
+	require.Equal(t, runtimetypes.ExternalACPTransportStdio, spawner.Config.Transport)
+	require.Equal(t, stub, spawner.Config.Command, "the command is this runtime's own binary")
+	require.Equal(t, []string{"acp"}, spawner.Config.Args)
+	require.Equal(t, map[string]string{"CONTENOX_ACP_CHAIN_PATH": chainPath}, spawner.Config.Env,
+		"ONLY the chain path is set: the child inherits the environment so it shares the one global state")
+}
+
+// TestManager_Chain_RunsThroughTheSameBringUp proves a chain unit is not a
+// second class of instance: it reaches StateRunning over a real downstream
+// connection, opens a session, and tears down like any other. (That the spawned
+// process really executes the named chain is proven end to end against the real
+// binary in the fleet dispatch e2e; here the point is that the KERNEL treats
+// both kinds identically.)
+func TestManager_Chain_RunsThroughTheSameBringUp(t *testing.T) {
+	ctx, _, svc := setupRegistry(t)
+	stub := buildStubAgent(t)
+	registerChain(t, ctx, svc, "chain-unit", filepath.Join(t.TempDir(), "agent-fixture.json"))
+
+	mgr := New(svc, WithSelfExecutable(stub))
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	id, err := mgr.Start(ctx, "chain-unit")
 	require.NoError(t, err)
 
 	st, err := mgr.Get(id)
@@ -345,12 +380,54 @@ func TestManager_Native_ProcessLess(t *testing.T) {
 	require.Equal(t, StateRunning, st.State)
 	require.Equal(t, runtimetypes.AgentKindChain, st.Kind)
 
-	// Process-less: no handle behind a native instance.
-	require.Nil(t, currentHandle(instanceOf(t, mgr, id)))
+	// A live connection, not a process-less placeholder: sessions work.
+	handle := currentHandle(instanceOf(t, mgr, id))
+	require.NotNil(t, handle)
+	sessionID, err := mgr.OpenSession(ctx, id, SessionSpec{Cwd: t.TempDir()})
+	require.NoError(t, err)
+	require.NotEmpty(t, sessionID)
 
 	require.NoError(t, mgr.Stop(id))
+	requireConnClosed(t, handle)
 	_, err = mgr.Get(id)
 	require.ErrorIs(t, err, ErrNotFound)
+}
+
+// TestManager_Chain_RejectsUnusableConfig keeps the kind from being a hole in
+// the other direction: declaring "chain" without a usable chain path fails at
+// spawn with a clear error rather than bringing up a unit that cannot answer.
+// (The registry refuses to persist such a record; this is the kernel's own
+// guard for a record handed to it directly.)
+func TestManager_Chain_RejectsUnusableConfig(t *testing.T) {
+	ctx, _, svc := setupRegistry(t)
+	mgr := New(svc, WithSelfExecutable("/nonexistent/contenox"))
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	_, err := mgr.StartResolved(ctx, &runtimetypes.Agent{Name: "pathless", Kind: runtimetypes.AgentKindChain})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "path is required")
+}
+
+// TestManager_Chain_DefaultsToTheRunningExecutable pins the default half of
+// WithSelfExecutable: with no override the spawn targets os.Executable(). Under
+// `go test` that is the test binary, which is not an ACP agent — so the spawn is
+// expected to fail, and what is asserted is WHICH program the kernel reached
+// for, read off the constructed spawner.
+func TestManager_Chain_DefaultsToTheRunningExecutable(t *testing.T) {
+	_, _, svc := setupRegistry(t)
+	chainPath := filepath.Join(t.TempDir(), "agent-fixture.json")
+	agent := &runtimetypes.Agent{Name: "chain-unit", Enabled: true}
+	require.NoError(t, agent.SetChainConfig(runtimetypes.ChainConfig{Path: chainPath}))
+
+	self, err := os.Executable()
+	require.NoError(t, err)
+
+	mgr := New(svc)
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	spawner, err := mgr.(*manager).chainSpawner(agent)
+	require.NoError(t, err)
+	require.Equal(t, self, spawner.(*agenthost.ExternalACPAgent).Config.Command)
 }
 
 func TestManager_Start_UnknownAgent(t *testing.T) {
@@ -866,15 +943,14 @@ func TestManager_EventSink_FiresOnLifecycle(t *testing.T) {
 
 // -----------------------------------------------------------------------------
 // (h2) The kernel OWNS driving: OpenSession → Prompt round-trip through the Manager
-//      API, with viewers observing via Attach. Native and unknown instances cannot
-//      open a session (no downstream connection).
+//      API, with viewers observing via Attach. Connection-less and unknown
+//      instances cannot open a session.
 // -----------------------------------------------------------------------------
 
 func TestManager_OpenSession_PromptRoundTrip(t *testing.T) {
-	ctx, db, svc := setupRegistry(t)
+	ctx, _, svc := setupRegistry(t)
 	stub := buildStubAgent(t)
 	registerExternal(t, ctx, svc, "ext-agent", stub)
-	registerNativeChain(t, ctx, db, "native-chain")
 
 	mgr := New(svc)
 	t.Cleanup(func() { _ = mgr.Close() })
@@ -883,11 +959,13 @@ func TestManager_OpenSession_PromptRoundTrip(t *testing.T) {
 	_, err := mgr.OpenSession(ctx, "no-such-instance", SessionSpec{Cwd: t.TempDir()})
 	require.ErrorIs(t, err, ErrNotFound)
 
-	// Native (process-less) instance: a live instance, but no connection to drive.
-	nativeID, err := mgr.Start(ctx, "native-chain")
+	// A spawner-less instance is live but has no connection to drive. No declared
+	// kind produces one any more (chain agents spawn this binary's ACP server),
+	// so it is built white-box here to keep the guard covered.
+	connLess, err := mgr.(*manager).bringUp(&runtimetypes.Agent{Name: "no-conn", Kind: runtimetypes.AgentKindChain}, nil)
 	require.NoError(t, err)
-	_, err = mgr.OpenSession(ctx, nativeID, SessionSpec{Cwd: t.TempDir()})
-	require.ErrorIs(t, err, errNoConn, "a native instance cannot open a downstream session")
+	_, err = mgr.OpenSession(ctx, connLess, SessionSpec{Cwd: t.TempDir()})
+	require.ErrorIs(t, err, errNoConn, "an instance with no downstream connection cannot open a session")
 
 	// External instance: OpenSession drives the downstream handshake; Prompt drives a
 	// turn whose stream a viewer observes.

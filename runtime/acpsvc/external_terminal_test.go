@@ -15,6 +15,7 @@ import (
 	"github.com/contenox/runtime/runtime/enginesvc"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/shellsession"
+	"github.com/contenox/runtime/runtime/vfs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -57,9 +58,14 @@ func externalTerminalWire(t *testing.T, ctx context.Context, db libdb.DBManager,
 func newTerminalShellManager(t *testing.T) shellsession.Manager {
 	t.Helper()
 	root := t.TempDir()
+	// Give the manager a real one-root allowlist rather than a bare default
+	// root: shellsession enforces the workspace envelope through
+	// vfs.ResolveSessionCwd, so a Factory is what production hands it.
+	roots, err := vfs.NewFactory(root)
+	require.NoError(t, err)
 	mgr := shellsession.NewManager(shellsession.Config{
 		CwdResolver: func(context.Context) string { return root },
-		DefaultRoot: root,
+		Workspace:   roots,
 		IdleTimeout: time.Minute,
 	})
 	t.Cleanup(mgr.Shutdown)

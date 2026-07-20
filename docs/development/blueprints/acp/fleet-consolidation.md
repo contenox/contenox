@@ -221,6 +221,34 @@ rejects the kind (`:143-144`). `Manager.Start`'s process-less stub
 (`manager.go:284-285`) becomes a real spawner, and `OpenSession` / `Prompt`
 stop erroring for native instances because a connection now exists.
 
+**EXECUTED — how a chain becomes selectable: convention, not declaration.**
+(Maintainer, 2026-07-20.) Requiring an operator to hand-register every chain
+would be ceremony over a file that already exists. Instead:
+
+- The agentic chains shipped by `contenox init` are eligible by default.
+- Any chain named `agent-*` in the directories chain discovery already walks is
+  eligible automatically. Naming the file *is* the declaration.
+- `contenox mission fire --chain <path>` overrides both, firing an ad-hoc chain
+  that was never registered at all.
+
+**Seed rather than fork the resolution path.** Discovery upserts each eligible
+chain as an `Agent` row of kind `chain`, and everything downstream — the
+`Enabled` gate, `ResolveForSpawn`, `Dispatch`, beam's picker — keeps working
+unchanged with one resolution path and one source of truth for "what can I
+fire." The record already has the field for this: `Source` is system-managed
+provenance, today `"registry"` or `"manual"` (`runtimetypes/agents.go:106-112`),
+so a discovered chain is simply a third source. Do NOT teach `ResolveForSpawn`
+to consult a second lookup; that is how two drifting implementations of one
+judgement get born, and this blueprint exists partly to repair exactly that.
+
+**SEQUENCING CONSTRAINT — do not ship discovery before the kind runs.** The
+service currently rejects kind `chain` and the kernel's branch for it is a
+process-less stub. Seeding chain agents into the registry while that is true
+would put entries in the picker that fail at spawn with "unsupported kind" —
+manufacturing precisely the half-built surface this blueprint was written to
+eliminate. The runnable half and the discovery half land together, or discovery
+stays gated until the kind works.
+
 **Acceptance.** Two chain files declared as two agents; units dispatched from
 each; both appear on the board, are adoptable, cancellable, and stoppable, and
 route permissions through the same HITL path as external agents — with no
@@ -229,6 +257,50 @@ subprocess spawned.
 **Open sub-question for review:** whether each chain-backed instance gets its
 own `acpsvc.Transport` (simplest, mirrors one-per-connection, costs a little
 per unit) or shares one across units. I lean per-instance for isolation.
+
+**CORRECTED as landed (2026-07-20).** The "EXECUTED design" above chose an
+in-process ACP peer over an in-memory pipe. What shipped is a **self-spawn**
+instead: a chain-kind agent resolves to an ordinary
+`agenthost.ExternalACPAgent` whose command is *this binary* with argv `["acp"]`
+and `CONTENOX_ACP_CHAIN_PATH` naming the chain file. Both readings of "contenox
+driving contenox" are legitimate; the self-spawn was chosen because
+`agenthost/e2e_loopback_test.go` already demonstrates that exact path working
+end to end — registry row → resolve → spawn → initialize → session/new →
+session/prompt → chain execution → streamed reply → teardown — with nothing
+mocked, so the kind landed on a proven mechanism rather than a new one. It also
+keeps the invariant the in-process design was chosen to protect (the kernel
+learns nothing about `taskengine`; it builds one more `ExternalACPAgent`) and
+keeps the two kinds on one `bringUp`, so journal, viewers, controller
+promotion, adopt, cancel, stop and restart are identical by construction rather
+than by parallel implementation.
+
+Consequences of the correction:
+
+- **The acceptance clause "with no subprocess spawned" does not hold.** A chain
+  unit IS a subprocess — of this same binary, inheriting this process's
+  environment so it shares the one global database, with only the chain-path
+  variable added. The property that clause was reaching for — a fleet unit
+  costing a chain rather than a second vendor's agent with its own model and
+  credentials — does hold.
+- **The open sub-question is moot.** There is no in-process `acpsvc.Transport`
+  to share or isolate; the spawned runtime constructs its own, one per unit.
+- Kind `chain` is no longer reserved: `runtimetypes.ChainConfig`
+  (`{path, chainId}`) is its config shape, `agentregistryservice.validate`
+  accepts and validates it, and `Manager.StartResolved`'s chain branch builds
+  the self-spawn. `Manager` gained one option, `WithSelfExecutable`, defaulting
+  to `os.Executable()`, so a test can point the spawn at a built fixture binary.
+- Discovery landed with it (the sequencing constraint holds): `runtime/chainagents`
+  reuses the existing chain walker (`taskchainservice.List` over
+  `localfileservice`) across the workspace `.contenox/` and `~/.contenox/`,
+  seeds rows with `Source = "discovered"`, and is run once at `contenox serve`
+  startup. A chain file that vanishes DISABLES its row rather than deleting it,
+  so the refusal goes through `ResolveForSpawn`'s one message instead of a new
+  one, and mission/telemetry references keep resolving.
+- Still open after this slice: the ACP **chat** path (`contenox.agent` picker,
+  `acpsvc.resolveExternalAgent`) refuses a chain-kind agent with a kind-mismatch
+  error. It refuses rather than half-spawning, so the sequencing constraint is
+  satisfied — but a chain agent is visible there and unusable until that path
+  learns the second kind.
 
 ## Mission mode — the second way to interact with an agent
 
@@ -292,13 +364,89 @@ board rows. This is the plumbing that ends missions' zero-consumer status.
 ### M3 — Mission tools and the attention inbox
 
 **Requirement.** A unit on a mission must be able to report progress and ask
-for attention, and the operator must have one place where asks land.
+for attention — and its reports must reach **whoever fired it**, which is not
+always the operator.
 
 The `report` / `ask` tools, granted per-mission and forwarded at session setup
 (via `mcpServers` for external ACP agents, via the tools allowlist for chain
 templates per C9); durable storage of reports against the mission; and the
 attention inbox — which is C2's approval inbox, extended, not a second
 surface.
+
+**The supervision edge (structural, and currently missing).** A mission fired
+from a chat session by `/mission` (M4) is supervised by **the calling agent's
+session**, not by the operator directly. The fired unit reports back into that
+session so the caller can act on the result, and may talk back to it. That is
+the recursion this whole direction rests on: *supervisor* is a role, filled by
+a human at beam, by a `tail` in a shell, or by another agent — and the
+mechanism must not care which.
+
+Today's `Mission` record cannot express this. It carries `SessionID` and
+`InstanceID` — the session and instance the mission **spawned** — and nothing
+identifying who **fired** it. Add a parent reference (the calling upstream
+session, absent when fired by an operator directly), and route a report to it
+when set, falling back to the operator inbox when not.
+
+Note this is the same gap C2 surfaced from the other side: an approval row
+carries no agent, session, instance, or mission identity, so the inbox cannot
+name who is asking. One missing edge, two symptoms. Fix it once, in the record,
+and both surfaces gain attribution.
+
+**Deliberately open until first use:** whether talk-back is asynchronous
+(reports land in the parent's transcript; the parent reads them on its next
+turn) or synchronous (the sub-unit blocks awaiting the parent's answer, i.e.
+an ask). Async is strictly simpler and is the floor; synchronous talk-back is
+the ask path already being built for humans, pointed at an agent instead. Build
+async first and let real use decide whether blocking is wanted.
+
+### C10 — The fleet is every session, not just the ones `serve` owns
+
+**The observation (maintainer, 2026-07-20).** An editor wired to contenox over
+ACP launches `contenox acp` as its own subprocess — one per window or project.
+Those processes **share the one global database**. So the runtime already knows
+about that work; the fleet board simply refuses to look at it.
+
+**Why this is a correctness claim, not a feature request.** The product's
+position is that the runtime is the centre and editors are viewers. A fleet
+view that enumerates only what `contenox serve` happens to hold in memory is
+lying by omission: an operator with three editor windows open has three live
+agent sessions the board reports as nothing at all. `Manager.List` is a
+config+runtime join over *one process's* memory; "the fleet" should mean every
+unit this runtime is running, whichever process is hosting it.
+
+**What already exists.** Session enumeration across the whole database is
+built and shipped: `deriveNamespace` and `contenox session workspaces`
+(`contenoxcli/session_inspect_cmd.go:17,58`) list every workspace and namespace
+in the DB, and the namespace *is* the origin (`zed`, `jetbrainsgoland`,
+`default`). The CLI reference already documents recovering a session an editor
+abandoned. Nothing new is needed to *find* these sessions.
+
+**What is missing: liveness.** The database records that a session *exists*,
+never that its process is *alive*. A row outlives the editor that made it, so
+naive enumeration would render closed sessions as running units — precisely the
+failure the mission record's `LastHeartbeat` was added to prevent, one level
+up. This needs a process/session registration with a heartbeat and a staleness
+sweep, and it should reuse that same shape rather than invent a second one.
+
+**Control across the process boundary is already possible.** The production
+bus backend is SQLite-backed, and `bus_events` / `bus_requests` / `bus_replies`
+live in the same shared database every contenox process opens. So the bus is
+**cross-process by construction** and its request-reply half can carry stop,
+cancel, and attach to a session another process owns. Foreign sessions do not
+have to be read-only. That is a far better answer than either giving up on
+control or inventing IPC.
+
+**Why this matters more than its size suggests.** It supplies the fleet with a
+real N>1 population *today*, with no isolation primitive required — editor
+projects are already separate working directories, so the units are naturally
+isolated by construction. The plurality that mission mode's surfaces assume,
+and that the sandboxing gap otherwise blocks, already exists on the maintainer's
+machine and is merely invisible.
+
+**Open:** whether a heartbeat is written by every contenox process
+unconditionally, or only by those hosting a live ACP session; and whether a
+stale entry is swept or merely rendered as stale. Prefer rendering staleness
+over deleting evidence.
 
 ### M5 — Unattended permissions reach the inbox (prerequisite for everything else)
 
@@ -365,6 +513,44 @@ for one act, and the first thing to rot.
 its reports newest-first. Same output discipline as every other verb: stdout is
 data, diagnostics are stderr, `--json` is the machine contract, exit codes are
 meaningful.
+
+**The `/mission` slash command — the surface an operator actually reaches for.**
+You are already in a chat when you realise something should be a mission.
+`acpsvc/commands.go:23` already advertises contenox's own commands (`/model`,
+`/provider`, `/max-tokens`, `/compact`) upward to every ACP client, so this is
+one more entry plus a handler, dispatching through `fleetservice.Dispatch`
+rather than reimplementing anything.
+
+- `/mission <intent>` — fires the **default mission agent** from config.
+- `/mission <agent-name> <intent>` — fires that named agent.
+
+**Grammar ambiguity to resolve before coding:** those two forms are not
+distinguishable by shape. Resolving the first token against the declared-agent
+registry and treating a hit as the agent name is the obvious rule, but it means
+an intent whose first word happens to match an agent name silently changes
+meaning. Alternatives: require a flag-ish prefix for the named form, or accept
+the registry-lookup heuristic and make the echoed confirmation state plainly
+which agent was chosen so a misread is immediately visible. **Decide
+deliberately; do not let the parser pick.**
+
+For external-agent sessions the command must be **injected** into the
+downstream agent's advertised menu and **intercepted** before forwarding —
+contenox answers `/mission`, never the downstream. Precedent exists: the kernel
+already merges synthetic entries into a downstream's surface for modes and
+models (`agentinstance/drive.go:26-32`). On collision, contenox wins and the
+downstream's same-named command is shadowed; a command that sometimes fires a
+mission and sometimes does not is worse than either behavior consistently.
+
+**Config, and the CRUD it needs.** `default-mission-agent` and
+`default-mission-policy` join the existing `validConfigKeys` map
+(`contenoxcli/config_cmd.go`), which carries them to the CLI, `GET|PUT
+/api/cli-config`, and beam's settings page for free. That is what makes
+`/mission <intent>` work with no flags. Beyond the defaults, declared agents
+still have **no write surface at all** outside the CLI — no REST create/update/
+delete, no beam management UI — so setting up "the agent that runs missions,
+with its config and prompt" is currently a terminal-only act. That surface is
+in scope here; it is the difference between mission mode being configurable and
+being hardcoded.
 
 **Documentation is part of this slice, not a follow-up.** Two audiences, two
 places: the verb reference in `docs/reference/contenox-cli.md` alongside the

@@ -12,8 +12,9 @@ import (
 // Instance lifecycle states — the vocabulary of InstanceStatus.State.
 //
 //   - StateStarting: transient, while a subprocess is (re)spawning.
-//   - StateRunning: the instance is up (external: a live downstream connection;
-//     native: a process-less placeholder).
+//   - StateRunning: the instance is up — a live downstream connection.
+//     (A spawner-less instance, which no supported kind produces, would report
+//     running with no connection; see start.)
 //   - StateStopped: torn down intentionally (Stop/Close). The watchDog never
 //     restarts out of this state.
 //   - StateError: the downstream died UNEXPECTEDLY. Terminal when restart is
@@ -139,7 +140,7 @@ type instanceConfig struct {
 	// rootCtx is the long-lived context the subprocess is bound to (the Manager's
 	// root), so the instance outlives the caller ctx that started it. spawner is
 	// the agenthost primitive that (re)establishes the downstream connection; nil
-	// marks a process-less native instance.
+	// marks a process-less instance (no supported agent kind produces one).
 	rootCtx context.Context
 	spawner agenthost.Agent
 
@@ -151,6 +152,10 @@ type instanceConfig struct {
 	onAttach           func(sessionID libacp.SessionID, viewerID string, controller bool)
 	onDetach           func(sessionID libacp.SessionID, viewerID string)
 	onUnsupervisedDeny func(sessionID libacp.SessionID)
+	// onUnsupervisedRequest is the Manager's injected permission fallback with this
+	// instance's identity already closed over (see Manager.WithPermissionFallback).
+	// Nil keeps the hub's built-in headless deny.
+	onUnsupervisedRequest func(ctx context.Context, req libacp.RequestPermissionRequest) (libacp.RequestPermissionResponse, error)
 }
 
 // instance is one running agent instance: the pure primitive of Layer A. Its own
@@ -176,7 +181,7 @@ type instance struct {
 
 	mu           sync.Mutex
 	state        string
-	handle       *agenthost.Handle // nil for native; reassigned on restart
+	handle       *agenthost.Handle // nil until connected; reassigned on restart
 	manualStop   bool              // set by stop(): the watchDog must never restart
 	restartCount int
 	closed       bool
@@ -190,6 +195,7 @@ func newInstance(cfg instanceConfig) *instance {
 	hub.onAttach = cfg.onAttach
 	hub.onDetach = cfg.onDetach
 	hub.onUnsupervisedDeny = cfg.onUnsupervisedDeny
+	hub.onUnsupervisedRequest = cfg.onUnsupervisedRequest
 	driver := newSessionDriver()
 	return &instance{
 		id:             cfg.id,
@@ -212,7 +218,7 @@ func newInstance(cfg instanceConfig) *instance {
 	}
 }
 
-// start brings the instance up. For a native (spawner-less) instance it simply
+// start brings the instance up. For a spawner-less instance it simply
 // transitions to Running. For an external one it spawns the subprocess wired to
 // the internal journaling harness and arms the watchDog. A spawn failure leaves
 // the instance StateError and returns the error, so the Manager can decline to
@@ -345,7 +351,7 @@ func (i *instance) stop() error {
 	return nil
 }
 
-// conn returns the instance's live downstream connection, or nil for a native or
+// conn returns the instance's live downstream connection, or nil for a spawner-less or
 // not-yet-started instance. It is INTERNAL: the instance's own session-driving methods
 // (openSession/promptSession/... in drive.go) issue their ACP calls on it, and white-box
 // tests use it directly. The Manager exposes NO raw-connection accessor — driving goes

@@ -35,10 +35,31 @@ import (
 //
 // Deps are mocked the same way the rest of this package's tests mock them:
 // sessionEntry.Agent is swapped for a scripted agentservice.Agent double
-// after a real session/new call (mirroring prompt_test.go's fakeAgent), and
-// the event bus is libbus.NewInMem() (mirroring taskengine/mcpworker tests).
+// after a real session/new call (mirroring prompt_test.go's fakeAgent).
 // There is no real LLM backend and no real chain execution engine anywhere
 // in this file.
+//
+// The event bus, however, is NOT mocked with libbus.NewInMem() the way the
+// rest of the package's tests mock it — it is the SQLite backend serve wires
+// (contenoxcli/serve_cmd.go), on this harness's own SQLite database. That is
+// load-bearing, not incidental. prompt.go tears a turn's event subscription
+// down the instant the agent returns:
+//
+//	sub.Unsubscribe(); close(rawCh); <-translateDone
+//
+// which delivers the turn's trailing events only on a backend that hands over
+// what was published before Unsubscribe. libbus's conformance suite records
+// that as a per-backend divergence — drainsOnUnsubscribe is SQLite-only, and
+// it says in as many words that "callers that need the last event must not
+// assume the SQLite behaviour". On InMem the queued events race the teardown:
+// the delivery goroutine selects between a closed done channel and a
+// non-empty queue, so under parallel load (this package is subprocess-heavy)
+// it can exit having forwarded none of them. The events are then GONE, not
+// late — which is why this presented as a flake no timeout could fix.
+//
+// So an InMem harness would have been asserting that a turn's events reach the
+// client while running on a backend whose contract does not promise it. Using
+// the backend production uses makes the assertion mean what it says.
 
 // loopbackClient is a minimal libacp.Client that answers the agent's reverse
 // calls (session/request_permission, fs/*) deterministically instead of
@@ -172,7 +193,7 @@ type loopbackHarness struct {
 	tr     *Transport
 	client *libacp.ClientSideConnection
 	lc     *loopbackClient
-	bus    *libbus.InMem
+	bus    libbus.Messenger
 	router *PermissionRouter
 }
 
@@ -188,7 +209,15 @@ func newLoopbackHarness(t *testing.T) *loopbackHarness {
 	agentSide := &wirePipe{r: agentR, w: agentW}
 	clientSide := &wirePipe{r: clientR, w: clientW}
 
-	bus := libbus.NewInMem()
+	// Same backend serve wires, on the schema this DB was already created with
+	// (runtimetypes.SchemaSQLite owns bus_events/bus_requests/bus_replies). The
+	// poll interval is shortened only so a turn's events surface promptly; the
+	// delivery GUARANTEE this harness relies on is Unsubscribe's final drain,
+	// which does not depend on the tick at all. See the file header.
+	bus := libbus.NewSQLiteWithOptions(db.WithoutTransaction(), libbus.SQLiteBusOptions{
+		EventPoll:   5 * time.Millisecond,
+		RequestPoll: 5 * time.Millisecond,
+	})
 	// serve wires a shared PermissionRouter so a single engine can route HITL
 	// approvals to the owning WS connection; the harness mirrors that so the
 	// router path is exercised exactly as production does. It is inert for tests
@@ -231,6 +260,8 @@ func newLoopbackHarness(t *testing.T) *loopbackHarness {
 		case <-time.After(2 * time.Second):
 			t.Error("client connection did not shut down")
 		}
+		// Before the DB: the bus owns a cleanup goroutine that queries it.
+		require.NoError(t, bus.Close())
 		require.NoError(t, db.Close())
 	})
 

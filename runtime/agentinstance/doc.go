@@ -1,6 +1,7 @@
 // Package agentinstance is the runtime's backend-owned agent-instance kernel:
-// it spawns and OWNS running agent instances (external ACP subprocesses today,
-// process-less native chains as a stub), decoupled from any client connection,
+// it spawns and OWNS running agent instances (ACP subprocesses — somebody
+// else's agent, or this binary's own ACP server bound to one of the runtime's
+// task chains), decoupled from any client connection,
 // and lets many viewers ATTACH to one instance's sessions to observe its
 // stream and — for exactly one controller per session — answer its permission
 // requests.
@@ -81,6 +82,10 @@
 //     terminal/* (a controller that does not gets MethodNotFound). The kernel only
 //     ROUTES these callbacks; it has no shell dependency. Whether the downstream is
 //     told terminals exist is negotiated at OpenSession per SessionSpec.Terminal.
+//     A session with NO controller — the headless case a dispatched unit runs in by
+//     design — denies by default, or hands the request to an INJECTED answerer when
+//     one is wired (Manager.WithPermissionFallback). That seam keeps the kernel
+//     policy-free: it neither knows nor constrains how the answer is reached.
 //   - Restart loses conversation context. The reference restarts a crashed
 //     process and the process resumes from its own on-disk state. An ACP restart
 //     re-spawns a fresh subprocess that must be re-Initialized; the downstream

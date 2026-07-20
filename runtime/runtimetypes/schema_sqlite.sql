@@ -169,9 +169,9 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_created_at ON mcp_servers(created_at);
 
 -- agents: polymorphic declared-agent resource. `kind` selects which
--- kind-specific shape `config_json` holds ('external_acp' today; 'chain'
--- reserved for a future in-runtime task-chain-as-agent kind). Config lives in
--- the typed JSON column rather than flat per-kind columns (contrast
+-- kind-specific shape `config_json` holds ('external_acp': somebody else's
+-- ACP program; 'chain': one of the runtime's own task chains, run as a unit).
+-- Config lives in the typed JSON column rather than flat per-kind columns (contrast
 -- mcp_servers, which can use flat columns because it has only one kind) so
 -- adding a new kind never requires a schema migration.
 -- harness_id is a reserved FK seam (no harness table/service exists yet in
@@ -230,6 +230,10 @@ CREATE TABLE IF NOT EXISTS hitl_approvals (
     on_timeout   VARCHAR(20) NOT NULL DEFAULT 'deny',
     state        VARCHAR(20) NOT NULL DEFAULT 'pending',
     resolution   TEXT,
+    instance_id  VARCHAR(255) NOT NULL DEFAULT '',
+    session_id   VARCHAR(255) NOT NULL DEFAULT '',
+    agent_name   VARCHAR(255) NOT NULL DEFAULT '',
+    mission_id   VARCHAR(255),
     created_at   TIMESTAMP NOT NULL,
     expires_at   TIMESTAMP NOT NULL,
     resolved_at  TIMESTAMP
@@ -315,6 +319,23 @@ ALTER TABLE remote_tools ADD COLUMN insecure_skip_verify BOOLEAN NOT NULL DEFAUL
 -- code path yet. Runs once per fresh install (column absent from the CREATE
 -- TABLE above); silently skipped on databases where it was already added.
 ALTER TABLE message_indices ADD COLUMN agent_id VARCHAR(255);
+
+-- hitl_approvals: attribution columns added after the table shipped — which
+-- UNIT is asking, not just which tool it called. An inbox that can only say
+-- "write_file" is unanswerable once more than one unit is running, and it
+-- breaks the invariant that an operator can always name what gated an action
+-- (see docs/development/blueprints/acp/fleet-consolidation.md, slice M5 and
+-- C2's report). instance_id/session_id/agent_name default to '' because an ask
+-- raised by a native chain turn has no fleet unit behind it; mission_id is
+-- NULLABLE because not every ask has a mission (a non-mission unattended
+-- session, an API caller) and '' would be indistinguishable from one. Runs
+-- once per fresh install (the columns are in the CREATE TABLE above);
+-- "duplicate column name" is silently skipped on databases already carrying
+-- them.
+ALTER TABLE hitl_approvals ADD COLUMN instance_id VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE hitl_approvals ADD COLUMN session_id  VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE hitl_approvals ADD COLUMN agent_name  VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE hitl_approvals ADD COLUMN mission_id  VARCHAR(255);
 
 PRAGMA foreign_keys=off;
 BEGIN TRANSACTION;

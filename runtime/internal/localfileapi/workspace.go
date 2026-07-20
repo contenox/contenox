@@ -40,16 +40,24 @@ func AddWorkspaceRoutes(mux *http.ServeMux, factory *vfs.Factory, hitlFor Policy
 		}
 	}
 
-	mux.HandleFunc("GET /files", wh.wrap(func(h *handler, w http.ResponseWriter, r *http.Request) { h.list(w, r) }))
-	mux.HandleFunc("GET /files/stat", wh.wrap(func(h *handler, w http.ResponseWriter, r *http.Request) { h.stat(w, r) }))
-	mux.HandleFunc("GET /files/content", wh.wrap(func(h *handler, w http.ResponseWriter, r *http.Request) { h.content(w, r) }))
-	mux.HandleFunc("GET /files/download", wh.wrap(func(h *handler, w http.ResponseWriter, r *http.Request) { h.download(w, r) }))
-	mux.HandleFunc("POST /files", wh.wrap(func(h *handler, w http.ResponseWriter, r *http.Request) { h.createFile(w, r) }))
-	mux.HandleFunc("PUT /files", wh.wrap(func(h *handler, w http.ResponseWriter, r *http.Request) { h.updateFile(w, r) }))
-	mux.HandleFunc("DELETE /files", wh.wrap(func(h *handler, w http.ResponseWriter, r *http.Request) { h.deletePath(w, r) }))
-	mux.HandleFunc("PUT /files/move", wh.wrap(func(h *handler, w http.ResponseWriter, r *http.Request) { h.movePath(w, r) }))
-	mux.HandleFunc("POST /folders", wh.wrap(func(h *handler, w http.ResponseWriter, r *http.Request) { h.createFolder(w, r) }))
-	mux.HandleFunc("DELETE /folders", wh.wrap(func(h *handler, w http.ResponseWriter, r *http.Request) { h.deletePath(w, r) }))
+	// Method expressions, not closures: `wrap`'s parameter type IS the method
+	// expression signature, so the closures were redundant — and they hid the
+	// handler's name from the OpenAPI generator, which derives each operation's
+	// id and description from the handler it can name. This mount registers the
+	// same method+path pairs as AddRoutes, so an unnameable handler here produced
+	// a path-slug operationId and a missing response schema depending on which
+	// registration the generator visited last. See
+	// docs/development/api_spec_generation.md.
+	mux.HandleFunc("GET /files", wh.wrap((*handler).list))
+	mux.HandleFunc("GET /files/stat", wh.wrap((*handler).stat))
+	mux.HandleFunc("GET /files/content", wh.wrap((*handler).content))
+	mux.HandleFunc("GET /files/download", wh.wrap((*handler).download))
+	mux.HandleFunc("POST /files", wh.wrap((*handler).createFile))
+	mux.HandleFunc("PUT /files", wh.wrap((*handler).updateFile))
+	mux.HandleFunc("DELETE /files", wh.wrap((*handler).deleteFile))
+	mux.HandleFunc("PUT /files/move", wh.wrap((*handler).movePath))
+	mux.HandleFunc("POST /folders", wh.wrap((*handler).createFolder))
+	mux.HandleFunc("DELETE /folders", wh.wrap((*handler).deleteFolder))
 	return nil
 }
 

@@ -122,7 +122,7 @@ export default function MissionDetailPage() {
                 <span title={absoluteTime(m.lastHeartbeat)}>
                   {heartbeatLabel(m.lastHeartbeat, i18n.language, {
                     never: t('missions.heartbeat_never'),
-                    justNow: t('fleet.just_now'),
+                    justNow: t('common.just_now'),
                   })}
                 </span>
               }
@@ -169,7 +169,7 @@ export default function MissionDetailPage() {
                     <span
                       className="text-text-muted dark:text-dark-text-muted text-xs"
                       title={absoluteTime(r.createdAt)}>
-                      {relativeTime(r.createdAt, i18n.language, t('fleet.just_now'))}
+                      {relativeTime(r.createdAt, i18n.language, t('common.just_now'))}
                     </span>
                   </div>
 

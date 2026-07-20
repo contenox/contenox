@@ -669,3 +669,62 @@ func mustDB(t *testing.T) libdb.DBManager {
 	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
+
+// ─── the supervision edge ──────────────────────────────────────────────────
+
+// Dispatch records WHO fired the mission when the caller knows, and leaves it
+// empty when it does not. SessionID/InstanceID say what the mission SPAWNED;
+// ParentSessionID says who fired it — the edge the record could not express
+// before, and the one report routing needs.
+func TestFleetService_Dispatch_RecordsParentSession(t *testing.T) {
+	ctx, db := setupRegistryDB(t)
+	agents := agentregistryservice.New(db)
+	registerAgent(t, ctx, agents, "runner", true)
+	missions := missionservice.New(db)
+
+	man := &fakeManager{
+		startID:        "inst-9",
+		openID:         "sess-9",
+		promptStarted:  make(chan struct{}),
+		promptReleased: make(chan struct{}),
+		promptDone:     make(chan struct{}),
+	}
+	close(man.promptReleased)
+	svc := New(man, agents, missions, nil, "/project/root", libtracker.NoopTracker{})
+
+	fired, err := svc.Dispatch(ctx, DispatchRequest{
+		AgentName:       "runner",
+		Intent:          "investigate the failure",
+		HITLPolicyName:  "default",
+		ParentSessionID: "upstream-session-3",
+	})
+	require.NoError(t, err)
+
+	m, err := missions.Get(ctx, fired.MissionID)
+	require.NoError(t, err)
+	require.Equal(t, "upstream-session-3", m.ParentSessionID)
+	require.Equal(t, "sess-9", m.SessionID, "the spawned session is a different fact from the parent")
+
+	// A second unit, fired without a parent. It needs its own fakeManager: the
+	// double's one-shot promptDone channel cannot serve two dispatches.
+	man2 := &fakeManager{
+		startID:        "inst-10",
+		openID:         "sess-10",
+		promptStarted:  make(chan struct{}),
+		promptReleased: make(chan struct{}),
+		promptDone:     make(chan struct{}),
+	}
+	close(man2.promptReleased)
+	svc2 := New(man2, agents, missions, nil, "/project/root", libtracker.NoopTracker{})
+
+	direct, err := svc2.Dispatch(ctx, DispatchRequest{
+		AgentName:      "runner",
+		Intent:         "fired by an operator",
+		HITLPolicyName: "default",
+	})
+	require.NoError(t, err)
+
+	m2, err := missions.Get(ctx, direct.MissionID)
+	require.NoError(t, err)
+	require.Empty(t, m2.ParentSessionID, "an operator-fired mission has no parent session")
+}

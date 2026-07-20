@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, useMatch, useNavigate } from 'react-router-dom';
 import { useAcpWorkspace } from '../../hooks/useAcpWorkspace';
 import { externalAgentFromMeta, type SessionInfo } from '../../lib/acp';
+import { relativeTime } from '../../lib/relativeTime';
 import { useStagedAgent } from '../../lib/stagedAgent';
 import { AgentPicker } from '../AgentPicker';
 import { meaningfulTitle } from '../../pages/chat/lib/sessionLabel';
@@ -23,25 +24,6 @@ import { startNewChat } from './newChatIntent';
  * the rail keeps driving via `<Link to="/chat/:id">` and several sessions stay
  * open at once.
  */
-
-function relativeTimeLabel(updatedAt: string | undefined, locale: string, justNowLabel: string): string | null {
-  if (!updatedAt) return null;
-  const then = Date.parse(updatedAt);
-  if (Number.isNaN(then)) return null;
-  const diffSec = Math.round((Date.now() - then) / 1000);
-  if (diffSec < 45) return justNowLabel;
-
-  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
-  const diffMin = Math.round(diffSec / 60);
-  if (diffMin < 60) return rtf.format(-diffMin, 'minute');
-  const diffHour = Math.round(diffMin / 60);
-  if (diffHour < 24) return rtf.format(-diffHour, 'hour');
-  const diffDay = Math.round(diffHour / 24);
-  if (diffDay < 30) return rtf.format(-diffDay, 'day');
-  const diffMonth = Math.round(diffDay / 30);
-  if (diffMonth < 12) return rtf.format(-diffMonth, 'month');
-  return rtf.format(-Math.round(diffMonth / 12), 'year');
-}
 
 export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) => void }) {
   const { t, i18n } = useTranslation();
@@ -116,7 +98,12 @@ export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =>
           workspace.sessions.map(session => {
             const isActive = activeSessionId === session.sessionId;
             const label = meaningfulTitle(session) ?? t('acp_sidebar.session_fallback_label', { shortId: session.sessionId.slice(0, 8) });
-            const relative = relativeTimeLabel(session.updatedAt, i18n.language, t('acp_sidebar.just_now'));
+            // relativeTime is total (non-optional string in, string out); a session
+            // with no updatedAt yet is this call site's own absent-timestamp case, so
+            // it is handled here rather than by widening the shared function.
+            const relative = session.updatedAt
+              ? relativeTime(session.updatedAt, i18n.language, t('common.just_now'))
+              : null;
             const agentName = externalAgentFromMeta(session._meta);
             // A background (non-focused) session with a permission request waiting
             // on the user surfaces a subtle dot here so it is discoverable while

@@ -258,6 +258,9 @@
           },
           "intent": {
             "type": "string"
+          },
+          "parentSessionId": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -499,6 +502,9 @@
           },
           "lastHeartbeat": {
             "format": "date-time",
+            "type": "string"
+          },
+          "parentSessionId": {
             "type": "string"
           },
           "sessionId": {
@@ -1144,6 +1150,9 @@
       },
       "runtimetypes_HITLApproval": {
         "properties": {
+          "agentName": {
+            "type": "string"
+          },
           "argsSummary": {
             "type": "string"
           },
@@ -1161,8 +1170,14 @@
           "id": {
             "type": "string"
           },
+          "instanceId": {
+            "type": "string"
+          },
           "matchedRule": {
             "type": "integer"
+          },
+          "missionId": {
+            "type": "string"
           },
           "onTimeout": {
             "type": "string"
@@ -1173,6 +1188,9 @@
           "resolution": {},
           "resolvedAt": {
             "format": "date-time",
+            "type": "string"
+          },
+          "sessionId": {
             "type": "string"
           },
           "state": {
@@ -2629,14 +2647,12 @@
     },
     "/files": {
       "delete": {
-        "operationId": "localfile_deletePath",
+        "operationId": "delete_files",
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/apiframework_MessageResponse"
-                }
+                "schema": {}
               }
             },
             "description": "OK"
@@ -2712,12 +2728,23 @@
         ]
       },
       "put": {
-        "operationId": "put_files",
+        "operationId": "localfile_updateFile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/localfileapi_writeFileRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/localfileservice_Entry"
+                }
               }
             },
             "description": "OK"
@@ -2772,7 +2799,7 @@
     },
     "/files/download": {
       "get": {
-        "operationId": "localfile_download",
+        "operationId": "get_files_download",
         "responses": {
           "200": {
             "content": {
@@ -3065,12 +3092,14 @@
     },
     "/folders": {
       "delete": {
-        "operationId": "delete_folders",
+        "operationId": "localfile_deleteFolder",
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/apiframework_MessageResponse"
+                }
               }
             },
             "description": "OK"

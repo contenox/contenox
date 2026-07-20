@@ -1,10 +1,7 @@
 package toolsapi
 
 import (
-	"fmt"
 	"net/http"
-	"strconv"
-	"time"
 
 	apiframework "github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/runtime/runtimetypes"
@@ -72,22 +69,9 @@ func (s *remoteToolsService) create(w http.ResponseWriter, r *http.Request) {
 func (s *remoteToolsService) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	limitStr := apiframework.GetQueryParam(r, "limit", "100", "The maximum number of items to return per page.")
-	cursorStr := apiframework.GetQueryParam(r, "cursor", "", "An optional RFC3339Nano timestamp to fetch the next page of results.")
-
-	var cursor *time.Time
-	if cursorStr != "" {
-		parsedTime, err := time.Parse(time.RFC3339Nano, cursorStr)
-		if err != nil {
-			_ = apiframework.Error(w, r, fmt.Errorf("invalid cursor format: %w", err), apiframework.ListOperation)
-			return
-		}
-		cursor = &parsedTime
-	}
-
-	limit, err := strconv.Atoi(limitStr)
+	cursor, limit, err := apiframework.ListParams(r, 100)
 	if err != nil {
-		_ = apiframework.Error(w, r, fmt.Errorf("invalid limit format: %w", err), apiframework.ListOperation)
+		_ = apiframework.Error(w, r, err, apiframework.ListOperation)
 		return
 	}
 

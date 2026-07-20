@@ -167,9 +167,9 @@ ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS oauth_client_secret_env TEXT NO
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_created_at ON mcp_servers(created_at);
 
 -- agents: polymorphic declared-agent resource. `kind` selects which
--- kind-specific shape `config_json` holds ('external_acp' today; 'chain'
--- reserved for a future in-runtime task-chain-as-agent kind). Config lives in
--- the typed JSON column rather than flat per-kind columns (contrast
+-- kind-specific shape `config_json` holds ('external_acp': somebody else's
+-- ACP program; 'chain': one of the runtime's own task chains, run as a unit).
+-- Config lives in the typed JSON column rather than flat per-kind columns (contrast
 -- mcp_servers, which can use flat columns because it has only one kind) so
 -- adding a new kind never requires a schema migration.
 -- harness_id is a reserved FK seam (no harness table/service exists yet in
@@ -228,10 +228,27 @@ CREATE TABLE IF NOT EXISTS hitl_approvals (
     on_timeout   VARCHAR(20) NOT NULL DEFAULT 'deny',
     state        VARCHAR(20) NOT NULL DEFAULT 'pending',
     resolution   JSONB,
+    instance_id  VARCHAR(255) NOT NULL DEFAULT '',
+    session_id   VARCHAR(255) NOT NULL DEFAULT '',
+    agent_name   VARCHAR(255) NOT NULL DEFAULT '',
+    mission_id   VARCHAR(255),
     created_at   TIMESTAMP NOT NULL,
     expires_at   TIMESTAMP NOT NULL,
     resolved_at  TIMESTAMP
 );
+-- Attribution columns added after the table shipped: which UNIT is asking, not
+-- just which tool it called. An inbox that can only say "write_file" is
+-- unanswerable once more than one unit is running, and it breaks the invariant
+-- that an operator can always name what gated an action (see
+-- docs/development/blueprints/acp/fleet-consolidation.md, slice M5 and C2's
+-- report). instance_id/session_id/agent_name default to '' because an ask
+-- raised by a native chain turn has no fleet unit behind it; mission_id is
+-- NULLABLE because not every ask has a mission (a non-mission unattended
+-- session, an API caller) and '' would be indistinguishable from one.
+ALTER TABLE hitl_approvals ADD COLUMN IF NOT EXISTS instance_id VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE hitl_approvals ADD COLUMN IF NOT EXISTS session_id  VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE hitl_approvals ADD COLUMN IF NOT EXISTS agent_name  VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE hitl_approvals ADD COLUMN IF NOT EXISTS mission_id  VARCHAR(255);
 CREATE INDEX IF NOT EXISTS idx_hitl_approvals_state_created ON hitl_approvals(state, created_at);
 CREATE INDEX IF NOT EXISTS idx_hitl_approvals_state_expires ON hitl_approvals(state, expires_at);
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"sync"
 	"time"
 
@@ -20,6 +21,22 @@ import (
 // (testy, claude-code-acp) never exit on stdin-close, so a short grace keeps
 // Stop/Close from stalling the full acpexec default per instance.
 const defaultKillGrace = 2 * time.Second
+
+// The two facts a chain-kind spawn needs about this binary's own ACP server:
+// ChainACPSubcommand serves ACP over stdio, and ChainPathEnvVar tells it which
+// chain file to execute.
+//
+// They are DECLARED here rather than imported because the packages that own
+// them (the CLI's acp command and the ACP service's chain registry) both sit
+// ABOVE this kernel and one of them imports it — importing back would be a
+// cycle, and reaching into either would put transport knowledge in a kernel
+// that is deliberately ACP-generic. They are EXPORTED so the owning packages
+// can assert the definitions still agree, which is what keeps the duplication
+// from drifting silently.
+const (
+	ChainACPSubcommand = "acp"
+	ChainPathEnvVar    = "CONTENOX_ACP_CHAIN_PATH"
+)
 
 // ErrNotFound is returned for an unknown instance id. It is a sentinel so callers
 // can branch on errors.Is(err, ErrNotFound).
@@ -38,10 +55,15 @@ const (
 	// EventDetach fires when a viewer detaches from a session.
 	EventDetach EventKind = "detach"
 	// EventUnsupervisedDeny fires when a downstream permission request arrives at a
-	// session with no attached controller and is auto-denied (returned to the
-	// downstream as a graceful "cancelled"). It surfaces a judgment the kernel
-	// already makes headless — see viewerHub.requestPermission — so passive audit
-	// can record that a permission-gated action was refused with no one watching.
+	// session with no attached controller and is REFUSED — by the kernel's built-in
+	// headless deny (returned as a graceful "cancelled"), or by an injected
+	// PermissionFallback that selected a reject option or failed to decide. It is
+	// passive audit: a permission-gated action was refused with no one watching.
+	//
+	// It deliberately does NOT fire when a fallback PERMITS the request. Once the
+	// decision can go either way (see WithPermissionFallback), an event that fired
+	// on every unattended request would claim refusals that never happened, and the
+	// audit trail's one job is to be true.
 	EventUnsupervisedDeny EventKind = "unsupervised_permission"
 )
 
@@ -62,6 +84,42 @@ type Event struct {
 	Controller bool             `json:"controller,omitempty"` // EventAttach
 	Time       time.Time        `json:"time"`
 }
+
+// UnattendedPermission is the SELF-CONTAINED input to a PermissionFallback: one
+// downstream session/request_permission that reached a session with NO controller
+// viewer, plus the identity of the unit that raised it. Like Event it carries
+// everything a consumer needs, so an answerer never calls back into the Manager to
+// find out who is asking (and thus cannot deadlock the session it is answering for).
+//
+// The identity is the same one the lifecycle Events carry, closed over at bring-up:
+// the kernel does no lookup of its own for it.
+type UnattendedPermission struct {
+	InstanceID string
+	AgentID    string
+	AgentName  string
+	// SessionID is the DOWNSTREAM session the request arrived on — the same id
+	// Request.SessionID carries, lifted out so an answerer need not reach into the
+	// wire type for the one field it always wants.
+	SessionID libacp.SessionID
+	Request   libacp.RequestPermissionRequest
+}
+
+// PermissionFallback answers a permission request that arrived at an unattended
+// session — the headless case a dispatched unit runs in BY DESIGN, where there is
+// no controller viewer to ask. It is installed via WithPermissionFallback and is
+// the kernel's ONLY concession to human-in-the-loop: the kernel calls it and
+// returns whatever it produces, knowing nothing about how the answer was reached
+// (a policy envelope, a durable ask, an operator's inbox — all service-layer
+// concerns; see the package doc's policy-free invariant).
+//
+// It MAY block: like Viewer.RequestPermission it runs on the request's own
+// dispatched goroutine, so waiting for a human is legitimate. ctx is the
+// downstream request's context, so a cancelled turn releases the wait.
+//
+// Returning an error is NOT a way to fault the downstream: the kernel falls back
+// to its built-in headless deny (a graceful "cancelled" outcome), so an answerer
+// that cannot decide is never more disruptive than having no answerer at all.
+type PermissionFallback func(ctx context.Context, req UnattendedPermission) (libacp.RequestPermissionResponse, error)
 
 // EventSink receives every lifecycle Event the Manager fires. It is called
 // synchronously on the goroutine that produced the event (a state transition, an
@@ -93,8 +151,9 @@ type Manager interface {
 	// the instance outlives the request that started it; ctx governs only the
 	// registry lookup. The instance is wired to its OWN internal journaling
 	// harness (callers ATTACH as viewers, they no longer supply the harness). For
-	// a chain (native) agent it creates a process-less instance. Returns the
-	// generated instance id, or an error if the agent cannot be resolved or
+	// a chain agent it spawns THIS binary's own ACP server bound to the declared
+	// chain file — the same subprocess mechanism, pointed at ourselves. Returns
+	// the generated instance id, or an error if the agent cannot be resolved or
 	// spawned (in which case nothing is registered and no process is leaked).
 	//
 	// It is Start-by-NAME: a convenience over StartResolved for a caller that has
@@ -154,7 +213,7 @@ type Manager interface {
 	// journals and fans out under, and the id a viewer Attaches to. This is the outbound
 	// counterpart of Attach: viewers OBSERVE a session's stream and answer its permissions
 	// via Attach; a consumer DRIVES the downstream via these methods, holding no connection.
-	// Returns ErrNotFound for an unknown instance, or an error for a native/no-connection
+	// Returns ErrNotFound for an unknown instance, or an error for a no-connection
 	// instance or a failed handshake.
 	OpenSession(ctx context.Context, instanceID string, spec SessionSpec) (libacp.SessionID, error)
 
@@ -243,15 +302,48 @@ func WithRestart(limit int) Option {
 // WithEventSink installs sink as the lifecycle event sink (see EventSink).
 func WithEventSink(sink EventSink) Option { return func(m *manager) { m.sink = sink } }
 
+// WithPermissionFallback installs fn as the answerer for permission requests that
+// reach a session with NO controller viewer (see PermissionFallback). Default:
+// unset, which keeps the built-in headless deny — so a Manager nobody wires this
+// on behaves exactly as it did before the seam existed.
+//
+// It is deliberately shaped like WithEventSink: one injected function, called by
+// the kernel, whose behavior the kernel neither knows nor constrains. That is what
+// lets `contenox serve` route an unattended ask into a mission's HITL envelope
+// without teaching this package what an approval is.
+func WithPermissionFallback(fn PermissionFallback) Option {
+	return func(m *manager) { m.permissionFallback = fn }
+}
+
+// WithSelfExecutable overrides the program a CHAIN-kind agent is spawned from
+// (see the chain branch of StartResolved). It defaults to os.Executable() —
+// the running binary — which is what makes a chain unit "this runtime, bound
+// to that chain" rather than a second product.
+//
+// It exists so a test can point the spawn at a freshly BUILT fixture binary:
+// under `go test` os.Executable() is the compiled test binary, which has no
+// ACP server in it, so without this seam a chain agent could only ever be
+// proven to spawn — never to answer.
+func WithSelfExecutable(path string) Option {
+	return func(m *manager) { m.selfExecutable = path }
+}
+
 type manager struct {
 	agents      agentregistryservice.Service
 	stderr      io.Writer
 	killGrace   time.Duration
 	journalSize int
 
+	// selfExecutable is the program a chain-kind agent re-executes. Empty means
+	// "resolve os.Executable() at spawn time"; see WithSelfExecutable.
+	selfExecutable string
+
 	restartEnabled bool
 	restartLimit   int
 	sink           EventSink
+	// permissionFallback answers unattended permission requests; nil keeps the
+	// kernel's built-in headless deny. See WithPermissionFallback.
+	permissionFallback PermissionFallback
 
 	// rootCtx is the long-lived context every external instance's subprocess is
 	// bound to, so instances outlive the caller ctx passed to Start. Close cancels
@@ -322,14 +414,71 @@ func (m *manager) StartResolved(ctx context.Context, agent *runtimetypes.Agent) 
 		}
 		return m.bringUp(agent, spawner)
 	case runtimetypes.AgentKindChain:
-		return m.bringUp(agent, nil)
+		spawner, err := m.chainSpawner(agent)
+		if err != nil {
+			return "", err
+		}
+		return m.bringUp(agent, spawner)
 	default:
 		return "", fmt.Errorf("agentinstance: agent %q has unsupported kind %q", agent.Name, agent.Kind)
 	}
 }
 
-// bringUp builds and starts an instance for agent (spawner nil => native), then
-// registers it. start() spawns OUTSIDE the registry lock, so a slow subprocess
+// chainSpawner builds the agenthost primitive for a CHAIN-kind agent: this
+// binary's own ACP server, bound to the declared chain file.
+//
+// The kernel does not gain a second connection mechanism for this, and it does
+// not learn what a task chain is. It builds an ordinary ExternalACPAgent whose
+// command happens to be US — the runtime's `acp` subcommand is a conforming ACP
+// agent over stdio, so "contenox driving contenox" is just the external path
+// with the loopback wired in. Everything downstream of bringUp (journal,
+// viewers, controller promotion, permission routing, adopt, cancel, stop,
+// restart policy) is therefore identical for both kinds by construction rather
+// than by parallel implementation.
+//
+// The child INHERITS this process's environment and only ChainPathEnvVar is
+// added on top. That is deliberate and load-bearing: a chain unit is meant to
+// share the one global runtime state (HOME resolves the database, the seeded
+// presets, the workspace id), which is the entire difference between a chain
+// unit and an external agent that brings its own everything.
+//
+// HITL is NOT disabled: the child runs its gated tool calls through ACP
+// session/request_permission, which arrives back here as the instance harness's
+// RequestPermission and routes to the session's controller viewer — the same
+// human-in-the-loop path an external agent's requests take, including the
+// unsupervised auto-deny when nobody is attached.
+func (m *manager) chainSpawner(agent *runtimetypes.Agent) (agenthost.Agent, error) {
+	cfg, err := agent.ChainConfig()
+	if err != nil {
+		return nil, fmt.Errorf("agentinstance: agent %q: %w", agent.Name, err)
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("agentinstance: agent %q: %w", agent.Name, err)
+	}
+	self := m.selfExecutable
+	if self == "" {
+		self, err = os.Executable()
+		if err != nil {
+			return nil, fmt.Errorf("agentinstance: agent %q: resolve this executable to run its chain: %w", agent.Name, err)
+		}
+	}
+	return &agenthost.ExternalACPAgent{
+		Config: runtimetypes.ExternalACPConfig{
+			Transport: runtimetypes.ExternalACPTransportStdio,
+			Command:   self,
+			Args:      []string{ChainACPSubcommand},
+			Env:       map[string]string{ChainPathEnvVar: cfg.Path},
+		},
+		Stderr:    m.stderr,
+		KillGrace: m.killGrace,
+	}, nil
+}
+
+// bringUp builds and starts an instance for agent, then registers it. It is the
+// ONE path both kinds take — external and chain differ only in which
+// agenthost.Agent they hand it — so journal, viewers, controller promotion,
+// adopt, cancel, stop and restart semantics are identical for both by
+// construction. start() spawns OUTSIDE the registry lock, so a slow subprocess
 // startup never blocks List/Get/Stop of other instances; only on success is the
 // instance registered. A spawn failure registers nothing and leaks no process.
 func (m *manager) bringUp(agent *runtimetypes.Agent, spawner agenthost.Agent) (string, error) {
@@ -356,6 +505,10 @@ func (m *manager) bringUp(agent *runtimetypes.Agent, spawner agenthost.Agent) (s
 		onUnsupervisedDeny: func(sessionID libacp.SessionID) {
 			m.emit(Event{Kind: EventUnsupervisedDeny, InstanceID: id, AgentID: agent.ID, AgentName: agent.Name, SessionID: sessionID, Time: time.Now().UTC()})
 		},
+		// The injected answerer for an unattended permission request, with the SAME
+		// identity the hooks above close over. Nil when no fallback is wired, which
+		// is what keeps the hub on its built-in deny.
+		onUnsupervisedRequest: m.unattendedPermissionAnswerer(id, agent),
 	})
 
 	if err := inst.start(); err != nil {
@@ -371,6 +524,31 @@ func (m *manager) bringUp(agent *runtimetypes.Agent, spawner agenthost.Agent) (s
 	m.instances[id] = inst
 	m.mu.Unlock()
 	return id, nil
+}
+
+// unattendedPermissionAnswerer adapts the Manager's configured PermissionFallback
+// to the hub's request-only hook by closing this instance's identity over it —
+// exactly how the onState/onAttach/onDetach hooks above are built, and for the same
+// reason: the hub is per-instance state that must not know the Manager, and the
+// answerer must not have to ask who is calling it.
+//
+// Returns nil when no fallback is configured, so the hub keeps its built-in deny
+// rather than routing through a wrapper that would only re-implement it.
+func (m *manager) unattendedPermissionAnswerer(instanceID string, agent *runtimetypes.Agent) func(context.Context, libacp.RequestPermissionRequest) (libacp.RequestPermissionResponse, error) {
+	fn := m.permissionFallback
+	if fn == nil {
+		return nil
+	}
+	agentID, agentName := agent.ID, agent.Name
+	return func(ctx context.Context, req libacp.RequestPermissionRequest) (libacp.RequestPermissionResponse, error) {
+		return fn(ctx, UnattendedPermission{
+			InstanceID: instanceID,
+			AgentID:    agentID,
+			AgentName:  agentName,
+			SessionID:  req.SessionID,
+			Request:    req,
+		})
+	}
 }
 
 func (m *manager) Attach(ctx context.Context, instanceID string, sessionID libacp.SessionID, viewer Viewer) (bool, error) {

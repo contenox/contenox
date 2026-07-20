@@ -101,10 +101,17 @@ type viewerHub struct {
 	// sink that calls back into the Manager cannot deadlock the fan-out.
 	onAttach func(sessionID libacp.SessionID, viewerID string, controller bool)
 	onDetach func(sessionID libacp.SessionID, viewerID string)
-	// onUnsupervisedDeny fires when a permission request is auto-denied for lack of
-	// a controller (see requestPermission). Passive audit only — like onAttach it
-	// fires OUTSIDE mu and never influences the deny itself.
+	// onUnsupervisedDeny fires when an unattended permission request ends in a
+	// REFUSAL (see requestPermission). Passive audit only — like onAttach it fires
+	// OUTSIDE mu and never influences the outcome it reports.
 	onUnsupervisedDeny func(sessionID libacp.SessionID)
+	// onUnsupervisedRequest, when set, ANSWERS a permission request that reached a
+	// session with no controller, in place of the built-in deny. It is the hub's
+	// half of the Manager's WithPermissionFallback option: the Manager closes the
+	// instance's identity over it, so the hub passes only the request. Nil (the
+	// default) keeps the built-in deny, so an unwired Manager behaves exactly as it
+	// did before this seam existed.
+	onUnsupervisedRequest func(ctx context.Context, req libacp.RequestPermissionRequest) (libacp.RequestPermissionResponse, error)
 
 	mu       sync.Mutex
 	sessions map[libacp.SessionID]*sessionState
@@ -231,11 +238,21 @@ func (h *viewerHub) detach(sessionID libacp.SessionID, viewerID string) error {
 // before calling into it, because the controller's answer may block awaiting a
 // human — holding mu there would stall the whole session's fan-out.
 //
-// Fallback (no controller attached): an UNSUPERVISED DENY, returned as a
-// spec-graceful "cancelled" outcome. Denying is the safe default for an instance
-// running headless — nothing gets to perform a permission-gated action with no one
-// watching — and cancelled (rather than a JSON-RPC error) lets the downstream turn
-// end cleanly instead of faulting.
+// Fallback (no controller attached): the INJECTED answerer when one is wired
+// (onUnsupervisedRequest — see Manager.WithPermissionFallback), otherwise an
+// UNSUPERVISED DENY returned as a spec-graceful "cancelled" outcome. Denying
+// remains the built-in default for an instance running headless — nothing gets to
+// perform a permission-gated action with no one watching — and cancelled (rather
+// than a JSON-RPC error) lets the downstream turn end cleanly instead of faulting.
+//
+// The kernel knows NOTHING about what a wired fallback does: it hands over the
+// request and returns whatever comes back. Approvals, envelopes and inboxes are
+// service-layer judgments (see the package doc's policy-free invariant); this seam
+// exists so they can be made without any of them reaching down here.
+//
+// A fallback that ERRORS falls back to the built-in deny rather than faulting the
+// downstream turn: an answerer that could not decide must not be more disruptive
+// than having no answerer at all.
 func (h *viewerHub) requestPermission(ctx context.Context, req libacp.RequestPermissionRequest) (libacp.RequestPermissionResponse, error) {
 	h.mu.Lock()
 	var controller Viewer
@@ -245,16 +262,56 @@ func (h *viewerHub) requestPermission(ctx context.Context, req libacp.RequestPer
 	h.mu.Unlock()
 
 	if controller == nil {
-		// The deny decision is already made (and the lock released); the hook only
-		// records it for after-the-fact audit and never changes the outcome.
-		if h.onUnsupervisedDeny != nil {
-			h.onUnsupervisedDeny(req.SessionID)
+		// Read the fallback under no lock: it is set once at construction and may
+		// block for a long time (a durable ask awaiting a human), so holding mu
+		// across it would stall the whole session's fan-out.
+		if answer := h.onUnsupervisedRequest; answer != nil {
+			resp, err := answer(ctx, req)
+			if err == nil {
+				if permissionRefused(req, resp) {
+					h.reportUnsupervisedDeny(req.SessionID)
+				}
+				return resp, nil
+			}
+			// fall through to the built-in deny
 		}
+		h.reportUnsupervisedDeny(req.SessionID)
 		return libacp.RequestPermissionResponse{
 			Outcome: libacp.RequestPermissionOutcome{Outcome: libacp.PermissionOutcomeCancelled},
 		}, nil
 	}
 	return controller.RequestPermission(ctx, req)
+}
+
+// reportUnsupervisedDeny fires the passive audit hook for an unattended request
+// that was REFUSED. The decision is already made (and the lock released); the hook
+// only records it and never changes the outcome.
+func (h *viewerHub) reportUnsupervisedDeny(sessionID libacp.SessionID) {
+	if h.onUnsupervisedDeny != nil {
+		h.onUnsupervisedDeny(sessionID)
+	}
+}
+
+// permissionRefused reports whether resp REFUSES req — either because it selected
+// no option at all (cancelled, the built-in headless outcome) or because the option
+// it selected is one of the downstream's own REJECT options. It is what keeps the
+// unsupervised-deny audit event truthful once a fallback can also PERMIT: an
+// allow_once selected by an envelope is not a deny and must not be recorded as one.
+//
+// An unknown option id is treated as a refusal: the kernel cannot verify that an id
+// it never saw offered grants anything, and over-reporting a refusal is the safe
+// direction for an audit trail.
+func permissionRefused(req libacp.RequestPermissionRequest, resp libacp.RequestPermissionResponse) bool {
+	if resp.Outcome.Outcome != libacp.PermissionOutcomeSelected {
+		return true
+	}
+	for _, opt := range req.Options {
+		if opt.OptionID != resp.Outcome.OptionID {
+			continue
+		}
+		return opt.Kind != libacp.PermissionAllowOnce && opt.Kind != libacp.PermissionAllowAlways
+	}
+	return true
 }
 
 // terminalServer returns sessionID's controller viewer cast to TerminalServer, or nil when

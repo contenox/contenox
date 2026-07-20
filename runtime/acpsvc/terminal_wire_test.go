@@ -14,7 +14,6 @@ import (
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/enginesvc"
 	"github.com/contenox/runtime/runtime/runtimetypes"
-	"github.com/contenox/runtime/runtime/shellsession"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,13 +32,7 @@ func TestE2E_Wire_TerminalPassthrough(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	root := t.TempDir()
-	mgr := shellsession.NewManager(shellsession.Config{
-		CwdResolver: func(context.Context) string { return root },
-		DefaultRoot: root,
-		IdleTimeout: time.Minute,
-	})
-	defer mgr.Shutdown()
+	mgr := newTerminalShellManager(t)
 
 	agentR, clientW := io.Pipe()
 	clientR, agentW := io.Pipe()
@@ -115,13 +108,7 @@ func TestE2E_Wire_ExternalAgent_TerminalPassthrough(t *testing.T) {
 
 	agentName := registerStubAgentInDB(t, db, "claude-stub-term", nil)
 
-	root := t.TempDir()
-	mgr := shellsession.NewManager(shellsession.Config{
-		CwdResolver: func(context.Context) string { return root },
-		DefaultRoot: root,
-		IdleTimeout: time.Minute,
-	})
-	defer mgr.Shutdown()
+	mgr := newTerminalShellManager(t)
 
 	agentR, clientW := io.Pipe()
 	clientR, agentW := io.Pipe()
