@@ -1,4 +1,4 @@
-import { Cpu, Database, Settings, type LucideIcon } from 'lucide-react';
+import { Cpu, Database, Radar, Settings, type LucideIcon } from 'lucide-react';
 import { lazy } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import i18n, { type TranslationKey } from '../i18n';
@@ -7,6 +7,7 @@ import { LOGIN_ROUTE } from './routeConstants.ts';
 
 const AcpChatPage = lazy(() => import('../pages/chat/AcpChatPage.tsx'));
 const BackendsPage = lazy(() => import('../pages/admin/backends/BackendPage.tsx'));
+const FleetPage = lazy(() => import('../pages/admin/fleet/FleetPage.tsx'));
 const ControlPlanePage = lazy(() => import('../pages/admin/control/ControlPlanePage.tsx'));
 const SettingsPage = lazy(() => import('../pages/admin/settings/SettingsPage.tsx'));
 const ByePage = lazy(() => import('../pages/public/bye/Bye.tsx'));
@@ -49,6 +50,7 @@ type AdminRouteDefinition = {
 };
 
 const adminRouteDefinitions: AdminRouteDefinition[] = [
+  { path: '/fleet', element: FleetPage, labelKey: 'navbar.fleet', Icon: Radar },
   { path: '/backends', element: BackendsPage, labelKey: 'navbar.backends', Icon: Database },
   { path: '/settings', element: SettingsPage, labelKey: 'navbar.settings', Icon: Settings },
 ];

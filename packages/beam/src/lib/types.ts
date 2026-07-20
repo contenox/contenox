@@ -445,6 +445,39 @@ export type Agent = {
   updatedAt: string;
 };
 
+/**
+ * Lifecycle state of a live agent instance; mirrors agentinstance's
+ * `starting|running|stopped|error|warning` (runtime/agentinstance/instance.go).
+ */
+export type FleetInstanceState = 'starting' | 'running' | 'stopped' | 'error' | 'warning';
+
+/**
+ * A single running agent instance. Mirrors agentinstance.InstanceStatus JSON
+ * (GET /api/fleet/{instanceID}, and the elements of a FleetEntry's instances).
+ */
+export type InstanceStatus = {
+  id: string;
+  agentId: string;
+  agentName: string;
+  kind: string;
+  state: FleetInstanceState;
+  sessions: number;
+  viewers: number;
+  startedAt: string;
+};
+
+/**
+ * One declared agent annotated with its running instances — the config+runtime
+ * join returned by GET /api/fleet. Mirrors agentinstance.FleetEntry JSON.
+ * `instances` is null when the declared agent is idle (no live instances).
+ */
+export type FleetEntry = {
+  agentId: string;
+  agentName: string;
+  kind: string;
+  instances: InstanceStatus[] | null;
+};
+
 /** Persisted MCP server config; matches runtimetypes.MCPServer JSON. */
 export type MCPServer = {
   id: string;

@@ -560,6 +560,54 @@ func TestManager_NoController_PermissionDenyFallback(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
+// The unsupervised-deny judgment the kernel already makes (a permission request
+// with no attached controller) surfaces as a passive EventUnsupervisedDeny — so
+// after-the-fact audit can find that a gated action was refused headless. The
+// deny outcome itself is unchanged; the event only records it.
+func TestUnit_EventSink_UnsupervisedDenyEmitsEvent(t *testing.T) {
+	ctx, _, svc := setupRegistry(t)
+	stub := buildStubAgent(t)
+	registerExternal(t, ctx, svc, "ext-agent", stub)
+
+	var mu sync.Mutex
+	var events []Event
+	mgr := New(svc, WithEventSink(func(ev Event) {
+		mu.Lock()
+		events = append(events, ev)
+		mu.Unlock()
+	}))
+	t.Cleanup(func() { _ = mgr.Close() })
+
+	id, err := mgr.Start(ctx, "ext-agent")
+	require.NoError(t, err)
+	sid := openSession(t, mgr, id)
+
+	// Attach then detach the only viewer → the session has no controller, so the
+	// downstream's permission request during the "callbacks" turn is auto-denied.
+	viewerA := newMockViewer("A")
+	_, err = mgr.Attach(ctx, id, sid, viewerA)
+	require.NoError(t, err)
+	require.NoError(t, mgr.Detach(id, sid, "A"))
+
+	reason := promptText(t, mgr, id, sid, "callbacks")
+	require.Equal(t, libacp.StopReasonRefusal, reason)
+
+	mu.Lock()
+	defer mu.Unlock()
+	var deny *Event
+	for i := range events {
+		if events[i].Kind == EventUnsupervisedDeny {
+			deny = &events[i]
+			break
+		}
+	}
+	require.NotNil(t, deny, "an unsupervised permission request must emit EventUnsupervisedDeny")
+	require.Equal(t, id, deny.InstanceID)
+	require.Equal(t, "ext-agent", deny.AgentName)
+	require.Equal(t, sid, deny.SessionID)
+	require.False(t, deny.Time.IsZero(), "the event carries a timestamp")
+}
+
 // -----------------------------------------------------------------------------
 // (e) watchDog restart policy: an out-of-band death restarts (with restart
 //     enabled) up to the limit then parks in Warning; a manual Stop never

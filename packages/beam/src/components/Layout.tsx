@@ -93,11 +93,12 @@ export function Layout({ defaultOpen = true, mainContent, sidebarContent, classN
     // "Beam" is the product name of the chat surface (same in every language) —
     // it replaces the old in-body "Chat" H2, which moved up into this navbar.
     if (location.pathname.startsWith('/chat')) return 'Beam';
+    if (location.pathname.startsWith('/fleet')) return t('navbar.fleet');
     if (location.pathname.startsWith('/settings')) return 'Settings';
     if (location.pathname.startsWith('/backends')) return 'Backends';
     if (location.pathname.startsWith('/control')) return 'Control Plane';
     return 'Contenox';
-  }, [location.pathname]);
+  }, [location.pathname, t]);
 
   const handleDismissWizard = () => {
     dismissWizard(setupData);

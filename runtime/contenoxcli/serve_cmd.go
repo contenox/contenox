@@ -30,6 +30,7 @@ import (
 	internalweb "github.com/contenox/runtime/runtime/internal/web"
 	"github.com/contenox/runtime/runtime/localfileservice"
 	"github.com/contenox/runtime/runtime/localtools"
+	"github.com/contenox/runtime/runtime/missionservice"
 	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/serverapi"
@@ -327,8 +328,19 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// process (and thus its context) survives a browser disconnect/reload and a
 	// reloaded session re-attaches to the still-running instance. Owned by the serve
 	// process and torn down (every subprocess killed) on shutdown.
-	instances := agentinstance.New(agentregistryservice.New(db))
+	// Passive fleet telemetry: lifecycle facts (state changes, attach/detach,
+	// unsupervised denies) are reported through the shared tracker for
+	// after-the-fact audit — recorded, triggering nothing. Noop unless tracing is
+	// enabled, like every other subsystem here.
+	instances := agentinstance.New(
+		agentregistryservice.New(db),
+		agentinstance.WithEventSink(newInstanceEventSink(tracker)),
+	)
 	defer func() { _ = instances.Close() }()
+
+	// Durable mission records — the manifest's other half. Backed by the same DB;
+	// missions outlive the sessions/instances they reference.
+	missions := missionservice.New(db)
 
 	// /acp serves the same acpsvc agent `contenox acp` speaks over stdio, over
 	// a WebSocket instead — see acp_ws.go. It reuses the engine/db/workspace
@@ -377,6 +389,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 		ToolsProviderService: toolsProviderSvc,
 		Agent:                agent,
 		Chains:               chains,
+		Instances:            instances,
+		Missions:             missions,
+		Tracker:              tracker,
 		TerminalService:      terminalSvc,
 		TerminalEnabled:      terminalCfg.Enabled,
 		WorkspaceID:          workspaceID,

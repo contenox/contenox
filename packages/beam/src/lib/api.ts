@@ -11,6 +11,7 @@ import {
   CLIConfigUpdateResponse,
   CloudProviderType,
   ConfigureProviderInput,
+  FleetEntry,
   HITLPolicy,
   LocalHook,
   MCPServer,
@@ -131,6 +132,13 @@ export const api = {
   },
   getAgentByName: (name: string) =>
     apiFetch<Agent>(`/api/agents/by-name/${encodeURIComponent(name)}`),
+
+  // Fleet — the live agent-instance board: the config+runtime join of every
+  // declared agent annotated with its running instances. Read-only; instance
+  // lifecycle stays with `contenox serve`. Truthful under polling because
+  // Manager.List is an in-memory join (see runtime/internal/fleetapi).
+  getFleet: () => apiFetch<FleetEntry[]>('/api/fleet'),
+
   // Backends
   getBackends: () => apiFetch<Backend[]>('/api/backends'),
   getBackend: (id: string) => apiFetch<Backend>(`/api/backends/${id}`),

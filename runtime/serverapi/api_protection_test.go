@@ -121,14 +121,17 @@ func TestServe_TokenSet_TamperedCookieIs401(t *testing.T) {
 	t.Cleanup(srv.Close)
 	good := cookieJWTFor(t, testToken)
 
-	// Flip the last character of the (base64url) signature segment.
+	// Flip a SIGNIFICANT bit of the (base64url) signature's final character. In
+	// the final quantum only the top 4 of its 6 bits are signature bits and the
+	// encoder emits zero padding bits, so 'A'→'B' would change padding bits only
+	// and still verify; 'A'↔'Q' always flips a real signature bit.
 	tampered := good.Value
 	if len(tampered) == 0 {
 		t.Fatal("empty cookie JWT")
 	}
 	b := []byte(tampered)
 	if b[len(b)-1] == 'A' {
-		b[len(b)-1] = 'B'
+		b[len(b)-1] = 'Q'
 	} else {
 		b[len(b)-1] = 'A'
 	}

@@ -38,6 +38,7 @@ export * from "./components/SidebarToggle";
 export * from "./components/SidePanel";
 export * from "./components/Skeleton";
 export * from "./components/Spinner";
+export * from "./components/StatusIndicator";
 export * from "./components/Table";
 export * from "./components/TabTrigger";
 export * from "./components/Tabs";

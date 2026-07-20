@@ -216,7 +216,30 @@ composition; ~100–200 LoC.
 
 ## Decision Points
 
-All RESERVED to the maintainer unless marked DECIDED.
+Execution note (2026-07-19): the maintainer delegated build-out ("you're on
+your own for this, I'll review what landed when done and e2e validated").
+Decisions below marked EXECUTED were made under that delegation and remain
+subject to review-time reversal:
+
+- Board placement: EXECUTED admin-first (`adminRouteDefinitions`, one line,
+  auto-nav via dropdown + control-plane hub). Top-level promotion is a
+  one-line follow-up if fleet becomes the daily entry.
+- Mission storage: EXECUTED as runtimetypes KV records (pattern of
+  `acp:session_*`), zero migration, reversible to a table later.
+- Dispatch semantics: EXECUTED async-after-OpenSession (returns ids
+  immediately; first prompt runs detached; outcome observable on the board).
+  Known v1 limitation, documented in the slice: a dispatched session is
+  Manager-direct and not yet adoptable into a beam chat session.
+- Restart default: NOT touched — serve keeps restarts off; the board renders
+  reality. Changing the default is a live product-behavior change and stays
+  reserved.
+- Channel model (from the maintainer's decomposition, unratified in detail):
+  lifecycle = fleet plumbing (poll + passive tracker); output artifacts hang
+  off mission records by reference; harness reporting/escalation belongs to
+  the declared-agents-and-harnesses blueprint; the HITL-notification bus for
+  external agents is deferred out of fleet v1.
+
+All remaining points RESERVED to the maintainer unless marked DECIDED.
 
 - **DECIDED (2026-07-19): ACP-only yard.** Foreign UIs are replaced with our
   own rather than integrated.

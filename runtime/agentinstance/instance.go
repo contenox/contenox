@@ -128,9 +128,10 @@ type instanceConfig struct {
 	restartEnabled bool
 	restartLimit   int
 
-	onState  func(state string)
-	onAttach func(sessionID libacp.SessionID, viewerID string, controller bool)
-	onDetach func(sessionID libacp.SessionID, viewerID string)
+	onState            func(state string)
+	onAttach           func(sessionID libacp.SessionID, viewerID string, controller bool)
+	onDetach           func(sessionID libacp.SessionID, viewerID string)
+	onUnsupervisedDeny func(sessionID libacp.SessionID)
 }
 
 // instance is one running agent instance: the pure primitive of Layer A. Its own
@@ -169,6 +170,7 @@ func newInstance(cfg instanceConfig) *instance {
 	hub := newViewerHub(cfg.id, cfg.journalSize)
 	hub.onAttach = cfg.onAttach
 	hub.onDetach = cfg.onDetach
+	hub.onUnsupervisedDeny = cfg.onUnsupervisedDeny
 	driver := newSessionDriver()
 	return &instance{
 		id:             cfg.id,

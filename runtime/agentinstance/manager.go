@@ -37,6 +37,12 @@ const (
 	EventAttach EventKind = "attach"
 	// EventDetach fires when a viewer detaches from a session.
 	EventDetach EventKind = "detach"
+	// EventUnsupervisedDeny fires when a downstream permission request arrives at a
+	// session with no attached controller and is auto-denied (returned to the
+	// downstream as a graceful "cancelled"). It surfaces a judgment the kernel
+	// already makes headless — see viewerHub.requestPermission — so passive audit
+	// can record that a permission-gated action was refused with no one watching.
+	EventUnsupervisedDeny EventKind = "unsupervised_permission"
 )
 
 // Event is one instance-lifecycle event. It is SELF-CONTAINED — every field a
@@ -51,7 +57,7 @@ type Event struct {
 	AgentID    string           `json:"agentId"`
 	AgentName  string           `json:"agentName"`
 	State      string           `json:"state,omitempty"`      // EventStateChange
-	SessionID  libacp.SessionID `json:"sessionId,omitempty"`  // EventAttach / EventDetach
+	SessionID  libacp.SessionID `json:"sessionId,omitempty"`  // EventAttach / EventDetach / EventUnsupervisedDeny
 	ViewerID   string           `json:"viewerId,omitempty"`   // EventAttach / EventDetach
 	Controller bool             `json:"controller,omitempty"` // EventAttach
 	Time       time.Time        `json:"time"`
@@ -306,6 +312,9 @@ func (m *manager) bringUp(agent *runtimetypes.Agent, spawner agenthost.Agent) (s
 		},
 		onDetach: func(sessionID libacp.SessionID, viewerID string) {
 			m.emit(Event{Kind: EventDetach, InstanceID: id, AgentID: agent.ID, AgentName: agent.Name, SessionID: sessionID, ViewerID: viewerID, Time: time.Now().UTC()})
+		},
+		onUnsupervisedDeny: func(sessionID libacp.SessionID) {
+			m.emit(Event{Kind: EventUnsupervisedDeny, InstanceID: id, AgentID: agent.ID, AgentName: agent.Name, SessionID: sessionID, Time: time.Now().UTC()})
 		},
 	})
 

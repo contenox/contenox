@@ -44,7 +44,9 @@ var typeScanDirs = []string{
 	"apiframework",
 	"runtime/taskengine",
 	"runtime/taskengine/llmretry",
+	"runtime/agentinstance",
 	"runtime/agentservice",
+	"runtime/missionservice",
 	"runtime/runtimetypes",
 	"runtime/stateservice",
 	"runtime/internal/setupcheck",
@@ -73,10 +75,10 @@ type aliasInfo struct {
 }
 
 type handlerAnno struct {
-	request   string // "pkg.Type" or ""
-	response  string
-	params    map[string]string // name -> description (from @param)
-	paramOrd  []string
+	request    string // "pkg.Type" or ""
+	response   string
+	params     map[string]string // name -> description (from @param)
+	paramOrd   []string
 	docSummary string
 }
 

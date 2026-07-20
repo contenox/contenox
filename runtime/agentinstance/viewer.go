@@ -101,6 +101,10 @@ type viewerHub struct {
 	// sink that calls back into the Manager cannot deadlock the fan-out.
 	onAttach func(sessionID libacp.SessionID, viewerID string, controller bool)
 	onDetach func(sessionID libacp.SessionID, viewerID string)
+	// onUnsupervisedDeny fires when a permission request is auto-denied for lack of
+	// a controller (see requestPermission). Passive audit only — like onAttach it
+	// fires OUTSIDE mu and never influences the deny itself.
+	onUnsupervisedDeny func(sessionID libacp.SessionID)
 
 	mu       sync.Mutex
 	sessions map[libacp.SessionID]*sessionState
@@ -241,6 +245,11 @@ func (h *viewerHub) requestPermission(ctx context.Context, req libacp.RequestPer
 	h.mu.Unlock()
 
 	if controller == nil {
+		// The deny decision is already made (and the lock released); the hook only
+		// records it for after-the-fact audit and never changes the outcome.
+		if h.onUnsupervisedDeny != nil {
+			h.onUnsupervisedDeny(req.SessionID)
+		}
 		return libacp.RequestPermissionResponse{
 			Outcome: libacp.RequestPermissionOutcome{Outcome: libacp.PermissionOutcomeCancelled},
 		}, nil

@@ -13,15 +13,18 @@ import (
 	libbus "github.com/contenox/runtime/libbus"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/agentinstance"
 	"github.com/contenox/runtime/runtime/agentregistryservice"
 	"github.com/contenox/runtime/runtime/agentservice"
 	"github.com/contenox/runtime/runtime/backendservice"
 	"github.com/contenox/runtime/runtime/hitlservice"
 	"github.com/contenox/runtime/runtime/internal/agentregistryapi"
 	"github.com/contenox/runtime/runtime/internal/backendapi"
+	"github.com/contenox/runtime/runtime/internal/fleetapi"
 	"github.com/contenox/runtime/runtime/internal/hitlpolicyapi"
 	"github.com/contenox/runtime/runtime/internal/localfileapi"
 	"github.com/contenox/runtime/runtime/internal/mcpserverapi"
+	"github.com/contenox/runtime/runtime/internal/missionapi"
 	"github.com/contenox/runtime/runtime/internal/modeldapi"
 	"github.com/contenox/runtime/runtime/internal/modelregistryapi"
 	"github.com/contenox/runtime/runtime/internal/openapidocs"
@@ -34,6 +37,7 @@ import (
 	"github.com/contenox/runtime/runtime/internal/toolsapi"
 	"github.com/contenox/runtime/runtime/localfileservice"
 	"github.com/contenox/runtime/runtime/mcpserverservice"
+	"github.com/contenox/runtime/runtime/missionservice"
 	"github.com/contenox/runtime/runtime/modelregistry"
 	"github.com/contenox/runtime/runtime/modelregistryservice"
 	"github.com/contenox/runtime/runtime/providerservice"
@@ -80,9 +84,20 @@ type Dependencies struct {
 	Auth                 middleware.AuthZReader
 	Agent                agentservice.Agent
 	Chains               taskchainservice.Service
-	WorkspaceID          string
-	ProjectRoot          string
-	ContenoxDir          string
+	// Instances is serve's live agent-instance manager; the /fleet routes surface
+	// its config+runtime join (declared agents annotated with running instances).
+	Instances agentinstance.Manager
+	// Missions is the durable mission registry; the /missions routes surface it.
+	// The other half of the manifest — one-line intents bound to fleet work.
+	Missions missionservice.Service
+	// Tracker records after-the-fact fleet facts — currently the outcome of a
+	// dispatch's detached first prompt (POST /fleet/dispatch). Optional: nil
+	// degrades to a Noop, matching the passive-telemetry gate the rest of the
+	// fleet rides.
+	Tracker     libtracker.ActivityTracker
+	WorkspaceID string
+	ProjectRoot string
+	ContenoxDir string
 	// WorkspaceRoots is the workspace-root allowlist. When set, the /files browse
 	// API resolves each request against a client-supplied `root` (validated
 	// through the allowlist) instead of the single fixed ProjectRoot.
@@ -225,6 +240,22 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 
 	if deps.ToolsProviderService != nil {
 		toolsapi.AddRemoteToolsRoutes(mux, deps.ToolsProviderService)
+	}
+
+	// Live-fleet counterpart of the declared-agents registry above: the
+	// config+runtime join lives only in serve's Manager, so the routes exist
+	// only when serve passes it. Dispatch additionally uses the mission registry,
+	// the workspace-root allowlist, the project root, and the tracker — all
+	// optional (dispatch validates a missionIntent against a nil registry, and a
+	// nil tracker degrades to a Noop).
+	if deps.Instances != nil {
+		fleetapi.AddRoutes(mux, deps.Instances, deps.Missions, deps.WorkspaceRoots, deps.ProjectRoot, deps.Tracker)
+	}
+
+	// Durable manifest half of the fleet: mission records. Registered only when
+	// serve builds the service, mirroring the other nil-gated route groups.
+	if deps.Missions != nil {
+		missionapi.AddRoutes(mux, deps.Missions)
 	}
 
 	if deps.PubSub != nil {
