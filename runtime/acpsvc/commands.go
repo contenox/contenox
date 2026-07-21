@@ -17,10 +17,16 @@ import (
 	"github.com/contenox/runtime/runtime/runtimetypes"
 )
 
-// acpCommands is the admin command set advertised to ACP clients. The protocol
-// only uses this list as a client-side autocomplete/menu hint — an invoked
-// command arrives back as ordinary prompt text, which Prompt intercepts.
-func acpCommands() []libacp.AvailableCommand {
+// allACPCommands is the full, capability-unfiltered admin command set — every
+// command this package knows how to dispatch, regardless of what the current
+// transport can actually run. It exists so parseCommand's recognition (via
+// acpCommandNames, below) is never narrower than what (*Transport).acpCommands
+// advertises: a command that got dropped from the advertised menu must still be
+// recognized as a command when a client sends it anyway (see handleMission's
+// teaching error for /mission), not silently forwarded as ordinary prompt text.
+// Use (*Transport).acpCommands for anything that reaches a client — the menu,
+// /help, session/new's available_commands — never this directly.
+func allACPCommands() []libacp.AvailableCommand {
 	return []libacp.AvailableCommand{
 		{Name: "help", Description: "List the available commands."},
 		{Name: "doctor", Description: "Check provider/model/backend readiness (read-only — no test prompt is sent)."},
@@ -32,13 +38,40 @@ func acpCommands() []libacp.AvailableCommand {
 		{Name: "think", Description: "Show or set this session's reasoning level: /think <level|off|auto>.", Input: &libacp.AvailableCommandInput{Hint: "[level|off|auto]"}},
 		{Name: "capability", Description: "Show or set persistent provider/model capability overrides.", Input: &libacp.AvailableCommandInput{Hint: "set|show|unset <provider> <model> [--think true|false]"}},
 		{Name: "policy", Description: "Show the active HITL policy, or switch it: /policy <name>.", Input: &libacp.AvailableCommandInput{Hint: "[policy-name]"}},
+		{Name: "mission", Description: "Fire a mission from this session: /mission [agent-name] <intent>.", Input: &libacp.AvailableCommandInput{Hint: "[agent-name] <intent>"}},
 	}
 }
 
+// acpCommands is the admin command set actually advertised to THIS transport's
+// ACP clients — capability-filtered from allACPCommands. /mission is dropped
+// unless hasMissionCapability reports the fleet kernel and agent resolver it
+// needs are both wired (only true in a serve-hosted session): ACP is
+// advertise-what-works, so a standalone `contenox acp` process (what Zed
+// spawns, with no fleet kernel of its own) must never list a command that can
+// only error out. The protocol only uses this list as a client-side
+// autocomplete/menu hint — an invoked command arrives back as ordinary prompt
+// text, which Prompt intercepts.
+func (t *Transport) acpCommands() []libacp.AvailableCommand {
+	all := allACPCommands()
+	if t.hasMissionCapability() {
+		return all
+	}
+	out := make([]libacp.AvailableCommand, 0, len(all)-1)
+	for _, c := range all {
+		if c.Name == "mission" {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
 // acpCommandNames is the set of recognized command names, used by parseCommand.
+// Built from allACPCommands (the unfiltered superset), not the per-transport
+// advertised list — see allACPCommands' doc comment for why.
 var acpCommandNames = func() map[string]struct{} {
-	m := make(map[string]struct{}, len(acpCommands()))
-	for _, c := range acpCommands() {
+	m := make(map[string]struct{}, len(allACPCommands()))
+	for _, c := range allACPCommands() {
 		m[c.Name] = struct{}{}
 	}
 	return m
@@ -93,6 +126,8 @@ func (t *Transport) dispatchCommand(ctx context.Context, sid libacp.SessionID, s
 		out, err = t.handleCapability(ctx, args)
 	case "policy":
 		out, err = t.handlePolicy(ctx, args)
+	case "mission":
+		out, err = t.handleMission(ctx, sess, args)
 	case "clear":
 		out, err = t.handleClear(ctx, sid, sess)
 	case "compact":
@@ -152,13 +187,13 @@ func (t *Transport) sendAvailableCommands(ctx context.Context, sid libacp.Sessio
 		SessionID: sid,
 		Update: libacp.SessionUpdate{
 			SessionUpdate:     libacp.SessionUpdateAvailableCommands,
-			AvailableCommands: acpCommands(),
+			AvailableCommands: t.acpCommands(),
 		},
 	})
 }
 
 func (t *Transport) handleHelp() string {
-	cmds := acpCommands()
+	cmds := t.acpCommands()
 	sort.Slice(cmds, func(i, j int) bool { return cmds[i].Name < cmds[j].Name })
 	var b strings.Builder
 	b.WriteString("Available commands:\n")

@@ -48,6 +48,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -57,7 +58,154 @@ import (
 	"github.com/google/uuid"
 )
 
-// Status is a mission's lifecycle state.
+// EventPublisher is the NARROW slice of the event bus AddReport uses to announce
+// a new report. libbus.Messenger satisfies it. It is declared here, rather than
+// importing libbus, so this package depends only on the one verb it calls and
+// never on the whole bus — and so a missionservice built without a bus (every
+// test today, the mission-only REST wiring) simply does not publish, with no
+// nil-bus plumbing to thread through callers.
+type EventPublisher interface {
+	Publish(ctx context.Context, subject string, data []byte) error
+}
+
+// ReportAddedSubject is the bus subject AddReport publishes a ReportAddedEvent
+// on. It follows this codebase's "<package>.events[.<verb>]" bus-subject
+// convention (see taskengine.TaskEventSubjectAll = "taskengine.events"). A
+// routing service subscribes to it to deliver the report to the mission's
+// supervisor — a live parent session, or the operator inbox when there is none.
+//
+// The seam is the point: missionservice PUBLISHES that a report exists and stays
+// ignorant of sessions and inboxes; a separate service SUBSCRIBES and decides
+// where it goes. That is the libbus idiom CONTRIBUTING.md names ("services
+// publish typed events ... others subscribe without direct package coupling"),
+// and it is what lets report routing work today off a REST-added report and
+// compose automatically with the mission-tools slice when a unit files its own.
+const ReportAddedSubject = "missionservice.events.report_added"
+
+// ReportAddedEvent is the SELF-CONTAINED domain event AddReport publishes after
+// a report is durably stored. Self-contained on purpose (the register of
+// agentinstance.Event and UnattendedPermission): a subscriber routes it without
+// reading anything back, so a routing service needs no missionservice handle to
+// act on it.
+//
+// ParentSessionID is the supervision edge lifted onto the event from the
+// mission: non-empty names the upstream session that fired the mission (route
+// the report there), empty means an operator fired it directly (route it to the
+// operator inbox). It is a fact ABOUT the mission, not a routing instruction —
+// missionservice reports what happened; the subscriber decides what to do.
+//
+// The embedded Report carries the whole stored report, its OPTIONAL typed
+// Handover included, so a subscriber that hands the report on to a next mission
+// has the full hand-off in the event and never reads the report back — the
+// self-contained-payload rule holds even as the report grew a structured half.
+type ReportAddedEvent struct {
+	MissionID       string `json:"missionId"`
+	ParentSessionID string `json:"parentSessionId,omitempty"`
+	AgentName       string `json:"agentName,omitempty"`
+	Intent          string `json:"intent,omitempty"`
+	Report          Report `json:"report"`
+}
+
+// PlanRevisedSubject and StatusChangedSubject are the two sibling bus subjects
+// this package publishes the plan engine's attention-worthy events on. They
+// follow ReportAddedSubject's convention byte-for-byte (the "<package>.events.
+// <verb>" form) and exist for the same reason: the inbox and board SUBSCRIBE to
+// them the way reportrouter subscribes to ReportAddedSubject, and missionservice
+// stays ignorant of who is listening. A plan revision and a terminal transition
+// are exactly the "surfaced, never prevented" moments the blueprint's design law
+// names (the inbox's "plan revised +2/−1 — <explanation>" line is a rendering of
+// a PlanRevisedEvent), so they ride the bus rather than being polled for.
+const (
+	PlanRevisedSubject   = "missionservice.events.plan_revised"
+	StatusChangedSubject = "missionservice.events.status_changed"
+)
+
+// PlanRevisedEvent is the SELF-CONTAINED event SetPlan publishes after a plan
+// snapshot is durably stored. Self-contained in the register of ReportAddedEvent:
+// a subscriber renders "plan revised" without a missionservice handle to read
+// anything back.
+//
+// It carries both the revision's identity (Revision, Explanation) and the shape
+// the inbox and board draw from: EntryCount plus the per-status counts for a
+// progress bar, and Added/Removed — the "+2/−1" delta — computed by diffing the
+// new snapshot's entry ids against the prior revision's. Added/Removed are a
+// PRESENTATION number keyed on entry id (a fresh entry counts as added, an id
+// that vanished from the snapshot counts as removed); they are honest for the
+// single-writer planner that echoes ids and are never load-bearing for anything
+// but the human-facing "what changed" line.
+type PlanRevisedEvent struct {
+	MissionID       string `json:"missionId"`
+	ParentSessionID string `json:"parentSessionId,omitempty"`
+	AgentName       string `json:"agentName,omitempty"`
+	Intent          string `json:"intent,omitempty"`
+	Revision        int    `json:"revision"`
+	Explanation     string `json:"explanation,omitempty"`
+	EntryCount      int    `json:"entryCount"`
+	Added           int    `json:"added"`
+	Removed         int    `json:"removed"`
+	Pending         int    `json:"pending"`
+	InProgress      int    `json:"inProgress"`
+	Completed       int    `json:"completed"`
+}
+
+// PlanRevisionSummary is one durable entry in a mission's bounded revision ring
+// (Mission.PlanRevisions): the "+2/−1 — why" line for a single past SetPlan,
+// kept so the overnight-skim inbox feed can show plan HISTORY, not only the
+// current Plan.{Revision,Explanation}. It is the PlanRevisedEvent's presentation
+// shape (Added/Removed delta plus the per-status counts) minus the routing edge
+// (MissionID/ParentSessionID/AgentName/Intent, which the record already carries
+// or the feed does not need), plus At — the wall-clock the revision was stored.
+//
+// WHY it is persisted on the record and not merely published: the event is a
+// best-effort routing NUDGE that only fires when a bus is wired (see
+// publishPlanRevised); the record is the durable fact. Decision (b) of the
+// component roadmap (Tier 2 item 6) asks for a REAL history feed for the honest
+// overnight-skim answer, which a fire-and-forget event cannot give — a subscriber
+// that was down misses it forever. So the summary write rides INSIDE the durable
+// SetPlan put, next to the plan snapshot itself: it is present whether or not the
+// bus is, and a mission that ran with no publisher still accrues its full history.
+//
+// The `at` field is the same wall-clock stamped on Mission.UpdatedAt for the same
+// revision, so a reader can order the ring chronologically without a second clock.
+type PlanRevisionSummary struct {
+	Revision    int       `json:"revision"`
+	Explanation string    `json:"explanation,omitempty"`
+	Added       int       `json:"added"`
+	Removed     int       `json:"removed"`
+	Pending     int       `json:"pending"`
+	InProgress  int       `json:"inProgress"`
+	Completed   int       `json:"completed"`
+	At          time.Time `json:"at"`
+}
+
+// StatusChangedEvent is the SELF-CONTAINED event Finish publishes after a
+// mission comes to rest in a terminal state. OldStatus/NewStatus name the
+// transition (always open-or-running → terminal, since Finish rejects every
+// other move) and Reason carries the one line the caller gave for why — the same
+// string persisted as Mission.StatusReason. Same register as ReportAddedEvent:
+// the inbox routes and renders it without reading the mission back.
+type StatusChangedEvent struct {
+	MissionID       string `json:"missionId"`
+	ParentSessionID string `json:"parentSessionId,omitempty"`
+	AgentName       string `json:"agentName,omitempty"`
+	Intent          string `json:"intent,omitempty"`
+	OldStatus       Status `json:"oldStatus"`
+	NewStatus       Status `json:"newStatus"`
+	Reason          string `json:"reason,omitempty"`
+}
+
+// Status is a mission's lifecycle state: one running state (open) and a closed
+// set of TERMINAL states a finished mission comes to rest in. The terminal set
+// is the mission-plan blueprint's "hard facts a planner reasons over" — a landed
+// mission handed real context to the next one; a derailed one failed; a stuck
+// one hit a discrete boundary the caller must judge (see the register on
+// StatusStuck). abandoned predates the blueprint and stays in the set: it is the
+// operator's "I gave up on this" label, distinct from the three the RUNTIME (or
+// a unit, once it can) records on its own.
+//
+// The values are contracted, not incidental: existing KV rows carry these exact
+// strings, so the set only ever GROWS (a new terminal state is added, never a
+// rename), and old rows keep parsing unchanged.
 type Status string
 
 const (
@@ -65,7 +213,35 @@ const (
 	StatusLanded    Status = "landed"
 	StatusDerailed  Status = "derailed"
 	StatusAbandoned Status = "abandoned"
+
+	// StatusStuck is a FIRST-CLASS terminal signal, deliberately distinct from
+	// StatusDerailed rather than folded into it. The blueprint takes the
+	// OpenHands lesson literally: "stuck" is a discrete boundary a mission can
+	// hit — a loop, a wall it cannot get past, a judgement it cannot make alone —
+	// and it is worth a different word than "failed" because it asks for a
+	// different response (attention, a nudge, a replan) than a derailment does
+	// (a post-mortem). DETECTING stuck is the caller's business — a heuristic, a
+	// planner's judgement, an operator's call — never this layer's; the runtime
+	// only owns the discrete STATUS, exactly as it owns the closed report-kind
+	// set without owning what counts as progress.
+	StatusStuck Status = "stuck"
 )
+
+// isTerminalStatus reports whether a mission in this state is FINISHED — at rest
+// in one of the closed terminal states, never to move again through the guarded
+// Finish path. It backs both halves of Finish's guard: the target must be
+// terminal, and a mission already terminal is immutable. abandoned is included
+// because it is an end-state too, so an operator's abandon cannot later be
+// overwritten by a unit's Finish (the operator's manual PATCH/Update remains the
+// one deliberately-unguarded override — see Finish).
+func isTerminalStatus(status Status) bool {
+	switch status {
+	case StatusLanded, StatusDerailed, StatusStuck, StatusAbandoned:
+		return true
+	default:
+		return false
+	}
+}
 
 // missionKVPrefix namespaces mission records in the KV store; each mission is
 // stored at missionKVPrefix+ID and the set is listed by this prefix.
@@ -97,30 +273,52 @@ const missionReportKVPrefix = "fleet:mission_report:"
 // erroring, without attaching to its session. Neither is required on create;
 // both start zero (LastHeartbeat nil, LastError "") until Heartbeat is
 // called.
-// ParentSessionID is the SUPERVISION EDGE: the upstream session that FIRED
-// this mission, which is not the same thing as the session it spawned.
-// SessionID/InstanceID name the unit the mission created; nothing on the
-// record used to name who created it. A mission fired from a chat session (the
-// `/mission` slash command) is supervised by THAT session — the fired unit's
-// reports belong to the caller who can act on them, not to an operator inbox
-// nobody is reading. It is empty when an operator fired the mission directly,
-// which is also the "route reports to the operator inbox" case.
+//
+// ParentSessionID is the SUPERVISION EDGE: the upstream session that FIRED this
+// mission, which is not the same thing as the session it spawned.
+// SessionID/InstanceID name the unit the mission created; ParentSessionID names
+// who created it. A mission fired from a chat session (the `/mission` slash
+// command) is supervised by THAT session — the fired unit's reports belong to
+// the caller who can act on them, not to an operator inbox nobody is reading. It
+// is empty when an operator fired the mission directly, which is also the "route
+// reports to the operator inbox" case. This layer only RECORDS the edge;
+// runtime/reportrouter consumes it (delivering reports to the parent session or
+// the operator inbox).
 //
 // It is the same missing edge C2 surfaced from the other side (an approval row
 // that cannot name who is asking): one absent relationship, two symptoms.
+//
+// Plan is the mission's living plan (see Plan and SetPlan) — the reviewable
+// record a resident planner owns, never a schedule the runtime executes. A
+// mission that was never planned carries the zero Plan (revision 0, no entries),
+// which is also exactly what a legacy row written before this field existed
+// decodes to. PlanRevisions is the bounded ring of past revision summaries (see
+// PlanRevisionSummary and SetPlan) — the durable "+2/−1 — why" history the inbox
+// feed skims; it is additive and omitempty, so a legacy row (or a mission never
+// planned) decodes to a nil ring exactly as before. StatusReason is the one line Finish attaches to a terminal
+// transition — WHY a mission derailed or got stuck — kept as a durable fact so
+// the reason survives the fire-and-forget status_changed event that also carries
+// it. It is empty for a running mission and (by the register below) for one that
+// landed cleanly.
 type Mission struct {
-	ID              string     `json:"id"`
-	Intent          string     `json:"intent"`
-	AgentName       string     `json:"agentName"`
-	HITLPolicyName  string     `json:"hitlPolicyName"`
-	SessionID       string     `json:"sessionId,omitempty"`
-	InstanceID      string     `json:"instanceId,omitempty"`
-	ParentSessionID string     `json:"parentSessionId,omitempty"`
-	Status          Status     `json:"status"`
-	LastHeartbeat   *time.Time `json:"lastHeartbeat,omitempty"`
-	LastError       string     `json:"lastError,omitempty"`
-	CreatedAt       time.Time  `json:"createdAt"`
-	UpdatedAt       time.Time  `json:"updatedAt"`
+	ID              string `json:"id"`
+	Intent          string `json:"intent"`
+	AgentName       string `json:"agentName"`
+	HITLPolicyName  string `json:"hitlPolicyName"`
+	SessionID       string `json:"sessionId,omitempty"`
+	InstanceID      string `json:"instanceId,omitempty"`
+	ParentSessionID string `json:"parentSessionId,omitempty"`
+	Status          Status `json:"status"`
+	StatusReason    string `json:"statusReason,omitempty"`
+	Plan            Plan   `json:"plan"`
+	// PlanRevisions is the last-N revision summaries, oldest-first (newest is the
+	// final element). Bounded by maxPlanRevisions; nil on a never-planned or legacy
+	// mission. Surfaced additively on the mission GET as `planRevisions`.
+	PlanRevisions []PlanRevisionSummary `json:"planRevisions,omitempty"`
+	LastHeartbeat *time.Time            `json:"lastHeartbeat,omitempty"`
+	LastError     string                `json:"lastError,omitempty"`
+	CreatedAt     time.Time             `json:"createdAt"`
+	UpdatedAt     time.Time             `json:"updatedAt"`
 }
 
 // ReportKind is the closed, small set of things a mission report may be. See
@@ -138,6 +336,15 @@ const (
 // Report is a single dispatch from a unit on a mission, filed under a Kind
 // that hints how much it matters. Refs is by reference only (file paths,
 // URLs, etc.) — a report never carries artifact content.
+//
+// Handover is the OPTIONAL typed hand-off (see Handover). It is a pointer so
+// its ABSENCE is a first-class, wire-visible fact: a nil Handover is a legacy
+// report (or any report the unit chose not to attach a hand-off to), and such a
+// report round-trips through JSON exactly as it did before this field existed —
+// the field is purely additive and every pre-handover row decodes to nil. It is
+// meaningful mostly on a `result` report that a NEXT mission will build on; the
+// Kind set stays unchanged, because the hand-off is extra STRUCTURE on a report,
+// not a new KIND of report.
 type Report struct {
 	ID        string     `json:"id"`
 	MissionID string     `json:"missionId"`
@@ -145,7 +352,115 @@ type Report struct {
 	Summary   string     `json:"summary"`
 	Detail    string     `json:"detail,omitempty"`
 	Refs      []string   `json:"refs,omitempty"`
+	Handover  *Handover  `json:"handover,omitempty"`
 	CreatedAt time.Time  `json:"createdAt"`
+}
+
+// Handover is the structured hand-off a mission attaches to a report so the NEXT
+// mission builds on real context instead of prose (the blueprint's ontology: a
+// landed mission "hands real context to the next one"; the old summarizer's typed
+// `{outcome, artifacts, handover_for_next, caveats}` shape adapted to a report —
+// Summary already lives on the Report, so the hand-off carries the rest). Every
+// field is optional: a report may fill all, some, or none, and a report with an
+// empty Handover is indistinguishable from one with none (both round-trip as a
+// nil pointer once the empties are dropped — see AddReport's normalization).
+//
+//   - Outcome: the one-line verdict of what this mission actually achieved, the
+//     hand-off's headline ("ported the hot loop; benchmarks pending").
+//   - Artifacts: the concrete deliverables this mission produced that the next
+//     one consumes — paths or URLs, by reference only, never inline content (the
+//     same by-reference discipline Report.Refs holds). Distinct from Refs, which
+//     are supporting pointers for THIS report; Artifacts are what the next mission
+//     is handed to work FROM.
+//   - HandoverForNext: the free-text brief to the next mission — what to pick up,
+//     what is already done, what to watch for. The substance the model owns.
+//   - Caveats: the known limitations, unverified assumptions, or risks the next
+//     mission must not take for granted — the honest small print on the hand-off.
+type Handover struct {
+	Outcome         string   `json:"outcome,omitempty"`
+	Artifacts       []string `json:"artifacts,omitempty"`
+	HandoverForNext string   `json:"handoverForNext,omitempty"`
+	Caveats         string   `json:"caveats,omitempty"`
+}
+
+// IsEmpty reports whether a hand-off carries no substance — every field blank.
+// AddReport uses it to drop an all-empty Handover to nil, so "a hand-off with
+// nothing in it" and "no hand-off" are the same durable fact rather than two
+// shapes a reader must tell apart.
+func (h *Handover) IsEmpty() bool {
+	if h == nil {
+		return true
+	}
+	if strings.TrimSpace(h.Outcome) != "" ||
+		strings.TrimSpace(h.HandoverForNext) != "" ||
+		strings.TrimSpace(h.Caveats) != "" {
+		return false
+	}
+	for _, a := range h.Artifacts {
+		if strings.TrimSpace(a) != "" {
+			return false
+		}
+	}
+	return true
+}
+
+// PlanEntryStatus is a plan entry's lifecycle state. Its VALUES are contracted
+// to be byte-for-byte libacp.PlanEntryStatus (pending|in_progress|completed):
+// the plan record is projected to ACP as full-snapshot plan updates (the next
+// slice), and value-parity turns that projection into a cast rather than a
+// translation table nobody remembers to keep in sync. The type is kept DISTINCT
+// on purpose — missionservice owns a durable record and must not import a
+// transport package to describe it (the same reason ReportKind is local rather
+// than borrowed) — but the strings are a promise the projection slice leans on,
+// and a conformance test there pins them.
+type PlanEntryStatus string
+
+const (
+	PlanEntryPending    PlanEntryStatus = "pending"
+	PlanEntryInProgress PlanEntryStatus = "in_progress"
+	PlanEntryCompleted  PlanEntryStatus = "completed"
+)
+
+// PlanEntryPriority mirrors libacp.PlanEntryPriority the same way, and for the
+// same reason.
+type PlanEntryPriority string
+
+const (
+	PlanEntryPriorityHigh   PlanEntryPriority = "high"
+	PlanEntryPriorityMedium PlanEntryPriority = "medium"
+	PlanEntryPriorityLow    PlanEntryPriority = "low"
+)
+
+// PlanEntry is one line of a mission's plan: a short piece of work with a
+// status and a priority. ID is the entry's stable identity ACROSS revisions —
+// it is what lets a full-snapshot replace (see SetPlan) be diffed against the
+// prior snapshot without matching on content, and it is what the completed-work
+// immutability guard keys on. SetPlan assigns an id to any entry that arrives
+// without one, so a planner may carry an entry forward by echoing its id and
+// introduce a new one simply by omitting it.
+type PlanEntry struct {
+	ID       string            `json:"id"`
+	Content  string            `json:"content"`
+	Status   PlanEntryStatus   `json:"status"`
+	Priority PlanEntryPriority `json:"priority"`
+}
+
+// Plan is a mission's LIVING plan — an ordered list of entries owned by exactly
+// one planner, held here as the reviewable record (blueprint's design law: the
+// runtime stores, validates, and publishes the plan; it never compiles it into
+// control flow). It is never a schedule and nothing here reads it back to decide
+// what runs next.
+//
+// Revision counts successful SetPlan calls: 0 is "never planned" (the zero Plan
+// every pre-plan mission and every legacy KV row decodes to), 1 is the first
+// snapshot, and it climbs by one per replace. Explanation is the LATEST
+// revision's rationale (blueprint pattern 1, Codex's explanation-per-revision) —
+// the one line the "plan revised" inbox entry carries; only the current
+// revision's is retained, since the record keeps only the current snapshot.
+type Plan struct {
+	Entries     []PlanEntry `json:"entries"`
+	Revision    int         `json:"revision"`
+	Explanation string      `json:"explanation,omitempty"`
 }
 
 // Service exposes validated CRUD over mission records, Bind (which attaches
@@ -186,6 +501,31 @@ type Service interface {
 	// yet — the caller arrives with the mission-tools slice.
 	Heartbeat(ctx context.Context, id string, lastErr string) (*Mission, error)
 
+	// Finish moves mission id into a terminal state (landed | derailed | stuck
+	// | abandoned), records reason as the durable StatusReason, and publishes a
+	// StatusChangedEvent. It is GUARDED — the one transition mission mode makes
+	// hard truth: only a non-terminal mission may be finished, a terminal status
+	// is the only permitted target, and a mission already terminal is immutable.
+	// A second Finish naming the SAME terminal status is an idempotent no-op
+	// (safe to retry); a DIFFERENT terminal status over an already-finished
+	// mission is apiframework.ErrConflict (a landed mission does not later
+	// become derailed). An unknown mission id surfaces as libdb.ErrNotFound.
+	Finish(ctx context.Context, id string, status Status, reason string) (*Mission, error)
+
+	// SetPlan replaces mission id's plan with a FULL SNAPSHOT (blueprint pattern
+	// 4: each call replaces the whole list, deletion is omission from the
+	// snapshot), bumps the revision counter, records explanation as the new
+	// revision's rationale, and publishes a PlanRevisedEvent. Entries are
+	// validated for SHAPE (count/size caps, empty/garbage rejection, known
+	// status/priority) but NOT for planning DISCIPLINE (no "exactly one
+	// in_progress" rule — that is the planner prompt's job, blueprint pattern 3).
+	// The one audit-safety guard it does enforce: a snapshot may not rewrite the
+	// content of an entry that was already completed in the prior revision
+	// (matched by id) — completed work is immutable, corrections are appended as
+	// new entries (blueprint pattern 5). An unknown mission id surfaces as
+	// libdb.ErrNotFound.
+	SetPlan(ctx context.Context, id string, entries []PlanEntry, explanation string) (*Mission, error)
+
 	// AddReport validates report (Kind, Summary), assigns an id and
 	// CreatedAt when absent, binds it to missionID, and persists it.
 	// missionID must name an existing mission — an unknown one surfaces as
@@ -198,12 +538,31 @@ type Service interface {
 }
 
 type service struct {
-	db libdb.DBManager
+	db  libdb.DBManager
+	pub EventPublisher
+}
+
+// Option configures a mission service at construction. It exists so the one
+// optional dependency this service has (the event publisher) can be wired
+// without changing New's signature for the many callers that pass only a db.
+type Option func(*service)
+
+// WithEventPublisher wires the bus AddReport publishes ReportAddedEvent on. When
+// unset (the default) AddReport stores the report and publishes nothing — the
+// report is still the durable fact; only its live routing nudge is skipped — so
+// a missionservice built without a bus behaves exactly as before this seam
+// existed.
+func WithEventPublisher(pub EventPublisher) Option {
+	return func(s *service) { s.pub = pub }
 }
 
 // New creates a mission service backed by the given database manager.
-func New(db libdb.DBManager) Service {
-	return &service{db: db}
+func New(db libdb.DBManager, opts ...Option) Service {
+	s := &service{db: db}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 func (s *service) store() runtimetypes.Store {
@@ -471,10 +830,20 @@ func (s *service) AddReport(ctx context.Context, missionID string, report *Repor
 	if report == nil {
 		return fmt.Errorf("report is required")
 	}
-	if _, err := s.Get(ctx, missionID); err != nil {
+	// Fetch (not just existence-check) the mission: it both proves the mission
+	// exists — the not-found guard — and hands us the supervision edge the
+	// ReportAddedEvent carries, with no second read.
+	m, err := s.Get(ctx, missionID)
+	if err != nil {
 		return err
 	}
 	report.MissionID = missionID
+	// Collapse an all-empty hand-off to nil BEFORE validation and storage, so a
+	// report the unit tagged with a blank Handover is stored as a legacy report
+	// rather than an empty-object shape a reader must special-case (see Handover).
+	if report.Handover.IsEmpty() {
+		report.Handover = nil
+	}
 	if err := validateReport(report); err != nil {
 		return err
 	}
@@ -487,7 +856,44 @@ func (s *service) AddReport(ctx context.Context, missionID string, report *Repor
 	if err != nil {
 		return fmt.Errorf("marshal report: %w", err)
 	}
-	return s.store().SetKV(ctx, missionReportKVPrefix+missionID+":"+report.ID, raw)
+	// Persist the durable fact FIRST, then nudge (the ADOPTED enqueue-then-nudge
+	// order of fleet-consolidation.md): the report is stored before anyone is
+	// told it exists, so a lost or late nudge never loses the report.
+	if err := s.store().SetKV(ctx, missionReportKVPrefix+missionID+":"+report.ID, raw); err != nil {
+		return err
+	}
+	s.publishReportAdded(ctx, m, report)
+	return nil
+}
+
+// publishReportAdded announces a stored report on ReportAddedSubject. It is
+// BEST EFFORT and never surfaces to AddReport's caller: the report is already
+// the durable fact (persisted above) and remains readable via ListReports and
+// the operator inbox regardless, so a publish failure must not turn a
+// successfully-recorded report into a failed AddReport. Routing is best-effort
+// delivery layered on top of a durable record — that is the invariant, and this
+// is where it is enforced. A no-op when no publisher was wired.
+func (s *service) publishReportAdded(ctx context.Context, m *Mission, report *Report) {
+	if s.pub == nil {
+		return
+	}
+	ev := ReportAddedEvent{
+		MissionID:       m.ID,
+		ParentSessionID: m.ParentSessionID,
+		AgentName:       m.AgentName,
+		Intent:          m.Intent,
+		Report:          *report,
+	}
+	data, err := json.Marshal(ev)
+	if err != nil {
+		slog.Warn("missionservice: marshal report-added event failed; report stored, routing nudge skipped",
+			"missionId", m.ID, "reportId", report.ID, "error", err)
+		return
+	}
+	if err := s.pub.Publish(ctx, ReportAddedSubject, data); err != nil {
+		slog.Warn("missionservice: publish report-added event failed; report stored, routing nudge skipped",
+			"missionId", m.ID, "reportId", report.ID, "error", err)
+	}
 }
 
 // ListReports returns missionID's reports newest-first via the store's prefix
@@ -515,6 +921,385 @@ func (s *service) ListReports(ctx context.Context, missionID string, limit int) 
 	return reports, nil
 }
 
+// Finish implements Service.Finish. See the interface doc for the guard; this is
+// where it lives.
+//
+// # Why the guard is here and not in Update
+//
+// Update is the low-level, unguarded write — the operator's manual PATCH goes
+// through it, and an operator correcting a mislabeled mission (even un-finishing
+// one) is a legitimate act, so Update stays able to set any valid status. Finish
+// is the AGENT-REPORTABLE, hard-fact path: a unit (or the runtime on its behalf)
+// declaring "this work is over, and here is why". That path is the one that must
+// not let a finished mission be silently re-terminalized, because the terminal
+// status is what downstream planning treats as settled truth. Keeping the guard
+// on Finish and off Update is a decision, not an oversight: it puts immutability
+// exactly where the audit story needs it (the automated writer) and leaves the
+// human override deliberately unguarded (the manual one).
+//
+// Idempotent-same-status is the other deliberate call: a retried Finish that
+// names the state the mission is already in returns it unchanged rather than
+// erroring, so a caller that lost the response to a network blip can safely
+// repeat the call; a Finish naming a DIFFERENT terminal state is the conflict,
+// because that is a genuine contradiction, not a retry.
+func (s *service) Finish(ctx context.Context, id string, status Status, reason string) (*Mission, error) {
+	if !isTerminalStatus(status) {
+		return nil, fmt.Errorf("cannot finish mission %q as %q: a terminal status is required (landed|derailed|stuck|abandoned)", id, status)
+	}
+	m, err := s.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if isTerminalStatus(m.Status) {
+		if m.Status == status {
+			// Idempotent no-op: a retry of the same terminal transition. Return
+			// the record untouched — no restamp, no second event — so repetition
+			// is genuinely free of side effects.
+			return m, nil
+		}
+		return nil, apiframework.Conflict(fmt.Sprintf("mission %q already finished as %q; cannot re-finish as %q", id, m.Status, status))
+	}
+	old := m.Status
+	m.Status = status
+	m.StatusReason = strings.TrimSpace(reason)
+	m.UpdatedAt = time.Now().UTC()
+	// Persist the durable fact FIRST, then announce it (the same order AddReport
+	// takes): the terminal status is stored before anyone is told, so a lost or
+	// failed publish never loses the outcome.
+	if err := s.put(ctx, m, true); err != nil {
+		return nil, err
+	}
+	s.publishStatusChanged(ctx, m, old)
+	return m, nil
+}
+
+// SetPlan implements Service.SetPlan. It normalizes the incoming snapshot (trims
+// content, assigns an id to any entry lacking one), validates its shape, enforces
+// the completed-work immutability guard against the prior revision, then replaces
+// the whole plan and bumps the revision.
+//
+// The normalization is why a fresh copy is built rather than mutating the
+// caller's slice: SetPlan hands the caller back the stored entries (with their
+// assigned ids and the new revision number) so the plan-tools slice can project
+// exactly what was persisted, and doing that must not scribble ids into the
+// caller's own PlanEntry values as a side effect.
+func (s *service) SetPlan(ctx context.Context, id string, entries []PlanEntry, explanation string) (*Mission, error) {
+	m, err := s.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	normalized := make([]PlanEntry, len(entries))
+	for i, e := range entries {
+		e.Content = strings.TrimSpace(e.Content)
+		if strings.TrimSpace(e.ID) == "" {
+			e.ID = uuid.NewString()
+		}
+		normalized[i] = e
+	}
+
+	if err := validatePlan(normalized); err != nil {
+		return nil, err
+	}
+	if err := validateCompletedImmutable(m.Plan.Entries, normalized); err != nil {
+		return nil, err
+	}
+
+	prev := m.Plan.Entries
+	m.Plan = Plan{
+		Entries:     normalized,
+		Revision:    m.Plan.Revision + 1,
+		Explanation: strings.TrimSpace(explanation),
+	}
+	now := time.Now().UTC()
+	m.UpdatedAt = now
+
+	// Build the revision summary ONCE and thread it into both the durable ring and
+	// the (best-effort) event, so the persisted history and the published nudge
+	// carry byte-identical numbers by construction — no chance of the two drifting.
+	added, removed := planRevisionDelta(prev, m.Plan.Entries)
+	pending, inProgress, completed := planStatusCounts(m.Plan.Entries)
+	summary := PlanRevisionSummary{
+		Revision:    m.Plan.Revision,
+		Explanation: m.Plan.Explanation,
+		Added:       added,
+		Removed:     removed,
+		Pending:     pending,
+		InProgress:  inProgress,
+		Completed:   completed,
+		At:          now,
+	}
+	// The summary append is part of the DURABLE put, not the best-effort publish:
+	// the history feed must survive an absent bus (see PlanRevisionSummary's
+	// register). It is bounded to the last maxPlanRevisions so a long-lived,
+	// heavily-replanned mission cannot grow its KV row without limit.
+	m.PlanRevisions = appendPlanRevision(m.PlanRevisions, summary)
+
+	if err := s.put(ctx, m, true); err != nil {
+		return nil, err
+	}
+	s.publishPlanRevised(ctx, m, summary)
+	return m, nil
+}
+
+// maxPlanRevisions bounds the durable revision ring: the last N summaries are
+// kept (N=20, decision (b) of the component roadmap), oldest dropped first. It
+// is deliberately small — the ring is a skim feed, not an audit log — and keeps
+// the mission KV row bounded no matter how many times a plan is revised.
+const maxPlanRevisions = 20
+
+// appendPlanRevision appends s to the ring and trims it to the last
+// maxPlanRevisions entries, oldest-first. When trimming, it copies into a fresh
+// slice rather than resliced-in-place, so the returned ring never aliases a
+// larger backing array that would keep dropped summaries reachable.
+func appendPlanRevision(ring []PlanRevisionSummary, s PlanRevisionSummary) []PlanRevisionSummary {
+	ring = append(ring, s)
+	if len(ring) <= maxPlanRevisions {
+		return ring
+	}
+	trimmed := make([]PlanRevisionSummary, maxPlanRevisions)
+	copy(trimmed, ring[len(ring)-maxPlanRevisions:])
+	return trimmed
+}
+
+// publishStatusChanged announces a terminal transition on StatusChangedSubject.
+// BEST EFFORT, in the exact register of publishReportAdded: the terminal status
+// is already the durable fact, so a publish failure must never turn a
+// successfully-finished mission into a failed Finish. A no-op when no publisher
+// was wired.
+func (s *service) publishStatusChanged(ctx context.Context, m *Mission, old Status) {
+	if s.pub == nil {
+		return
+	}
+	ev := StatusChangedEvent{
+		MissionID:       m.ID,
+		ParentSessionID: m.ParentSessionID,
+		AgentName:       m.AgentName,
+		Intent:          m.Intent,
+		OldStatus:       old,
+		NewStatus:       m.Status,
+		Reason:          m.StatusReason,
+	}
+	data, err := json.Marshal(ev)
+	if err != nil {
+		slog.Warn("missionservice: marshal status-changed event failed; status stored, routing nudge skipped",
+			"missionId", m.ID, "status", m.Status, "error", err)
+		return
+	}
+	if err := s.pub.Publish(ctx, StatusChangedSubject, data); err != nil {
+		slog.Warn("missionservice: publish status-changed event failed; status stored, routing nudge skipped",
+			"missionId", m.ID, "status", m.Status, "error", err)
+	}
+}
+
+// publishPlanRevised announces a stored plan snapshot on PlanRevisedSubject.
+// BEST EFFORT, same register as publishReportAdded: the snapshot is already the
+// durable fact (the plan AND its revision summary are persisted before this
+// runs), so a publish failure must never fail SetPlan. A no-op when no publisher
+// was wired. summary is the same value SetPlan already appended to the durable
+// ring, so the event and the stored history carry identical numbers.
+func (s *service) publishPlanRevised(ctx context.Context, m *Mission, summary PlanRevisionSummary) {
+	if s.pub == nil {
+		return
+	}
+	ev := PlanRevisedEvent{
+		MissionID:       m.ID,
+		ParentSessionID: m.ParentSessionID,
+		AgentName:       m.AgentName,
+		Intent:          m.Intent,
+		Revision:        summary.Revision,
+		Explanation:     summary.Explanation,
+		EntryCount:      len(m.Plan.Entries),
+		Added:           summary.Added,
+		Removed:         summary.Removed,
+		Pending:         summary.Pending,
+		InProgress:      summary.InProgress,
+		Completed:       summary.Completed,
+	}
+	data, err := json.Marshal(ev)
+	if err != nil {
+		slog.Warn("missionservice: marshal plan-revised event failed; plan stored, routing nudge skipped",
+			"missionId", m.ID, "revision", m.Plan.Revision, "error", err)
+		return
+	}
+	if err := s.pub.Publish(ctx, PlanRevisedSubject, data); err != nil {
+		slog.Warn("missionservice: publish plan-revised event failed; plan stored, routing nudge skipped",
+			"missionId", m.ID, "revision", m.Plan.Revision, "error", err)
+	}
+}
+
+// planRevisionDelta reports how many entry ids the new snapshot adds and drops
+// relative to prev — the "+added/−removed" the inbox shows. It is keyed on id,
+// so a status/priority/content edit to an entry that keeps its id is neither an
+// add nor a drop; only genuinely new or genuinely gone entries count.
+func planRevisionDelta(prev, next []PlanEntry) (added, removed int) {
+	prevIDs := make(map[string]bool, len(prev))
+	for _, e := range prev {
+		if e.ID != "" {
+			prevIDs[e.ID] = true
+		}
+	}
+	nextIDs := make(map[string]bool, len(next))
+	for _, e := range next {
+		if e.ID != "" {
+			nextIDs[e.ID] = true
+		}
+	}
+	for id := range nextIDs {
+		if !prevIDs[id] {
+			added++
+		}
+	}
+	for id := range prevIDs {
+		if !nextIDs[id] {
+			removed++
+		}
+	}
+	return added, removed
+}
+
+// planStatusCounts tallies a snapshot by entry status, for the progress the
+// board and inbox render. Entries with an unrecognized status cannot occur here
+// (validatePlan rejects them before persistence), so the three known buckets
+// account for every stored entry.
+func planStatusCounts(entries []PlanEntry) (pending, inProgress, completed int) {
+	for _, e := range entries {
+		switch e.Status {
+		case PlanEntryPending:
+			pending++
+		case PlanEntryInProgress:
+			inProgress++
+		case PlanEntryCompleted:
+			completed++
+		}
+	}
+	return pending, inProgress, completed
+}
+
+// Plan validation limits, ported from the retired planservice.planner_validate
+// (recovered at 0c28a69^). They are DEFENSIVE, not aesthetic: they exist to keep
+// a single hallucinated or stream-corrupted planner turn from writing a
+// multi-megabyte KV row or pasting a build-tool stream into the plan, not to
+// impose a house style on how a plan should read. Per the blueprint, host-side
+// validation is HARD on shape and SOFT on discipline — hence a cap on count and
+// size and a garbage detector, but no rule about how many steps may be
+// in_progress at once.
+const (
+	maxPlanEntries     = 100
+	maxPlanEntryBytes  = 12000
+	planEscapeRatioNum = 3   // reject when backslashes exceed len/ratio (RSC/stream leak)
+	planEscapeMinLen   = 400 // …but only past this length, so short escaped strings pass
+)
+
+// validatePlan checks a normalized (trimmed, id-assigned) snapshot for shape:
+// non-empty, within the count cap, and every entry non-empty, within the size
+// cap, not obvious garbage, and carrying a known status and priority. An empty
+// snapshot is rejected outright — a plan with no entries is the degenerate case
+// the old validator called "no steps", and full-snapshot-replace does not need
+// an "erase the plan" path (deletion is omission of individual entries, not a
+// wholesale empty write).
+func validatePlan(entries []PlanEntry) error {
+	if len(entries) == 0 {
+		return fmt.Errorf("a plan must have at least one entry")
+	}
+	if len(entries) > maxPlanEntries {
+		return fmt.Errorf("plan has too many entries (%d, max %d)", len(entries), maxPlanEntries)
+	}
+	for i := range entries {
+		e := &entries[i]
+		if e.Content == "" {
+			return fmt.Errorf("plan entry %d has empty content", i+1)
+		}
+		if len(e.Content) > maxPlanEntryBytes {
+			return fmt.Errorf("plan entry %d exceeds max length (%d bytes, max %d)", i+1, len(e.Content), maxPlanEntryBytes)
+		}
+		if planContentLooksCorrupted(e.Content) {
+			return fmt.Errorf("plan entry %d looks corrupted (stream or log paste); revise the plan or shorten the step", i+1)
+		}
+		if err := validatePlanEntryStatus(e.Status); err != nil {
+			return fmt.Errorf("plan entry %d: %w", i+1, err)
+		}
+		if err := validatePlanEntryPriority(e.Priority); err != nil {
+			return fmt.Errorf("plan entry %d: %w", i+1, err)
+		}
+	}
+	return nil
+}
+
+// planContentLooksCorrupted detects accidental inclusion of framework build
+// streams or similar (a Next.js flight stream, an RSC dump) pasted into a step —
+// ported verbatim in spirit from plannerStepLooksCorrupted: the __next_f marker,
+// or an implausible backslash density past a minimum length.
+func planContentLooksCorrupted(s string) bool {
+	lower := strings.ToLower(s)
+	if strings.Contains(lower, "__next_f") || strings.Contains(lower, "self.__next_f") {
+		return true
+	}
+	if len(s) >= planEscapeMinLen {
+		if strings.Count(s, "\\")*planEscapeRatioNum > len(s) {
+			return true
+		}
+	}
+	return false
+}
+
+// validateCompletedImmutable enforces blueprint pattern 5: a revision may not
+// rewrite the content of work that was already completed. It keys on entry id —
+// for every entry the PRIOR snapshot marked completed, if the NEW snapshot still
+// carries that id its content must be identical.
+//
+// The scope of this check is a deliberate, documented decision. It guards the
+// one thing the audit story cannot tolerate — silently changing what a finished
+// step SAID — and nothing more. It does NOT forbid dropping a completed entry
+// (deletion is omission, pattern 4) and does NOT police status transitions
+// (reopening a completed step is discipline, left soft, pattern 3). A planner
+// that wants to correct completed work appends a NEW entry (a fresh id, which
+// this check ignores); it may not mutate the old one's text in place. That keeps
+// the plan a trustworthy record of what was actually done without turning the
+// runtime into a plan-discipline enforcer.
+func validateCompletedImmutable(prev, next []PlanEntry) error {
+	if len(prev) == 0 {
+		return nil
+	}
+	completed := make(map[string]string, len(prev))
+	for _, e := range prev {
+		if e.Status == PlanEntryCompleted && e.ID != "" {
+			completed[e.ID] = e.Content
+		}
+	}
+	if len(completed) == 0 {
+		return nil
+	}
+	for i := range next {
+		e := &next[i]
+		if e.ID == "" {
+			continue
+		}
+		if prevContent, ok := completed[e.ID]; ok && e.Content != prevContent {
+			return fmt.Errorf("plan entry %q rewrites the content of already-completed work; append a correction as a new entry instead", e.ID)
+		}
+	}
+	return nil
+}
+
+func validatePlanEntryStatus(status PlanEntryStatus) error {
+	switch status {
+	case PlanEntryPending, PlanEntryInProgress, PlanEntryCompleted:
+		return nil
+	default:
+		return fmt.Errorf("invalid plan entry status %q: must be one of pending|in_progress|completed", status)
+	}
+}
+
+func validatePlanEntryPriority(priority PlanEntryPriority) error {
+	switch priority {
+	case PlanEntryPriorityHigh, PlanEntryPriorityMedium, PlanEntryPriorityLow:
+		return nil
+	default:
+		return fmt.Errorf("invalid plan entry priority %q: must be one of high|medium|low", priority)
+	}
+}
+
 func validate(m *Mission) error {
 	if strings.TrimSpace(m.Intent) == "" {
 		return fmt.Errorf("intent is required")
@@ -530,10 +1315,10 @@ func validate(m *Mission) error {
 
 func validateStatus(status Status) error {
 	switch status {
-	case StatusOpen, StatusLanded, StatusDerailed, StatusAbandoned:
+	case StatusOpen, StatusLanded, StatusDerailed, StatusStuck, StatusAbandoned:
 		return nil
 	default:
-		return fmt.Errorf("invalid status %q: must be one of open|landed|derailed|abandoned", status)
+		return fmt.Errorf("invalid status %q: must be one of open|landed|derailed|stuck|abandoned", status)
 	}
 }
 
@@ -546,6 +1331,54 @@ func validateReport(report *Report) error {
 	}
 	if strings.ContainsAny(report.Summary, "\r\n") {
 		return fmt.Errorf("summary must be a single line")
+	}
+	return validateHandover(report.Handover)
+}
+
+// Hand-off validation limits, in the same DEFENSIVE register as the plan caps
+// above (maxPlanEntries etc.): they exist to keep one hallucinated or
+// stream-corrupted report from writing a multi-megabyte KV row or pasting a build
+// stream into a hand-off field — not to impose a house style on what a good
+// hand-off says. Hard on shape (size/count and the same corruption heuristic the
+// plan uses), silent on substance.
+const (
+	maxHandoverTextBytes     = 8000 // per free-text field (outcome/handoverForNext/caveats)
+	maxHandoverArtifacts     = 50   // artifacts listed on one hand-off
+	maxHandoverArtifactBytes = 2000 // per artifact reference (a path or URL)
+)
+
+// validateHandover checks a report's OPTIONAL hand-off for shape. A nil hand-off
+// is valid (a legacy report, or one with none) and validates to nothing. Present,
+// each free-text field is capped and run through the plan's stream-leak detector,
+// and the artifact list is capped in count and per-entry length. It is deliberately
+// SILENT on whether a hand-off is well-written — that is the planner prompt's job,
+// exactly as SetPlan is soft on plan discipline.
+func validateHandover(h *Handover) error {
+	if h == nil {
+		return nil
+	}
+	for _, f := range []struct {
+		name  string
+		value string
+	}{
+		{"outcome", h.Outcome},
+		{"handoverForNext", h.HandoverForNext},
+		{"caveats", h.Caveats},
+	} {
+		if len(f.value) > maxHandoverTextBytes {
+			return fmt.Errorf("handover %s exceeds max length (%d bytes, max %d)", f.name, len(f.value), maxHandoverTextBytes)
+		}
+		if planContentLooksCorrupted(f.value) {
+			return fmt.Errorf("handover %s looks corrupted (stream or log paste); shorten it or move it to an artifact reference", f.name)
+		}
+	}
+	if len(h.Artifacts) > maxHandoverArtifacts {
+		return fmt.Errorf("handover has too many artifacts (%d, max %d)", len(h.Artifacts), maxHandoverArtifacts)
+	}
+	for i, a := range h.Artifacts {
+		if len(a) > maxHandoverArtifactBytes {
+			return fmt.Errorf("handover artifact %d exceeds max length (%d bytes, max %d)", i+1, len(a), maxHandoverArtifactBytes)
+		}
 	}
 	return nil
 }

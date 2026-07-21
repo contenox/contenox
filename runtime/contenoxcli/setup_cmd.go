@@ -37,8 +37,8 @@ var setupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Interactive wizard to configure your LLM provider and model.",
 	Long: `Run the setup wizard to pick an LLM provider (Ollama, OpenAI, OpenRouter,
-Gemini, or local llama/OpenVINO through modeld), enter credentials, and set defaults.
-This is the same wizard that runs inside IDE terminals via ACP.
+Gemini, Vertex AI, or local llama/OpenVINO through modeld), enter credentials, and
+set defaults. This is the same wizard that runs inside IDE terminals via ACP.
 
 Pass --web to run the same onboarding in the browser via the Beam UI instead
 of the terminal; the command exits once setup is complete.
@@ -70,13 +70,26 @@ type setupProvider struct {
 	defaultModel string
 	envKey       string
 	needsAPIKey  bool
+	// needsBaseURL marks providers whose endpoint is account-specific and cannot
+	// be defaulted (e.g. Vertex, whose URL carries the GCP project + region).
+	needsBaseURL bool
+	baseURLHint  string
 }
 
+// setupProviders is the terminal wizard's provider menu. DRIFT HAZARD: it
+// duplicates provider metadata (base-URL / secret requirements) that
+// providerservice.providerDefaultsByType already owns; keep the two in sync and,
+// ideally, derive this menu from providerservice.ListSupportedProviders instead
+// of hand-listing (the per-provider defaultModel is the only field not yet in
+// that catalog). Adding a provider here without a matching providerservice entry
+// — or vice versa — is exactly the class of drift that hid vertex-google from
+// this menu even though the runtime, CLI, and serve already supported it.
 var setupProviders = []setupProvider{
 	{key: "ollama", label: "Ollama (local daemon)", defaultModel: "qwen2.5:7b", needsAPIKey: false},
 	{key: "openai", label: "OpenAI", defaultModel: "gpt-5-mini", envKey: "OPENAI_API_KEY", needsAPIKey: true},
 	{key: "openrouter", label: "OpenRouter (300+ models, one API key — deepseek, qwen, llama, gemini, gpt and more)", defaultModel: "deepseek/deepseek-chat-v3-5", envKey: "OPENROUTER_API_KEY", needsAPIKey: true},
 	{key: "gemini", label: "Google Gemini", defaultModel: "gemini-flash-latest", envKey: "GEMINI_API_KEY", needsAPIKey: true},
+	{key: "vertex-google", label: "Google Vertex AI (Gemini via gcloud ADC)", defaultModel: "gemini-flash-latest", needsAPIKey: false, needsBaseURL: true, baseURLHint: "https://us-central1-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT/locations/us-central1"},
 	{key: "llama", label: "Llama.cpp GGUF (local modeld)", defaultModel: "", needsAPIKey: false},
 	{key: "openvino", label: "OpenVINO IR (local modeld)", defaultModel: "", needsAPIKey: false},
 }
@@ -174,6 +187,25 @@ func runSetup(cmd *cobra.Command, out io.Writer) error {
 		}
 	}
 
+	var baseURL string
+	if sp.needsBaseURL {
+		if sp.key == "vertex-google" {
+			fmt.Fprintln(out, "  Vertex AI authenticates with Google Cloud Application Default Credentials.")
+			fmt.Fprintln(out, "  If you have not already, run:")
+			fmt.Fprintln(out, "    gcloud auth application-default login --project YOUR_PROJECT")
+			fmt.Fprintln(out, "")
+		}
+		fmt.Fprintf(out, "  Enter the %s endpoint URL (with your project and location):\n", sp.label)
+		if sp.baseURLHint != "" {
+			fmt.Fprintf(out, "    e.g. %s\n", sp.baseURLHint)
+		}
+		baseURL = promptLine(out, scanner, "  URL", "")
+		if baseURL == "" {
+			return fmt.Errorf("an endpoint URL is required for %s", sp.label)
+		}
+		fmt.Fprintln(out, "")
+	}
+
 	model := sp.defaultModel
 	switch sp.key {
 	case "ollama":
@@ -196,7 +228,7 @@ func runSetup(cmd *cobra.Command, out io.Writer) error {
 	defer db.Close()
 
 	if !isLocalModeldProvider(sp.key) {
-		if err := registerSetupBackend(ctx, db, sp.key, apiKey); err != nil {
+		if err := registerSetupBackend(ctx, db, sp.key, apiKey, baseURL); err != nil {
 			return err
 		}
 	}
@@ -462,30 +494,44 @@ func reportSetupReadiness(ctx context.Context, cmd *cobra.Command, db libdb.DBMa
 	fmt.Fprintln(out, "")
 }
 
-func registerSetupBackend(ctx context.Context, db libdb.DBManager, providerType, apiKey string) error {
+func registerSetupBackend(ctx context.Context, db libdb.DBManager, providerType, apiKey, baseURL string) error {
 	svc := backendservice.New(db)
 
-	backendURL := ""
-	switch providerType {
-	case "ollama":
-		if base, ok := setupcheck.ProbeLocalOllamaAPI(ctx); ok {
-			backendURL = base
-		} else {
-			backendURL = "http://127.0.0.1:11434"
+	backendURL := strings.TrimSpace(baseURL)
+	if backendURL == "" {
+		// Providers with a stable, account-independent endpoint default it here;
+		// account-specific providers (vertex-google) supply baseURL from the wizard.
+		switch providerType {
+		case "ollama":
+			if base, ok := setupcheck.ProbeLocalOllamaAPI(ctx); ok {
+				backendURL = base
+			} else {
+				backendURL = "http://127.0.0.1:11434"
+			}
+		case "openai":
+			backendURL = "https://api.openai.com/v1"
+		case "openrouter":
+			backendURL = "https://openrouter.ai/api/v1"
+		case "gemini":
+			backendURL = "https://generativelanguage.googleapis.com"
 		}
-	case "openai":
-		backendURL = "https://api.openai.com/v1"
-	case "openrouter":
-		backendURL = "https://openrouter.ai/api/v1"
-	case "gemini":
-		backendURL = "https://generativelanguage.googleapis.com"
 	}
 
 	existing, _ := svc.List(ctx, nil, 100)
 	for _, b := range existing {
-		if strings.EqualFold(b.Type, providerType) {
-			return nil
+		if !strings.EqualFold(b.Type, providerType) {
+			continue
 		}
+		// Re-running setup should be able to rewire an account-specific endpoint
+		// (e.g. point Vertex at a new project/region) rather than silently keeping
+		// the stale URL. Only touch the record when the URL actually changed.
+		if backendURL != "" && b.BaseURL != backendURL {
+			b.BaseURL = backendURL
+			if err := svc.Update(ctx, b); err != nil {
+				return fmt.Errorf("update %s backend: %w", providerType, err)
+			}
+		}
+		return nil
 	}
 
 	backend := &runtimetypes.Backend{

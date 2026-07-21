@@ -65,7 +65,7 @@ export function ResponseSettingsSection() {
             {t('settingsAdvanced.response_section_description')}
           </P>
         </div>
-        <form id={formId} onSubmit={onSubmit} className="grid max-w-xl gap-4">
+        <form id={formId} onSubmit={onSubmit} className="grid gap-4">
           <InlineNotice variant="info" className="rounded-lg">
             {t('settingsAdvanced.restart_notice')}
           </InlineNotice>

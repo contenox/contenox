@@ -1,4 +1,4 @@
-import { Cpu, Database, Radar, Rocket, Settings, type LucideIcon } from 'lucide-react';
+import { Cpu, Database, Inbox, Radar, Rocket, Settings, type LucideIcon } from 'lucide-react';
 import { lazy } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import i18n, { type TranslationKey } from '../i18n';
@@ -11,6 +11,7 @@ const FleetPage = lazy(() => import('../pages/admin/fleet/FleetPage.tsx'));
 const MissionListPage = lazy(() => import('../pages/admin/missions/MissionListPage.tsx'));
 const MissionDetailPage = lazy(() => import('../pages/admin/missions/MissionDetailPage.tsx'));
 const MissionDispatchPage = lazy(() => import('../pages/admin/missions/MissionDispatchPage.tsx'));
+const InboxPage = lazy(() => import('../pages/admin/inbox/InboxPage.tsx'));
 const ControlPlanePage = lazy(() => import('../pages/admin/control/ControlPlanePage.tsx'));
 const SettingsPage = lazy(() => import('../pages/admin/settings/SettingsPage.tsx'));
 const ByePage = lazy(() => import('../pages/public/bye/Bye.tsx'));
@@ -61,6 +62,11 @@ const adminRouteDefinitions: AdminRouteDefinition[] = [
   // are reached FROM this list, not from the control-plane menu), so they
   // are registered directly on `routes` below instead of here.
   { path: '/missions', element: MissionListPage, labelKey: 'navbar.missions', Icon: Rocket },
+  // The attention inbox sits alongside Fleet and Missions: it is the third
+  // fleet surface (docs/development/blueprints/acp/fleet-consolidation.md,
+  // slices C2 + M3) — where the exceptions a unit raises while unattended come
+  // up to be answered, and where its reports come back.
+  { path: '/inbox', element: InboxPage, labelKey: 'navbar.inbox', Icon: Inbox },
   { path: '/backends', element: BackendsPage, labelKey: 'navbar.backends', Icon: Database },
   { path: '/settings', element: SettingsPage, labelKey: 'navbar.settings', Icon: Settings },
 ];

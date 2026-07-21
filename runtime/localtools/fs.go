@@ -1,12 +1,15 @@
 package localtools
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/runtimetypes"
@@ -26,8 +30,10 @@ const LocalFSToolsName = "local_fs"
 
 // readBeforeWriteDenial is the LLM-facing message returned when the model tries
 // to mutate an existing file it has not read in this session. The model treats
-// it as a normal tool result and is expected to call read_file then retry.
-const readBeforeWriteDenial = "local_fs: cannot modify existing file %s without reading it first. Call local_fs.read_file(%q) to confirm the current contents, then retry."
+// it as a normal tool result and is expected to call read_file then retry. It
+// carries the Rec 5 recoverable-by-correction severity marker like every other
+// correctable local-tools condition.
+const readBeforeWriteDenial = "local_fs: cannot modify existing file %s without reading it first. Call local_fs.read_file(%q) to confirm the current contents, then retry. " + severityRecoverable
 
 // fileUnchangedStub is the tool-result text returned when the model re-reads a
 // file whose content hash is already recorded in this session. The earlier
@@ -35,9 +41,9 @@ const readBeforeWriteDenial = "local_fs: cannot modify existing file %s without 
 // content wastes tokens without providing new information.
 const fileUnchangedStub = "File unchanged since last read — the content from your earlier read_file call in this conversation is still current."
 
-const readBeforeWriteFullReadDenial = "local_fs: cannot overwrite existing file %s after only reading a line range. Call local_fs.read_file(%q) to read the full current contents, then retry."
+const readBeforeWriteFullReadDenial = "local_fs: cannot overwrite existing file %s after only reading a line range. Call local_fs.read_file(%q) to read the full current contents, then retry. " + severityRecoverable
 
-const readBeforeWriteStaleReadDenial = "local_fs: cannot modify existing file %s because it changed since you read it. Call local_fs.read_file(%q) to refresh the current contents, then retry."
+const readBeforeWriteStaleReadDenial = "local_fs: cannot modify existing file %s because it changed since you read it. Call local_fs.read_file(%q) to refresh the current contents, then retry. " + severityRecoverable
 
 type readRequirement int
 
@@ -89,8 +95,19 @@ func NewLocalFSToolsWith(allowedDir string, db libdb.DBManager, io FileIO, name 
 	}
 }
 
-// Exec handles filesystem tool execution.
+// Exec handles filesystem tool execution. It is a thin wrapper over execDispatch
+// that stamps every returned error with a fatal-vs-recoverable severity marker
+// (Rec 5, tool-hardening.md): callers can key on "(recoverable: ...)" vs
+// "(fatal: ...)" to decide whether a corrected retry is worthwhile. Soft
+// tool-result strings (read-before-write denials, sed no-match suggestions) carry
+// their own recoverable marker inline and flow through the nil-error path
+// untouched here.
 func (h *LocalFSTools) Exec(ctx context.Context, startTime time.Time, input any, debug bool, toolsCall *taskengine.ToolsCall) (any, taskengine.DataType, error) {
+	res, dt, err := h.execDispatch(ctx, startTime, input, debug, toolsCall)
+	return res, dt, markSeverity(err)
+}
+
+func (h *LocalFSTools) execDispatch(ctx context.Context, startTime time.Time, input any, debug bool, toolsCall *taskengine.ToolsCall) (any, taskengine.DataType, error) {
 	if toolsCall == nil {
 		return nil, taskengine.DataTypeAny, errors.New("local_fs: tools required")
 	}
@@ -117,7 +134,7 @@ func (h *LocalFSTools) Exec(ctx context.Context, startTime time.Time, input any,
 
 	switch toolName {
 	case "read_file":
-		if err := rejectUnknownArgs("local_fs.read_file", args, "path"); err != nil {
+		if err := rejectUnknownArgs("local_fs.read_file", args, "path", "start_line", "end_line"); err != nil {
 			return nil, taskengine.DataTypeAny, err
 		}
 		return h.readFile(ctx, args)
@@ -531,8 +548,43 @@ func (h *LocalFSTools) readFile(ctx context.Context, args map[string]any) (any, 
 	if err != nil {
 		return nil, taskengine.DataTypeAny, err
 	}
-	if err := h.precheckFullRead(ctx, absPath); err != nil {
+	if err := h.checkDeniedSubstrings(ctx, absPath); err != nil {
 		return nil, taskengine.DataTypeAny, err
+	}
+
+	info, statErr := os.Stat(absPath)
+	if statErr != nil {
+		// Rec 7: did-you-mean over sibling names on a missing path.
+		if os.IsNotExist(statErr) {
+			return nil, taskengine.DataTypeAny, h.notFound("read_file", path, absPath)
+		}
+		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: read_file: %w", statErr)
+	}
+	if info.IsDir() {
+		return nil, taskengine.DataTypeAny, recoverablef(
+			"local_fs: read_file: %s is a directory (%s); use list_dir", path, describePathForError(absPath, info))
+	}
+
+	// Rec 4: read_file gained optional start_line/end_line, so a truncated read can
+	// name "use start_line: N" actionable on the SAME tool. When either is present
+	// this is a ranged (paging) read, delegated to the shared range reader.
+	if _, hasStart := argFloat(args, "start_line"); hasStart {
+		return h.readFileRange(ctx, args)
+	}
+	if _, hasEnd := argFloat(args, "end_line"); hasEnd {
+		return h.readFileRange(ctx, args)
+	}
+
+	outLimit, unlimitedOut := h.maxOutputBytesFromPolicy(ctx)
+	readLimit, unlimitedRead := h.maxReadBytesFromPolicy(ctx)
+
+	// A file larger than the read cap cannot be loaded whole. Rec 4: don't dump a
+	// partial; name the exact next step. Reading a portion via start_line/end_line
+	// streams without the size cap, or raise _max_read_bytes to load it all.
+	if !unlimitedRead && info.Size() > readLimit {
+		return nil, taskengine.DataTypeAny, recoverablef(
+			"local_fs: read_file: %s is %s (%d bytes), over the %d-byte read cap; read a portion with read_file start_line/end_line (e.g. start_line: 1), or raise _max_read_bytes in tools_policies.local_fs to load the whole file",
+			path, humanSize(info.Size()), info.Size(), readLimit)
 	}
 
 	content, err := h.fileIO.ReadFile(ctx, absPath)
@@ -540,20 +592,55 @@ func (h *LocalFSTools) readFile(ctx context.Context, args map[string]any) (any, 
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to read file: %w", err)
 	}
 
+	// Refuse to dump binary content into the model's transcript: raw bytes from a
+	// compiled binary, image, or archive burn tokens on content the model cannot
+	// use as text. This only inspects the bytes already loaded (no extra I/O) and
+	// shares its heuristic with stat_file's "binary" field.
+	if isBinarySample(sniffPrefix(content)) {
+		detail := fmt.Sprintf("binary file (%s)", fileSizeAndExecFlag(info))
+		return nil, taskengine.DataTypeAny, recoverablef(
+			"local_fs: refusing to read %s: %s. Use stat_file or shell tools for binaries.",
+			path, detail,
+		)
+	}
+
 	// Dedup: if this session has already read this exact file version, return a
-	// stub instead of re-sending the full content. Only applies when read
-	// tracking is active (db + session). Falls through to full read otherwise.
+	// stub instead of re-sending the full content.
 	hash := contentHash(content)
 	if !h.readTrackingDisabled(ctx) && h.hasCurrentFullRead(ctx, absPath, hash) {
 		return fileUnchangedStub, taskengine.DataTypeString, nil
 	}
 
 	out := string(content)
-	if err := h.checkToolOutputLimit(ctx, "read_file", out); err != nil {
-		return nil, taskengine.DataTypeAny, err
+	if !unlimitedOut && int64(len(out)) > outLimit {
+		// Rec 4: never truncate silently. Return a line-based head that fits the
+		// output cap and name the exact next step. The file on disk is its own
+		// durable copy, so read_file does not spool (a redundant, possibly huge
+		// copy) — the model pages forward with start_line. Records a RANGE read
+		// only: a truncated read has not seen the whole file, so it must not
+		// authorize a blind write_file overwrite.
+		head, lastLine, nextLine, _ := streamRange(bytes.NewReader(content), 1, math.MaxInt, outLimit)
+		total := len(strings.Split(out, "\n"))
+		h.recordRangeRead(ctx, absPath, content)
+		notice := fmt.Sprintf(
+			"local_fs: read_file truncated — showed lines 1-%d of %d; output capped at %d bytes. To read the next page call read_file with start_line: %d. %s",
+			lastLine, total, outLimit, nextLine, severityRecoverable,
+		)
+		return head + "\n\n" + notice, taskengine.DataTypeString, nil
 	}
 	h.recordFullRead(ctx, absPath, content)
 	return out, taskengine.DataTypeString, nil
+}
+
+// notFound builds a recoverable not-found error with a fuzzy "Did you mean:"
+// clause over the parent directory's entries (Rec 7). Suggestion only — the tool
+// never acts on a fuzzy match (the fuzzy law).
+func (h *LocalFSTools) notFound(tool, userPath, absPath string) error {
+	msg := fmt.Sprintf("local_fs: %s: %s does not exist", tool, userPath)
+	if hint := didYouMean(filepath.Dir(absPath), filepath.Base(absPath)); hint != "" {
+		msg += "." + hint
+	}
+	return recoverablef("%s", msg)
 }
 
 type FsWriteResult struct {
@@ -622,10 +709,16 @@ func (h *LocalFSTools) writeFile(ctx context.Context, args map[string]any) (any,
 	}
 
 	if err := os.MkdirAll(filepath.Dir(absPath), 0755); err != nil {
+		if isDiskFull(err) {
+			return nil, taskengine.DataTypeAny, fatalf("disk full", "local_fs: failed to create directories for %s", absPath)
+		}
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to create directories: %w", err)
 	}
 
 	if err := h.fileIO.WriteFile(ctx, absPath, []byte(content)); err != nil {
+		if isDiskFull(err) {
+			return nil, taskengine.DataTypeAny, fatalf("disk full", "local_fs: failed to write file %s", absPath)
+		}
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to write file: %w", err)
 	}
 	h.invalidateReads(ctx, absPath)
@@ -658,10 +751,17 @@ func (h *LocalFSTools) listDir(ctx context.Context, args map[string]any) (any, t
 	}
 	st, err := os.Stat(absRoot)
 	if err != nil {
+		// Rec 7: did-you-mean over sibling names on a missing path.
+		if os.IsNotExist(err) {
+			return nil, taskengine.DataTypeAny, h.notFound("list_dir", listRootArg, absRoot)
+		}
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: stat: %w", err)
 	}
 	if !st.IsDir() {
-		return nil, taskengine.DataTypeAny, errors.New("local_fs: list_dir path must be a directory")
+		return nil, taskengine.DataTypeAny, fmt.Errorf(
+			"local_fs: list_dir: %s is not a directory: %s",
+			listRootArg, describePathForError(absRoot, st),
+		)
 	}
 
 	recursive, _ := argBool(args, "recursive")
@@ -697,7 +797,11 @@ func (h *LocalFSTools) listDir(ctx context.Context, args map[string]any) (any, t
 				if allowExts != nil && !allowExts[strings.ToLower(filepath.Ext(entry.Name()))] {
 					continue
 				}
-				results = append(results, entry.Name())
+				name := entry.Name()
+				if info, infoErr := entry.Info(); infoErr == nil {
+					name += fileEntrySuffix(info)
+				}
+				results = append(results, name)
 			}
 		}
 	} else {
@@ -765,6 +869,9 @@ func (h *LocalFSTools) walkListDir(ctx context.Context, listRootArg string, curA
 		} else {
 			if allowExts != nil && !allowExts[strings.ToLower(filepath.Ext(e.Name()))] {
 				continue
+			}
+			if info, infoErr := e.Info(); infoErr == nil {
+				userPath += fileEntrySuffix(info)
 			}
 			*out = append(*out, userPath)
 		}
@@ -949,19 +1056,181 @@ func (h *LocalFSTools) findFiles(ctx context.Context, args map[string]any) (any,
 	return s, taskengine.DataTypeJSON, nil
 }
 
-// isBinaryContent reports whether content is likely binary by scanning the first
-// 8 KB for NUL bytes, which are absent in well-formed UTF-8 text files.
-func isBinaryContent(content []byte) bool {
-	check := content
-	if len(check) > 8192 {
-		check = check[:8192]
+// listSizeNoticeThreshold is the size above which list_dir appends a compact
+// human-readable size next to a file name. Kept high enough that ordinary
+// source/text files never carry the annotation — it exists purely to flag
+// files large enough that a model should think twice before read_file'ing
+// them.
+const listSizeNoticeThreshold = 1 << 20 // 1 MiB
+
+// sniffBinaryBytes bounds how much of a file this package reads to classify
+// it as binary vs. text. 512 bytes is enough to catch the common binary
+// formats (ELF/PE/Mach-O magic, PNG/JPEG/GIF headers, gzip/zip, ...) cheaply,
+// even against a multi-gigabyte file.
+const sniffBinaryBytes = 512
+
+// binaryInvalidUTF8Fraction is the share of a sniffed sample that must fail
+// to decode as UTF-8 before the sample is classified binary on that basis
+// alone (independent of the NUL-byte check in isBinarySample).
+const binaryInvalidUTF8Fraction = 0.3
+
+// isExecutable reports whether info's regular-file mode has any executable
+// bit set (owner, group, or other). Non-regular modes (directories, sockets,
+// ...) are never executable by this check.
+//
+// Limitation: on Windows, os.FileMode does not carry a meaningful executable
+// bit from the filesystem (there is no exec permission bit to read), so this
+// always reports false there. That's a known gap in the annotation, not a
+// security control — nothing in this package relies on isExecutable to deny
+// access.
+func isExecutable(info os.FileInfo) bool {
+	return info.Mode().IsRegular() && info.Mode().Perm()&0111 != 0
+}
+
+// humanSize renders a byte count as a compact binary-unit string (KiB, MiB,
+// GiB, ...), e.g. humanSize(50746820) == "48 MiB". Values under 1 KiB print
+// as whole bytes. This is for model-facing annotations where "48 MiB" reads
+// faster than "50746820"; the exact byte count is still reported alongside it
+// wherever this is used, so nothing is lost to the rounding.
+func humanSize(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
 	}
-	for _, b := range check {
+	div, exp := int64(unit), 0
+	for x := n / unit; x >= unit; x /= unit {
+		div *= unit
+		exp++
+	}
+	val := float64(n) / float64(div)
+	if val >= 10 {
+		return fmt.Sprintf("%.0f %ciB", val, "KMGTPE"[exp])
+	}
+	return fmt.Sprintf("%.1f %ciB", val, "KMGTPE"[exp])
+}
+
+// isBinarySample applies a cheap, best-effort text/binary heuristic to a
+// content prefix (see sniffBinaryBytes): the sample is classified binary if
+// it contains a NUL byte — never valid in well-formed UTF-8 text — or if more
+// than binaryInvalidUTF8Fraction of it fails to decode as UTF-8.
+//
+// Known limits, worth remembering before trusting this for anything beyond
+// an agent-facing annotation: legacy 8-bit text encodings (Latin-1,
+// Shift-JIS, ...) are not valid UTF-8 and can be misclassified as binary;
+// conversely a binary format whose first sniffBinaryBytes happen to decode as
+// valid UTF-8 (e.g. an archive with an all-ASCII header ahead of a compressed
+// payload) can be misclassified as text. This trades precision for being
+// cheap enough to run on every read_file/stat_file call — it is not a MIME
+// sniffer.
+func isBinarySample(sample []byte) bool {
+	if len(sample) == 0 {
+		return false
+	}
+	for _, b := range sample {
 		if b == 0 {
 			return true
 		}
 	}
-	return false
+	invalid := 0
+	for i := 0; i < len(sample); {
+		r, size := utf8.DecodeRune(sample[i:])
+		if r == utf8.RuneError && size == 1 {
+			invalid++
+			i++
+			continue
+		}
+		i += size
+	}
+	return float64(invalid)/float64(len(sample)) > binaryInvalidUTF8Fraction
+}
+
+// sniffPrefix returns the first sniffBinaryBytes of content (or all of it, if
+// shorter), for feeding to isBinarySample without re-reading from disk when
+// the content is already loaded in memory.
+func sniffPrefix(content []byte) []byte {
+	if len(content) > sniffBinaryBytes {
+		return content[:sniffBinaryBytes]
+	}
+	return content
+}
+
+// sniffBinaryFile classifies a file on disk as binary vs. text by reading at
+// most sniffBinaryBytes from its start — independent of any read-size policy,
+// so it stays cheap even against a file too large for read_file to ever load
+// (e.g. a 50 MB executable). See isBinarySample for the heuristic and its
+// limits.
+func sniffBinaryFile(absPath string) (bool, error) {
+	f, err := os.Open(absPath)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	buf := make([]byte, sniffBinaryBytes)
+	n, err := io.ReadFull(f, buf)
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+		return false, err
+	}
+	return isBinarySample(buf[:n]), nil
+}
+
+// fileSizeAndExecFlag renders "<size>[, executable]" for compact use inside
+// teaching error messages, e.g. "48 MiB, executable" or "312 B".
+func fileSizeAndExecFlag(info os.FileInfo) string {
+	desc := humanSize(info.Size())
+	if isExecutable(info) {
+		desc += ", executable"
+	}
+	return desc
+}
+
+// describePathForError renders a short, teaching-oriented description of
+// what a path actually is — kind, size, and any executable/binary flags — for
+// use in error messages where the model expected something else (e.g.
+// list_dir called on a file). absPath is used only for the binary content
+// sniff; info supplies everything else.
+func describePathForError(absPath string, info os.FileInfo) string {
+	kind := "regular file"
+	switch {
+	case info.Mode()&os.ModeSymlink != 0:
+		kind = "symlink"
+	case info.IsDir():
+		kind = "directory"
+	case !info.Mode().IsRegular():
+		kind = "special file"
+	}
+	desc := fmt.Sprintf("%s, %s", kind, humanSize(info.Size()))
+
+	var flags []string
+	if isExecutable(info) {
+		flags = append(flags, "executable")
+	}
+	if info.Mode().IsRegular() {
+		if binary, err := sniffBinaryFile(absPath); err == nil && binary {
+			flags = append(flags, "binary")
+		}
+	}
+	if len(flags) > 0 {
+		desc += ", " + strings.Join(flags, " ")
+	}
+	return desc
+}
+
+// fileEntrySuffix renders the ls -F-style annotation appended to a
+// non-directory list_dir entry name: "*" when the executable bit is set for
+// owner, group, or other, plus a compact human size in parentheses when the
+// file exceeds listSizeNoticeThreshold. Small, non-executable files — the
+// common case: source files, docs, configs — get no suffix at all, so
+// ordinary listings stay exactly as compact as before this annotation
+// existed.
+func fileEntrySuffix(info os.FileInfo) string {
+	var suffix string
+	if isExecutable(info) {
+		suffix += "*"
+	}
+	if info.Size() > listSizeNoticeThreshold {
+		suffix += " (" + humanSize(info.Size()) + ")"
+	}
+	return suffix
 }
 
 func (h *LocalFSTools) sed(ctx context.Context, args map[string]any) (any, taskengine.DataType, error) {
@@ -997,9 +1266,25 @@ func (h *LocalFSTools) sed(ctx context.Context, args map[string]any) (any, taske
 
 	oldText := string(content)
 	replacements := strings.Count(oldText, pattern)
+	if replacements == 0 {
+		// Rec 7 + the fuzzy law (tool-hardening.md): the pattern was not found.
+		// SUGGEST the nearest actual lines and DO NOT mutate — a fuzzy match must
+		// never be applied silently (a misplaced edit is corruption). The model
+		// reads the suggestion, corrects its pattern, and retries.
+		msg := fmt.Sprintf(
+			"local_fs: sed: pattern %q not found in %s — file left unchanged; correct the pattern and retry. %s",
+			pattern, path, severityRecoverable)
+		if near := suggestNearestLines(oldText, pattern, 2); near != "" {
+			msg += "\nClosest lines:\n" + near
+		}
+		return msg, taskengine.DataTypeString, nil
+	}
 	newContent := strings.ReplaceAll(oldText, pattern, replacement)
 
 	if err := h.fileIO.WriteFile(ctx, absPath, []byte(newContent)); err != nil {
+		if isDiskFull(err) {
+			return nil, taskengine.DataTypeAny, fatalf("disk full", "local_fs: failed to write file %s", absPath)
+		}
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to write file: %w", err)
 	}
 	h.invalidateReads(ctx, absPath)
@@ -1058,11 +1343,19 @@ func (h *LocalFSTools) readFileRange(ctx context.Context, args map[string]any) (
 	if !ok {
 		return nil, taskengine.DataTypeAny, errors.New("local_fs: path required for read_file_range")
 	}
-	startLine, ok := args["start_line"].(float64)
-	if !ok {
-		startLine = 1
+	start := 1
+	if v, ok := argFloat(args, "start_line"); ok {
+		if start = int(v); start < 1 {
+			start = 1
+		}
 	}
-	endLine, ok := args["end_line"].(float64)
+	end := math.MaxInt
+	if v, ok := argFloat(args, "end_line"); ok {
+		end = int(v)
+	}
+	if end < start {
+		end = start
+	}
 
 	absPath, err := h.checkPath(ctx, path)
 	if err != nil {
@@ -1071,9 +1364,46 @@ func (h *LocalFSTools) readFileRange(ctx context.Context, args map[string]any) (
 	if err := h.checkDeniedSubstrings(ctx, absPath); err != nil {
 		return nil, taskengine.DataTypeAny, err
 	}
-	// Line-range reads still load the full file internally; enforce size to avoid multi-GB reads.
-	if err := h.checkFileSizeLimit(ctx, absPath); err != nil {
-		return nil, taskengine.DataTypeAny, err
+	info, statErr := os.Stat(absPath)
+	if statErr != nil {
+		if os.IsNotExist(statErr) {
+			return nil, taskengine.DataTypeAny, h.notFound("read_file_range", path, absPath)
+		}
+		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: read_file_range: %w", statErr)
+	}
+	if info.IsDir() {
+		return nil, taskengine.DataTypeAny, recoverablef("local_fs: read_file_range: %s is a directory; use list_dir", path)
+	}
+
+	outLimit, unlimitedOut := h.maxOutputBytesFromPolicy(ctx)
+	readLimit, unlimitedRead := h.maxReadBytesFromPolicy(ctx)
+	budget := int64(0)
+	if !unlimitedOut && outLimit > 0 {
+		budget = outLimit
+	}
+
+	// Over the read cap: stream the requested range without loading the whole file
+	// (Rec 4). No read marker recorded — an over-cap file cannot be loaded for
+	// mutation, so the read-before-write gate is moot for it.
+	if !unlimitedRead && info.Size() > readLimit {
+		f, err := os.Open(absPath)
+		if err != nil {
+			return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: read_file_range open: %w", err)
+		}
+		defer f.Close()
+		out, lastLine, nextLine, sErr := streamRange(f, start, end, budget)
+		if sErr != nil {
+			return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: read_file_range stream: %w", sErr)
+		}
+		// Only a BUDGET-driven early stop is a truncation: reaching the requested
+		// end_line (lastLine == end) returned exactly what was asked for, even
+		// though the file continues past it.
+		if nextLine != 0 && lastLine < end {
+			out += fmt.Sprintf(
+				"\n\nlocal_fs: read_file_range truncated — showed lines %d-%d; output capped at %d bytes. To read the next page call read_file with start_line: %d. %s",
+				start, lastLine, budget, nextLine, severityRecoverable)
+		}
+		return out, taskengine.DataTypeString, nil
 	}
 
 	content, err := h.fileIO.ReadFile(ctx, absPath)
@@ -1083,32 +1413,26 @@ func (h *LocalFSTools) readFileRange(ctx context.Context, args map[string]any) (
 
 	lines := strings.Split(string(content), "\n")
 	totalLines := len(lines)
-
-	s := int(startLine)
-	if s < 1 {
-		s = 1
-	}
-	if s > totalLines {
+	if start > totalLines {
+		h.recordRangeRead(ctx, absPath, content)
 		return "", taskengine.DataTypeString, nil
 	}
-
-	e := totalLines
-	if ok {
-		e = int(endLine)
-	}
-	if e < s {
-		e = s
-	}
+	e := end
 	if e > totalLines {
 		e = totalLines
 	}
-
-	resultLines := lines[s-1 : e]
-	out := strings.Join(resultLines, "\n")
-	if err := h.checkToolOutputLimit(ctx, "read_file_range", out); err != nil {
-		return nil, taskengine.DataTypeAny, err
-	}
+	out := strings.Join(lines[start-1:e], "\n")
 	h.recordRangeRead(ctx, absPath, content)
+
+	// Rec 4: truncate-and-continue on the output cap rather than erroring.
+	if budget > 0 && int64(len(out)) > budget {
+		head, lastLine, nextLine, _ := streamRange(bytes.NewReader([]byte(out)), 1, math.MaxInt, budget)
+		absNext := start + nextLine - 1
+		notice := fmt.Sprintf(
+			"local_fs: read_file_range truncated — showed lines %d-%d; output capped at %d bytes. To read the next page call read_file with start_line: %d. %s",
+			start, start+lastLine-1, budget, absNext, severityRecoverable)
+		return head + "\n\n" + notice, taskengine.DataTypeString, nil
+	}
 	return out, taskengine.DataTypeString, nil
 }
 
@@ -1125,14 +1449,32 @@ func (h *LocalFSTools) statFile(ctx context.Context, args map[string]any) (any, 
 
 	info, err := os.Stat(absPath)
 	if err != nil {
+		// Rec 7: did-you-mean over sibling names on a missing path.
+		if os.IsNotExist(err) {
+			return nil, taskengine.DataTypeAny, h.notFound("stat_file", path, absPath)
+		}
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to stat file: %w", err)
 	}
 
+	// binary is only meaningful (and only sniffed) for regular files; a
+	// directory or other special file is never "binary" in the sense a model
+	// asking whether it's safe to read_file cares about.
+	binary := false
+	if info.Mode().IsRegular() {
+		if b, sniffErr := sniffBinaryFile(absPath); sniffErr == nil {
+			binary = b
+		}
+	}
+
 	result := map[string]any{
-		"name":    info.Name(),
-		"size":    info.Size(),
-		"modTime": info.ModTime().Format(time.RFC3339),
-		"isDir":   info.IsDir(),
+		"name":       info.Name(),
+		"size":       info.Size(),
+		"sizeHuman":  humanSize(info.Size()),
+		"modTime":    info.ModTime().Format(time.RFC3339),
+		"isDir":      info.IsDir(),
+		"mode":       info.Mode().String(),
+		"executable": isExecutable(info),
+		"binary":     binary,
 	}
 
 	b, err := json.Marshal(result)
@@ -1163,11 +1505,13 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "read_file",
-				Description: "Read the full content of a text file. Returns the raw text. If you have already read this exact file in this session and the file has not changed on disk, you will receive a short stub message instead of the full content — that means the prior read result already in your context is still current, so no action is needed. For large files prefer read_file_range to avoid hitting size limits. Calling read_file is also a prerequisite for write_file or sed on an existing file — the version you read here gates subsequent mutation of that path in this session.",
+				Description: "Read a text file. With no start_line/end_line, reads the whole file and returns the raw text. Refuses with an error for files that sniff as binary (a NUL byte or a high fraction of invalid UTF-8 in the first ~512 bytes) instead of dumping raw bytes into your context — call stat_file first if unsure, or use shell tools for binaries. If you have already read this exact file version this session and it is unchanged on disk, you get a short stub instead of the full content (the prior read is still current). NEVER TRUNCATED SILENTLY: if the file is larger than the read/output cap, the result is a line-based HEAD followed by a notice naming the exact next step — 'call read_file with start_line: N' (a real number). Page forward by passing start_line (and optional end_line); this is the same as read_file_range. A truncated or ranged read does NOT satisfy the full-file read-before-write prerequisite (only a complete read does); a complete read gates write_file/sed on that path this session. Missing paths return a 'Did you mean:' suggestion of similar sibling names. Errors carry a severity marker: '(recoverable: adjust parameters and retry)' when a corrected call fixes it, '(fatal: <reason>)' only for a broken environment.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
-						"path": map[string]interface{}{"type": "string", "description": "Path to the file relative to the project root"},
+						"path":       map[string]interface{}{"type": "string", "description": "Path to the file relative to the project root"},
+						"start_line": map[string]interface{}{"type": "integer", "description": "Optional 1-based first line to read. Provide this (from a truncation notice) to page forward through a large file. When set, the read is treated as a ranged read."},
+						"end_line":   map[string]interface{}{"type": "integer", "description": "Optional 1-based last line to read (inclusive; default: end of file). Only meaningful with a ranged read."},
 					},
 					"required": []string{"path"},
 				},
@@ -1192,7 +1536,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "list_dir",
-				Description: "List entries in a directory under the project root. Non-recursive: one level, names sorted. Set recursive true for a depth-limited tree (paths relative to project root, dirs end with /). By default, high-noise directories (.git, node_modules, .venv, etc.) are silently omitted — override with _skip_dir_names policy key (comma-separated basenames; empty string disables filtering). Filter returned files by extension with _list_extensions (comma-separated, e.g. .go,.md,.json).",
+				Description: "List entries in a directory under the project root. Non-recursive: one level, names sorted. Set recursive true for a depth-limited tree (paths relative to project root, dirs end with /). Entry names carry ls -F-style hints so you can tell a directory from a text file from an executable binary without a follow-up call: directories end with '/'; a trailing '*' means the executable bit is set; files over 1 MiB get a compact size in parentheses, e.g. 'contenox* (48 MiB)'. Files with no suffix are ordinary, non-executable, non-huge files. Calling list_dir on something that is not a directory returns an error describing what the path actually is (kind, size, executable/binary flags) instead of just saying it isn't a directory. By default, high-noise directories (.git, node_modules, .venv, etc.) are silently omitted — override with _skip_dir_names policy key (comma-separated basenames; empty string disables filtering). Filter returned files by extension with _list_extensions (comma-separated, e.g. .go,.md,.json). A missing path returns a 'Did you mean:' suggestion of similar sibling names; errors carry a '(recoverable: ...)' or '(fatal: ...)' severity marker.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -1264,7 +1608,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "sed",
-				Description: "Replace all literal occurrences of pattern with replacement in a file (plain string replacement, not regex). Replaces every occurrence on every line. Returns compact JSON with {path, written, changed, replacements, old_bytes, new_bytes, old_sha256, new_sha256}; full old/new file bodies are not returned to the model. Requires a prior read_file or read_file_range call against the current file version in this session; editing a file you have not seen, or that changed since you saw it, is blocked.",
+				Description: "Replace all literal occurrences of pattern with replacement in a file (plain string replacement, not regex). Replaces every occurrence on every line. Returns compact JSON with {path, written, changed, replacements, old_bytes, new_bytes, old_sha256, new_sha256}; full old/new file bodies are not returned to the model. Requires a prior read_file or read_file_range call against the current file version in this session; editing a file you have not seen, or that changed since you saw it, is blocked. If the pattern is NOT found, the file is left UNCHANGED and you get the closest actual lines as a suggestion ('Closest lines: ...') so you can correct the pattern — a fuzzy match is never applied on your behalf. The suggestion carries a '(recoverable: adjust parameters and retry)' marker.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -1294,7 +1638,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "read_file_range",
-				Description: "Read a contiguous range of lines from a file (1-based, inclusive end_line optional). This satisfies the read-before-mutate prerequisite for targeted sed edits on the same current file version, but not for write_file full-file overwrites. Call read_file before write_file on an existing file.",
+				Description: "Read a contiguous range of lines from a file (1-based, inclusive end_line optional). Works on files of any size (streamed when over the read cap). If the range's output exceeds the output cap it is truncated to a head with a notice naming the exact resume line ('call read_file with start_line: N') — never truncated silently. This satisfies the read-before-mutate prerequisite for targeted sed edits on the same current file version, but not for write_file full-file overwrites. Missing paths return a 'Did you mean:' suggestion. Call read_file (full) before write_file on an existing file.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -1310,7 +1654,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "stat_file",
-				Description: "Return metadata for a file or directory. Returns JSON with {name, size (bytes), modTime (RFC3339), isDir (bool)}. Does not read file contents. Useful for checking whether a path exists or is a directory before reading.",
+				Description: "Return metadata for a file or directory. Returns JSON with {name, size (bytes), sizeHuman (e.g. \"48 MiB\"), modTime (RFC3339), isDir (bool), mode (Go permission string, e.g. \"-rwxr-xr-x\"), executable (bool: any executable bit set), binary (bool: best-effort content sniff of the first ~512 bytes — NUL byte or high invalid-UTF-8 density; always false for directories)}. Reads at most the first ~512 bytes of file content for the binary check, never the whole file. Use this before read_file when unsure whether a path is a directory, a text file, or an executable/binary — a 50 MB binary reports as {isDir:false, executable:true, binary:true, sizeHuman:\"48 MiB\", ...}. A missing path returns a 'Did you mean:' suggestion of similar sibling names.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{

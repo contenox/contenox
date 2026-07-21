@@ -1,4 +1,5 @@
 {
+  "//compute": "OPTIONAL and OMITTED here by design, so this preset stays unbounded (unchanged behavior). The envelope is a unit's TOTAL boundary: to bound a mission's COMPUTE as well as its actions, add a top-level \"compute\" block, e.g. \"compute\": {\"maxTurns\": 40, \"maxToolCalls\": 300, \"maxTokens\": 2000000, \"onExhausted\": \"finish_stuck\"}. Bounds only RESTRICT (an absent field is unbounded); a mission that crosses one is finished at status \"stuck\" with a reason naming the bound. maxTurns and maxToolCalls are enforced host-side; maxTokens is best-effort (enforced only from reported usage); modelAllowlist/backendAllowlist are declared but not yet enforced. See docs/development/blueprints/acp/envelope-compute-bounds.md.",
   "default_action": "approve",
   "rules": [
     {"tools": "local_fs", "tool": "read_file", "action": "allow"},

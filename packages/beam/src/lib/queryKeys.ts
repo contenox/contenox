@@ -212,6 +212,38 @@ export const missionKeys = {
   list: () => [...missionKeys.all, 'list'] as const,
   detail: (id: string) => [...missionKeys.all, id] as const,
   reports: (id: string) => [...missionKeys.all, id, 'reports'] as const,
+  /** A mission's aggregated changed-files list + scope (the attention layer). */
+  changes: (id: string) => [...missionKeys.all, id, 'changes'] as const,
+  /** One changed file's diff, keyed by the absolute path the endpoint takes. */
+  changeDiff: (id: string, path: string) =>
+    [...missionKeys.all, id, 'changes', 'diff', path] as const,
+};
+
+export const approvalKeys = {
+  all: ['approvals'] as const,
+  list: () => [...approvalKeys.all, 'list'] as const,
+};
+
+export const operatorInboxKeys = {
+  all: ['operatorInbox'] as const,
+  list: () => [...operatorInboxKeys.all, 'list'] as const,
+};
+
+export const workspaceRootKeys = {
+  all: ['workspaceRoots'] as const,
+  list: () => [...workspaceRootKeys.all, 'list'] as const,
+};
+
+export const terminalKeys = {
+  all: ['terminal'] as const,
+  /**
+   * One host-terminal session, keyed by an opaque owner key (e.g. a mission
+   * id). Keyed rather than a bare list so react-query memoizes the POST that
+   * opens the PTY: while the entry is cached, switching away from and back to
+   * the terminal tab reattaches to the SAME session instead of spawning a new
+   * shell (the "reconnect by session id on remount" behavior).
+   */
+  session: (ownerKey: string) => [...terminalKeys.all, 'session', ownerKey] as const,
 };
 
 export const planKeys = {

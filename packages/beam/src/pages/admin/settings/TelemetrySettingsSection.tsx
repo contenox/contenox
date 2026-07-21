@@ -48,7 +48,7 @@ export function TelemetrySettingsSection() {
             {t('settingsAdvanced.telemetry_section_description')}
           </P>
         </div>
-        <form id={formId} onSubmit={onSubmit} className="grid max-w-xl gap-3">
+        <form id={formId} onSubmit={onSubmit} className="grid gap-3">
           <div className="space-y-1">
             <Checkbox
               label={t('settingsAdvanced.telemetry_enabled_label')}

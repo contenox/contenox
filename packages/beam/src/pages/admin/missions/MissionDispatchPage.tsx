@@ -1,11 +1,16 @@
-import { Button, Form, FormField, GridLayout, H1, Input, P, Page, Select } from '@contenox/ui';
+import { Button, Form, FormField, H1, Input, P, Page, Select } from '@contenox/ui';
 import { FormEvent, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { RootChip } from '../../../components/workspace/RootChip';
+import { RootSelector } from '../../../components/workspace/RootSelector';
 import { useAgents } from '../../../hooks/useAgents';
 import { useDispatchMission } from '../../../hooks/useFleet';
 import { useListPolicies } from '../../../hooks/usePolicies';
+import { useWorkspaceRoots } from '../../../hooks/useWorkspaceRoots';
 import type { TranslationKey } from '../../../i18n';
+import { ApiError } from '../../../lib/fetch';
+import { extractRefusedRoot, isWorkspaceRootRefusal } from '../../../lib/workspaceRoots';
 import {
   canSubmitDispatchForm,
   type DispatchFormValues,
@@ -28,9 +33,29 @@ export default function MissionDispatchPage() {
   const navigate = useNavigate();
   const { data: agents } = useAgents();
   const { data: policies } = useListPolicies();
+  const { roots, defaultRoot, isAbsent: rootsAbsent } = useWorkspaceRoots();
   const dispatch = useDispatchMission();
 
-  const [values, setValues] = useState<DispatchFormValues>(EMPTY_FORM);
+  // A dispatch can be refused because the chosen cwd is outside the workspace
+  // roots (the server does the real bounds check). Surface THAT legibly on the
+  // working-directory field instead of the raw wire string, and suppress the
+  // generic form-level error so the reason shows exactly once, where it belongs.
+  const dispatchError = dispatch.error;
+  const rootRefused =
+    dispatch.isError &&
+    dispatchError instanceof ApiError &&
+    dispatchError.status === 422 &&
+    isWorkspaceRootRefusal(dispatchError.message);
+
+  // The command palette's agent action lands here with `?agent=<name>` so the
+  // form opens with that agent already chosen — the "dispatch prefill" the
+  // palette promises. Read once as the initial value; the Select stays freely
+  // editable afterwards.
+  const [searchParams] = useSearchParams();
+  const [values, setValues] = useState<DispatchFormValues>(() => {
+    const agent = searchParams.get('agent');
+    return agent ? { ...EMPTY_FORM, agentName: agent } : EMPTY_FORM;
+  });
   // Errors stay computed but hidden until a first submit attempt — a field
   // required error the instant the page loads (before anyone has typed
   // anything) would just be noise.
@@ -68,18 +93,23 @@ export default function MissionDispatchPage() {
 
   return (
     <Page bodyScroll="auto">
-      <GridLayout variant="body" minWidth="minmax(0, 1fr)" className="gap-8 pb-8">
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 p-4 md:p-6">
         <div>
           <H1 variant="page">{t('missions.form_title')}</H1>
           <P variant="muted" className="mt-2">
             {t('missions.form_description')}
           </P>
+          {defaultRoot && (
+            <div className="mt-3">
+              <RootChip root={defaultRoot} />
+            </div>
+          )}
         </div>
 
         <Form
           onSubmit={onSubmit}
           error={
-            dispatch.isError
+            dispatch.isError && !rootRefused
               ? `${t('missions.form_dispatch_error')} ${dispatch.error?.message ?? ''}`
               : undefined
           }
@@ -141,16 +171,24 @@ export default function MissionDispatchPage() {
             />
           </FormField>
 
-          <FormField label={t('missions.form_cwd_label')}>
-            <Input
-              type="text"
+          <FormField
+            label={t('missions.form_cwd_label')}
+            error={
+              rootRefused
+                ? t('roots.out_of_bounds_body_path', {
+                    path: extractRefusedRoot(dispatch.error?.message) ?? values.cwd,
+                  })
+                : undefined
+            }>
+            <RootSelector
               value={values.cwd}
-              onChange={e => setValues(v => ({ ...v, cwd: e.target.value }))}
-              placeholder={t('missions.form_cwd_placeholder')}
+              onChange={cwd => setValues(v => ({ ...v, cwd }))}
+              roots={roots}
+              isAbsent={rootsAbsent}
             />
           </FormField>
         </Form>
-      </GridLayout>
+      </div>
     </Page>
   );
 }

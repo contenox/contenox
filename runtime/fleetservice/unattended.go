@@ -98,12 +98,15 @@ func NewUnattendedPermissionAnswerer(deps UnattendedPermissionDeps) agentinstanc
 	if deps.Tracker == nil {
 		deps.Tracker = libtracker.NoopTracker{}
 	}
-	a := &unattendedAnswerer{deps: deps}
+	a := &unattendedAnswerer{deps: deps, calls: newMissionCallCounter(0)}
 	return a.answer
 }
 
 type unattendedAnswerer struct {
 	deps UnattendedPermissionDeps
+	// calls tallies each mission's envelope-gated tool dispatches — the count the
+	// maxToolCalls compute bound is checked against. See missionCallCounter.
+	calls *missionCallCounter
 }
 
 func (a *unattendedAnswerer) answer(ctx context.Context, req agentinstance.UnattendedPermission) (libacp.RequestPermissionResponse, error) {
@@ -124,6 +127,23 @@ func (a *unattendedAnswerer) answer(ctx context.Context, req agentinstance.Unatt
 	reportChange("policy", policyName)
 	if missionID != "" {
 		reportChange("mission_id", missionID)
+	}
+
+	// The COMPUTE half of the envelope, checked before the action rules: this
+	// gated dispatch counts against the mission's maxToolCalls budget, and the call
+	// that crosses it is refused with a teaching outcome while the mission is
+	// finished stuck through the real terminal machinery. A mission with no
+	// maxToolCalls bound (the default) is never counted here — today's behavior.
+	if reason, refuse := a.toolCallBudgetRefusal(ctx, policyName, missionID); refuse {
+		reportChange("compute_bound", reason)
+		if _, err := a.deps.Missions.Finish(ctx, missionID, missionservice.StatusStuck, reason); err != nil {
+			// Best-effort: a Finish that conflicts (the mission already terminal —
+			// e.g. an earlier gated call from the same draining turn already finished
+			// it) still leaves the durable status correct, and refusing THIS call is
+			// the safe direction regardless. Record and move on.
+			reportChange("compute_bound_finish_error", err.Error())
+		}
+		return approvalflow.Answer(req.Request, false), nil
 	}
 
 	verdict, escalate := a.judge(ctx, policyName, mapped)
@@ -179,6 +199,38 @@ func (a *unattendedAnswerer) envelope(ctx context.Context, instanceID string) (p
 		return a.deps.DefaultPolicyName, m.ID
 	}
 	return m.HITLPolicyName, m.ID
+}
+
+// toolCallBudgetRefusal applies the mission envelope's maxToolCalls compute bound
+// to THIS gated dispatch. It counts the call and, when the count crosses the bound,
+// returns the teaching reason and refuse=true so the caller refuses the call and
+// finishes the mission stuck. It never itself writes to the mission store — the
+// caller owns the Finish, so this stays a pure decision over the counter and the
+// bound.
+//
+// It is a NO-OP (refuse=false) whenever a compute bound cannot apply: a session
+// with no mission behind it (compute bounds are per-mission; there is nothing to
+// count against or to finish), a HITL service that does not implement
+// ComputeBoundsReader, a bounds-load error (unbounded on failure, exactly as
+// Evaluate falls back), or a mission whose envelope sets no maxToolCalls. Every one
+// of those leaves the request to the normal judge/escalate path — today's behavior.
+func (a *unattendedAnswerer) toolCallBudgetRefusal(ctx context.Context, policyName, missionID string) (string, bool) {
+	if missionID == "" {
+		return "", false
+	}
+	reader, ok := a.deps.HITL.(hitlservice.ComputeBoundsReader)
+	if !ok {
+		return "", false
+	}
+	bounds, err := reader.ComputeBoundsFor(ctx, policyName)
+	if err != nil || bounds.MaxToolCalls <= 0 {
+		return "", false
+	}
+	count := a.calls.increment(missionID)
+	if !toolCallBudgetExceeded(count, bounds) {
+		return "", false
+	}
+	return toolCallsExhaustedReason(bounds.MaxToolCalls), true
 }
 
 // judge evaluates the envelope against the mapped request and reports whether

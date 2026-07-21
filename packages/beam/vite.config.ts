@@ -26,7 +26,7 @@ function beamSpaFallback(): Plugin {
           return;
         }
         const pathname = req.url.split('?')[0] ?? '';
-        if (pathname.startsWith('/api')) {
+        if (pathname.startsWith('/api') || pathname.startsWith('/ui')) {
           next();
           return;
         }
@@ -102,6 +102,11 @@ export default defineConfig(({ mode }) => {
               target: proxyTarget,
               changeOrigin: true,
               ws: true,
+            },
+            /** Auth (login/logout/auth-status) lives under /ui, outside /api. */
+            '/ui': {
+              target: proxyTarget,
+              changeOrigin: true,
             },
           },
         }

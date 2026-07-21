@@ -88,8 +88,12 @@ without direct package coupling.
 
 The `contenox` binary is the main entrypoint. Current commands include `setup`,
 `init`, `chat`, `run`, `tools`, `mcp`, `backend`, `cache`, `config`, `model`,
-`state`, `doctor`, `session`, `acp`, `acpx`, `vscode-agent`, `update`, and
-`version`.
+`state`, `doctor`, `session`, `acp`, `acpx`, `vscode-agent`, `approvals`,
+`fleet`, `mission`, `workspace`, `update`, and `version`. (`fleet` and `mission`
+operate the supervised agent fleet over a running `contenox serve`; `workspace`
+grants or revokes the workspace roots a session may run in, written to the shared
+config and applied to a running serve live via a reload doorbell; the others work
+against the local database directly.)
 
 All AI workflow packages live under `runtime/`. Infrastructure libraries
 (`libauth`, `libbus`, `libcipher`, `libdbexec`, `libkvstore`, `libprocess`,

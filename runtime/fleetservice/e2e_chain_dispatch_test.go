@@ -245,9 +245,15 @@ func TestFleetE2E_ChainAgent_DiscoveredDispatchedAndAnswers(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, controller, "the first viewer of an unattended dispatched session becomes its controller")
 
-	// The reply is the fixture chain's print — byte-exact, no model involved.
+	// The reply is the fixture chain's print — no model involved. Contains, not
+	// byte-equality: this fixture calls no mission tool, so under the mission
+	// doctrine its turn ends bare and the runtime nudges it once (see
+	// driveUnattendedMission), and the deterministic unit answers the nudge by
+	// printing the same reply a second time. The cure's own behavior — heartbeat,
+	// the one nudge, the runtime-filed blocker — is asserted in
+	// e2e_unattended_nudge_test.go; here we only need the reply to have streamed.
 	require.Eventually(t, func() bool {
-		return viewer.messageText() == chainFixtureReply
+		return strings.Contains(viewer.messageText(), chainFixtureReply)
 	}, 120*time.Second, 100*time.Millisecond,
 		"chain unit never streamed its reply; got %q\nstderr:\n%s", viewer.messageText(), stderr.String())
 

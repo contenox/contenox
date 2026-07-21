@@ -11,9 +11,12 @@ import (
 	"strings"
 	"sync"
 
+	libbus "github.com/contenox/runtime/libbus"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/internal/clikv"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/providerservice"
+	"github.com/contenox/runtime/runtime/runtimestate"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 )
 
@@ -663,12 +666,39 @@ type listModelsResult struct {
 func (s *Server) listModels(ctx context.Context, params listModelsParams) (listModelsResult, error) {
 	provider := strings.TrimSpace(params.Provider)
 	cfg := s.getConfig(ctx)
+
+	out := make([]modelInfo, 0, 16)
+	seen := map[string]bool{}
+
+	// Live provider catalog first, so provider-attributed models win. This mirrors
+	// `contenox model list` (contenoxcli.printLiveModels): the picker used to read
+	// only store.ListAllModels (persisted declared/observed rows), which never
+	// contains a provider whose models live solely in its live catalog — notably
+	// vertex-google (the Vertex AI publisher catalog), and any cloud provider
+	// before a chat has been sent. That is why Vertex models were missing here.
+	//
+	// DRIFT HAZARD: "which providers exist / what models they expose" has exactly
+	// one source of truth — the runtime's backend catalog (modelrepo catalog
+	// providers, reconciled by runtimestate). Do not hand-list providers or models
+	// in this bridge; derive them, as below and as providerservice does for
+	// listProviders. FOLLOW-UP: the VS Code path is converging onto ACP, after
+	// which provider/model pickers should be fed by ACP config-options backed by a
+	// shared live-model service, retiring this bespoke listModels RPC entirely.
+	for _, m := range s.liveBackendModels(ctx, provider) {
+		if seen[m.Name] {
+			continue
+		}
+		seen[m.Name] = true
+		out = append(out, m)
+	}
+
+	// Persisted observed/declared models that are not attributed to a live backend.
+	// These carry no provider label, so a provider is never invented for them and
+	// they are shown regardless of the provider filter.
 	models, err := s.store.ListAllModels(ctx)
 	if err != nil {
 		return listModelsResult{}, err
 	}
-	out := make([]modelInfo, 0, len(models)+1)
-	seen := map[string]bool{}
 	for _, model := range models {
 		name := strings.TrimSpace(model.Model)
 		if name == "" || seen[name] {
@@ -690,6 +720,8 @@ func (s *Server) listModels(ctx context.Context, params listModelsParams) (listM
 		})
 	}
 
+	// The configured default may not have been observed on any live backend yet
+	// (e.g. the provider is unreachable right now), so surface it explicitly.
 	if cfg.DefaultModel != "" && !seen[cfg.DefaultModel] && (provider == "" || provider == cfg.DefaultProvider) {
 		out = append(out, modelInfo{
 			ID:          cfg.DefaultModel,
@@ -704,6 +736,78 @@ func (s *Server) listModels(ctx context.Context, params listModelsParams) (listM
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].DisplayName < out[j].DisplayName })
 	return listModelsResult{Models: out}, nil
+}
+
+// liveBackendModels runs one backend reconciliation cycle and returns the models
+// each configured backend currently advertises, mirroring `contenox model list`.
+// This is how a provider whose catalog is not persisted as model rows — most
+// importantly vertex-google, whose models come from the Vertex AI publisher
+// catalog — reaches the model picker. Best effort: an unreachable backend simply
+// contributes nothing, so a slow or offline provider never fails the picker.
+func (s *Server) liveBackendModels(ctx context.Context, provider string) []modelInfo {
+	bus := libbus.NewSQLite(s.db.WithoutTransaction())
+	defer bus.Close()
+	state, err := runtimestate.New(ctx, s.db, bus,
+		runtimestate.WithSkipDeleteUndeclaredModels(),
+		runtimestate.WithAutoDiscoverModels(),
+	)
+	if err != nil {
+		return nil
+	}
+	// Partial results are still useful, so a cycle error is non-fatal.
+	_ = state.RunBackendCycle(ctx)
+
+	var out []modelInfo
+	seen := map[string]bool{}
+	for _, bs := range state.Get(ctx) {
+		canonical := modelrepo.CanonicalBackendType(bs.Backend.Type)
+		if provider != "" && provider != canonical {
+			continue
+		}
+		if len(bs.PulledModels) > 0 {
+			for _, pm := range bs.PulledModels {
+				name := strings.TrimSpace(pm.Model)
+				if name == "" || seen[name] {
+					continue
+				}
+				seen[name] = true
+				out = append(out, modelInfo{
+					ID:            name,
+					Provider:      canonical,
+					Name:          name,
+					DisplayName:   displayModelName(name),
+					ContextLength: pm.ContextLength,
+					Capabilities: map[string]bool{
+						"chat":   pm.CanChat,
+						"embed":  pm.CanEmbed,
+						"prompt": pm.CanPrompt,
+						"stream": pm.CanStream,
+					},
+					Source: "observed",
+				})
+			}
+			continue
+		}
+		// Some providers only report bare model names (no capability detail).
+		for _, name := range bs.Models {
+			name = strings.TrimSpace(name)
+			if name == "" || seen[name] {
+				continue
+			}
+			seen[name] = true
+			out = append(out, modelInfo{
+				ID:          name,
+				Provider:    canonical,
+				Name:        name,
+				DisplayName: displayModelName(name),
+				Capabilities: map[string]bool{
+					"chat": true,
+				},
+				Source: "observed",
+			})
+		}
+	}
+	return out
 }
 
 func displayModelName(name string) string {

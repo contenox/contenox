@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, useMatch, useNavigate } from 'react-router-dom';
 import { useAcpWorkspace } from '../../hooks/useAcpWorkspace';
 import { externalAgentFromMeta, type SessionInfo } from '../../lib/acp';
+import { adoptResultFromMeta } from '../../lib/adoptMeta';
 import { relativeTime } from '../../lib/relativeTime';
 import { useStagedAgent } from '../../lib/stagedAgent';
 import { AgentPicker } from '../AgentPicker';
@@ -51,6 +52,12 @@ export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =>
   );
 
   const handleDelete = (session: SessionInfo) => {
+    // An ADOPTED session is never deletable from here: session/delete STOPS the
+    // running dispatch (including for any other viewer of it — see
+    // acpsvc/adopt.go's teardown asymmetry), so the delete affordance is hidden
+    // for adopted sessions and this is a defensive second gate. Leaving/closing
+    // the tab detaches; ending the run is a fleet-board Stop, not a chat delete.
+    if (adoptResultFromMeta(session._meta)) return;
     const label = meaningfulTitle(session) ?? t('acp_sidebar.session_fallback_label', { shortId: session.sessionId.slice(0, 8) });
     if (!window.confirm(t('acp_sidebar.confirm_delete', { name: label }))) return;
     deleteSession(session.sessionId);
@@ -105,6 +112,9 @@ export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =>
               ? relativeTime(session.updatedAt, i18n.language, t('common.just_now'))
               : null;
             const agentName = externalAgentFromMeta(session._meta);
+            // Adopted sessions expose NO delete affordance here: deleting one
+            // stops the running dispatch (see handleDelete). Detach is via close.
+            const adopted = adoptResultFromMeta(session._meta) != null;
             // A background (non-focused) session with a permission request waiting
             // on the user surfaces a subtle dot here so it is discoverable while
             // its tab is out of view. Only OPEN (subscribed) sessions have a live
@@ -146,15 +156,17 @@ export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =>
                     <Span className="text-text-muted dark:text-dark-text-muted mt-1 block text-xs">{relative}</Span>
                   )}
                 </Link>
-                <Button
-                  aria-label={t('acp_sidebar.delete_label', { name: label })}
-                  className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-                  onClick={() => handleDelete(session)}
-                  size="icon"
-                  type="button"
-                  variant="ghost">
-                  <Trash2 className="h-4 w-4" aria-hidden />
-                </Button>
+                {!adopted && (
+                  <Button
+                    aria-label={t('acp_sidebar.delete_label', { name: label })}
+                    className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                    onClick={() => handleDelete(session)}
+                    size="icon"
+                    type="button"
+                    variant="ghost">
+                    <Trash2 className="h-4 w-4" aria-hidden />
+                  </Button>
+                )}
               </div>
             );
           })

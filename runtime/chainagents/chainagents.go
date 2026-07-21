@@ -201,7 +201,7 @@ func scan(ctx context.Context, roots []string) ([]candidate, error) {
 		if info, err := os.Stat(abs); err != nil || !info.IsDir() {
 			continue
 		}
-		files, err := localfileservice.New(abs)
+		files, err := localfileservice.NewPrivileged(abs)
 		if err != nil {
 			return nil, fmt.Errorf("chainagents: open chain root %q: %w", abs, err)
 		}

@@ -9,6 +9,7 @@ import (
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/agentservice"
 	"github.com/contenox/runtime/runtime/hitlservice"
+	"github.com/contenox/runtime/runtime/missiontools"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/taskengine"
 )
@@ -42,8 +43,9 @@ func (d *nativeDriver) AgentName() string { return "" }
 // Close is a no-op: a native session holds no downstream connection.
 func (d *nativeDriver) Close() error { return nil }
 
-// AvailableCommands advertises contenox's admin slash-command menu.
-func (d *nativeDriver) AvailableCommands() []libacp.AvailableCommand { return acpCommands() }
+// AvailableCommands advertises contenox's admin slash-command menu, filtered to
+// what this transport can actually run (see (*Transport).acpCommands).
+func (d *nativeDriver) AvailableCommands() []libacp.AvailableCommand { return d.t.acpCommands() }
 
 // ConfigOptions returns the chain-engine config selects (model/HITL/think/token,
 // plus the workspace root when an allowlist is configured).
@@ -122,6 +124,17 @@ func (d *nativeDriver) Prompt(ctx context.Context, req libacp.PromptRequest, ses
 	// gating -> HITLWrapper.Exec -> hitlservice.Evaluate.
 	if policyName := t.resolveSessionHITLPolicy(sess); policyName != "" {
 		promptCtx = hitlservice.WithPolicyName(promptCtx, policyName)
+	}
+
+	// If this session is a dispatched unit on a mission, bind its mission id onto
+	// the turn context so this turn's mission_report / mission_ask_attention tools
+	// report against THIS mission — the per-mission grant, enforced at
+	// construction rather than asserted by the agent. The same synchronous
+	// prompt -> agentservice -> taskengine tool path WithPolicyName rides carries
+	// it. Empty for a chat-mode session, which injects nothing and whose mission
+	// tools therefore resolve to nothing.
+	if sess.MissionID != "" {
+		promptCtx = missiontools.WithMissionID(promptCtx, sess.MissionID)
 	}
 
 	rawCh := make(chan []byte, 64)

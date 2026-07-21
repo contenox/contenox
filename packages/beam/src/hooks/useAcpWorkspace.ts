@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import type { SessionConfigOptionValue } from '../lib/acp';
+import type { AdoptRef } from '../lib/adoptMeta';
 import type { WorkspaceFileRef } from '../pages/chat/lib/mentions';
 import { useAcpWorkspaceContext } from '../lib/acp/AcpWorkspaceProvider';
 import type { AcpSessionState } from './acpSessionState';
@@ -18,6 +19,8 @@ export interface UseAcpWorkspaceResult {
   refreshSessions: () => void;
   /** Lazy-creation primitive (D5): creates a session, subscribes to it, and makes it active. Call this on first prompt submit, not on mount — see acpWorkspaceController.ts. `cwd` sets the session's workspace root (the user's pre-session pick). `agentName` binds the session to a registered external agent via the `session/new` `_meta` extension (null/omitted = native chain). */
   newSession: (cwd?: string, agentName?: string | null) => Promise<string>;
+  /** Adopts an already-running instance+session into a new upstream chat session (additive — does not close open sessions). See `acpWorkspaceController.ts`'s `adoptSession()`. */
+  adoptSession: (ref: AdoptRef, cwd?: string) => Promise<string>;
   /** Single-view switch: opens `id` and closes whichever session was focused. */
   openSession: (id: string) => void;
   /** Multi-session (Slice 2): opens/focuses `id` as a tab WITHOUT closing others — several sessions stay open and live. See `acpWorkspaceController.ts`'s `openSessionTab()`. */
@@ -72,6 +75,11 @@ export function useAcpWorkspace(): UseAcpWorkspaceResult {
 
   const newSession = useCallback(
     (cwd?: string, agentName?: string | null) => controller.newSession(cwd, agentName),
+    [controller],
+  );
+
+  const adoptSession = useCallback(
+    (ref: AdoptRef, cwd?: string) => controller.adoptSession(ref, cwd),
     [controller],
   );
 
@@ -160,6 +168,7 @@ export function useAcpWorkspace(): UseAcpWorkspaceResult {
     openSessionIds,
     refreshSessions,
     newSession,
+    adoptSession,
     openSession,
     openSessionTab,
     closeSessionTab,

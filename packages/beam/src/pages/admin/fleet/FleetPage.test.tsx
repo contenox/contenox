@@ -14,6 +14,9 @@ vi.mock('../../../lib/api', () => ({
     stopInstance: vi.fn(async () => 'deleted'),
     cancelInstance: vi.fn(async () => 'cancelled'),
     listMissions: vi.fn(async () => []),
+    // The board now derives a "blocked" chip from the report feed
+    // (useInboxReports), a client-side fan-out of per-mission report fetches.
+    listMissionReports: vi.fn(async () => []),
   },
 }));
 
@@ -326,5 +329,62 @@ describe('FleetPage — mission intent joined onto rows (M2 board integration)',
 
     expect(html).toContain('inst-1');
     expect(html).not.toContain('undefined');
+  });
+});
+
+describe('FleetPage — open session (adopt) + plan progress', () => {
+  it('offers "Open session" per session row for a running instance', () => {
+    const html = renderBoard([
+      {
+        agentId: 'agent-1',
+        agentName: 'Researcher',
+        kind: 'claude-code',
+        instances: [instance({ id: 'inst-1', state: 'running', sessions: 1, sessionIds: ['sess-a'] })],
+      },
+    ]);
+    expect(html).toContain('Open session sess-a in chat');
+  });
+
+  it('withholds "Open session" when the instance is not running (nothing live to adopt)', () => {
+    const html = renderBoard([
+      {
+        agentId: 'agent-1',
+        agentName: 'Researcher',
+        kind: 'claude-code',
+        instances: [instance({ id: 'inst-1', state: 'error', sessions: 1, sessionIds: ['sess-a'] })],
+      },
+    ]);
+    expect(html).not.toContain('Open session sess-a in chat');
+    // The session row (and its Cancel) still render — only adoption is gated.
+    expect(html).toContain('Cancel the in-flight turn on session sess-a');
+  });
+
+  it('shows a compact plan-progress fragment beside the status when the mission has a plan', () => {
+    const html = renderBoard(
+      [
+        {
+          agentId: 'agent-1',
+          agentName: 'Researcher',
+          kind: 'claude-code',
+          instances: [instance({ id: 'inst-1', state: 'running', sessions: 1, sessionIds: ['sess-a'] })],
+        },
+      ],
+      [
+        mission({
+          id: 'mission-1',
+          instanceId: 'inst-1',
+          intent: 'Migrate the staging database',
+          plan: {
+            revision: 2,
+            entries: [
+              { id: '1', content: 'a', status: 'completed', priority: 'medium' },
+              { id: '2', content: 'b', status: 'in_progress', priority: 'medium' },
+              { id: '3', content: 'c', status: 'pending', priority: 'medium' },
+            ],
+          },
+        }),
+      ],
+    );
+    expect(html).toContain('1/3 steps');
   });
 });

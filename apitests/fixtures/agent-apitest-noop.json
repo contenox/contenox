@@ -1,0 +1,12 @@
+{
+  "id": "agent-apitest-noop",
+  "description": "Deterministic no-model chain unit for apitests: a single noop task whose print template is the entire reply. It resolves no model, so a fleet unit dispatched from it needs no backend and no network — which is what lets test_fleet.py exercise a real dispatch -> running -> stop lifecycle hermetically. Seeded into the serve workspace's .contenox/ before boot by scripts/run_apitests.sh so chain-agent discovery (which runs once at `contenox serve` startup) declares it as a fleet-dispatchable agent named 'agent-apitest-noop'.",
+  "tasks": [
+    {
+      "id": "reply",
+      "description": "Answer every prompt with the fixed fixture text.",
+      "handler": "noop",
+      "print": "apitest-noop-ok"
+    }
+  ]
+}

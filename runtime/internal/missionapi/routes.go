@@ -19,6 +19,15 @@ import (
 
 // MissionPatch is the PATCH body: any subset of intent, status, and a session
 // and/or instance id to bind. Omitted fields are left unchanged.
+//
+// Status accepts any value missionservice validates (open and the terminal set
+// landed | derailed | stuck | abandoned). This route is deliberately the
+// OPERATOR OVERRIDE, and it goes through the unguarded Update path on purpose:
+// an operator relabeling a mission — even correcting a mislabeled terminal one —
+// is a legitimate manual act, so the immutability guard that protects the
+// agent-reportable path lives on missionservice.Finish, not here. The two are a
+// pair by design: Finish is how a unit (or the runtime) records a terminal
+// outcome as hard truth; PATCH is how a human overrides one.
 type MissionPatch struct {
 	Intent     *string `json:"intent,omitempty"`
 	Status     *string `json:"status,omitempty"`
@@ -75,6 +84,12 @@ func (h *missionHandler) list(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, items) // @response []*missionservice.Mission
 }
 
+// get returns one mission record whole. The encoded Mission carries the current
+// Plan (Revision/Explanation/Entries) AND the additive `planRevisions` field —
+// the bounded ring of past revision summaries (missionservice.PlanRevisionSummary)
+// the inbox's "plan revised +2/−1 — why" history feed skims. It is omitempty, so
+// a never-planned or legacy mission simply omits it; no separate route surfaces
+// the history — it rides this GET.
 func (h *missionHandler) get(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := apiframework.GetPathParam(r, "id", "The unique ID of the mission.")

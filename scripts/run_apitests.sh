@@ -50,6 +50,33 @@ mkdir -p "$HOME_DIR" "$WORKSPACE_DIR"
 
 HOME="$HOME_DIR" "$BIN" --data-dir "$DATA_DIR" --db "$DB_PATH" init --force >/dev/null
 
+# Seed the no-model chain-agent fixture(s) into the workspace .contenox/ BEFORE
+# boot. Chain-agent discovery runs once at `contenox serve` startup and walks
+# this directory, so a fixture placed here is declared as a fleet-dispatchable
+# agent by the time the API is up. This is what lets test_fleet.py exercise a
+# REAL, hermetic dispatch -> running -> stop lifecycle: each fixture chain is a
+# single noop task that resolves no model, so no backend and no network are
+# needed. Additive and self-contained — every other suite simply ignores the
+# extra agent. See apitests/fixtures/agent-apitest-noop.json.
+FIXTURE_DIR="$ROOT_DIR/apitests/fixtures"
+if [[ -d "$FIXTURE_DIR" ]]; then
+  shopt -s nullglob
+  for fixture in "$FIXTURE_DIR"/agent-*.json; do
+    cp "$fixture" "$DATA_DIR/"
+  done
+  shopt -u nullglob
+fi
+
+# A dispatched chain unit is a subprocess of this same binary (see the C9
+# "self-spawn" note in docs/development/blueprints/acp/fleet-consolidation.md).
+# Its runtime engine hard-requires a configured default model at boot even
+# though the noop fixture chain never resolves one, so hand it a fake default
+# via the environment the subprocess inherits. The name is intentionally fake:
+# a noop chain never touches it, and any accidental model resolution then fails
+# loudly instead of finding a real backend. No existing suite reads default-*.
+export CONTENOX_DEFAULT_MODEL="${CONTENOX_APITEST_DEFAULT_MODEL:-apitest-fixture-model}"
+export CONTENOX_DEFAULT_PROVIDER="${CONTENOX_APITEST_DEFAULT_PROVIDER:-ollama}"
+
 HOME="$HOME_DIR" ADDR="$HOST" PORT="$PORT" TOKEN="" "$BIN" --data-dir "$DATA_DIR" --db "$DB_PATH" serve >"$LOG_FILE" 2>&1 &
 SERVER_PID="$!"
 

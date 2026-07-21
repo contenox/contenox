@@ -95,6 +95,7 @@ export function Layout({ defaultOpen = true, mainContent, sidebarContent, classN
     if (location.pathname.startsWith('/chat')) return 'Beam';
     if (location.pathname.startsWith('/fleet')) return t('navbar.fleet');
     if (location.pathname.startsWith('/missions')) return t('navbar.missions');
+    if (location.pathname.startsWith('/inbox')) return t('navbar.inbox');
     if (location.pathname.startsWith('/settings')) return 'Settings';
     if (location.pathname.startsWith('/backends')) return 'Backends';
     if (location.pathname.startsWith('/control')) return 'Control Plane';

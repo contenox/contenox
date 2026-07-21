@@ -30,6 +30,8 @@ var validConfigKeys = map[string]string{
 	"hitl-policy-name":              "Active HITL policy file name (e.g. hitl-policy-strict.json). Empty = use hitl-policy-default.json.",
 	"telemetry-enabled":             "Enable writing telemetry logs to <data-dir>/telemetry.log (true/false)",
 	"update-check":                  "Enable automatic update availability checks (true/false). Set false for zero-trust/air-gapped environments.",
+	"default-mission-agent":         "Default declared agent fired by '/mission <intent>' and 'contenox mission fire' with no --agent.",
+	"default-mission-policy":        "Default mission envelope (HITL policy) used when '/mission' or 'contenox mission fire' names none.",
 }
 
 var configCmd = &cobra.Command{
@@ -37,7 +39,7 @@ var configCmd = &cobra.Command{
 	Short: "Manage persistent CLI settings (default model, provider, chain, HITL policy).",
 	Long: `Store and retrieve persistent CLI defaults backed by SQLite.
 
-Global keys (shared across all projects): default-model, default-provider, default-alt-model, default-alt-provider, default-autocomplete-model, default-autocomplete-provider, default-max-tokens, default-think, telemetry-enabled, update-check
+Global keys (shared across all projects): default-model, default-provider, default-alt-model, default-alt-provider, default-autocomplete-model, default-autocomplete-provider, default-max-tokens, default-think, telemetry-enabled, update-check, default-mission-agent, default-mission-policy
 Workspace keys (scoped to current project): default-chain, hitl-policy-name
 
 Supported keys:
@@ -52,7 +54,9 @@ Supported keys:
   telemetry-enabled              Enable local telemetry logs (true/false)
   update-check                   Enable automatic update checks (true/false)
   default-chain                  Default chain file path
-  hitl-policy-name               Active HITL policy file name (e.g. hitl-policy-strict.json)`,
+  hitl-policy-name               Active HITL policy file name (e.g. hitl-policy-strict.json)
+  default-mission-agent          Default agent fired by /mission and 'mission fire' with no --agent
+  default-mission-policy         Default mission envelope (HITL policy) when none is named`,
 }
 
 var configSetCmd = &cobra.Command{

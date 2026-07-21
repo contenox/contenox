@@ -108,6 +108,29 @@ function compareByFreshness(a: SessionInfo, b: SessionInfo): number {
   return 0;
 }
 
+/**
+ * Merges two `_meta` blobs at the KEY level: incoming keys win, but a key
+ * present only on `existing` is preserved rather than dropped. This matters
+ * because different code paths contribute DIFFERENT `_meta` keys for the same
+ * session: `session/new` echoes both `contenox.agent` (external-agent
+ * attribution) and, for an adopted session, `contenox.adopt` (the adopt outcome
+ * incl. the controller verdict — see adoptMeta.ts), whereas a later
+ * `session/list` page reconstructs only `contenox.agent`. An atomic
+ * `incoming ?? existing` would let that list page — which carries a truthy
+ * `_meta` — wipe the `contenox.adopt` outcome, silently demoting an adopted
+ * chat back to an ordinary one (no "Übernommen"/"Beobachten" header, delete
+ * un-guarded). Per-key merge keeps each attribution alive under whichever path
+ * supplied it.
+ */
+function mergeMeta(
+  existing: Record<string, unknown> | undefined,
+  incoming: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!existing) return incoming;
+  if (!incoming) return existing;
+  return { ...existing, ...incoming };
+}
+
 /** Merges `incoming` onto `existing` (if any), treating an absent/undefined field on `incoming` as "keep existing" rather than clearing it. */
 function mergeSessionInfo(existing: SessionInfo | undefined, incoming: SessionInfo): SessionInfo {
   if (!existing) return incoming;
@@ -116,10 +139,10 @@ function mergeSessionInfo(existing: SessionInfo | undefined, incoming: SessionIn
     cwd: incoming.cwd ?? existing.cwd,
     title: incoming.title ?? existing.title,
     updatedAt: incoming.updatedAt ?? existing.updatedAt,
-    // External-agent attribution (see AGENT_META_KEY): keep whichever side has
-    // it, so a session/new echo isn't wiped by a `session/list` refresh page
-    // that lags (same `incoming ?? existing` rule as every other field).
-    _meta: incoming._meta ?? existing._meta,
+    // Attribution (`contenox.agent`, `contenox.adopt`) is merged per key, not
+    // replaced wholesale, so a session/new echo isn't wiped by a `session/list`
+    // refresh page that lags or carries only a subset of the keys.
+    _meta: mergeMeta(existing._meta, incoming._meta),
   };
 }
 

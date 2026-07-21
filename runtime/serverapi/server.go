@@ -26,9 +26,11 @@ import (
 	"github.com/contenox/runtime/runtime/internal/localfileapi"
 	"github.com/contenox/runtime/runtime/internal/mcpserverapi"
 	"github.com/contenox/runtime/runtime/internal/missionapi"
+	"github.com/contenox/runtime/runtime/internal/missionchangesapi"
 	"github.com/contenox/runtime/runtime/internal/modeldapi"
 	"github.com/contenox/runtime/runtime/internal/modelregistryapi"
 	"github.com/contenox/runtime/runtime/internal/openapidocs"
+	"github.com/contenox/runtime/runtime/internal/operatorinboxapi"
 	"github.com/contenox/runtime/runtime/internal/providerapi"
 	"github.com/contenox/runtime/runtime/internal/setupapi"
 	"github.com/contenox/runtime/runtime/internal/taskchainapi"
@@ -38,9 +40,11 @@ import (
 	"github.com/contenox/runtime/runtime/internal/toolsapi"
 	"github.com/contenox/runtime/runtime/localfileservice"
 	"github.com/contenox/runtime/runtime/mcpserverservice"
+	"github.com/contenox/runtime/runtime/missionchanges"
 	"github.com/contenox/runtime/runtime/missionservice"
 	"github.com/contenox/runtime/runtime/modelregistry"
 	"github.com/contenox/runtime/runtime/modelregistryservice"
+	"github.com/contenox/runtime/runtime/operatorinbox"
 	"github.com/contenox/runtime/runtime/providerservice"
 	"github.com/contenox/runtime/runtime/runtimestate"
 	"github.com/contenox/runtime/runtime/runtimetypes"
@@ -101,6 +105,19 @@ type Dependencies struct {
 	// Missions is the durable mission registry; the /missions routes surface it.
 	// The other half of the manifest — one-line intents bound to fleet work.
 	Missions missionservice.Service
+	// MissionChanges is the attention layer's read model over a mission's work
+	// (runtime/missionchanges): the changed-files list, per-file diffs, and the
+	// scope-anomaly summary the /missions/{id}/changes routes surface. Built on the
+	// same live kernel journal the Fleet Manager owns, so it is present only when
+	// serve wires it.
+	MissionChanges missionchanges.Service
+	// OperatorInbox is the durable attention surface for mission reports that
+	// reached no live supervising session (runtime/operatorinbox); the
+	// /operator-inbox route surfaces it. The sibling of the approval inbox for
+	// notices that need eyes rather than a decision — reports from missions an
+	// operator fired directly, and reports whose parent session had ended (see
+	// runtime/reportrouter). Optional: nil-gated like the other route groups.
+	OperatorInbox operatorinbox.Service
 	// HITL is the human-in-the-loop approval service (runtime/hitlservice) whose
 	// durable pending-ask store (slice C1) the /approvals routes surface: the
 	// inbox an operator reads and answers without attaching to the session that
@@ -119,10 +136,16 @@ type Dependencies struct {
 	// WorkspaceRoots is the workspace-root allowlist. When set, the /files browse
 	// API resolves each request against a client-supplied `root` (validated
 	// through the allowlist) instead of the single fixed ProjectRoot.
-	WorkspaceRoots  *vfs.Factory
-	Defaults        stateservice.RuntimeDefaults
-	TerminalService terminalservice.Service
-	TerminalEnabled bool
+	WorkspaceRoots *vfs.Factory
+	// WorkspaceRootMutators, when set, enables the authenticated grant verbs
+	// (POST/DELETE /workspace/roots) on top of the read-only GET: serve builds
+	// them over the durable grant config and the reload doorbell
+	// (runtime/workspacegrants). Optional — nil leaves the roots surface
+	// read-only, matching the pre-grant behavior.
+	WorkspaceRootMutators *localfileapi.RootsMutators
+	Defaults              stateservice.RuntimeDefaults
+	TerminalService       terminalservice.Service
+	TerminalEnabled       bool
 	// HITLPolicySource and HITLDefaultPolicyName feed the /files `agent` view
 	// filter: verdicts are computed by the same HITL policy engine the live agent
 	// uses. When HITLPolicySource is nil the filter is unavailable (the raw tree
@@ -228,6 +251,14 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 		if err := localfileapi.AddWorkspaceRoutes(mux, deps.WorkspaceRoots, workspaceHITLFactory(deps)); err != nil {
 			return fmt.Errorf("workspace files: %w", err)
 		}
+		// GET /workspace/roots surfaces the same allowlist so a client can offer a
+		// folder picker instead of discovering the boundary via the 422 above; when
+		// serve supplies mutators, POST/DELETE /workspace/roots let a LAN operator
+		// grant or revoke a root live (see AddWorkspaceRootsRoutes).
+		localfileapi.AddWorkspaceRootsRoutes(mux, deps.WorkspaceRoots, deps.WorkspaceRootMutators)
+		// GET /workspace/search streams `rg --json` matches (SSE) under a
+		// Factory-validated root — same allowlist authority as the browse API.
+		localfileapi.AddWorkspaceSearchRoutes(mux, deps.WorkspaceRoots)
 	} else if deps.ProjectRoot != "" {
 		projectFiles, err := localfileservice.New(deps.ProjectRoot)
 		if err != nil {
@@ -237,7 +268,7 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 	}
 	chains := deps.Chains
 	if deps.ContenoxDir != "" {
-		chainFiles, err := localfileservice.New(deps.ContenoxDir)
+		chainFiles, err := localfileservice.NewPrivileged(deps.ContenoxDir)
 		if err != nil {
 			return fmt.Errorf("chain files: %w", err)
 		}
@@ -253,7 +284,15 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 	}
 
 	if deps.TerminalService != nil {
-		terminalapi.AddRoutes(mux, deps.TerminalService, deps.Auth, deps.TerminalEnabled, config.Token)
+		// The terminal accepts exactly what every other serve surface accepts:
+		// the raw token OR the browser session JWT — one login, every surface.
+		// Injected as a closure because terminalapi cannot import this package.
+		var terminalAuth func(string) bool
+		if strings.TrimSpace(config.Token) != "" {
+			token := config.Token
+			terminalAuth = func(cred string) bool { return AuthenticateCredential(token, cred) }
+		}
+		terminalapi.AddRoutes(mux, deps.TerminalService, deps.Auth, deps.TerminalEnabled, terminalAuth)
 	}
 
 	if deps.ToolsProviderService != nil {
@@ -271,6 +310,23 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 	// serve builds the service, mirroring the other nil-gated route groups.
 	if deps.Missions != nil {
 		missionapi.AddRoutes(mux, deps.Missions)
+	}
+
+	// The attention layer's per-mission changed-files/diff/scope view
+	// (runtime/missionchanges), read-only, sitting under /missions/{id}. Nil-gated
+	// like every other fleet surface: it needs the live kernel journal to fold, so
+	// the routes exist only when serve builds the service.
+	if deps.MissionChanges != nil {
+		missionchangesapi.AddRoutes(mux, deps.MissionChanges)
+	}
+
+	// The operator attention inbox: mission reports that reached no live
+	// supervising session (an operator-fired mission's reports, or reports whose
+	// parent session had ended). The read sibling of /approvals — see
+	// runtime/reportrouter for what routes reports here. Registered only when
+	// serve builds the service, mirroring the other nil-gated route groups.
+	if deps.OperatorInbox != nil {
+		operatorinboxapi.AddRoutes(mux, deps.OperatorInbox)
 	}
 
 	// The inbox: pending human-in-the-loop approvals an operator can read and

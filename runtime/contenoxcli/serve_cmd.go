@@ -28,12 +28,17 @@ import (
 	"github.com/contenox/runtime/runtime/enginesvc"
 	"github.com/contenox/runtime/runtime/fleetservice"
 	"github.com/contenox/runtime/runtime/hitlservice"
+	"github.com/contenox/runtime/runtime/internal/fleetapi"
 	internaltools "github.com/contenox/runtime/runtime/internal/tools"
 	internalweb "github.com/contenox/runtime/runtime/internal/web"
 	"github.com/contenox/runtime/runtime/localfileservice"
 	"github.com/contenox/runtime/runtime/localtools"
+	"github.com/contenox/runtime/runtime/missionchanges"
 	"github.com/contenox/runtime/runtime/missionservice"
 	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/operatorinbox"
+	"github.com/contenox/runtime/runtime/presence"
+	"github.com/contenox/runtime/runtime/reportrouter"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/serverapi"
 	"github.com/contenox/runtime/runtime/shellsession"
@@ -44,6 +49,7 @@ import (
 	"github.com/contenox/runtime/runtime/toolsproviderservice"
 	"github.com/contenox/runtime/runtime/version"
 	"github.com/contenox/runtime/runtime/vfs"
+	"github.com/contenox/runtime/runtime/workspacegrants"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
@@ -86,15 +92,20 @@ func init() {
 		"Directory a browser client may choose as a session workspace (repeatable). The serve directory is always the default; these extend the allowlist. Also settable via WORKSPACE_ROOTS (OS path-list separated) or as `contenox serve [dir]...` positional arguments.")
 }
 
-// buildWorkspaceFactory assembles the workspace-root allowlist. defaultRoot is
-// the effective workspace root (the served project directory when one is given
-// positionally, else home) and is always first, making it the Factory default.
-// It already IS the first positional serve arg (resolved) when one was given, so
-// only positional args BEYOND the first extend the allowlist here — home is
-// never injected as an extra root when a project is served. --workspace-root
-// flags and the WORKSPACE_ROOTS env (OS path-list separated) also extend it.
-// Duplicates are collapsed by the Factory.
-func buildWorkspaceFactory(cmd *cobra.Command, args []string, config *serverapi.Config, defaultRoot string) (*vfs.Factory, error) {
+// buildWorkspaceBaseRoots assembles the LAUNCH-time workspace-root set — the
+// part of the allowlist fixed at serve start. defaultRoot is the effective
+// workspace root (the served project directory when one is given positionally,
+// else home) and is always FIRST, making it the Factory default. It already IS
+// the first positional serve arg (resolved) when one was given, so only
+// positional args BEYOND the first extend the set here — home is never injected
+// as an extra root when a project is served. --workspace-root flags and the
+// WORKSPACE_ROOTS env (OS path-list separated) also extend it.
+//
+// This is the BASE the hot-reload path (workspaceRootReloader) always prepends;
+// the durable, runtime-mutable grants (workspacegrants) are appended to it, so
+// defaultRoot stays roots[0] across every reload and a grant never displaces the
+// default. Duplicates are collapsed by the Factory.
+func buildWorkspaceBaseRoots(cmd *cobra.Command, args []string, config *serverapi.Config, defaultRoot string) []string {
 	roots := []string{defaultRoot}
 	if len(args) > 1 {
 		roots = append(roots, args[1:]...)
@@ -109,7 +120,7 @@ func buildWorkspaceFactory(cmd *cobra.Command, args []string, config *serverapi.
 			}
 		}
 	}
-	return vfs.NewFactory(roots...)
+	return roots
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
@@ -190,11 +201,31 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// The workspace-root allowlist bounds what a browser client may choose as a
 	// session's workspace. The serve directory is the default root, so behavior
-	// is unchanged when nothing else is configured.
-	workspaceFactory, err := buildWorkspaceFactory(cmd, args, config, workspaceRoot)
+	// is unchanged when nothing else is configured. The launch-time BASE (serve
+	// dir + args + flags + env) is combined with the DURABLE grants an operator
+	// added through `contenox workspace` / POST /workspace/roots, so a grant made
+	// while serve was down is honored at boot. The reloader (wired to the bus
+	// doorbell below) re-applies base ∪ grants whenever a grant changes, without a
+	// restart.
+	workspaceBaseRoots := buildWorkspaceBaseRoots(cmd, args, config, workspaceRoot)
+	effectiveWorkspaceRoots := append(append([]string{}, workspaceBaseRoots...),
+		workspacegrants.ReadGrants(dbCtx, store)...)
+	workspaceFactory, err := vfs.NewFactory(effectiveWorkspaceRoots...)
 	if err != nil {
 		return fmt.Errorf("resolve workspace roots: %w", err)
 	}
+	// Control-plane isolation (vfs-invariant slice, 2026-07-21). Register the
+	// runtime's OWN state dirs (~/.contenox: config, database, HITL policies,
+	// declared agents, models) so NO session, browse root, or agent fs tool can
+	// reach them — even though the default workspace root is the PARENT of the
+	// .contenox dir, which containment (landed today) would otherwise let a client
+	// browse into. Set ONCE here, before serving; it is process-global and NOT part
+	// of the mutable root set, so it survives every SetRoots hot-reload the
+	// reloader performs. See runtime/vfs/controlplane.go.
+	if err := vfs.SetControlPlaneDenied(controlPlaneDirs(contenoxDir)...); err != nil {
+		return fmt.Errorf("register control-plane isolation: %w", err)
+	}
+	workspaceReloader := newWorkspaceRootReloader(workspaceFactory, workspaceBaseRoots, store)
 
 	var tracker libtracker.ActivityTracker = libtracker.NoopTracker{}
 	if opts.EffectiveTracing {
@@ -204,6 +235,37 @@ func runServe(cmd *cobra.Command, args []string) error {
 	bus := libbus.NewSQLite(db.WithoutTransaction())
 	defer bus.Close()
 	kvMgr := libkvstore.NewSQLiteManager(db)
+
+	// Fleet presence: the WHOLE fleet on the board, not only kernel-dispatched
+	// units. Editor-spawned contenox processes (`contenox acp`, `vscode-agent`)
+	// self-register into this shared-SQLite store; serve is both a WRITER (it
+	// registers its own row, kind serve, for symmetry) and the READER the board
+	// join below surfaces the observed section from. Best-effort throughout — a
+	// presence write never blocks serve.
+	presenceStore := presence.NewStore(kvMgr)
+	presenceReporter := presence.StartReporter(ctx, presenceStore, presence.Record{
+		Kind: presence.KindServe,
+		Cwd:  workspaceRoot,
+		// The reachable address a sibling process discovers this serve at (a
+		// standalone `contenox acp` forwarding `/mission` reads it from this shared
+		// store when CONTENOX_SERVER_URL is unset). config.Addr/Port are already
+		// defaulted to the loopback bind above, so this is the concrete host:port
+		// serve listens on. The token is NOT advertised — presence is world-readable.
+		Address: net.JoinHostPort(config.Addr, config.Port),
+	})
+	defer presenceReporter.Stop()
+
+	// The workspace-root reload doorbell. `contenox workspace add/remove` (a
+	// SECOND process) and POST/DELETE /workspace/roots both write the durable
+	// grant config and publish workspacegrants.RootsChangedSubject on this shared
+	// SQLite bus; this subscriber re-reads the config and swaps the live Factory's
+	// root set, so a grant applies without restarting serve. Best-effort and
+	// off-band: a failed reload logs and keeps the current roots.
+	stopWorkspaceReload, err := startWorkspaceRootReloader(ctx, bus, workspaceReloader)
+	if err != nil {
+		return fmt.Errorf("start workspace-root reloader: %w", err)
+	}
+	defer stopWorkspaceReload()
 
 	localTools := map[string]taskengine.ToolsRepo{
 		"echo":     localtools.NewEchoTools(),
@@ -320,7 +382,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 	defer engine.Stop()
 
-	chainFiles, err := localfileservice.New(contenoxDir)
+	chainFiles, err := localfileservice.NewPrivileged(contenoxDir)
 	if err != nil {
 		return fmt.Errorf("chain files: %w", err)
 	}
@@ -364,7 +426,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// missions outlive the sessions/instances they reference. Built BEFORE the
 	// Manager because the unattended-permission answerer wired into it below
 	// resolves a unit's envelope from its mission.
-	missions := missionservice.New(db)
+	//
+	// The bus wiring is the supervision edge's producer half: AddReport publishes
+	// a ReportAddedEvent that the report router (below) consumes to deliver a
+	// report to whoever fired the mission — a live parent session, or the operator
+	// inbox. Best effort by contract: a publish failure never fails AddReport,
+	// because the report is already the durable fact.
+	missions := missionservice.New(db, missionservice.WithEventPublisher(bus))
 
 	instances := agentinstance.New(
 		agentRegistry,
@@ -407,6 +475,30 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// instances: the /fleet REST routes below are a thin surface over this.
 	fleet := fleetservice.New(instances, agentRegistry, missions, workspaceFactory, workspaceRoot, tracker)
 
+	// The supervision edge's delivery half. A durable operator inbox for reports
+	// that reached no live supervisor (surfaced by /operator-inbox below), and the
+	// report router that consumes the ReportAddedEvent missions publishes and
+	// routes each report: into its parent session's stream when one fired the
+	// mission (the Manager is the SessionDeliverer), or into the inbox when an
+	// operator fired directly or the parent session has since ended. The router
+	// runs off the bus, so nothing it does can fail the AddReport that produced
+	// the event — routing is best-effort delivery on top of a durable report.
+	operatorInbox := operatorinbox.New(db)
+	reportRouter, err := reportrouter.New(reportrouter.Deps{
+		Bus:      bus,
+		Sessions: instances,
+		Inbox:    operatorInbox,
+		Tracker:  tracker,
+	})
+	if err != nil {
+		return fmt.Errorf("build report router: %w", err)
+	}
+	stopReportRouter, err := reportRouter.Start(ctx)
+	if err != nil {
+		return fmt.Errorf("start report router: %w", err)
+	}
+	defer stopReportRouter()
+
 	// /acp serves the same acpsvc agent `contenox acp` speaks over stdio, over
 	// a WebSocket instead — see acp_ws.go. It reuses the engine/db/workspace
 	// already built above; only the ACP chain registry is looked up fresh
@@ -436,7 +528,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 			PermissionRouter: permissionRouter,
 			// External-agent sessions attach to Manager-owned instances that survive
 			// client disconnect/reload (a reload re-attaches to the same instance).
-			Instances:     instances,
+			Instances: instances,
+			// The `/mission` slash command fires through the same fleetservice and
+			// resolves agent names through the same registry the REST/CLI paths use —
+			// one dispatch implementation, one source of "what can I fire".
+			Fleet:         fleet,
+			Agents:        agentRegistry,
 			KnownPolicies: embeddedPolicyNames(),
 			// serve passes no fallbackPolicy to hitlservice.NewWithDefaultPolicy
 			// above ("" = the service's own built-in default), so there is no
@@ -456,6 +553,17 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Chains:               chains,
 		Fleet:                fleet,
 		Missions:             missions,
+		// The attention layer's per-mission changed-files/diff/scope view, folded
+		// from the live kernel journal `instances` owns and the mission→session
+		// binding `missions` holds. The kernel's SessionJournal read is an optional
+		// capability off the Manager interface (the SessionAgentText precedent), so
+		// the concrete Manager is reached by assertion here rather than widening the
+		// lifecycle interface every sibling mock would then have to satisfy.
+		MissionChanges: missionchanges.New(missions, instances.(missionchanges.SessionJournalReader)),
+		// The /operator-inbox read surface: reports the router landed here because
+		// they reached no live supervisor (operator-fired missions, or a parent
+		// session that had ended). Same durable store the router above writes.
+		OperatorInbox: operatorInbox,
 		// The /approvals inbox (fleet-consolidation.md slice C2): the same
 		// hitlSvc the engine's AskApproval falls back to above, so answering
 		// a pending ask over REST/CLI resolves the exact row a headless
@@ -468,6 +576,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 		ProjectRoot:     workspaceRoot,
 		ContenoxDir:     contenoxDir,
 		WorkspaceRoots:  workspaceFactory,
+		// The authenticated grant verbs (POST/DELETE /workspace/roots): persist a
+		// grant, apply it to workspaceFactory live, and ring the reload doorbell —
+		// the LAN operator's browser-side equivalent of `contenox workspace`.
+		WorkspaceRootMutators: workspaceReloader.mutators(bus),
 		// Feed the /files `agent` view filter the same HITL policy source serve
 		// uses so its verdicts match the live agent's gates. Fallback policy is ""
 		// (the service's built-in default), mirroring hitlSvc above.
@@ -487,6 +599,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("build server: %w", err)
 	}
 	defer func() { _ = cleanupAPI() }()
+
+	// The board's OBSERVED section, additive beside serverapi's GET /fleet (which
+	// is unchanged): GET /api/fleet/presence lists the self-registered
+	// editor/serve instances, marked external (observed, not kernel-managed). The
+	// literal /fleet/presence is more specific than serverapi's GET
+	// /fleet/{instanceID}, so the two coexist on apiMux without conflict.
+	fleetapi.AddPresenceRoutes(apiMux, presenceStore)
 
 	rootMux := http.NewServeMux()
 	serverapi.AddHealthRoutes(rootMux)

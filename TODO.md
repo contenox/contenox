@@ -1,4 +1,46 @@
-# TODO — UX/design issues from live testing (2026-07-16)
+# TODO — UX/design issues from live testing
+
+## Fleet / missions / inbox (live-tested 2026-07-21, first real dispatch)
+
+Observed driving a real mission (`chain-acp`, strict HITL envelope) from Beam
+over LAN. The fleet surfaces are functionally wired but not operable yet:
+
+- [ ] **Fleet board layout is unusable.** Declared-but-idle agents render as
+      repetitive near-empty cards ("Deklariert, aber nicht laufend…" × N),
+      and the one card that matters — a running instance with its
+      status/sessions/viewers table — is crushed into the same small card
+      format. Idle agents should be a compact secondary list; running units
+      deserve the space. Redesign the page around "what is running now",
+      not around the declared-agent grid.
+- [ ] **Status vocabulary split reads as contradiction.** The board shows the
+      instance state ("Läuft"/green) while the missions page shows the
+      mission status ("Offen") plus "Noch nie gemeldet" for the heartbeat —
+      three different truths about ONE unit with no reconciliation. The UI
+      must present unit state + mission status + liveness as one composed
+      picture (and once terminal statuses land, "open" must never read like
+      a health indicator).
+- [ ] **No session peek — the operator is blind.** There is no way to see
+      what a dispatched unit is doing: no transcript view, no live stream,
+      nothing. This is THE missing piece for trust (fleetservice's documented
+      "no adoption into a beam chat session" v1 limitation, now confirmed as
+      the first thing a real operator reaches for). The kernel already
+      supports viewer attach + journal replay — Beam needs a read-only
+      session viewer on the instance (attach as observer), reachable from
+      board and mission detail.
+- [ ] **Stuck-unit blindness (the trust collapse).** A unit that is stuck or
+      waiting produced NOTHING in the inbox, and with no session peek and no
+      heartbeat the operator cannot distinguish "working", "blocked on an
+      unsurfaced ask", and "dead". Whatever the root cause of the missing
+      ask (under investigation), the UX requirement stands: a unit in ANY
+      wait state must be visible as such on the board/inbox, and "no signal
+      for N minutes" is itself an attention-worthy inbox condition.
+- [ ] **Fleet/mission/inbox pages ignore mobile and the house UI patterns.**
+      None of the new pages work in a mobile viewport, and they diverge from
+      the layout/component patterns the other admin pages use. Audit them
+      against the existing pages' responsive patterns and bring them in line
+      (same tokens, same list/card idioms, same breakpoint behavior).
+
+# Archived — chat-path findings (2026-07-16)
 
 ## Chat path polish (the actual product surface)
 

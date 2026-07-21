@@ -53,7 +53,7 @@ export function AutocompleteSettingsSection() {
             {t('settingsAdvanced.autocomplete_section_description')}
           </P>
         </div>
-        <form id={formId} onSubmit={onSubmit} className="grid max-w-xl gap-4">
+        <form id={formId} onSubmit={onSubmit} className="grid gap-4">
           <FormField
             label={t('settingsAdvanced.autocomplete_model_label')}
             tooltip={t('settingsAdvanced.autocomplete_model_tooltip')}>

@@ -68,6 +68,14 @@ func Contain(root, candidate string) (string, error) {
 }
 
 func containWithin(realRoot, displayRoot, candidate string) (string, error) {
+	return containWithinOpts(realRoot, displayRoot, candidate, false)
+}
+
+// containWithinOpts is containWithin with the privileged escape hatch for the
+// runtime's OWN reads of its control plane (see OpenPrivilegedView). Escape
+// containment is enforced unconditionally — privilege waives only the
+// control-plane deny, never the root boundary.
+func containWithinOpts(realRoot, displayRoot, candidate string, privileged bool) (string, error) {
 	absPath := candidate
 	if !filepath.IsAbs(candidate) {
 		absPath = filepath.Join(realRoot, candidate)
@@ -83,6 +91,20 @@ func containWithin(realRoot, displayRoot, candidate string) (string, error) {
 	real = filepath.Clean(real)
 	if !within(realRoot, real) {
 		return "", fmt.Errorf("%w: %s escapes %s", ErrEscape, candidate, displayRoot)
+	}
+	// Control-plane carveout (vfs-invariant slice, 2026-07-21 — containment made
+	// it live): a path that stays WITHIN a legitimate root is STILL refused when
+	// it lands at or under the runtime's control plane. This is the traversal-side
+	// half of the carveout (the root-selection half is Factory.Resolve): it closes
+	// the /files explorer "enter .contenox" path and the local_fs agent tool, both
+	// of which resolve a RELATIVE path inside a granted root and never touch the
+	// Factory's root selection. `real` is already symlink-resolved above, so a link
+	// inside the root pointing into the control plane is caught by its real target.
+	// See controlplane.go.
+	if !privileged {
+		if denied, ok := deniedResolved(real); ok {
+			return "", controlPlaneError(candidate, denied)
+		}
 	}
 	return real, nil
 }

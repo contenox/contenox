@@ -489,6 +489,64 @@ export type FleetEntry = {
 export type MissionStatus = 'open' | 'landed' | 'derailed' | 'abandoned';
 
 /**
+ * A plan entry's lifecycle state; mirrors missionservice.PlanEntryStatus, whose
+ * values are contracted byte-for-byte to libacp.PlanEntryStatus
+ * (pending|in_progress|completed).
+ */
+export type MissionPlanEntryStatus = 'pending' | 'in_progress' | 'completed';
+
+/** A plan entry's priority; mirrors missionservice.PlanEntryPriority (high|medium|low). */
+export type MissionPlanEntryPriority = 'high' | 'medium' | 'low';
+
+/**
+ * One line of a mission's living plan; mirrors missionservice.PlanEntry. `id` is
+ * server-assigned and stable across revisions (SetPlan diffs on it), so it is the
+ * right React key.
+ */
+export type MissionPlanEntry = {
+  id: string;
+  content: string;
+  status: MissionPlanEntryStatus;
+  priority: MissionPlanEntryPriority;
+};
+
+/**
+ * A mission's living plan; mirrors missionservice.Plan. `revision` counts
+ * successful SetPlan calls — 0 with an empty/absent `entries` is the zero Plan
+ * ("never planned"), which the UI renders as NO plan panel rather than an empty
+ * shell. `explanation` is the agent's own "why it changed" line for the latest
+ * revision. The field is always present on the wire (missionservice marshals a
+ * never-planned mission as the zero Plan), so callers key on `entries` length,
+ * not on the field's presence.
+ */
+export type MissionPlan = {
+  entries: MissionPlanEntry[] | null;
+  revision: number;
+  explanation?: string;
+};
+
+/**
+ * One durable entry in a mission's bounded plan-revision ring; mirrors
+ * missionservice.PlanRevisionSummary. The "+2/−1 — why" line for a single past
+ * SetPlan: `added`/`removed` are the entry delta, the per-status counts are the
+ * snapshot after that revision, `explanation` is the agent's own account of the
+ * change (absent when it gave none), and `at` is the wall-clock the revision was
+ * stored. Surfaced additively on the mission GET as `planRevisions`
+ * (oldest-first, newest is the final element) — absent on legacy or
+ * never-planned missions, which is a real state, never an error.
+ */
+export type PlanRevisionSummary = {
+  revision: number;
+  explanation?: string;
+  added: number;
+  removed: number;
+  pending: number;
+  inProgress: number;
+  completed: number;
+  at: string;
+};
+
+/**
  * The headless interaction model's durable record (see
  * docs/development/blueprints/acp/fleet-consolidation.md, "Mission mode"): a
  * one-line intent fired at a declared agent, bound to exactly one session and
@@ -511,11 +569,109 @@ export type Mission = {
   hitlPolicyName: string;
   sessionId?: string;
   instanceId?: string;
+  parentSessionId?: string;
   status: MissionStatus;
+  /**
+   * The one line Finish attached when the mission reached a terminal status
+   * (missionservice.Mission.StatusReason). Absent while open.
+   */
+  statusReason?: string;
+  /**
+   * The mission's living plan (missionservice.Mission.Plan). Always present on
+   * the wire; a never-planned mission carries the zero Plan (revision 0, no
+   * entries) — see {@link MissionPlan}. Optional here so an older serve that
+   * omits the field entirely still decodes.
+   */
+  plan?: MissionPlan;
+  /**
+   * The mission's last-N plan-revision summaries, oldest-first (newest is the
+   * final element), bounded server-side. Surfaced additively as `planRevisions`
+   * (missionservice.Mission.PlanRevisions); absent on legacy or never-planned
+   * missions — the revision feed simply renders nothing, never an empty shell.
+   */
+  planRevisions?: PlanRevisionSummary[];
   lastHeartbeat?: string;
   lastError?: string;
   createdAt: string;
   updatedAt: string;
+};
+
+/**
+ * A changed file in a mission's aggregated diff (mirrors
+ * missionchanges.ChangedFile). `score` is the Degree-of-Interest weight the
+ * list is ordered by (DESC) — where the unit's attention concentrated, per the
+ * attention layer; it is a ranking hint, never a gate. `path` is absolute (the
+ * value the diff endpoint's `path` query parameter takes verbatim).
+ */
+export type MissionChangeStatus = 'added' | 'modified' | 'deleted';
+
+export type MissionChangedFile = {
+  path: string;
+  status: MissionChangeStatus;
+  score: number;
+};
+
+/**
+ * The scope statistics of a mission's changes (mirrors missionchanges.ScopeStats)
+ * — the attention layer's scope signal. `anomaly` flags that the unit's touched
+ * paths diverged from its expected scope (an early-warning ADVICE flag, not a
+ * verdict); `outsidePaths` names the offending paths when present.
+ */
+export type MissionChangeScope = {
+  files: number;
+  dirs: number;
+  anomaly: boolean;
+  outsidePaths?: string[];
+};
+
+/**
+ * `GET /api/missions/{id}/changes` body (mirrors missionchanges.Changes).
+ * `files` is non-nil and ordered by `score` DESC; `incomplete` is true when the
+ * list was capped (100) so more changes exist than are shown.
+ */
+export type MissionChangesResponse = {
+  files: MissionChangedFile[];
+  incomplete: boolean;
+  scope: MissionChangeScope;
+};
+
+/**
+ * `GET /api/missions/{id}/changes/diff?path=<absolute>` body (mirrors
+ * missionchanges.Diff). `truncated` is true when either side was capped at
+ * 128 KiB. An added file has an empty `original`; a deleted file an empty
+ * `modified`.
+ */
+export type MissionFileDiff = {
+  original: string;
+  modified: string;
+  truncated?: boolean;
+};
+
+/**
+ * One streamed match from `GET /api/workspace/search` (mirrors
+ * localfileapi.searchMatch). `path` is root-relative (matching the /files
+ * endpoints), `line` is 1-based, and `column`/`length` are 0-based BYTE offsets
+ * of the matched substring within `preview` — so the client highlights it
+ * without re-searching (see byteSlice in lib/workspaceSearch).
+ */
+export type WorkspaceSearchMatch = {
+  path: string;
+  line: number;
+  column: number;
+  length: number;
+  preview: string;
+};
+
+/**
+ * The terminal `done` frame of a workspace search (mirrors
+ * localfileapi.searchDone). Always closes the stream; `truncated` is true when
+ * the hard result cap stopped the scan early, so the UI can offer "refine your
+ * search".
+ */
+export type WorkspaceSearchDone = {
+  done: boolean;
+  matches: number;
+  truncated: boolean;
 };
 
 /**
@@ -565,6 +721,79 @@ export type DispatchResult = {
   instanceId: string;
   sessionId: string;
   missionId: string;
+};
+
+/**
+ * Lifecycle state of one durable human-in-the-loop approval ask; mirrors
+ * runtimetypes.HITLApprovalState. `pending` is the only non-terminal state —
+ * a row ends exactly once at approved/denied (a human's answer) or expired
+ * (the sweeper). The inbox only ever lists `pending`.
+ */
+export type HITLApprovalState = 'pending' | 'approved' | 'denied' | 'expired';
+
+/**
+ * One durable approval ask (the attention inbox's rows). Mirrors
+ * runtimetypes.HITLApproval JSON (GET /api/approvals). It is the ask an
+ * unattended unit raised that a human must answer without attaching to the
+ * session that raised it (see docs/development/blueprints/acp/
+ * fleet-consolidation.md, slice C2).
+ *
+ * The attribution set — agentName, instanceId, sessionId, missionId — names WHO
+ * is asking, which is what makes an inbox of many answerable: identical-looking
+ * rows can be told apart, and an operator can name the policy (policyName +
+ * matchedRule) that gated the action. All are best-effort: an ask raised by a
+ * native chain turn with no fleet unit behind it carries none of them, so empty
+ * means "not applicable", never "unknown but exists".
+ */
+export type HITLApproval = {
+  id: string;
+  toolsName: string;
+  toolName: string;
+  argsSummary?: string;
+  diff?: string;
+  policyName?: string;
+  matchedRule?: number;
+  onTimeout?: string;
+  state: HITLApprovalState;
+  /** Opaque JSON, present only once the ask is resolved. */
+  resolution?: unknown;
+  instanceId?: string;
+  sessionId?: string;
+  agentName?: string;
+  missionId?: string;
+  createdAt: string;
+  expiresAt: string;
+  resolvedAt?: string;
+};
+
+/**
+ * Why a report landed in the operator inbox rather than reaching a live
+ * supervising session; mirrors operatorinbox.Reason. `operator_fired`: the
+ * mission carried no parent session, so an operator fired it directly and its
+ * reports were always inbox-bound. `parent_gone`: the mission named a parent
+ * session, but no live instance owned it when the report arrived — the
+ * supervisor had ended.
+ */
+export type OperatorInboxReason = 'operator_fired' | 'parent_gone';
+
+/**
+ * One mission report that reached no live supervisor, plus the mission
+ * attribution needed to render and act on it without a second read. Mirrors
+ * operatorinbox.Item JSON (GET /api/operator-inbox) — the read sibling of
+ * {@link HITLApproval}'s inbox for notices that need eyes rather than a
+ * decision. `agentName`/`intent` are best-effort (present when the mission
+ * carried them at write time); `parentSessionId` is present only for
+ * `parent_gone` — the (now-unreachable) supervisor the report was meant for.
+ */
+export type OperatorInboxItem = {
+  id: string;
+  missionId: string;
+  agentName?: string;
+  intent?: string;
+  parentSessionId?: string;
+  reason: OperatorInboxReason;
+  report: MissionReport;
+  createdAt: string;
 };
 
 /** Persisted MCP server config; matches runtimetypes.MCPServer JSON. */
@@ -1142,3 +1371,50 @@ export const HandleChatCompletion: TaskHandler = 'chat_completion';
 export const HandleExecuteToolCalls: TaskHandler = 'execute_tool_calls';
 export const HandleNoop: TaskHandler = 'noop';
 export const HandleTools: TaskHandler = 'tools';
+
+/**
+ * One allowlisted workspace root reported by `GET /workspace/roots`. Mirrors
+ * localfileapi.workspaceRoot: `default` marks the single root that the empty
+ * value and "/" resolve to (see vfs.Factory.Default). The list is the legible
+ * boundary a client offers as a folder picker instead of discovering it by
+ * probing paths and reading the 422 the per-request `root` check returns.
+ */
+export type WorkspaceRoot = {
+  path: string;
+  default: boolean;
+};
+
+/**
+ * `GET /workspace/roots` body. Mirrors localfileapi.workspaceRootsResponse.
+ * The whole route is nil-gated server-side: when serve has no workspace-root
+ * allowlist configured it 404s, which the client reads as "feature absent"
+ * (hide the picker affordances), never as an error to surface.
+ */
+export type WorkspaceRootsResponse = {
+  roots: WorkspaceRoot[];
+};
+
+/**
+ * `POST /api/terminal/sessions` body. Mirrors terminalapi.createSessionRequest.
+ * `cwd` is validated server-side against the workspace-root allowlist (empty →
+ * default root); `cols`/`rows` seed the PTY size before the first fit/resize
+ * frame. `shell` is optional (server default when blank).
+ */
+export type TerminalSessionRequest = {
+  cwd?: string;
+  cols: number;
+  rows: number;
+  shell?: string;
+};
+
+/**
+ * The 201 body from `POST /api/terminal/sessions`. Mirrors
+ * terminalapi.createSessionResponse. `wsPath` is the server-authoritative,
+ * already-`/api`-prefixed path of the binary-frame WebSocket to attach to
+ * (`/api/terminal/sessions/{id}/ws`) — the client turns it into a `ws(s)://`
+ * URL rather than reconstructing the path itself.
+ */
+export type TerminalSession = {
+  id: string;
+  wsPath: string;
+};

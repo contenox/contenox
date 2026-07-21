@@ -84,6 +84,69 @@ type Deps struct {
 	// back to today's connCtx-bound spawn — byte-for-byte the historical behavior —
 	// so nothing regresses where the Manager is not wired.
 	Instances agentinstance.Manager
+
+	// Fleet, when set, is what the `/mission` slash command fires through — the
+	// same fleetservice.Dispatch the REST path and `contenox mission fire` use, so
+	// firing a mission from a chat reimplements nothing. serve sets it together
+	// with Agents (below); the stdio `contenox acp` path (what Zed spawns) has no
+	// fleet kernel of its own and leaves both nil. It is the narrow
+	// MissionDispatcher slice (Dispatch only), not the whole Service — /mission
+	// needs no more.
+	Fleet MissionDispatcher
+
+	// Agents, when set, resolves a declared agent by name so /mission can tell its
+	// two shape-identical grammar forms apart (`/mission <intent>` vs `/mission
+	// <agent-name> <intent>`).
+	//
+	// Fleet and Agents together are this transport's mission capability
+	// (hasMissionCapability, in mission.go): BOTH non-nil is what gates whether
+	// `/mission` is advertised to the client at all (acpCommands, in
+	// commands.go) and whether handleMission treats an invocation as possible.
+	// ACP is advertise-what-works — a standalone `contenox acp` session must
+	// never list a command that can only error out, so it never sees `/mission`
+	// in its menu. A client that sends it anyway (stale menu state, a
+	// remembered command) gets handleMission's teaching error, which names the
+	// paths that do work: a Beam/serve-connected session, or `contenox mission
+	// fire` against a running serve.
+	//
+	// The standalone `contenox acp` process (what Zed spawns) now ALSO wires
+	// these — as a FORWARDING pair that reaches a running serve over its REST
+	// API — together with MissionForwarded below, so `/mission` works from the
+	// editor. serve's own in-process kernel leaves MissionForwarded nil.
+	Agents MissionAgentResolver
+
+	// MissionForwarded, when non-nil, marks Fleet/Agents as a REMOTE serve
+	// reached over REST from a standalone `contenox acp` process — not serve's
+	// own in-process kernel. It changes two honest details for that case, and
+	// nothing else (serve leaves it nil, so serve's path is byte-identical):
+	//
+	//   - hasMissionCapability ADDITIONALLY requires the target serve to answer
+	//     right now (Reachable), so `/mission` is advertised per session exactly
+	//     when it can work: a serve that has stopped since this process launched
+	//     drops off a fresh session's menu, and one that comes back reappears.
+	//   - the impossible-invocation teaching error, and the fired-mission
+	//     confirmation, are forwarding-aware (see handleMission): the error names
+	//     the serve URL and how to bring it back, and the confirmation states that
+	//     reports land in the OPERATOR INBOX — because the firing session lives in
+	//     THIS acp process, not serve's kernel, so serve's report router cannot
+	//     deliver back into it and falls back to the inbox as parent-gone.
+	MissionForwarded *MissionForwardConfig
+}
+
+// MissionForwardConfig carries the two forwarding-only hooks a standalone
+// `contenox acp` session needs so `/mission` is honest about a serve it reaches
+// over the network rather than owns in-process. Both are cheap and best-effort;
+// neither is consulted on serve's own path (Deps.MissionForwarded is nil there).
+type MissionForwardConfig struct {
+	// Reachable cheaply reports whether the target serve answers right now (a
+	// health probe, typically cached for a short interval). It gates per-session
+	// advertisement of `/mission` and the invocation guard, so the command is
+	// offered exactly when a dispatch could actually land.
+	Reachable func() bool
+	// TargetURL returns the serve base URL currently discovered, for the teaching
+	// error only ("the serve at <url> stopped answering"). It never carries the
+	// token. Empty is tolerated (the error degrades to a generic phrasing).
+	TargetURL func() string
 }
 
 // EnvSetupSpec describes environment-variable-based setup (the non-interactive
@@ -114,6 +177,15 @@ type sessionEntry struct {
 	// A concrete selection is injected into the prompt context (see prompt.go) so a
 	// shared engine's one hitlservice gates each session's turn under its own policy.
 	HITLPolicy string
+
+	// MissionID is set when this session was constructed for a dispatched unit on a
+	// mission — parsed from the session/new `_meta` (missionservice.MissionMetaKey)
+	// the dispatcher forwards. It is what binds this session's mission tools to
+	// exactly one mission: prompt.go injects it into the turn context
+	// (missiontools.WithMissionID) so mission_report/mission_ask_attention report
+	// against THIS mission and no other. Empty for an ordinary chat-mode session,
+	// whose mission tools resolve to nothing (the envelope enforced at construction).
+	MissionID string
 
 	// driver is this session's execution backend: a nativeDriver for the
 	// contenox task-chain engine, or an externalDriver for a REGISTERED downstream

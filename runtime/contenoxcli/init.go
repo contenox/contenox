@@ -40,6 +40,9 @@ var initACPXChain string
 //go:embed chain-fim.json
 var initFIMChain string
 
+//go:embed agent-planner.json
+var initPlannerChain string
+
 // blessedChainHashes is a map of file basenames to a list of known-good SHA256
 // checksums from previous versions. When the --update flag is used, if a file's
 // current checksum matches one of these, it is safe to overwrite it.
@@ -270,6 +273,12 @@ func RunGlobalInit(out io.Writer) error {
 	if err := writeFile(filepath.Join(homeDir, headlessACPChainFilename), initACPXChain); err != nil {
 		return err
 	}
+	// The resident-planner profile (mission-plans.md, slice 4). Named by the
+	// agent-* convention so chain-agent discovery declares it as a fleet-
+	// dispatchable agent; its envelope grants only the mission tools.
+	if err := writeFile(filepath.Join(homeDir, "agent-planner.json"), initPlannerChain); err != nil {
+		return err
+	}
 	if err := writeEmbeddedHITLPolicies(homeDir, false); err != nil {
 		return err
 	}
@@ -384,6 +393,12 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 		return err
 	}
 	if err := writeFile(filepath.Join(homeDir, headlessACPChainFilename), initACPXChain); err != nil {
+		return err
+	}
+	// The resident-planner profile (mission-plans.md, slice 4). Named by the
+	// agent-* convention so chain-agent discovery declares it as a fleet-
+	// dispatchable agent; its envelope grants only the mission tools.
+	if err := writeFile(filepath.Join(homeDir, "agent-planner.json"), initPlannerChain); err != nil {
 		return err
 	}
 	if err := writeEmbeddedHITLPolicies(homeDir, force); err != nil {

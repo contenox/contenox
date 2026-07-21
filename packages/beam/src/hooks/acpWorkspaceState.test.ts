@@ -184,6 +184,33 @@ describe('acpWorkspaceReducer: session roster freshness sort', () => {
     });
     expect(listed.sessions[0]._meta).toEqual({ 'contenox.agent': 'other-bot' });
   });
+
+  it('preserves the adopt outcome (contenox.adopt) when a session/list page carries only contenox.agent', () => {
+    // session/new echoes BOTH keys for an adopted session (adoptMeta.ts).
+    const adopted = acpWorkspaceReducer(initialAcpWorkspaceState, {
+      type: 'session_upserted',
+      session: {
+        sessionId: 'ad',
+        cwd: '/',
+        _meta: {
+          'contenox.agent': 'chain-acp',
+          'contenox.adopt': { instanceId: 'i', sessionId: 'down', controller: true },
+        },
+      },
+    });
+
+    // A later session/list only reconstructs contenox.agent. A wholesale replace
+    // would demote the adopted chat back to ordinary; a per-key merge keeps the
+    // adopt outcome (the "Übernommen"/"Beobachten" header + delete-guard read it).
+    const refreshed = acpWorkspaceReducer(adopted, {
+      type: 'sessions_replaced',
+      sessions: [{ sessionId: 'ad', _meta: { 'contenox.agent': 'chain-acp' } }],
+    });
+    expect(refreshed.sessions[0]._meta).toEqual({
+      'contenox.agent': 'chain-acp',
+      'contenox.adopt': { instanceId: 'i', sessionId: 'down', controller: true },
+    });
+  });
 });
 
 describe('acpWorkspaceReducer: active session', () => {

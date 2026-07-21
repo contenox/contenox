@@ -70,6 +70,15 @@ func (t *Transport) publishEvent(ctx context.Context, sid libacp.SessionID, payl
 	case taskengine.TaskEventToolCall:
 		id := t.toolCallWireID(sid, ev, true)
 		t.sendToolCallUpdateGuarded(ctx, sid, id, toolCallUpdateNotification(sid, ev, id))
+		// A mission_plan call ALSO projects the stored plan snapshot onto this
+		// session as a full-snapshot ACP `plan` update — in addition to the
+		// tool-call card above, since the plan is a distinct wire surface an editor
+		// renders on its own. planUpdateNotification returns ok only for a
+		// successful mission_plan event whose content parses; every other tool
+		// event no-ops here.
+		if note, ok := planUpdateNotification(sid, ev); ok {
+			t.sendUpdate(ctx, note)
+		}
 	case taskengine.TaskEventTokenUsage:
 		used := ev.TokenUsed
 		size := ev.TokenSize

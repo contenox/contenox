@@ -406,3 +406,55 @@ func (i *instance) attach(ctx context.Context, sessionID libacp.SessionID, viewe
 func (i *instance) detach(sessionID libacp.SessionID, viewerID string) error {
 	return i.hub.detach(sessionID, viewerID)
 }
+
+// deliverToSession injects n into sid's fan-out IFF this instance currently OWNS
+// sid — i.e. the driver holds it, the authoritative "this session is open here"
+// fact (sessionDriver.owns / .sessionIDs), NOT the hub, whose per-session state
+// materializes only lazily on a first update or attach. It reports whether it
+// owned and delivered, so the Manager's scan can find the one instance that does.
+//
+// Ownership-gating is load-bearing: hub.deliver get-or-creates session state, so
+// delivering to a session this instance does NOT own would journal the update
+// into a phantom session on the wrong instance. Gated, an injected update goes
+// only to the instance that actually hosts the session, where it is journaled
+// (a viewer attaching later replays it) and fanned out to current viewers
+// exactly like a downstream update — the SessionID is forced to sid so a caller
+// cannot misroute it within the owning instance.
+func (i *instance) deliverToSession(ctx context.Context, sid libacp.SessionID, n libacp.SessionNotification) bool {
+	if !i.driver.owns(sid) {
+		return false
+	}
+	n.SessionID = sid
+	i.hub.deliver(ctx, n)
+	return true
+}
+
+// agentText returns the concatenated agent-message-chunk text retained in sid's
+// journal, and whether this instance OWNS sid. Ownership is the driver's
+// authoritative fact (as everywhere in this package — sessionIDs/owns/
+// deliverToSession), while the TEXT comes from the hub's journal, which captures
+// every downstream session/update whether or not a viewer is attached: a
+// dispatched, unwatched unit's words are journaled all the same, which is why
+// they are recoverable here without anyone having attached. An owned-but-silent
+// session yields ("", true) — recoverable, but nothing said.
+func (i *instance) agentText(sid libacp.SessionID) (string, bool) {
+	if !i.driver.owns(sid) {
+		return "", false
+	}
+	return i.hub.agentText(sid), true
+}
+
+// sessionJournal returns a raw snapshot of sid's replay journal together with
+// the session's working directory, and whether this instance OWNS sid. Same
+// ownership-from-driver, data-from-hub split as agentText: ownership is the
+// driver's authoritative fact, while the journal comes from the hub (which
+// captures every downstream update whether or not a viewer is attached, so a
+// dispatched, unwatched unit's diffs are journaled all the same). The cwd is the
+// driver's recorded SessionSpec.Cwd. An owned-but-empty session yields
+// (nil, cwd, true).
+func (i *instance) sessionJournal(sid libacp.SessionID) ([]libacp.SessionNotification, string, bool) {
+	if !i.driver.owns(sid) {
+		return nil, "", false
+	}
+	return i.hub.journalSnapshot(sid), i.driver.cwd(sid), true
+}

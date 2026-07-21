@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	libbus "github.com/contenox/runtime/libbus"
 	"github.com/contenox/runtime/libdbexec"
@@ -17,11 +18,13 @@ import (
 	"github.com/contenox/runtime/runtime/llmrepo"
 	"github.com/contenox/runtime/runtime/localtools"
 	"github.com/contenox/runtime/runtime/mcpworker"
+	"github.com/contenox/runtime/runtime/missiontools"
 	"github.com/contenox/runtime/runtime/ollamatokenizer"
 	"github.com/contenox/runtime/runtime/runtimestate"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/stateservice"
 	"github.com/contenox/runtime/runtime/taskengine"
+	"github.com/contenox/runtime/runtime/toolguidance"
 )
 
 // LocalTenantID is re-exported from runtimetypes for backwards compatibility.
@@ -247,8 +250,61 @@ func buildTools(engineCtx context.Context, cfg Config, db libdbexec.DBManager, t
 			}
 			hitlSvc = hitlservice.NewWithDefaultPolicy(cfg.HITLPolicySource, hitlTenant, store, tracker, cfg.HITLDefaultPolicyName)
 		}
-		toolsRepo = localtools.NewHITLWrapper(toolsRepo, cfg.AskApproval, hitlSvc, tracker, cfg.TaskEventSink)
+		// The mission tools are exempted from the HITL gate BY CONSTRUCTION, not
+		// by policy data. They are the attention channel itself: mission_report /
+		// mission_ask_attention / mission_finish / mission_plan are how an
+		// unattended unit reaches its operator — gating them behind the approval
+		// machinery they exist to carry is a deadlock, and a live one: a
+		// discovered chain unit (HITL on) under a default_action:"approve" policy
+		// raised an ask FOR ITS OWN REPORT and hung until --wait timed out. The
+		// tools are already scoped harder than any policy could scope them (a
+		// session without a mission id cannot even see them), and their writes go
+		// only to the mission store. Exempting here — rather than allow-listing
+		// them in every shipped policy — means no operator-authored policy can
+		// ever reintroduce the deadlock by omission.
+		raw := toolsRepo
+		toolsRepo = hitlExemptProviders(
+			localtools.NewHITLWrapper(toolsRepo, cfg.AskApproval, hitlSvc, tracker, cfg.TaskEventSink),
+			raw,
+			missiontools.ToolsProviderName,
+		)
 	}
 
+	// Attention layer, Stage 0 — the inward face. This is THE single seam: one
+	// decorator over the aggregate tools repo observes every provider (local_fs,
+	// local_shell, webtools, mission, MCP) without touching them, and feeds
+	// navigation-awareness back to the model through the tool-result envelope. It
+	// sits OUTSIDE the HITL wrapper so it counts only model-level calls, not the
+	// internal reads the gate makes to build a diff. On by default (the blind-spot
+	// doctrine); CONTENOX_TOOL_GUIDANCE=off returns the inner repo untouched.
+	// Because acp/serve/chat all compose their tools through this one buildTools,
+	// this single wrap covers every entry path.
+	toolsRepo = toolguidance.WrapFromEnv(toolsRepo)
+
 	return mgr, localToolNames, toolsRepo, nil
+}
+
+// hitlExemptRepo routes Exec calls for exempted PROVIDERS around the HITL
+// wrapper to the raw aggregate, and everything else — including listings and
+// schemas — through the gated repo unchanged. See the construction site in
+// buildTools for why exemption is structural rather than policy data.
+type hitlExemptRepo struct {
+	taskengine.ToolsRepo
+	raw    taskengine.ToolsRepo
+	exempt map[string]bool
+}
+
+func hitlExemptProviders(gated, raw taskengine.ToolsRepo, providers ...string) taskengine.ToolsRepo {
+	exempt := make(map[string]bool, len(providers))
+	for _, p := range providers {
+		exempt[p] = true
+	}
+	return &hitlExemptRepo{ToolsRepo: gated, raw: raw, exempt: exempt}
+}
+
+func (h *hitlExemptRepo) Exec(ctx context.Context, startingTime time.Time, input any, debug bool, args *taskengine.ToolsCall) (any, taskengine.DataType, error) {
+	if args != nil && h.exempt[args.Name] {
+		return h.raw.Exec(ctx, startingTime, input, debug, args)
+	}
+	return h.ToolsRepo.Exec(ctx, startingTime, input, debug, args)
 }

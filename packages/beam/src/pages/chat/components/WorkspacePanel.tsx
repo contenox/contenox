@@ -13,11 +13,15 @@
  *   workspace.access_read          = "Read"
  *   workspace.access_write         = "Write"
  */
-import { Button, FileTree, InlineNotice, type FileTreeNode } from '@contenox/ui';
+import { Button, FileTree, type FileTreeNode } from '@contenox/ui';
 import { RefreshCw, ShieldCheck } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { RootChip } from '../../../components/workspace/RootChip';
+import { WorkspaceBoundaryNotice } from '../../../components/workspace/WorkspaceBoundaryNotice';
+import { useWorkspaceRoots } from '../../../hooks/useWorkspaceRoots';
 import { type UseWorkspaceFilesResult } from '../../../hooks/useWorkspaceFiles';
+import type { WorkspaceRoot } from '../../../lib/types';
 import { toFileTreeNodes, type AccessLabels } from '../lib/workspaceTree';
 
 export interface WorkspacePanelProps {
@@ -45,6 +49,7 @@ export interface WorkspacePanelProps {
  */
 export function WorkspacePanel({ root, files, onOpenFile, selectedFilePath }: WorkspacePanelProps) {
   const { t } = useTranslation();
+  const { roots } = useWorkspaceRoots();
   const { agentView, setAgentView } = files;
 
   const handleNodeSelect = useCallback(
@@ -76,6 +81,9 @@ export function WorkspacePanel({ root, files, onOpenFile, selectedFilePath }: Wo
   if (!root) return null;
 
   const isEmptyRoot = !files.rootLoading && !files.error && nodes.length === 0;
+  // Prefer the allowlisted root (so the chip can flag the default); fall back to
+  // a plain chip for the session's own root when the allowlist is absent.
+  const activeRoot: WorkspaceRoot = roots.find(r => r.path === root) ?? { path: root, default: false };
 
   return (
     <div className="border-surface-200 bg-surface-50 dark:border-dark-surface-600 dark:bg-dark-surface-100 flex h-full w-64 min-w-0 shrink-0 flex-col border-r sm:w-72">
@@ -105,6 +113,10 @@ export function WorkspacePanel({ root, files, onOpenFile, selectedFilePath }: Wo
         </div>
       </div>
 
+      <div className="border-surface-200 dark:border-dark-surface-600 shrink-0 border-b px-3 py-1.5">
+        <RootChip root={activeRoot} />
+      </div>
+
       {agentView && (
         <div className="border-surface-200 dark:border-dark-surface-600 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b px-3 py-1.5 text-[11px] text-text-muted dark:text-dark-text-muted">
           <LegendItem dotClass="ring-1 ring-inset ring-success-500/60" label={t('workspace.legend_allowed')} />
@@ -116,14 +128,11 @@ export function WorkspacePanel({ root, files, onOpenFile, selectedFilePath }: Wo
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {files.error ? (
-          <InlineNotice variant="error" className="mb-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="min-w-0 truncate">{files.error}</span>
-              <Button type="button" variant="outline" size="xs" onClick={() => files.refresh()}>
-                {t('workspace.refresh')}
-              </Button>
-            </div>
-          </InlineNotice>
+          <WorkspaceBoundaryNotice
+            message={files.error}
+            roots={roots}
+            onRetry={() => files.refresh()}
+          />
         ) : null}
 
         {files.rootLoading && nodes.length === 0 ? (

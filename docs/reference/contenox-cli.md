@@ -432,9 +432,11 @@ contenox config get default-model
 contenox config list
 ```
 
-Valid global keys: `default-model`, `default-provider`, `default-alt-model`, `default-alt-provider`, `default-autocomplete-model`, `default-autocomplete-provider`, `default-max-tokens`, `default-think`, `telemetry-enabled`, `update-check`.
+Valid global keys: `default-model`, `default-provider`, `default-alt-model`, `default-alt-provider`, `default-autocomplete-model`, `default-autocomplete-provider`, `default-max-tokens`, `default-think`, `telemetry-enabled`, `update-check`, `default-mission-agent`, `default-mission-policy`.
 
 Valid workspace keys: `default-chain`, `hitl-policy-name`.
+
+`default-mission-agent` and `default-mission-policy` are the fallbacks mission mode fires with when none is named — see [`contenox mission`](#contenox-mission) and the `/mission` slash command.
 
 ### `contenox mcp`
 
@@ -508,10 +510,85 @@ Binds `127.0.0.1:32123` by default (override with `ADDR`/`PORT`). Set `TOKEN` to
 
 | Flag / env | Description |
 | ---------- | ----------- |
-| `--workspace-root <dir>` | Directory a browser client may choose as a session workspace (repeatable). The serve directory is always allowed; also settable via `WORKSPACE_ROOTS` or as positional args. |
+| `--workspace-root <dir>` | Directory a browser client may choose as a session workspace (repeatable). The serve directory is always allowed; also settable via `WORKSPACE_ROOTS` or as positional args. These are the launch-time roots; grant more at runtime — without a restart — via [`contenox workspace add`](#contenox-workspace) or `POST /workspace/roots`. |
 | `ADDR` / `PORT` | Override the bind address/port. |
 | `TOKEN` | Bearer token required on mutating API requests and cross-origin reads. |
 | `BEAM_DEV_PROXY_URL` | Proxy Beam UI requests to a Vite dev server while keeping `/api` on this server. |
+
+### `contenox fleet`
+
+Operate the fleet — the supervised agent **units** a running `contenox serve` is hosting — from the shell. These verbs act on units (the running processes); the **work** a unit was sent to do lives under [`contenox mission`](#contenox-mission).
+
+The fleet is not in the database — it is a set of live subprocesses owned by the serve process's in-memory manager — so, unlike `contenox state`/`session`, these verbs reach serve over its REST API. By default that is `http://127.0.0.1:32123`; override with `--server`/`--token` or `CONTENOX_SERVER_URL`/`CONTENOX_SERVER_TOKEN` (the same client `contenox approvals` uses).
+
+```bash
+contenox fleet list                       # the board: every declared agent + its live units + intent
+contenox fleet list --json                # the raw /fleet records (declared agents + instances)
+contenox fleet show <instance-id>         # one unit's status (state, sessions, viewers, session ids)
+contenox fleet stop <instance-id>         # tear a unit down (idempotent)
+contenox fleet cancel <instance-id>       # cancel every in-flight turn on the unit
+contenox fleet cancel <instance-id> --session <session-id>   # cancel just that session
+```
+
+`list` renders the config+runtime join: every declared agent (idle ones included), each live instance's kind/state/session/viewer counts, and the mission `INTENT` the unit was fired with (joined from the bound mission; `-` when the unit has no mission behind it). `stop` is idempotent by the kernel contract — stopping an unknown or already-stopped instance succeeds — so a script may call it without a preceding existence check. To FIRE a new unit, use `contenox mission fire`; there is deliberately no `fleet dispatch`.
+
+| Flag | Description |
+| ---- | ----------- |
+| `--server <url>` | Base URL of a running `contenox serve` (default `http://127.0.0.1:32123`; also `CONTENOX_SERVER_URL`). |
+| `--token <token>` | Bearer token, when serve was started with one (also `CONTENOX_SERVER_TOKEN`). |
+| `--json` | Emit the raw route response instead of a table (`list`, `show`). |
+| `--session <id>` | `cancel` only this session id, instead of every session on the unit. |
+
+### `contenox mission`
+
+Work with an agent in **mission mode** — the dual of chat mode. In chat you prompt turn by turn and approve each gated action yourself. In mission mode you fire a one-line intent at a declared agent under an **envelope** (a HITL policy that bounds what it may do unattended) and detach; the unit acts inside the envelope and only crossing it costs your attention, in the [approvals inbox](#contenox-approvals). Missions live in a running `contenox serve`, reached over the same REST API as `contenox fleet`.
+
+```bash
+contenox mission fire --agent reviewer --intent "triage the failing CI run" --policy hitl-policy-strict.json
+contenox mission fire --intent "summarise today's commits"    # --agent/--policy from config defaults
+contenox mission list                     # what is running, for whom, under what envelope, and why
+contenox mission show <mission-id>        # the mission plus its reports, newest first
+```
+
+`fire` brings up a unit, hands it the intent as its first turn, and returns as soon as the session is open (the turn runs detached); the printed mission/instance/session ids let you follow it with `mission show` and `fleet show`. `--intent` is always required; `--agent` and `--policy` fall back to the config keys `default-mission-agent` / `default-mission-policy`, so a configured operator can fire with intent alone. A mission with no agent or no envelope is refused. `--cwd` roots the unit's session in an absolute directory serve allows.
+
+`show` prints the mission record — intent, agent, envelope, status, the session/instance it spawned, the parent session that supervises it (set only when a mission is fired from a chat by `/mission`, not by an operator directly), and liveness — followed by the unit's reports, newest first.
+
+| Flag | Description |
+| ---- | ----------- |
+| `--server <url>` / `--token <token>` | Reach a running `contenox serve` (as `contenox fleet`). |
+| `--agent <name>` | Declared agent to fire (`fire`; default: config `default-mission-agent`). |
+| `--intent <line>` | One-line mission intent — required for `fire`. |
+| `--policy <name>` | Envelope: the HITL policy bounding the unit (`fire`; default: config `default-mission-policy`). |
+| `--cwd <dir>` | Absolute working directory for the unit's session (`fire`; default: serve's project root). |
+| `--limit <n>` | Cap the mission list (`list`) or the reports shown (`show`). |
+| `--json` | Emit raw records: the dispatch ids (`fire`), the mission list (`list`), or `{mission, reports}` (`show`). |
+
+#### The `/mission` slash command
+
+From inside a chat (`contenox acp`, or the Beam chat) you can fire a mission without leaving the conversation:
+
+- `/mission <intent>` — fires the configured `default-mission-agent` under the `default-mission-policy` envelope.
+- `/mission <agent-name> <intent>` — fires the named agent instead.
+
+The two forms are the same shape, so contenox resolves the first token against the declared-agent registry: a hit is the named form, a miss means the whole line is the intent for the default agent. The confirmation always states which agent was chosen and echoes the intent, so a misread is visible immediately. A mission fired this way is supervised by the calling session — its reports return there rather than to the operator inbox.
+
+### `contenox workspace`
+
+Grant or revoke the **workspace roots** a session may run in — the directories a chat, a dispatched mission unit, or a Beam file browse may choose as its working directory. Granting a root grants everything **under** it; a directory outside every granted root (a sibling, a prefix-trick neighbour like `/home/meX` against `/home/me`, or a symlink whose real target escapes) is refused.
+
+```bash
+contenox workspace add /home/me/src        # grant a root (and everything under it)
+contenox workspace add /home/me/scratch
+contenox workspace list                     # the roots you have granted
+contenox workspace remove /home/me/scratch  # revoke a grant
+```
+
+Unlike `fleet` / `mission`, these do **not** reach serve over REST. A grant is durable config in the shared database (`~/.contenox/local.db`), so `add`/`remove` write it directly and then ring a reload doorbell on the shared bus. A running `contenox serve` picks up the signal and swaps its live workspace-root set **without a restart**; a serve started later reads the same durable config at boot. So these verbs work whether or not serve is up, and a running serve applies them live.
+
+`add` requires the path to be an existing directory (a workspace root must be a real directory); `remove` does not, so a grant to a since-deleted directory can be cleaned up. Both are idempotent. `list` prints the durable grants these verbs manage — serve additionally always allows its own launched default root (its served directory, or home for a bare `contenox serve`), which is not a grant and appears in the API and Beam folder picker (`GET /workspace/roots`) rather than here.
+
+A LAN operator working only through the browser has the same two verbs over the authenticated REST surface: `POST /workspace/roots {"path": "<dir>"}` grants and `DELETE /workspace/roots?path=<dir>` revokes, each token-authed and returning the new root list — the same validation, durable write, and reload doorbell as the CLI.
 
 ### `contenox code [vscode args...]`
 

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAcpWorkspace } from '../../../hooks/useAcpWorkspace';
 import { useWorkspaceTabs } from '../../../hooks/useWorkspaceTabs';
+import { useAdoptIntent } from '../../../lib/adoptIntent';
 import { meaningfulTitle } from '../lib/sessionLabel';
 import { routeForActiveTab } from '../lib/workspaceTabs';
 import { ChatSessionTab } from './ChatSessionTab';
@@ -33,9 +34,36 @@ export function WorkspaceTabs() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { sessionId: paramSessionId } = useParams<{ sessionId?: string }>();
-  const { workspace } = useAcpWorkspace();
+  const { workspace, adoptSession } = useAcpWorkspace();
   const tabModel = useWorkspaceTabs();
   const { tabs, activeId, open, close, focus, openEmpty } = tabModel;
+
+  // Eager fleet ADOPTION: an entry point (fleet board / mission detail) staged an
+  // adopt intent and routed here (see `adoptIntent.ts`). Unlike a staged agent —
+  // consumed lazily on the first prompt — the operator wants to watch the running
+  // dispatch immediately, so we adopt the moment the connection is ready and
+  // promote the resulting upstream session to a tab (its URL then follows). The
+  // intent is consumed one-shot BEFORE the await (a ready-state re-render must not
+  // re-fire it), and `adoptSession` is additive so any tab already open stays.
+  const { adoptIntent, setAdoptIntent } = useAdoptIntent();
+  const adoptingRef = useRef(false);
+  useEffect(() => {
+    if (!adoptIntent || workspace.status !== 'ready' || adoptingRef.current) return;
+    adoptingRef.current = true;
+    const intent = adoptIntent;
+    setAdoptIntent(null);
+    void adoptSession({ instanceId: intent.instanceId, sessionId: intent.sessionId }, intent.cwd)
+      .then(sid => {
+        open(sid);
+      })
+      .catch(() => {
+        // A failed adopt (instance gone, or an old serve rejecting it) is already
+        // surfaced as an inline error in the focused slice by adoptSession.
+      })
+      .finally(() => {
+        adoptingRef.current = false;
+      });
+  }, [adoptIntent, workspace.status, adoptSession, open, setAdoptIntent]);
 
   // Remounts the empty surface after it spawns a session, so its staged config /
   // draft start fresh for the next new chat (the old single-view page got this

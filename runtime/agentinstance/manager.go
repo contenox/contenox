@@ -224,6 +224,26 @@ type Manager interface {
 	// error. Returns ErrNotFound for an unknown instance.
 	Prompt(ctx context.Context, instanceID string, sessionID libacp.SessionID, prompt []libacp.ContentBlock) (libacp.StopReason, error)
 
+	// DeliverToSession injects n into sessionID's fan-out — its replay journal and
+	// every attached viewer — on whichever live instance currently OWNS that
+	// session, exactly as a downstream session/update would arrive. It is the
+	// WRITE counterpart of Attach: Attach lets a consumer OBSERVE a session's
+	// stream, this lets one INJECT an out-of-band update into it. The motivating
+	// consumer is the supervision edge — a sub-mission's report surfaced in the
+	// transcript of the session that fired the mission — but the kernel neither
+	// knows nor cares what n is: it adds nothing of its own to n and makes no
+	// judgement about it. WHAT to inject and WHY is a service-layer concern, per
+	// this package's policy-free invariant; this is only the mechanism.
+	//
+	// It resolves sessionID to its instance by scanning (session ids are
+	// downstream-unique), the same shape GetByInstance uses for missions: this is
+	// off any hot path (one report, not one token) and buys no index-consistency
+	// problem. Returns ErrNotFound when NO live instance owns sessionID — the
+	// supervisor may have ended, or the id may belong to a session this Manager
+	// never hosted — which the caller treats as "deliver elsewhere" (the operator
+	// inbox), never as a fault.
+	DeliverToSession(ctx context.Context, sessionID libacp.SessionID, n libacp.SessionNotification) error
+
 	// Cancel cancels sessionID's in-flight prompt turn on the downstream (session/cancel plus
 	// the prompt-turn permission auto-resolve). Safe with no turn in flight. Returns
 	// ErrNotFound for an unknown instance.
@@ -609,6 +629,30 @@ func (m *manager) Prompt(ctx context.Context, instanceID string, sessionID libac
 	return inst.promptSession(ctx, sessionID, prompt)
 }
 
+// DeliverToSession implements Manager.DeliverToSession by scanning for the
+// instance that owns sessionID and injecting n into its fan-out. It snapshots
+// the instance set under mu (never holding mu across the per-instance delivery,
+// which takes the hub lock), then asks each whether it owns the session; the
+// first owner delivers and the scan stops. No owner is ErrNotFound.
+func (m *manager) DeliverToSession(ctx context.Context, sessionID libacp.SessionID, n libacp.SessionNotification) error {
+	if sessionID == "" {
+		return fmt.Errorf("agentinstance: sessionID is required")
+	}
+	m.mu.Lock()
+	insts := make([]*instance, 0, len(m.instances))
+	for _, inst := range m.instances {
+		insts = append(insts, inst)
+	}
+	m.mu.Unlock()
+
+	for _, inst := range insts {
+		if inst.deliverToSession(ctx, sessionID, n) {
+			return nil
+		}
+	}
+	return fmt.Errorf("agentinstance: session %q: %w", sessionID, ErrNotFound)
+}
+
 func (m *manager) Cancel(instanceID string, sessionID libacp.SessionID) error {
 	inst, err := m.instance(instanceID)
 	if err != nil {
@@ -647,6 +691,54 @@ func (m *manager) AvailableCommands(instanceID string, sessionID libacp.SessionI
 		return nil, err
 	}
 	return inst.availableCommands(sessionID), nil
+}
+
+// SessionAgentText returns the concatenated text of the agent-message chunks
+// retained in sessionID's replay journal on instanceID — the unit's own words,
+// recoverable WITHOUT attaching a viewer, from the journal the kernel already
+// keeps for replay. ok is false for an unknown instance or a session this
+// instance does not own; text is "" when the session is owned but its journal
+// holds no agent text yet.
+//
+// It is deliberately NOT part of the Manager interface. It is an OPTIONAL,
+// policy-free READ a consumer reaches by type assertion (fleetservice quotes a
+// silent unit's last words when it files a blocker on the unit's behalf), so a
+// Manager double need not grow a method just to satisfy the interface — the same
+// reason DeliverToSession's scan lives here rather than being pushed onto every
+// caller. The kernel can answer it because it already holds the bytes; nothing
+// about it is a lifecycle verb, so it stays off the interface that IS the
+// lifecycle contract.
+func (m *manager) SessionAgentText(instanceID string, sessionID libacp.SessionID) (string, bool) {
+	inst, err := m.instance(instanceID)
+	if err != nil {
+		return "", false
+	}
+	return inst.agentText(sessionID)
+}
+
+// SessionJournal returns a RAW snapshot of sessionID's replay journal on
+// instanceID — every downstream session/update the kernel captured, whether or
+// not a viewer was attached — together with the session's working directory
+// (its SessionSpec.Cwd). ok is false for an unknown instance or a session this
+// instance does not own; the journal is nil for an owned-but-silent session and
+// cwd is "" when none was set.
+//
+// It is the SessionAgentText precedent applied to a richer read: an OPTIONAL,
+// policy-free accessor a consumer reaches by type assertion, deliberately NOT on
+// the Manager interface, so a Manager double need not grow a method and sibling
+// mocks stay untouched. Where SessionAgentText interprets the journal down to the
+// unit's words for fleetservice's silent-turn blocker, this returns it
+// uninterpreted for the attention layer (runtime/missionchanges), which folds the
+// tool-call updates into a changed-files list and a scope summary. The kernel
+// still interprets nothing: it already holds these bytes for replay, and nothing
+// here is a lifecycle verb, so it stays off the interface that IS the lifecycle
+// contract.
+func (m *manager) SessionJournal(instanceID string, sessionID libacp.SessionID) ([]libacp.SessionNotification, string, bool) {
+	inst, err := m.instance(instanceID)
+	if err != nil {
+		return nil, "", false
+	}
+	return inst.sessionJournal(sessionID)
 }
 
 func (m *manager) List(ctx context.Context) ([]FleetEntry, error) {

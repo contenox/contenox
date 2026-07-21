@@ -53,7 +53,7 @@ const (
 )
 
 // reservedSubcommands are first-arg names that must not be treated as run input (Cobra or our subcommands).
-var reservedSubcommands = map[string]bool{"init": true, "chat": true, "help": true, "completion": true, "session": true, "run": true, "tools": true, "mcp": true, "backend": true, "agent": true, "config": true, "model": true, "models": true, "modeld": true, "code": true, "doctor": true, "version": true, "state": true, "acp": true, "acpx": true, "vscode-agent": true, "setup": true, "cache": true, "serve": true, "update": true, "approvals": true}
+var reservedSubcommands = map[string]bool{"init": true, "chat": true, "help": true, "completion": true, "session": true, "run": true, "tools": true, "mcp": true, "backend": true, "agent": true, "config": true, "model": true, "models": true, "modeld": true, "code": true, "doctor": true, "version": true, "state": true, "acp": true, "acpx": true, "vscode-agent": true, "setup": true, "cache": true, "serve": true, "update": true, "approvals": true, "fleet": true, "mission": true, "workspace": true}
 
 // Main runs the contenox CLI: init subcommand or run (default) with optional positional input.
 func Main() {
@@ -83,6 +83,17 @@ func Main() {
 	_ = modelrepo.Shutdown()
 	if err != nil {
 		recordStartupFailure(err)
+		// A command that chose its own exit status (an *exitError) has already
+		// written whatever it wanted the operator to see — `mission fire --wait`
+		// prints its terminal-outcome line, the chain/editor sentinels print
+		// their own guidance. Honor the code and skip the generic "Error:" prefix
+		// so a deliberate non-zero exit (a mission that failed, blocked, or timed
+		// out) reads as a status, not a crash. Every pre-existing exitError uses
+		// code 1, so this changes nothing for them but the cosmetic prefix.
+		var ee *exitError
+		if errors.As(err, &ee) {
+			os.Exit(ee.code)
+		}
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
 		os.Exit(1)
 	}
@@ -405,6 +416,9 @@ func init() {
 	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(serveCmd)
 	rootCmd.AddCommand(approvalsCmd)
+	rootCmd.AddCommand(fleetCmd)
+	rootCmd.AddCommand(missionCmd)
+	rootCmd.AddCommand(workspaceCmd)
 
 	rootCmd.InitDefaultHelpCmd() // so "contenox help" is handled by Cobra, not passed as run input
 	initCmd.Flags().BoolP("force", "f", false, "Overwrite existing files")
@@ -474,6 +488,30 @@ func ResolveContenoxDir(cmd *cobra.Command) (string, error) {
 		}
 		dir = parent
 	}
+}
+
+// controlPlaneDirs is the SINGLE definition of "what the runtime's control plane
+// is" for a given command: the resolved .contenox data/config dir (contenoxDir —
+// chains, HITL policies, declared agents, and, unless split by --db, the local.db)
+// PLUS the home global ~/.contenox (the default database and the model cache).
+// These are the directories no session, browse root, or agent fs tool may reach,
+// per the control-plane isolation invariant (runtime/vfs/controlplane.go).
+//
+// Both serve (which calls vfs.SetControlPlaneDenied at boot) and the
+// `contenox workspace add` grant guard (which runs in a SEPARATE process with no
+// global set, so it consults vfs.WithinControlPlane with these dirs directly)
+// derive the set from here, so the two never disagree about the boundary. --data-dir
+// may point contenoxDir away from home; both are denied, so the split is covered
+// either way. NOTE: a database relocated by --db to an arbitrary directory is an
+// operator's explicit choice and is NOT auto-denied — denying its parent could
+// swallow a legitimate workspace root (e.g. --db ./local.db in the served project);
+// the two canonical control dirs are the boundary the invariant protects.
+func controlPlaneDirs(contenoxDir string) []string {
+	dirs := []string{contenoxDir}
+	if home, err := globalContenoxDir(); err == nil {
+		dirs = append(dirs, home)
+	}
+	return dirs
 }
 
 func ResolveWorkspaceID(contenoxDir string) string {

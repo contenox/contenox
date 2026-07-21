@@ -4,12 +4,14 @@ import { Route, HashRouter as Router, Routes } from 'react-router-dom';
 import './app.css';
 import { Layout } from './components/Layout';
 import { NavbarSlotProvider } from './components/NavbarSlot';
+import { CommandPalette } from './components/palette/CommandPalette';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AcpSessionSidebar } from './components/sidebar/AcpSessionSidebar';
 import { routes } from './config/routes';
 import { AuthProvider } from './lib/AuthProvider';
 import { AcpWorkspaceProvider } from './lib/acp/AcpWorkspaceProvider';
 import { StagedAgentProvider } from './lib/stagedAgent';
+import { AdoptIntentProvider } from './lib/adoptIntent';
 import { AuthContext } from './lib/authContext';
 
 const AuthPage = lazy(() => import('./pages/public/login/AuthPage'));
@@ -60,6 +62,18 @@ function AuthenticatedAcpProvider({ children }: { children: ReactNode }) {
   return <AcpWorkspaceProvider>{children}</AcpWorkspaceProvider>;
 }
 
+/**
+ * Mounts the goto-anything command palette only for authenticated users — it
+ * reads the ACP session roster and the query cache, both of which only exist
+ * under `AuthenticatedAcpProvider`. Rendered as a sibling of the shell so its
+ * Cmd/Ctrl+K overlay (a portal to <body>) floats above every route.
+ */
+function AuthedCommandPalette() {
+  const { user } = useContext(AuthContext);
+  if (!user) return null;
+  return <CommandPalette />;
+}
+
 export default function App() {
   return (
     <Router>
@@ -70,6 +84,14 @@ export default function App() {
                 sidebar (which seeds it) and the empty chat surface (which shows,
                 changes, and consumes it). See lib/stagedAgent.tsx. */}
             <StagedAgentProvider>
+            {/* Shares "the next chat should ADOPT this running unit" between the
+                fleet board / mission detail (which stage it) and the chat
+                workspace (which eagerly adopts once connected). See
+                lib/adoptIntent.tsx. */}
+            <AdoptIntentProvider>
+            {/* Global command palette (Cmd/Ctrl+K). Sibling of the shell so its
+                portal overlay floats above every route; inert until opened. */}
+            <AuthedCommandPalette />
             {/* Lets a routed page (today the chat surface) project chrome into
                 the shell's navbar center; wraps Layout so both the navbar and
                 the routed pages inside `mainContent` share the one slot. */}
@@ -104,6 +126,7 @@ export default function App() {
               }
             />
             </NavbarSlotProvider>
+            </AdoptIntentProvider>
             </StagedAgentProvider>
           </AuthenticatedAcpProvider>
         </AuthGate>

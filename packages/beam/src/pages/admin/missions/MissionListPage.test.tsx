@@ -11,6 +11,10 @@ import MissionListPage from './MissionListPage';
 vi.mock('../../../lib/api', () => ({
   api: {
     listMissions: vi.fn(async () => []),
+    // The list now joins the fleet (process state) and the report feed
+    // (blocked chip) into the one composed status; both degrade to absent.
+    getFleet: vi.fn(async () => []),
+    listMissionReports: vi.fn(async () => []),
   },
 }));
 

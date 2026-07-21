@@ -33,8 +33,10 @@ EXPECTED_CMDS=(
   "chat"
   "config"
   "doctor"
+  "fleet"
   "init"
   "mcp"
+  "mission"
   "model"
   "run"
   "session"
@@ -42,6 +44,7 @@ EXPECTED_CMDS=(
   "tools"
   "update"
   "version"
+  "workspace"
 )
 
 MISSING=()

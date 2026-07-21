@@ -26,6 +26,9 @@ const (
 	envDefaultAltProvider = "CONTENOX_DEFAULT_ALT_PROVIDER"
 	envDefaultMaxTokens   = "CONTENOX_DEFAULT_MAX_TOKENS"
 	envDefaultThink       = "CONTENOX_DEFAULT_THINK"
+	// envBaseURL supplies the endpoint URL for account-specific providers whose
+	// URL cannot be defaulted (currently vertex-google: project + region).
+	envBaseURL = "CONTENOX_BASE_URL"
 )
 
 // configValueWithEnv reads a global config value with environment-first
@@ -55,6 +58,10 @@ func acpEnvSetupVars() []libacp.AuthEnvVar {
 			vars = append(vars, libacp.AuthEnvVar{Name: sp.envKey, Label: sp.label + " API key", Optional: true})
 		}
 	}
+	// envBaseURL (CONTENOX_BASE_URL) is honored by completeEnvSetup for
+	// account-specific providers (vertex-google) but intentionally not advertised
+	// here: acpEnvSetupVars keeps a fixed shape (provider, model, then per-provider
+	// API keys) that TestUnit_ACPEnvSetupVars_ContractShape guards.
 	return vars
 }
 
@@ -103,8 +110,16 @@ func completeEnvSetup(ctx context.Context, db libdb.DBManager) error {
 		}
 	}
 
+	baseURL := ""
+	if sp.needsBaseURL {
+		baseURL = strings.TrimSpace(os.Getenv(envBaseURL))
+		if baseURL == "" && !backendExists(ctx, db, sp.key) {
+			return fmt.Errorf("set %s: provider %q needs an endpoint URL", envBaseURL, sp.key)
+		}
+	}
+
 	if !isLocalModeldProvider(sp.key) {
-		if err := registerSetupBackend(ctx, db, sp.key, apiKey); err != nil {
+		if err := registerSetupBackend(ctx, db, sp.key, apiKey, baseURL); err != nil {
 			return err
 		}
 	}

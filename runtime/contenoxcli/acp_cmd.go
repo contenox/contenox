@@ -12,14 +12,19 @@ import (
 	"time"
 
 	"github.com/contenox/runtime/libacp"
+	"github.com/contenox/runtime/libbus"
 	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/libkvstore"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/acpsvc"
 	"github.com/contenox/runtime/runtime/enginesvc"
 	"github.com/contenox/runtime/runtime/hitlservice"
 	"github.com/contenox/runtime/runtime/internal/updatecheck"
 	"github.com/contenox/runtime/runtime/localtools"
+	"github.com/contenox/runtime/runtime/missionservice"
+	"github.com/contenox/runtime/runtime/missiontools"
 	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/presence"
 	"github.com/contenox/runtime/runtime/reasoning"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/taskengine"
@@ -82,13 +87,20 @@ type acpProfile struct {
 	chainFile  string
 	chainEnv   string
 	seedChain  func(contenoxDir string) error
+	// forwardMissions wires the standalone `/mission` forwarder (fire a mission at
+	// a running serve over REST). Enabled for the editor profile (acp — the Zed
+	// journey); DISABLED for acpx: that profile is the hardened surface for an
+	// untrusted driver (OpenClaw), which must not be handed a lever to dispatch
+	// fleet units at the operator's serve.
+	forwardMissions bool
 }
 
 var acpProfileACP = acpProfile{
-	hitlPolicy: "hitl-policy-acp.json",
-	chainFile:  "default-acp-chain.json",
-	chainEnv:   "CONTENOX_ACP_CHAIN_PATH",
-	seedChain:  seedACPChainIfMissing,
+	hitlPolicy:      "hitl-policy-acp.json",
+	chainFile:       "default-acp-chain.json",
+	chainEnv:        "CONTENOX_ACP_CHAIN_PATH",
+	seedChain:       seedACPChainIfMissing,
+	forwardMissions: true,
 }
 
 var acpProfileACPX = acpProfile{
@@ -245,6 +257,29 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 		"local_shell": localtools.NewLocalExecToolsWith(
 			acpsvc.NewACPCommandRunner(func() *acpsvc.Transport { return transport }),
 		),
+		// Mission tools: the per-mission report/ask-for-attention channel a
+		// dispatched unit holds while running unattended. Registered here because
+		// a fleet unit IS a `contenox acp` subprocess, and the mission tools are
+		// its OWN local providers writing to the shared mission store (this db,
+		// under the same $HOME/.contenox the dispatcher reads). The grant is still
+		// per-mission: the provider exposes nothing and executes nothing unless the
+		// session was constructed with a mission id (session/new `_meta`), so an
+		// ordinary editor session over `contenox acp` never sees them. The nil
+		// asker means mission_ask_attention records a durable blocker report rather
+		// than a durable permission ask — wiring the ask to the operator inbox from
+		// a viewer-less unit is fleet-consolidation.md's M5, a separate slice.
+		//
+		// The mission service MUST carry an event publisher: report routing runs in
+		// the DISPATCHER's process (serve's reportrouter), subscribed to the SQLite
+		// bus over this same shared $HOME/.contenox/local.db, and it routes purely
+		// off ReportAddedEvent. A publisher-less service here would store a unit's
+		// report durably but never publish, so the supervision edge would silently
+		// go nowhere — the exact cross-process seam the composed round-trip e2e
+		// (acpsvc/e2e_mission_roundtrip_test.go) exists to keep closed.
+		missiontools.ToolsProviderName: missiontools.New(
+			missionservice.New(db, missionservice.WithEventPublisher(libbus.NewSQLite(db.WithoutTransaction()))),
+			nil,
+		),
 	}
 
 	var askApproval localtools.AskApproval
@@ -295,6 +330,31 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 
 	updateBanner := acpUpdateBanner(dbCtx, db, contenoxDir)
 
+	// Fleet presence store (shared-SQLite over the same $HOME/.contenox/local.db
+	// serve reads): serve REGISTERS its reachable address here, and a forwarding
+	// `/mission` session DISCOVERS it here. One store, used by the mission
+	// forwarder just below and the presence reporter further down.
+	presenceStore := presence.NewStore(libkvstore.NewSQLiteManager(db))
+
+	// Mission forwarding: in a standalone `contenox acp` session (what Zed spawns)
+	// `/mission` fires at a running serve over its REST API — discovered lazily
+	// (CONTENOX_SERVER_URL → serve's presence row → the loopback default) and
+	// health-probed, so the command is advertised per session exactly when a serve
+	// is reachable. The pair is the narrow MissionDispatcher/MissionAgentResolver
+	// acpsvc needs; MissionForwarded marks it REMOTE so acpsvc's advertisement,
+	// fired-mission confirmation, and teaching error stay forwarding-honest (see
+	// runtime/acpsvc/mission.go). Gated to the editor profile — acpx (untrusted
+	// driver) is deliberately never handed a lever to dispatch at the operator's serve.
+	var (
+		missionFleet   acpsvc.MissionDispatcher
+		missionAgents  acpsvc.MissionAgentResolver
+		missionForward *acpsvc.MissionForwardConfig
+	)
+	if profile.forwardMissions {
+		fwd := newMissionForwarder(presenceStore)
+		missionFleet, missionAgents, missionForward = fwd, fwd, fwd.forwardConfig()
+	}
+
 	transportFactory := acpsvc.New(acpsvc.Deps{
 		Engine:                engine,
 		DB:                    db,
@@ -310,6 +370,11 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 		KnownPolicies:         embeddedPolicyNames(),
 		HITLDefaultPolicyName: profile.hitlPolicy,
 		UpdateBanner:          updateBanner,
+		// Standalone `/mission` forwarding to a running serve (nil on the acpx
+		// profile, and nil-safe throughout acpsvc when not wired).
+		Fleet:            missionFleet,
+		Agents:           missionAgents,
+		MissionForwarded: missionForward,
 		EnvSetup: &acpsvc.EnvSetupSpec{
 			Vars: acpEnvSetupVars(),
 			Complete: func(cctx context.Context) error {
@@ -318,10 +383,24 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 		},
 	})
 
+	// Fleet presence: make THIS editor-spawned process visible on the fleet board.
+	// It self-registers into the shared-SQLite presence store (the same $HOME/
+	// .contenox/local.db serve reads), heartbeating on a modest interval and on
+	// session events. Entirely best-effort — a presence write never blocks or
+	// fails serving the editor (see runtime/presence). The decorator around the
+	// transport feeds it the client name (from initialize) and the open-session
+	// count without acpsvc needing to know presence exists.
+	acpCwd, _ := os.Getwd()
+	presenceReporter := presence.StartReporter(ctx, presenceStore, presence.Record{
+		Kind: presence.KindACP,
+		Cwd:  acpCwd,
+	})
+	defer presenceReporter.Stop()
+
 	conn := libacp.NewAgentSideConnection(acpStdio{}, func(c *libacp.AgentSideConnection) libacp.Agent {
 		agent := transportFactory(c)
 		transport = agent.(*acpsvc.Transport)
-		return agent
+		return newPresenceAgent(agent, presenceReporter)
 	})
 
 	runErr := conn.Run(ctx)

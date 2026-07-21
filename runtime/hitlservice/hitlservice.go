@@ -29,6 +29,18 @@ type PolicyEvaluator interface {
 	Evaluate(ctx context.Context, toolsName, toolName string, args map[string]any) (EvaluationResult, error)
 }
 
+// ComputeBoundsReader loads the COMPUTE half of an envelope by policy name — the
+// per-mission compute ceiling a fleet enforcement seam holds a mission under (see
+// ComputeBounds). It is an OPTIONAL capability, deliberately NOT folded into the
+// Service interface: a consumer reaches it by type assertion (the SessionAgentText
+// precedent in agentinstance), so a Service double that predates compute bounds
+// keeps satisfying Service without gaining a method, and a caller handed a Service
+// that does not implement this treats every mission as unbounded — today's
+// behavior. The concrete service here implements it.
+type ComputeBoundsReader interface {
+	ComputeBoundsFor(ctx context.Context, policyName string) (ComputeBounds, error)
+}
+
 // approvalStore is the durable persistence surface RequestApproval, Respond,
 // SweepExpired, and ListPending need: create a pending row, look it up,
 // compare-and-swap it into a terminal state, and list rows by state. It is a
@@ -181,6 +193,37 @@ func (s *service) ceiling() time.Duration {
 }
 
 var _ Service = (*service)(nil)
+var _ ComputeBoundsReader = (*service)(nil)
+
+// ComputeBoundsFor implements ComputeBoundsReader: it loads policyName's envelope
+// and returns its compute bounds, or the zero (unbounded) bounds when the policy
+// declares none. It resolves the name through the SAME fallback chain Evaluate
+// uses (an empty name → the service's configured fallback → the built-in default),
+// so "which envelope" means the same thing to a compute-bound check as it does to
+// an action check.
+//
+// A policy that fails to load returns the zero bounds AND the load error: the
+// caller records the error and proceeds UNBOUNDED, exactly as Evaluate falls back
+// to the built-in (bound-less) default policy on a load failure. A broken policy
+// therefore LOSES its ceiling rather than gaining a phantom one — the additive,
+// restrict-only invariant holds even in the failure path.
+func (s *service) ComputeBoundsFor(ctx context.Context, policyName string) (ComputeBounds, error) {
+	policyPath := strings.TrimSpace(policyName)
+	if policyPath == "" {
+		policyPath = s.fallbackPolicy
+	}
+	if policyPath == "" {
+		policyPath = defaultPolicyName
+	}
+	p, err := loadPolicy(ctx, s.src, s.tenantID, policyPath)
+	if err != nil {
+		return ComputeBounds{}, fmt.Errorf("hitlservice: load compute bounds for %q: %w", policyPath, err)
+	}
+	if p.Compute == nil {
+		return ComputeBounds{}, nil
+	}
+	return *p.Compute, nil
+}
 
 const kvPrefixHITLPolicy = "cli.hitl-policy-name"
 

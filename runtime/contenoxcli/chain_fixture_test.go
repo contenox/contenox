@@ -296,6 +296,63 @@ func TestUnit_BuiltinChains_LLMTasksIncludeDateMacro(t *testing.T) {
 	}
 }
 
+// TestUnit_PlannerChain_ProfileShape pins the resident-planner profile
+// (agent-planner.json, mission-plans.md slice 4): it parses, it is named by the
+// agent-* convention so discovery declares it, EVERY tool-bearing task grants
+// ONLY the mission tools and NO execution tools (the envelope the blueprint's
+// capability profile requires — grant plan/report/finish, withhold execution),
+// and its system prompt carries the Codex-derived discipline the planner must
+// keep. The discipline is prompt text, not host enforcement, so its PRESENCE in
+// the shipped prompt is exactly what this guards against a silent edit dropping.
+func TestUnit_PlannerChain_ProfileShape(t *testing.T) {
+	var chain taskengine.TaskChainDefinition
+	require.NoError(t, json.Unmarshal([]byte(initPlannerChain), &chain))
+
+	require.Equal(t, "agent-planner", chain.ID, "the chain id is the discovered agent name")
+	require.NotEmpty(t, chain.Tasks)
+
+	// The envelope: only the mission tools, and nothing that executes.
+	forbidden := map[string]bool{"*": true, "local_shell": true, "local_fs": true, "webtools": true}
+	sawMissionGrant := false
+	for _, task := range chain.Tasks {
+		if task.ExecuteConfig == nil || len(task.ExecuteConfig.Tools) == 0 {
+			continue
+		}
+		for _, tool := range task.ExecuteConfig.Tools {
+			require.Falsef(t, forbidden[tool], "task %s grants %q — the planner withholds execution tools", task.ID, tool)
+		}
+		require.Equal(t, []string{"mission"}, task.ExecuteConfig.Tools, "task %s grants only the mission tools", task.ID)
+		sawMissionGrant = true
+	}
+	require.True(t, sawMissionGrant, "the planner must grant the mission tools somewhere")
+
+	// The discipline lives in the prompt (blueprint pattern 3). These markers are
+	// the Codex-derived rules adapted to the mission tools — their presence is the
+	// contract, since the runtime does not enforce them.
+	var prompt string
+	for _, task := range chain.Tasks {
+		if task.ID == "plan_loop" {
+			prompt = task.SystemInstruction
+		}
+	}
+	require.NotEmpty(t, prompt, "the main planner loop carries the discipline prompt")
+	for _, marker := range []string{
+		"{{date}}",
+		"FULL SNAPSHOT",           // maintain the plan via full snapshots
+		"echoing the `id`",        // id carry-forward
+		"in_progress at any time", // exactly one in_progress
+		"pending to completed",    // no pending->completed jumps
+		"explanation",             // explanation on every scope pivot
+		"NEVER RESTATE THE PLAN",  // anti-echo
+		"mission_report",          // report via the report tool
+		"handover",                // typed handover
+		"mission_finish",          // end with finish
+		"not yet yours",           // sub-mission firing is a future slice
+	} {
+		require.Containsf(t, prompt, marker, "planner prompt is missing the %q discipline", marker)
+	}
+}
+
 func branchGoto(t *testing.T, task taskengine.TaskDefinition, operator taskengine.OperatorTerm, when, gotoID string) taskengine.TransitionBranch {
 	t.Helper()
 	for _, branch := range task.Transition.Branches {

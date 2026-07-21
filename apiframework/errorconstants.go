@@ -7,6 +7,7 @@ import (
 	"github.com/contenox/runtime/libauth"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/vfs"
 )
 
 var (
@@ -151,6 +152,13 @@ func mapErrorToStatus(op Operation, err error) int {
 		return http.StatusUnauthorized
 	}
 	if errors.Is(err, ErrForbidden) {
+		return http.StatusForbidden
+	}
+	// The vfs control-plane refusal (a path at/under ~/.contenox: config, DB,
+	// policies, agents) is a security boundary — 403 Forbidden carrying the
+	// teaching text, not a mystery 404/500. Surfaces on every /files, search, and
+	// fs-tool path that resolves through vfs. See runtime/vfs/controlplane.go.
+	if errors.Is(err, vfs.ErrControlPlane) {
 		return http.StatusForbidden
 	}
 	if errors.Is(err, ErrNotFound) {

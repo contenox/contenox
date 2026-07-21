@@ -143,6 +143,14 @@ func (c *serveClient) post(ctx context.Context, path string, body, out any) erro
 	return c.do(ctx, http.MethodPost, path, body, out)
 }
 
+// delete issues a DELETE to path and discards any 2xx body. `contenox fleet
+// stop` (slice C3) is its first caller: DELETE /fleet/{id} is idempotent by the
+// kernel contract, so the response body ("deleted") carries nothing the CLI
+// needs beyond the 2xx.
+func (c *serveClient) delete(ctx context.Context, path string) error {
+	return c.do(ctx, http.MethodDelete, path, nil, nil)
+}
+
 // do is the one place this client builds a request, authenticates it, and
 // interprets the response. path is joined onto baseURL + "/api" — every
 // route this client calls is mounted there (see serverapi.registerProductRoutes

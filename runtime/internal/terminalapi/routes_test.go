@@ -100,7 +100,7 @@ func (f *fakeTerminalService) ReapIdle(context.Context) error { return nil }
 
 func TestAddRoutes_DisabledDoesNotRegister(t *testing.T) {
 	mux := http.NewServeMux()
-	AddRoutes(mux, newFakeTerminalService(), nil, false, "")
+	AddRoutes(mux, newFakeTerminalService(), nil, false, nil)
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/terminal/sessions", nil)
@@ -116,7 +116,7 @@ func TestAddRoutes_DisabledDoesNotRegister(t *testing.T) {
 func TestTerminalRoutes_CreateListGetDelete(t *testing.T) {
 	mux := http.NewServeMux()
 	svc := newFakeTerminalService()
-	AddRoutes(mux, svc, nil, true, "")
+	AddRoutes(mux, svc, nil, true, nil)
 
 	rr := httptest.NewRecorder()
 	req := jsonReq(http.MethodPost, "/terminal/sessions", map[string]any{
@@ -162,7 +162,7 @@ func TestTerminalRoutes_CreateListGetDelete(t *testing.T) {
 // parameter as ErrInvalidParameterValue and so answers 400 everywhere.
 func TestTerminalRoutes_InvalidInputs(t *testing.T) {
 	mux := http.NewServeMux()
-	AddRoutes(mux, newFakeTerminalService(), nil, true, "")
+	AddRoutes(mux, newFakeTerminalService(), nil, true, nil)
 
 	for _, query := range []string{"limit=0", "limit=-1", "limit=not-a-number", "cursor=garbage"} {
 		rr := httptest.NewRecorder()
@@ -181,7 +181,7 @@ func (c *cappedTerminalService) Create(context.Context, string, terminalservice.
 
 func TestTerminalRoutes_TooManySessionsReturns422(t *testing.T) {
 	mux := http.NewServeMux()
-	AddRoutes(mux, &cappedTerminalService{fakeTerminalService: *newFakeTerminalService()}, nil, true, "")
+	AddRoutes(mux, &cappedTerminalService{fakeTerminalService: *newFakeTerminalService()}, nil, true, nil)
 
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, jsonReq(http.MethodPost, "/terminal/sessions", map[string]any{"cwd": "/tmp"}))
@@ -190,7 +190,7 @@ func TestTerminalRoutes_TooManySessionsReturns422(t *testing.T) {
 
 func TestTerminalRoutes_TokenProtectsReadRoutes(t *testing.T) {
 	mux := http.NewServeMux()
-	AddRoutes(mux, newFakeTerminalService(), nil, true, "secret")
+	AddRoutes(mux, newFakeTerminalService(), nil, true, func(cred string) bool { return cred == "secret" })
 
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/terminal/sessions", nil))

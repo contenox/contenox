@@ -4,6 +4,7 @@ import (
 	"context"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -45,11 +46,17 @@ type fakeManager struct {
 	openErr   error
 	openSpecs []agentinstance.SessionSpec
 
-	promptErr      error
-	promptStarted  chan struct{}
-	promptReleased chan struct{}
-	promptDone     chan struct{}
-	promptBlocks   []libacp.ContentBlock
+	promptErr          error
+	promptCalls        int
+	promptBlocks       []libacp.ContentBlock   // blocks of the MOST RECENT prompt
+	promptBlocksByCall [][]libacp.ContentBlock // blocks of every prompt, in order
+	// onPrompt, when set, runs on each Prompt call (call is 1-based) BEFORE it
+	// returns — the hook a test uses to make the "unit" file a mission fact so no
+	// nudge follows. Runs under no lock.
+	onPrompt func(call int)
+	// agentText is what SessionAgentText returns for any (instance, session) — the
+	// unit's "last words" fleetservice quotes into a runtime-filed blocker.
+	agentText string
 
 	stopCalls []string
 
@@ -100,18 +107,30 @@ func (m *fakeManager) OpenSession(_ context.Context, _ string, spec agentinstanc
 
 func (m *fakeManager) Prompt(_ context.Context, _ string, _ libacp.SessionID, blocks []libacp.ContentBlock) (libacp.StopReason, error) {
 	m.mu.Lock()
+	m.promptCalls++
+	call := m.promptCalls
 	m.promptBlocks = blocks
+	m.promptBlocksByCall = append(m.promptBlocksByCall, blocks)
+	hook := m.onPrompt
 	m.mu.Unlock()
-	if m.promptStarted != nil {
-		close(m.promptStarted)
-	}
-	if m.promptReleased != nil {
-		<-m.promptReleased
-	}
-	if m.promptDone != nil {
-		close(m.promptDone)
+	if hook != nil {
+		hook(call)
 	}
 	return libacp.StopReasonEndTurn, m.promptErr
+}
+
+// SessionAgentText satisfies fleetservice's optional sessionTextReader capability
+// (reached by type assertion), returning the configured agentText for any
+// (instance, session) so a test can assert the runtime-filed blocker quotes the
+// unit's last words.
+func (m *fakeManager) SessionAgentText(_ string, _ libacp.SessionID) (string, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.agentText, true
+}
+
+func (m *fakeManager) DeliverToSession(context.Context, libacp.SessionID, libacp.SessionNotification) error {
+	return nil
 }
 
 func (m *fakeManager) Stop(instanceID string) error {
@@ -178,6 +197,20 @@ func (m *fakeManager) stops() []string {
 	return append([]string(nil), m.stopCalls...)
 }
 
+func (m *fakeManager) prompts() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.promptCalls
+}
+
+func (m *fakeManager) promptCallBlocks() [][]libacp.ContentBlock {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([][]libacp.ContentBlock, len(m.promptBlocksByCall))
+	copy(out, m.promptBlocksByCall)
+	return out
+}
+
 func (m *fakeManager) cancels() []cancelCall {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -211,6 +244,20 @@ func registerAgent(t *testing.T, ctx context.Context, agents agentregistryservic
 		Command:   "/bin/true",
 	}))
 	require.NoError(t, agents.Create(ctx, agent))
+}
+
+// waitMissionSettled blocks until the detached dispatch goroutine has run to
+// completion for a BARE unit (one that files no mission fact): it nudges once and
+// then files exactly one runtime blocker, which is the goroutine's LAST durable
+// write, so its appearance means the goroutine is done — and t.Cleanup's db close
+// cannot race it. Use it after a successful Dispatch whose fake unit reports
+// nothing, so the test tears down against a quiescent goroutine.
+func waitMissionSettled(t *testing.T, missions missionservice.Service, missionID string) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		reps, err := missions.ListReports(context.Background(), missionID, 5)
+		return err == nil && len(reps) > 0
+	}, 5*time.Second, 20*time.Millisecond, "dispatch goroutine never settled (no runtime blocker filed)")
 }
 
 // countingRegistry wraps a real agentregistryservice.Service and counts
@@ -279,14 +326,19 @@ func TestFleetService_Dispatch_HappyPath(t *testing.T) {
 	registerAgent(t, ctx, agents, "runner", true)
 	missions := missionservice.New(db)
 
-	man := &fakeManager{
-		startID:        "inst-7",
-		openID:         "sess-7",
-		promptStarted:  make(chan struct{}),
-		promptReleased: make(chan struct{}),
-		promptDone:     make(chan struct{}),
+	man := &fakeManager{startID: "inst-7", openID: "sess-7"}
+	// A unit that files a report on its first turn — the happy path, no nudge —
+	// over the same store a real dispatched unit writes to.
+	man.onPrompt = func(call int) {
+		if call != 1 {
+			return
+		}
+		if ms, _ := missions.List(context.Background(), nil, 10); len(ms) == 1 {
+			_ = missions.AddReport(context.Background(), ms[0].ID, &missionservice.Report{
+				Kind: missionservice.ReportKindProgress, Summary: "shipping",
+			})
+		}
 	}
-	close(man.promptReleased) // let the async prompt run to completion freely
 
 	svc := New(man, agents, missions, nil, "/project/root", libtracker.NoopTracker{})
 
@@ -307,23 +359,27 @@ func TestFleetService_Dispatch_HappyPath(t *testing.T) {
 
 	m, err := missions.Get(ctx, result.MissionID)
 	require.NoError(t, err)
-	require.Equal(t, "ship the board", m.Intent)
+	require.Equal(t, "ship the board", m.Intent, "the intent is stored CLEAN — the preamble is wire-only")
 	require.Equal(t, "runner", m.AgentName)
 	require.Equal(t, "default", m.HITLPolicyName, "the mission carries the request's envelope")
 	require.Equal(t, "sess-7", m.SessionID, "bound to the session Dispatch just opened")
 	require.Equal(t, "inst-7", m.InstanceID, "bound to the instance Dispatch just started")
 
-	select {
-	case <-man.promptDone:
-	case <-time.After(2 * time.Second):
-		t.Fatal("async prompt never ran")
-	}
+	// The reporting unit is not nudged: exactly one turn ever runs.
+	require.Eventually(t, func() bool {
+		reps, _ := missions.ListReports(ctx, result.MissionID, 5)
+		return len(reps) == 1
+	}, 5*time.Second, 20*time.Millisecond)
+	require.Equal(t, 1, man.prompts(), "a unit that reported is not nudged")
 	require.Empty(t, man.stops(), "a successful dispatch must never stop the instance it just brought up")
 
-	// The intent IS the prompt: the first turn's content is the request's
-	// Intent, not some separate field.
-	text, _ := libacp.FlattenContent(man.promptBlocks)
-	require.Equal(t, "ship the board", text, "the intent runs as the unit's first turn")
+	// The intent IS the prompt, run CLEAN behind the wire-only preamble: turn one
+	// is [preamble, intent], and the intent block flattens to exactly the request.
+	blocks := man.promptCallBlocks()
+	require.Len(t, blocks, 1)
+	require.Len(t, blocks[0], 2, "the first turn is the preamble ahead of the intent")
+	intentText, _ := libacp.FlattenContent(blocks[0][1:])
+	require.Equal(t, "ship the board", intentText, "the intent runs as the unit's first turn")
 }
 
 // TestFleetService_Dispatch_ResolvesTheAgentExactlyOnce is the service half of
@@ -339,9 +395,10 @@ func TestFleetService_Dispatch_ResolvesTheAgentExactlyOnce(t *testing.T) {
 	agents := agentregistryservice.New(db)
 	registerAgent(t, ctx, agents, "runner", true)
 	counting := &countingRegistry{Service: agents}
+	missions := missionservice.New(db)
 
 	man := &fakeManager{startID: "inst-once", openID: "sess-once"}
-	svc := New(man, counting, missionservice.New(db), nil, "/project/root", nil)
+	svc := New(man, counting, missions, nil, "/project/root", nil)
 
 	result, err := svc.Dispatch(ctx, DispatchRequest{
 		AgentName: "runner", Intent: "do the thing", HITLPolicyName: "default",
@@ -355,6 +412,12 @@ func TestFleetService_Dispatch_ResolvesTheAgentExactlyOnce(t *testing.T) {
 	require.NotNil(t, spawned, "the kernel is handed the record, not a name to re-resolve")
 	require.Equal(t, "runner", spawned.Name)
 	require.True(t, spawned.Enabled, "the bytes that were judged are the bytes that are spawned")
+
+	// The bare unit's shepherding (nudge + blocker) reads only the mission store,
+	// never the registry — so one read stands even after the goroutine runs. Settle
+	// it so its writes do not race t.Cleanup.
+	waitMissionSettled(t, missions, result.MissionID)
+	require.Equal(t, 1, counting.reads(), "shepherding a mute unit adds no registry read")
 }
 
 func TestFleetService_Dispatch_MissingAgentNameRejected(t *testing.T) {
@@ -637,6 +700,16 @@ func TestFleetService_Cancel_EmptySessionIDReachesSilentSession(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, result.SessionID)
 
+	// The stub unit files no mission fact, so the runtime nudges once and then
+	// files a blocker. Wait for that to settle: it leaves the session OPEN but
+	// IDLE (prompt turns do not close a session), which is exactly the quiescent
+	// black hole this test's cancel assertions want — and it keeps the detached
+	// goroutine from racing t.Cleanup's teardown.
+	require.Eventually(t, func() bool {
+		reps, lerr := missions.ListReports(ctx, result.MissionID, 5)
+		return lerr == nil && len(reps) > 0
+	}, 20*time.Second, 50*time.Millisecond, "the unattended unit's nudge-then-blocker never settled")
+
 	st, err := svc.Get(ctx, result.InstanceID)
 	require.NoError(t, err)
 	require.Equal(t, []string{result.SessionID}, st.SessionIDs,
@@ -682,14 +755,7 @@ func TestFleetService_Dispatch_RecordsParentSession(t *testing.T) {
 	registerAgent(t, ctx, agents, "runner", true)
 	missions := missionservice.New(db)
 
-	man := &fakeManager{
-		startID:        "inst-9",
-		openID:         "sess-9",
-		promptStarted:  make(chan struct{}),
-		promptReleased: make(chan struct{}),
-		promptDone:     make(chan struct{}),
-	}
-	close(man.promptReleased)
+	man := &fakeManager{startID: "inst-9", openID: "sess-9"}
 	svc := New(man, agents, missions, nil, "/project/root", libtracker.NoopTracker{})
 
 	fired, err := svc.Dispatch(ctx, DispatchRequest{
@@ -704,17 +770,10 @@ func TestFleetService_Dispatch_RecordsParentSession(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "upstream-session-3", m.ParentSessionID)
 	require.Equal(t, "sess-9", m.SessionID, "the spawned session is a different fact from the parent")
+	waitMissionSettled(t, missions, fired.MissionID)
 
-	// A second unit, fired without a parent. It needs its own fakeManager: the
-	// double's one-shot promptDone channel cannot serve two dispatches.
-	man2 := &fakeManager{
-		startID:        "inst-10",
-		openID:         "sess-10",
-		promptStarted:  make(chan struct{}),
-		promptReleased: make(chan struct{}),
-		promptDone:     make(chan struct{}),
-	}
-	close(man2.promptReleased)
+	// A second unit, fired without a parent, on its own fakeManager.
+	man2 := &fakeManager{startID: "inst-10", openID: "sess-10"}
 	svc2 := New(man2, agents, missions, nil, "/project/root", libtracker.NoopTracker{})
 
 	direct, err := svc2.Dispatch(ctx, DispatchRequest{
@@ -727,4 +786,196 @@ func TestFleetService_Dispatch_RecordsParentSession(t *testing.T) {
 	m2, err := missions.Get(ctx, direct.MissionID)
 	require.NoError(t, err)
 	require.Empty(t, m2.ParentSessionID, "an operator-fired mission has no parent session")
+	waitMissionSettled(t, missions, direct.MissionID)
+}
+
+// ─── the unattended-turn cure: heartbeat, one nudge, then a runtime blocker ──
+//
+// These are the FAST (no-subprocess) siblings of the misbehaving-fixture
+// acceptance e2e (e2e_unattended_nudge_test.go). The pure decision and the
+// blocker text are pinned as TestUnit_*; the loop's shape is driven through the
+// fakeManager against a real (sqlite) mission store.
+
+// TestUnit_missionShowsUnitReached is the pure decision at the heart of the nudge
+// loop, exhaustive over the facts it keys on.
+func TestUnit_missionShowsUnitReached(t *testing.T) {
+	open := &missionservice.Mission{Status: missionservice.StatusOpen}
+	require.False(t, missionShowsUnitReached(open, 0), "a bare open mission reached no one")
+	require.True(t, missionShowsUnitReached(open, 1), "a filed report is the unit reaching the operator")
+
+	planned := &missionservice.Mission{Status: missionservice.StatusOpen, Plan: missionservice.Plan{Revision: 1}}
+	require.True(t, missionShowsUnitReached(planned, 0), "a plan revision is a mission-tool fact")
+
+	for _, term := range []missionservice.Status{
+		missionservice.StatusLanded, missionservice.StatusDerailed,
+		missionservice.StatusStuck, missionservice.StatusAbandoned,
+	} {
+		require.Truef(t, missionShowsUnitReached(&missionservice.Mission{Status: term}, 0),
+			"a terminal verdict (%s) is the unit finishing its mission", term)
+	}
+
+	require.False(t, missionShowsUnitReached(nil, 0), "no mission and no report is not-reached")
+	require.True(t, missionShowsUnitReached(nil, 2), "reports alone suffice even if the mission read failed")
+}
+
+// TestUnit_silentTurnBlocker pins the two shapes of the runtime-filed blocker and
+// the single-line-summary invariant missionservice.AddReport validation requires.
+func TestUnit_silentTurnBlocker(t *testing.T) {
+	// With recoverable last words: the summary QUOTES them, single-lined; the
+	// detail keeps the full text verbatim and points at the session.
+	sum, det := silentTurnBlocker("I need to know which\nbranch to target.", "sess-1")
+	require.NotContains(t, sum, "\n", "a report summary must be a single line")
+	require.Contains(t, sum, "which branch to target", "the summary carries the unit's own words")
+	require.Contains(t, det, "I need to know which\nbranch to target.", "the detail keeps the full text verbatim")
+	require.Contains(t, det, "sess-1")
+
+	// Without recoverable text: a clear generic pointing at the session.
+	sum, det = silentTurnBlocker("   ", "sess-2")
+	require.NotEmpty(t, sum)
+	require.NotContains(t, sum, "\n")
+	require.Contains(t, sum, "sess-2")
+	require.Contains(t, det, "sess-2")
+
+	// A pathological long single line still yields a bounded single-line summary.
+	sum, _ = silentTurnBlocker(strings.Repeat("x", 5000), "sess-3")
+	require.NotContains(t, sum, "\n")
+	require.LessOrEqual(t, len([]rune(sum)), 241, "the excerpt is truncated (max runes + ellipsis)")
+}
+
+// TestFleetService_Dispatch_BareUnitNudgedOnceThenBlocked drives the cure with a
+// fake kernel whose unit only ever ends its turn (never files a mission fact):
+// the runtime stamps liveness, nudges EXACTLY once, and — still mute — files a
+// blocker itself, with no third prompt and the mission left OPEN (blocked, not
+// terminal).
+func TestFleetService_Dispatch_BareUnitNudgedOnceThenBlocked(t *testing.T) {
+	ctx, db := setupRegistryDB(t)
+	agents := agentregistryservice.New(db)
+	registerAgent(t, ctx, agents, "runner", true)
+	missions := missionservice.New(db)
+
+	man := &fakeManager{startID: "inst-bare", openID: "sess-bare", agentText: "which branch should I target?"}
+	svc := New(man, agents, missions, nil, "/project/root", libtracker.NoopTracker{})
+
+	res, err := svc.Dispatch(ctx, DispatchRequest{
+		AgentName: "runner", Intent: "migrate the module", HITLPolicyName: "default",
+	})
+	require.NoError(t, err)
+
+	// The runtime files exactly one blocker once the unit is mute across both turns.
+	require.Eventually(t, func() bool {
+		reps, lerr := missions.ListReports(ctx, res.MissionID, 5)
+		return lerr == nil && len(reps) == 1
+	}, 5*time.Second, 20*time.Millisecond, "the runtime should file one blocker for a mute unit")
+
+	reps, err := missions.ListReports(ctx, res.MissionID, 5)
+	require.NoError(t, err)
+	require.Len(t, reps, 1)
+	require.Equal(t, missionservice.ReportKindBlocker, reps[0].Kind)
+	require.Contains(t, reps[0].Summary, "which branch should I target",
+		"the runtime-filed blocker quotes the unit's last words")
+
+	// Exactly two prompts: the intent turn and ONE nudge. No third, ever.
+	require.Equal(t, 2, man.prompts(), "one intent turn + exactly one nudge, hard-capped")
+
+	// Turn 1 = [preamble, clean intent]; turn 2 = [nudge]. The intent is stored clean.
+	blocks := man.promptCallBlocks()
+	require.Len(t, blocks, 2)
+	require.Len(t, blocks[0], 2, "the first turn is the preamble ahead of the intent")
+	preText, _ := libacp.FlattenContent(blocks[0][:1])
+	require.Equal(t, missionPreamble, preText)
+	intentText, _ := libacp.FlattenContent(blocks[0][1:])
+	require.Equal(t, "migrate the module", intentText, "the intent runs clean; the preamble is wire-only")
+	nudgeText, _ := libacp.FlattenContent(blocks[1])
+	require.Equal(t, missionNudge, nudgeText)
+
+	// Liveness got stamped (turn completion is liveness), and the mission is NOT
+	// terminal — it is blocked, not done.
+	m, err := missions.Get(ctx, res.MissionID)
+	require.NoError(t, err)
+	require.NotNil(t, m.LastHeartbeat, "every completed turn stamps liveness")
+	require.Equal(t, missionservice.StatusOpen, m.Status, "a nudged-then-blocked mission stays open, not terminal")
+	require.Equal(t, "migrate the module", m.Intent, "the preamble never persisted as the intent")
+}
+
+// TestFleetService_Dispatch_ReportingUnitGetsNoNudge is the happy-path guard: a
+// unit that files a mission report on its first turn is NOT nudged — the runtime
+// sends exactly one prompt and files no blocker of its own.
+func TestFleetService_Dispatch_ReportingUnitGetsNoNudge(t *testing.T) {
+	ctx, db := setupRegistryDB(t)
+	agents := agentregistryservice.New(db)
+	registerAgent(t, ctx, agents, "runner", true)
+	missions := missionservice.New(db)
+
+	man := &fakeManager{startID: "inst-rep", openID: "sess-rep"}
+	// The "unit" files a report on its first turn, over the same store a real
+	// dispatched unit writes to — so missionReached() is true and no nudge follows.
+	man.onPrompt = func(call int) {
+		if call != 1 {
+			return
+		}
+		if ms, _ := missions.List(context.Background(), nil, 10); len(ms) == 1 {
+			_ = missions.AddReport(context.Background(), ms[0].ID, &missionservice.Report{
+				Kind: missionservice.ReportKindResult, Summary: "did the thing",
+			})
+		}
+	}
+	svc := New(man, agents, missions, nil, "/project/root", libtracker.NoopTracker{})
+
+	res, err := svc.Dispatch(ctx, DispatchRequest{
+		AgentName: "runner", Intent: "do the thing", HITLPolicyName: "default",
+	})
+	require.NoError(t, err)
+
+	// The unit's single report lands and NOTHING else is added.
+	require.Eventually(t, func() bool {
+		reps, lerr := missions.ListReports(ctx, res.MissionID, 5)
+		return lerr == nil && len(reps) == 1
+	}, 5*time.Second, 20*time.Millisecond)
+
+	// Give any (erroneous) nudge a chance to happen, then prove it did not.
+	require.Never(t, func() bool {
+		return man.prompts() > 1
+	}, 300*time.Millisecond, 50*time.Millisecond, "a unit that reported must not be nudged")
+
+	require.Equal(t, 1, man.prompts(), "exactly one turn: the intent, no nudge")
+	reps, err := missions.ListReports(ctx, res.MissionID, 5)
+	require.NoError(t, err)
+	require.Len(t, reps, 1, "only the unit's own report — no runtime blocker")
+	require.Equal(t, missionservice.ReportKindResult, reps[0].Kind)
+}
+
+// TestFleetService_Dispatch_EmptyCwdResolvesToAllowlistDefault pins that an absent
+// cwd resolves to the workspace ALLOWLIST default (the effective root),
+// authoritatively — NOT to a divergent projectRoot. This is the guard that keeps
+// the traced footgun (a stray $HOME projectRoot leaking as a dispatched unit's
+// cwd) from ever reappearing: when a Factory is configured, its default wins.
+func TestFleetService_Dispatch_EmptyCwdResolvesToAllowlistDefault(t *testing.T) {
+	allowed := t.TempDir()
+	roots, err := vfs.NewFactory(allowed)
+	require.NoError(t, err)
+	resolvedAllowed, err := vfs.ResolveRoot(allowed) // the symlink-resolved form the Factory stores
+	require.NoError(t, err)
+
+	ctx, db := setupRegistryDB(t)
+	agents := agentregistryservice.New(db)
+	registerAgent(t, ctx, agents, "runner", true)
+	missions := missionservice.New(db)
+
+	man := &fakeManager{startID: "inst-cwd", openID: "sess-cwd"}
+	// projectRoot deliberately DIVERGES from the allowlist default — the shape of
+	// the footgun. It must resolve to the allowlist, never to the stray fallback.
+	svc := New(man, agents, missions, roots, "/some/other/home", libtracker.NoopTracker{})
+
+	res, err := svc.Dispatch(ctx, DispatchRequest{
+		AgentName: "runner", Intent: "do the thing", HITLPolicyName: "default",
+		// Cwd omitted.
+	})
+	require.NoError(t, err)
+
+	require.Len(t, man.openSpecs, 1)
+	require.Equal(t, resolvedAllowed, man.openSpecs[0].Cwd,
+		"an absent cwd resolves to the allowlist default, not the divergent projectRoot")
+	require.NotEqual(t, "/some/other/home", man.openSpecs[0].Cwd)
+
+	waitMissionSettled(t, missions, res.MissionID)
 }

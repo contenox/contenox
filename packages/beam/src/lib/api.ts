@@ -14,10 +14,13 @@ import {
   DispatchRequest,
   DispatchResult,
   FleetEntry,
+  HITLApproval,
   HITLPolicy,
   LocalHook,
   MCPServer,
   Mission,
+  MissionChangesResponse,
+  MissionFileDiff,
   MissionReport,
   ModeldCapacityResponse,
   ModelDescriptor,
@@ -26,6 +29,7 @@ import {
   ModeldStatusResponse,
   ModeldUnloadResponse,
   ModelRegistryEntry,
+  OperatorInboxItem,
   PushModelResult,
   RemoteHook,
   SetupStatus,
@@ -33,6 +37,9 @@ import {
   SupportedProvider,
   TaskExecutionRequest,
   TaskExecutionResponse,
+  TerminalSession,
+  TerminalSessionRequest,
+  WorkspaceRootsResponse,
 } from './types';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -182,6 +189,27 @@ export const api = {
   getMission: (id: string) => apiFetch<Mission>(`/api/missions/${encodeURIComponent(id)}`),
   listMissionReports: (missionId: string) =>
     apiFetch<MissionReport[]>(`/api/missions/${encodeURIComponent(missionId)}/reports`),
+
+  // Mission changes — the attention layer's per-mission changed-files list and
+  // per-file diffs (see runtime/missionchanges + runtime/internal/
+  // missionchangesapi). The whole route group is NIL-GATED server-side: a serve
+  // without change tracking registers nothing and 404s, which the caller
+  // (useMissionChanges) reads as "feature absent" — the Changes tab and the
+  // scope/anomaly surfacing simply do not appear — rather than surfacing an
+  // error. `files` is non-nil and ordered by Degree-of-Interest score DESC;
+  // `incomplete` marks a capped list.
+  getMissionChanges: (missionId: string) =>
+    apiFetch<MissionChangesResponse>(`/api/missions/${encodeURIComponent(missionId)}/changes`),
+  /**
+   * One changed file's aggregated diff. `path` is the ABSOLUTE path from the
+   * changes list, passed verbatim. 422 when the path query param is missing,
+   * 404 when the path is not one of the mission's changed files; `truncated` in
+   * the body marks a diff capped at 128 KiB per side.
+   */
+  getMissionChangeDiff: (missionId: string, path: string) =>
+    apiFetch<MissionFileDiff>(
+      `/api/missions/${encodeURIComponent(missionId)}/changes/diff?path=${encodeURIComponent(path)}`,
+    ),
   /**
    * Fires a mission: brings `agentName` up, opens a session, and runs
    * `intent` as its first turn, detached. 202 with the ids as soon as the
@@ -191,6 +219,63 @@ export const api = {
    */
   dispatchMission: (data: DispatchRequest) =>
     apiFetch<DispatchResult>('/api/fleet/dispatch', options('POST', data)),
+
+  // Approvals — the attention inbox's durable asks (see runtime/internal/
+  // approvalapi and docs/development/blueprints/acp/fleet-consolidation.md,
+  // slice C2). listApprovals returns pending asks newest-first; answerApproval
+  // resolves one. There is deliberately no create over REST — an ask is raised
+  // by an unattended unit's HITL path, never by a client.
+  listApprovals: (limit?: number) => {
+    const qs = limit !== undefined ? `?limit=${encodeURIComponent(limit)}` : '';
+    return apiFetch<HITLApproval[]>(`/api/approvals${qs}`);
+  },
+  /**
+   * Answers a pending ask. `approved` is the whole payload: true allows the
+   * gated action, false denies it. 404 when the id is unknown, 409 when the ask
+   * was already resolved or has expired (both mean "can no longer be answered",
+   * distinguished by message). The response body is the plain string
+   * "approved" / "denied".
+   */
+  answerApproval: (id: string, approved: boolean) =>
+    apiFetch<string>(
+      `/api/approvals/${encodeURIComponent(id)}`,
+      options('POST', { approved }),
+    ),
+
+  // Operator inbox (runtime/operatorinbox) — mission reports that reached NO
+  // live supervising session: an operator-fired mission's reports, or reports
+  // whose parent session had ended by the time they arrived. Newest first.
+  // The route is NIL-GATED server-side (registered only when serve builds an
+  // operator-inbox service), so a 404 here means the feature is absent — the
+  // caller (useOperatorInbox) folds that into a quiet "no rows", not an error.
+  getOperatorInbox: (limit?: number) => {
+    const qs = limit !== undefined ? `?limit=${encodeURIComponent(limit)}` : '';
+    return apiFetch<OperatorInboxItem[]>(`/api/operator-inbox${qs}`);
+  },
+
+  // Workspace roots — the serve-configured folder allowlist a client offers as
+  // a picker (per-session cwd, dispatch cwd, workspace switcher) instead of
+  // reverse-engineering the boundary from 422s (see runtime/internal/
+  // localfileapi/workspace_roots.go). The route is NIL-GATED server-side: a
+  // serve with no allowlist configured registers nothing and 404s, which the
+  // caller (useWorkspaceRoots) reads as "feature absent" — the picker
+  // affordances simply do not appear — rather than surfacing an error.
+  getWorkspaceRoots: () => apiFetch<WorkspaceRootsResponse>('/api/workspace/roots'),
+
+  // Interactive terminal (see runtime/internal/terminalapi). createTerminalSession
+  // opens a PTY under `cwd` (validated against the workspace-root allowlist,
+  // empty → default root) and returns the id plus the already-`/api`-prefixed
+  // WebSocket path to attach to. The whole route group is registered only when
+  // serve enables it, so a 404 here means the terminal feature is absent — the
+  // caller degrades to a graceful "unavailable" state, it does not retry. The WS
+  // itself is authenticated by the same-origin `auth_token` cookie riding the
+  // upgrade handshake (see lib/hostTerminal.ts), exactly like the /acp socket;
+  // no token is handled in JS. 422 (UnprocessableEntity) is a real refusal
+  // (too many sessions, or a cwd outside the roots).
+  createTerminalSession: (data: TerminalSessionRequest) =>
+    apiFetch<TerminalSession>('/api/terminal/sessions', options('POST', data)),
+  deleteTerminalSession: (id: string) =>
+    apiFetch<void>(`/api/terminal/sessions/${encodeURIComponent(id)}`, options('DELETE')),
 
   // Backends
   getBackends: () => apiFetch<Backend[]>('/api/backends'),

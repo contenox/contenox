@@ -2,7 +2,6 @@ package terminalapi
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -19,14 +18,25 @@ import (
 const localTerminalPrincipal = "local-user"
 
 // AddRoutes registers interactive terminal endpoints. If enabled is false, this is a no-op.
-func AddRoutes(mux *http.ServeMux, svc terminalservice.Service, auth middleware.AuthZReader, enabled bool, token string) {
+//
+// authenticate is the credential gate for every terminal route INCLUDING the
+// websocket handshake. It is a FUNCTION, not a raw token, for two load-bearing
+// reasons: (1) the terminal must accept exactly the credentials every other
+// serve surface accepts — the raw shared secret AND the browser's session JWT
+// cookie minted by /ui/login (serverapi.AuthenticateCredential is the one
+// gate; a raw-only ConstantTimeCompare here once rejected Beam's cookie with a
+// 401 while /acp accepted it — one login must satisfy every surface); and
+// (2) serverapi imports this package, so importing the gate from there would
+// cycle — the caller injects it instead. nil means "no token configured":
+// open, matching the loopback-only serving mode that permits an empty TOKEN.
+func AddRoutes(mux *http.ServeMux, svc terminalservice.Service, auth middleware.AuthZReader, enabled bool, authenticate func(credential string) bool) {
 	if !enabled {
 		return
 	}
 	if svc == nil {
 		svc = terminalservice.NewDisabled()
 	}
-	h := &handler{svc: svc, auth: auth, token: strings.TrimSpace(token)}
+	h := &handler{svc: svc, auth: auth, authenticate: authenticate}
 	mux.HandleFunc("GET /terminal/sessions", h.listSessions)
 	mux.HandleFunc("POST /terminal/sessions", h.createSession)
 	mux.HandleFunc("GET /terminal/sessions/{id}", h.getSession)
@@ -35,9 +45,9 @@ func AddRoutes(mux *http.ServeMux, svc terminalservice.Service, auth middleware.
 }
 
 type handler struct {
-	svc   terminalservice.Service
-	auth  middleware.AuthZReader
-	token string
+	svc          terminalservice.Service
+	auth         middleware.AuthZReader
+	authenticate func(credential string) bool
 }
 
 type createSessionRequest struct {
@@ -73,10 +83,10 @@ func (h *handler) principal(ctx context.Context) (string, error) {
 }
 
 func (h *handler) requireToken(r *http.Request) error {
-	if h.token == "" {
+	if h.authenticate == nil {
 		return nil
 	}
-	if subtle.ConstantTimeCompare([]byte(extractTerminalToken(r)), []byte(h.token)) != 1 {
+	if !h.authenticate(extractTerminalToken(r)) {
 		return apiframework.ErrUnauthorized
 	}
 	return nil

@@ -1,6 +1,7 @@
 package hitlservice
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -121,10 +122,85 @@ type Rule struct {
 // Rules are evaluated in order; the first matching rule wins.
 // DefaultAction is applied when no rule matches; it is fail-closed to "approve"
 // when absent so an unaccounted-for tool pauses for a human.
+//
+// Compute is the OPTIONAL compute half of the envelope (see ComputeBounds). A nil
+// Compute is the default and means UNBOUNDED — an envelope with no compute block
+// bounds only ACTIONS (the rules above), exactly as it did before this field
+// existed. It is a pointer so its absence is a first-class, wire-visible fact: a
+// policy that never grew a compute block round-trips through JSON byte-for-byte as
+// before, and the enforcement seams read `Compute == nil` as "this mission is
+// bounded only by its rules".
 type Policy struct {
-	DefaultAction Action `json:"default_action,omitempty"`
-	Rules         []Rule `json:"rules"`
+	DefaultAction Action         `json:"default_action,omitempty"`
+	Rules         []Rule         `json:"rules"`
+	Compute       *ComputeBounds `json:"compute,omitempty"`
 }
+
+// OnExhausted names what a mission does when it crosses one of its envelope's
+// compute bounds. It is a small, closed set — the terminal-vs-pause choice the
+// operator declares up front, the compute analogue of Rule.OnTimeout.
+type OnExhausted string
+
+const (
+	// OnExhaustedFinishStuck finishes the mission at StatusStuck through the
+	// runtime's real terminal machinery, with a reason naming the bound. It is the
+	// default when OnExhausted is unset, and the only behavior enforced today.
+	OnExhaustedFinishStuck OnExhausted = "finish_stuck"
+	// OnExhaustedPauseAsk is DECLARED but not yet enforced: it will file a durable
+	// ask ("this mission hit its compute bound — extend it or let it stop?") instead
+	// of finishing. Until that machinery lands, an envelope that sets it is honored
+	// AS finish_stuck at the enforcement seam. The validator accepts it so a
+	// forward-looking envelope parses today; the blueprint records the deferral.
+	OnExhaustedPauseAsk OnExhausted = "pause_ask"
+)
+
+// ComputeBounds is the envelope's COMPUTE half: the ceiling a mission's TOTAL
+// compute is held under, alongside the per-tool ACTION rules above. It is the
+// constitutional widening of the envelope from "what a unit may DO" to "how much a
+// unit may SPEND" — the same envelope, now the unit's total boundary. These are
+// GATES by design, the legitimate kind: envelope-declared, operator-authored, and
+// deterministic at the boundary (turn start, tool dispatch) — not the advice the
+// attention layer appends.
+//
+// Every bound is a CEILING and OPT-IN: a zero/absent field is unbounded, so an
+// envelope with no compute block (or an empty one) runs exactly as it did before —
+// bounds only ever RESTRICT, never grant. Bounds are per MISSION, checked at
+// deterministic seams, and exhaustion is never silent (see OnExhausted).
+//
+// What is measured and what is NOT yet enforced (honest scope, per the blueprint):
+//   - MaxTurns and MaxToolCalls are countable deterministically host-side and ARE
+//     enforced — the drive loop's prompt turns, and the unattended answerer's
+//     envelope-gated tool dispatches.
+//   - MaxTokens is BEST-EFFORT: it is enforced only from the usage the downstream
+//     unit actually reports (ACP usage_update), which not every provider emits — it
+//     bounds a mission whose unit reports usage and is inert for one whose unit does
+//     not, rather than guessing.
+//   - ModelAllowlist / BackendAllowlist are DECLARED here and validated for shape,
+//     but model/backend resolution happens inside the unit's own process where the
+//     host cannot see it, so they are NOT yet enforced. They are parsed so an
+//     envelope can express the intent and a later llmrepo-side seam can honor it.
+type ComputeBounds struct {
+	MaxTurns         int         `json:"maxTurns,omitempty"`
+	MaxToolCalls     int         `json:"maxToolCalls,omitempty"`
+	MaxTokens        int         `json:"maxTokens,omitempty"`
+	ModelAllowlist   []string    `json:"modelAllowlist,omitempty"`
+	BackendAllowlist []string    `json:"backendAllowlist,omitempty"`
+	OnExhausted      OnExhausted `json:"onExhausted,omitempty"`
+}
+
+// Compute-bound validation caps. They are DEFENSIVE, not aesthetic (the register
+// of the plan/handover caps in missionservice): they exist to reject a negative or
+// an absurd value a hand-edited or hallucinated policy might carry, not to impose a
+// house style on how tight a bound should be. A real operator ceiling sits far
+// below these; a value past them is a typo (an extra digit, a sign flip) that must
+// fail the policy to load rather than silently bound a mission at ten billion.
+const (
+	maxComputeTurns               = 100_000
+	maxComputeToolCalls           = 10_000_000
+	maxComputeTokens              = 100_000_000_000
+	maxComputeAllowlist           = 256
+	maxComputeAllowlistEntryBytes = 512
+)
 
 // Reason constants used in EvaluationResult.Reason.
 const (
@@ -539,10 +615,42 @@ func loadPolicy(ctx context.Context, src PolicySource, tenantID, policyPath stri
 	if err := json.Unmarshal(data, &p); err != nil {
 		return nil, fmt.Errorf("parse hitl policy %q: %w", policyPath, err)
 	}
+	if err := rejectUnknownComputeFields(data); err != nil {
+		return nil, fmt.Errorf("invalid hitl policy %q: %w", policyPath, err)
+	}
 	if err := validatePolicy(&p); err != nil {
 		return nil, fmt.Errorf("invalid hitl policy %q: %w", policyPath, err)
 	}
 	return &p, nil
+}
+
+// rejectUnknownComputeFields strict-decodes JUST the policy's "compute" sub-object
+// so a typo in a NEW bound (maxTurn, onExhaust) fails the policy to load rather
+// than silently running the mission unbounded on the field the operator thought
+// they set. The strictness is deliberately scoped to the block being introduced:
+// the rest of the policy stays laxly parsed (json.Unmarshal above), so every
+// existing policy carrying an incidental extra top-level key — a "//"-style comment
+// note, a future field — keeps loading exactly as before. Only "compute" is held to
+// deny-unknown-fields, and only when it is present.
+func rejectUnknownComputeFields(data []byte) error {
+	var probe struct {
+		Compute json.RawMessage `json:"compute"`
+	}
+	if err := json.Unmarshal(data, &probe); err != nil {
+		// A malformed document was already reported by the top-level Unmarshal in
+		// loadPolicy; nothing to add here.
+		return nil
+	}
+	if len(probe.Compute) == 0 {
+		return nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(probe.Compute))
+	dec.DisallowUnknownFields()
+	var cb ComputeBounds
+	if err := dec.Decode(&cb); err != nil {
+		return fmt.Errorf("compute: %w", err)
+	}
+	return nil
 }
 
 // validatePolicy checks semantic constraints that cannot be expressed in the JSON schema.
@@ -571,6 +679,62 @@ func validatePolicy(p *Policy) error {
 			default:
 				return fmt.Errorf("rule %d, condition %d: unknown op %q", i, j, c.Op)
 			}
+		}
+	}
+	if p.Compute != nil {
+		if err := validateComputeBounds(p.Compute); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateComputeBounds checks the envelope's compute block for shape: every
+// ceiling non-negative and within its defensive cap, the onExhausted value known,
+// and each allowlist within bounds. It is HARD on shape and silent on tightness —
+// it will not tell an operator their maxTurns is too small, only that it is not a
+// negative or an absurd one — the same stance the plan/handover validators take.
+func validateComputeBounds(c *ComputeBounds) error {
+	if err := validateComputeCeiling("maxTurns", c.MaxTurns, maxComputeTurns); err != nil {
+		return err
+	}
+	if err := validateComputeCeiling("maxToolCalls", c.MaxToolCalls, maxComputeToolCalls); err != nil {
+		return err
+	}
+	if err := validateComputeCeiling("maxTokens", c.MaxTokens, maxComputeTokens); err != nil {
+		return err
+	}
+	switch c.OnExhausted {
+	case "", OnExhaustedFinishStuck, OnExhaustedPauseAsk:
+	default:
+		return fmt.Errorf("compute: unknown onExhausted %q (must be finish_stuck or pause_ask)", c.OnExhausted)
+	}
+	if err := validateComputeAllowlist("modelAllowlist", c.ModelAllowlist); err != nil {
+		return err
+	}
+	return validateComputeAllowlist("backendAllowlist", c.BackendAllowlist)
+}
+
+func validateComputeCeiling(name string, v, max int) error {
+	if v < 0 {
+		return fmt.Errorf("compute: %s must not be negative (got %d)", name, v)
+	}
+	if v > max {
+		return fmt.Errorf("compute: %s is out of range (got %d, max %d)", name, v, max)
+	}
+	return nil
+}
+
+func validateComputeAllowlist(name string, entries []string) error {
+	if len(entries) > maxComputeAllowlist {
+		return fmt.Errorf("compute: %s has too many entries (%d, max %d)", name, len(entries), maxComputeAllowlist)
+	}
+	for i, e := range entries {
+		if strings.TrimSpace(e) == "" {
+			return fmt.Errorf("compute: %s entry %d is empty", name, i)
+		}
+		if len(e) > maxComputeAllowlistEntryBytes {
+			return fmt.Errorf("compute: %s entry %d exceeds max length (%d bytes, max %d)", name, i, len(e), maxComputeAllowlistEntryBytes)
 		}
 	}
 	return nil

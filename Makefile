@@ -161,6 +161,7 @@ CONTENOX_DEV_URL ?= http://$(CONTENOX_DEV_ADDR):$(CONTENOX_DEV_PORT)
 	dev-beam dev-web-proxy dev-install dev-install-vscode dev-link dev-unlink vscode-dev-install \
 	run-modeld \
 	test test-unit test-api test-ui test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help \
+	tool-eval \
 	acp-conformance acp-client-e2e acp-host-e2e \
 	verify-ui-embed
 
@@ -170,6 +171,7 @@ help:
 	@echo "release-*  bundle-modeld-deps[-linux|-darwin|-windows] push/pull-modeld-deps package-modeld-release[-<os>] modeld-release-metadata push-modeld-release push-modeld-index"
 	@echo "           (devices publish native dep bundles; release assembly later pulls a bundle and packages modeld; see docs/development/modeld-release-runbook.md)"
 	@echo "test-*     test test-unit test-api test-ui test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help"
+	@echo "tool-eval  gated per-model tool-eval matrix (opt-in; CONTENOX_RUN_TOOL_EVALS=1; see comment above the target)"
 	@echo "acp-conformance  validate libacp's agent-side wire dispatch against Rust reference ACP clients (needs ACP_VALIDATOR_BIN, see Makefile comment)"
 	@echo "acp-client-e2e   validate libacp's client-side wire dispatch against the Rust reference testy agent over a real subprocess (needs ACP_TESTY_BIN, see Makefile comment)"
 	@echo "acp-host-e2e     validate the composed registry→host path (runtime/agenthost) end to end: contenox self-loopback always; testy/claude too when ACP_TESTY_BIN/ACP_CLAUDE_ACP_BIN are set (see Makefile comment)"
@@ -681,6 +683,29 @@ test-llamacpp-direct:
 
 test-vllm:
 	CONTENOX_RUN_VLLM_TESTS=1 GOMAXPROCS=1 go test -C $(PROJECT_ROOT) -run '^TestSystem_VLLM' ./runtime/modelrepo
+
+# tool-eval: the incident-driven, per-model tool-eval matrix
+# (docs/development/blueprints/tool-hardening.md, "The eval harness"). Like test-vllm
+# it is OPT-IN and gated so CI and default `go test` stay hermetic; the harness's own
+# plumbing is covered by the ungated TestUnit_ToolEval_* self-tests (a scripted model,
+# no backend). This target runs the LIVE matrix against a configured local model,
+# driving the real localtools pipeline and the real toolguidance envelope through one
+# agentic loop, and scoring two axes per model x scenario: task success (an invariant,
+# never a tool-call sequence) and first-attempt tool-format compliance (malformed-rate,
+# its own column — rec 10). Results are STOCHASTIC measurements, not build gates: the
+# suite records seed/temperature and never fails on a model's task outcome.
+# Env vars:
+#   CONTENOX_RUN_TOOL_EVALS=1   required to run (else the suite Skips with a teaching message)
+#   CONTENOX_TOOL_EVAL_MODEL    model id      (default qwen2.5:0.5b)
+#   CONTENOX_TOOL_EVAL_PROVIDER provider type (default ollama)
+#   CONTENOX_TOOL_EVAL_URL      backend URL   (default http://127.0.0.1:11434)
+#   CONTENOX_TOOL_EVAL_REPEATS  N runs per required scenario (default 1; the -count knob)
+#   CONTENOX_TOOL_EVAL_OUT      results dir   (default bin/; a timestamped JSON lands there)
+# A run needs the model up and pulled (e.g. `ollama serve && ollama pull qwen2.5:0.5b`);
+# with nothing reachable the suite probes and Skips cleanly.
+tool-eval:
+	CONTENOX_RUN_TOOL_EVALS=1 CONTENOX_TOOL_EVAL_OUT=$(PROJECT_ROOT)/bin GOMAXPROCS=1 \
+		go test -C $(PROJECT_ROOT) -v -timeout 30m -run '^TestSystem_ToolEval' ./runtime/tooleval
 
 test-system:
 	GOMAXPROCS=1 go test -C $(PROJECT_ROOT) -run '^TestSystem_' ./...

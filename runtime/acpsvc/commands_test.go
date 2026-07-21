@@ -56,11 +56,12 @@ func TestParseCommand(t *testing.T) {
 }
 
 func TestAcpCommandsCoverDispatch(t *testing.T) {
-	// Every advertised command must be recognized by parseCommand, so the menu
-	// the client shows never offers a command Prompt would pass through as text.
-	for _, c := range acpCommands() {
+	// Every known command (the capability-unfiltered superset) must be
+	// recognized by parseCommand, so no advertised subset of it can ever be
+	// offered by a menu that Prompt would then pass through as plain text.
+	for _, c := range allACPCommands() {
 		if _, _, ok := parseCommand("/" + c.Name); !ok {
-			t.Errorf("advertised command %q is not recognized by parseCommand", c.Name)
+			t.Errorf("known command %q is not recognized by parseCommand", c.Name)
 		}
 	}
 }

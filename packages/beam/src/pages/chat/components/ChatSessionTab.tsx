@@ -24,6 +24,8 @@ import { useWorkspaceFiles } from '../../../hooks/useWorkspaceFiles';
 import { initialAcpSessionState } from '../../../hooks/acpSessionState';
 import { EMPTY_SESSION_KEY } from '../../../hooks/acpWorkspaceState';
 import { externalAgentFromMeta, type SessionConfigOption, type SessionConfigOptionValue } from '../../../lib/acp';
+import { adoptResultFromMeta } from '../../../lib/adoptMeta';
+import { AdoptedSessionBanner } from '../../../components/AdoptedSessionBanner';
 import { useStagedAgent } from '../../../lib/stagedAgent';
 import { useSetupStatus } from '../../../hooks/useSetupStatus';
 import { usePersistentToggle } from '../../../hooks/usePersistentToggle';
@@ -137,6 +139,11 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
   const { stagedAgent, setStagedAgent } = useStagedAgent();
   const sessionInfo = workspace.sessions.find(s => s.sessionId === sessionId);
   const sessionAgentName = externalAgentFromMeta(sessionInfo?._meta);
+  // When this session was opened by ADOPTING a running dispatch, its roster
+  // `_meta` carries the adopt outcome (instance id + controller verdict). Present
+  // only for adopted sessions — a native/external chat reads null and shows no
+  // adopted header. See adoptMeta.ts / AdoptedSessionBanner.
+  const adopted = adoptResultFromMeta(sessionInfo?._meta);
   const stagedExternalAgent = onEmptyChat ? stagedAgent : null;
   // Attribution for the transcript's assistant label: an external session shows
   // its agent's name instead of the generic workspace agent (init.agentInfo).
@@ -404,6 +411,14 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
         showNewSession={!onEmptyChat}
         onNewSession={onNewSession}
       />
+
+      {adopted && (
+        <AdoptedSessionBanner
+          instanceId={adopted.instanceId}
+          controller={adopted.controller}
+          agentName={sessionAgentName}
+        />
+      )}
 
       {workspace.status === 'reconnecting' && <InlineNotice variant="warning">{t('acp_chat.banner_reconnecting')}</InlineNotice>}
       {session.connectionBanner === 'disconnected' && (

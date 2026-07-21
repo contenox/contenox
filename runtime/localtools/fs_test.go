@@ -1,6 +1,7 @@
 package localtools_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -254,12 +255,20 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 	})
 
 	t.Run("maxReadBytesRejectsLargeFile", func(t *testing.T) {
+		// Content is ASCII text, not NUL bytes: this fixture (and the three
+		// tests below that reuse it) exercises the _max_read_bytes /
+		// _max_output_bytes size policies specifically, independent of the
+		// binary-content refusal added for read_file (see
+		// TestUnit_LocalFSTools_ReadFile_RefusesBinary for that behavior).
+		// An all-zero fixture would now be correctly refused as binary
+		// before ever reaching the size/output-limit checks these tests
+		// intend to exercise.
 		bigPath := filepath.Join(tempDir, "big.bin")
 		f, err := os.Create(bigPath)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := f.Write(make([]byte, 2*1024*1024)); err != nil {
+		if _, err := f.Write(bytes.Repeat([]byte("a"), 2*1024*1024)); err != nil {
 			t.Fatal(err)
 		}
 		_ = f.Close()
@@ -288,19 +297,29 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 		}
 	})
 
-	t.Run("maxOutputBytesRejectsOversizedResult", func(t *testing.T) {
+	t.Run("maxOutputBytesTruncatesRatherThanErrors", func(t *testing.T) {
+		// Rec 4 (tool-hardening.md): read_file no longer hard-errors when its output
+		// exceeds _max_output_bytes — it returns a bounded head plus a notice naming
+		// the exact next step ("start_line: N"), so nothing is dropped silently.
 		ctxSmallOut := taskengine.WithToolsArgs(ctx, localtools.LocalFSToolsName, map[string]string{
 			"_max_read_bytes":   "-1",
 			"_max_output_bytes": "64",
 		})
 		args := map[string]any{"path": "big.bin"}
 		toolsCall := &taskengine.ToolsCall{ToolName: "read_file"}
-		_, _, err := h.Exec(ctxSmallOut, now, args, false, toolsCall)
-		if err == nil {
-			t.Fatal("expected error when tool output exceeds _max_output_bytes")
+		res, _, err := h.Exec(ctxSmallOut, now, args, false, toolsCall)
+		if err != nil {
+			t.Fatalf("read_file over the output cap must truncate, not error: %v", err)
 		}
-		if !strings.Contains(err.Error(), "read_file output") || !strings.Contains(err.Error(), "max") {
-			t.Fatalf("expected output limit hint: %v", err)
+		out, ok := res.(string)
+		if !ok {
+			t.Fatalf("expected truncated string result, got %T", res)
+		}
+		if !strings.Contains(out, "truncated") || !strings.Contains(out, "start_line:") {
+			t.Fatalf("truncated result must name the exact next step: %q", out)
+		}
+		if !strings.Contains(out, "(recoverable:") {
+			t.Fatalf("truncation notice must carry the recoverable severity marker: %q", out)
 		}
 	})
 

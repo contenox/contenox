@@ -1,59 +1,40 @@
 import {
   Badge,
   Button,
-  Card,
   Dialog,
   EmptyState,
   ErrorState,
-  GridLayout,
   H1,
-  H2,
-  H3,
   InlineNotice,
   KeyValue,
   LoadingState,
   P,
   Page,
   Section,
-  Span,
   StatusIndicator,
-  Table,
-  TableCell,
-  TableRow,
-  type Status,
 } from '@contenox/ui';
-import { Fragment, useState } from 'react';
+import type { UseMutationResult } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
-import { useCancelInstance, useFleet, useStopInstance } from '../../../hooks/useFleet';
+import { Link, useNavigate } from 'react-router-dom';
+import { PlanProgress } from '../../../components/PlanProgress';
+import { UnitStatus } from '../../../components/UnitStatus';
+import { startAdoptSession, useAdoptIntent } from '../../../lib/adoptIntent';
+import { useInboxReports } from '../../../hooks/useApprovals';
+import {
+  useCancelInstance,
+  useFleet,
+  useStopInstance,
+  type CancelInstanceInput,
+} from '../../../hooks/useFleet';
 import { useMissions } from '../../../hooks/useMissions';
 import type { TranslationKey } from '../../../i18n';
 import { relativeTime } from '../../../lib/relativeTime';
 import type { FleetInstanceState, InstanceStatus, Mission } from '../../../lib/types';
+import { blockedMissionIds, PROCESS_LABEL_KEY } from '../../../lib/unitStatus';
 
-// Instance state → StatusIndicator status. error/warning are fixed by the
-// slice; the other three are chosen so the dot colour reads as fleet health:
-//   running  → completed   (green ✓  — up and serving, the healthy steady state)
-//   starting → in-progress (amber ⟳  — transitional, coming up)
-//   stopped  → planned     (neutral ○ — declared/known but not currently running)
-// error and warning keep the red/amber alert semantics one-to-one.
-const STATE_STATUS: Record<FleetInstanceState, Status> = {
-  running: 'completed',
-  starting: 'in-progress',
-  stopped: 'planned',
-  warning: 'warning',
-  error: 'error',
-};
-
-const STATE_LABEL_KEY: Record<FleetInstanceState, TranslationKey> = {
-  starting: 'fleet.state.starting',
-  running: 'fleet.state.running',
-  stopped: 'fleet.state.stopped',
-  warning: 'fleet.state.warning',
-  error: 'fleet.state.error',
-};
-
-// Instances in these states are hoisted into the attention strip.
+// Instances in these states are hoisted into the attention strip; everything
+// else (running / starting / stopped) is a live-or-recently-live unit.
 const ATTENTION_STATES: FleetInstanceState[] = ['error', 'warning'];
 const attentionRank = (s: FleetInstanceState): number => (s === 'error' ? 0 : 1);
 
@@ -67,11 +48,6 @@ const LIVE_STATES: FleetInstanceState[] = ['running', 'starting'];
  * is both "kill a working agent" and "clear a dead row from the board" — but
  * those read as two very different asks to an operator, and the board must be
  * truthful about which one it is about to do.
- *
- * `starting` counts as live: it is not dead, it is coming up, and stopping it
- * aborts a bring-up. Everything else (stopped/warning/error) gets the reap
- * copy, which still admits the instance *might* be serving a conversation the
- * board cannot see.
  */
 export function stopConfirmCopy(state: FleetInstanceState): {
   title: TranslationKey;
@@ -119,9 +95,6 @@ export function createStopFlow(
  * The Stop confirmation. Composed from `Dialog` + `Button` because the kit has
  * no prebuilt confirm, and kept out of `FleetPage` so the copy selection is a
  * plain prop-driven render rather than a branch buried in the board.
- *
- * The body states the real cost rather than hiding it in a tooltip: the fleet
- * blueprint's invariant is that the board is truthful about what Stop destroys.
  */
 export function StopConfirmDialog({
   instance,
@@ -149,20 +122,26 @@ export function StopConfirmDialog({
         <KeyValue label={t('fleet.stop_confirm_agent')} value={instance.agentName} />
         <KeyValue
           label={t('fleet.stop_confirm_instance')}
-          value={<span className="font-mono text-xs">{instance.id}</span>}
+          value={<span className="font-mono text-xs break-all">{instance.id}</span>}
         />
         <KeyValue
           label={t('fleet.stop_confirm_state')}
-          value={t(STATE_LABEL_KEY[instance.state])}
+          value={t(PROCESS_LABEL_KEY[instance.state])}
         />
       </div>
-      <div className="mt-6 flex justify-end gap-2">
-        <Button variant="outline" palette="neutral" size="sm" onClick={onClose}>
+      <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <Button
+          variant="outline"
+          palette="neutral"
+          size="sm"
+          className="w-full sm:w-auto"
+          onClick={onClose}>
           {t('fleet.stop_confirm_decline')}
         </Button>
         <Button
           variant="danger"
           size="sm"
+          className="w-full sm:w-auto"
           isLoading={pending}
           disabled={pending}
           onClick={onConfirm}>
@@ -173,19 +152,226 @@ export function StopConfirmDialog({
   );
 }
 
-export default function FleetPage() {
+type StopMutation = UseMutationResult<string, Error, string, unknown>;
+type CancelMutation = UseMutationResult<string, Error, CancelInstanceInput, unknown>;
+
+/**
+ * One running (or recently-live) unit, given the room to breathe that the
+ * board's whole point is to give it: the composed status truth up top, then its
+ * instance id, the mission it is running, sessions, viewers, and age laid out as
+ * plain facts, then one addressable row per attached session, then the lifecycle
+ * actions. A generous single-column card rather than a crushed table row, so it
+ * reads the same on a phone as on a wide screen.
+ */
+function InstanceRow({
+  entry,
+  inst,
+  mission,
+  blocked,
+  tone,
+  stopMutation,
+  cancelMutation,
+  onRequestStop,
+}: {
+  entry: { agentName: string; kind: string };
+  inst: InstanceStatus;
+  mission?: Mission;
+  blocked: boolean;
+  tone?: 'attention';
+  stopMutation: StopMutation;
+  cancelMutation: CancelMutation;
+  onRequestStop: (inst: InstanceStatus) => void;
+}) {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
+  const { setAdoptIntent } = useAdoptIntent();
+  const sessionIds = inst.sessionIds ?? [];
+  // Adoption needs a live downstream to attach a viewer to, so "Open session" is
+  // offered only while the instance is running (the runtime rejects adopting a
+  // stopped/errored one). See lib/adoptIntent.ts / adoptMeta.ts.
+  const canAdopt = inst.state === 'running';
+  const openSession = (sessionId: string) =>
+    startAdoptSession({ instanceId: inst.id, sessionId }, { setAdoptIntent, navigate });
+
+  const absoluteTime = (iso: string) => {
+    const parsed = Date.parse(iso);
+    return Number.isNaN(parsed) ? iso : new Date(parsed).toLocaleString(i18n.language);
+  };
+
+  const stopPending = stopMutation.isPending && stopMutation.variables === inst.id;
+  const stopFailed = stopMutation.error !== null && stopMutation.variables === inst.id;
+  const cancelPending = (sessionId?: string) =>
+    cancelMutation.isPending &&
+    cancelMutation.variables?.instanceId === inst.id &&
+    cancelMutation.variables.sessionId === sessionId;
+  const cancelFailed =
+    cancelMutation.error !== null && cancelMutation.variables?.instanceId === inst.id;
+
+  const border =
+    tone === 'attention'
+      ? inst.state === 'error'
+        ? 'border-l-4 border-l-error dark:border-l-dark-error'
+        : 'border-l-4 border-l-warning dark:border-l-dark-warning'
+      : '';
+
+  return (
+    <div
+      className={`border-surface-200 dark:border-dark-surface-600 space-y-3 rounded-lg border p-4 ${border}`}>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium">{entry.agentName}</span>
+            <Badge variant="secondary" size="sm">
+              {entry.kind}
+            </Badge>
+          </div>
+          {mission && (
+            <Link
+              to={`/missions/${mission.id}`}
+              className="text-text-muted dark:text-dark-text-muted block max-w-full truncate text-sm hover:underline"
+              title={mission.intent}>
+              {mission.intent}
+            </Link>
+          )}
+        </div>
+        <div className="flex flex-col items-start gap-1 sm:items-end">
+          <UnitStatus
+            facts={{
+              instanceState: inst.state,
+              missionStatus: mission?.status,
+              lastHeartbeat: mission?.lastHeartbeat,
+              blocked,
+            }}
+            className="sm:justify-end"
+          />
+          <PlanProgress plan={mission?.plan} />
+        </div>
+      </div>
+
+      <div className="text-text-muted dark:text-dark-text-muted flex flex-wrap gap-x-6 gap-y-1 text-sm">
+        <span className="min-w-0 break-all">
+          {t('fleet.col_instance')}: <span className="font-mono text-xs">{inst.id}</span>
+        </span>
+        <span className="tabular-nums">
+          {t('fleet.col_sessions')}: {inst.sessions}
+        </span>
+        <span className="tabular-nums">
+          {t('fleet.col_viewers')}: {inst.viewers}
+        </span>
+        <span title={absoluteTime(inst.startedAt)}>
+          {t('fleet.col_started')}:{' '}
+          {relativeTime(inst.startedAt, i18n.language, t('common.just_now'))}
+        </span>
+      </div>
+
+      {/* One addressable row per attached session. These are DOWNSTREAM ACP
+          session ids; beam's /chat/:id routes are keyed by UPSTREAM contenox
+          session ids, and acpsvc holds that mapping in one direction only
+          (acpsvc/session.go). So the id is shown, not linked — a link here
+          would be a dead link into the wrong id space. */}
+      {sessionIds.length === 0 ? (
+        <P variant="muted" className="text-xs">
+          {t('fleet.no_sessions')}
+        </P>
+      ) : (
+        <ul className="space-y-2">
+          {sessionIds.map(sessionId => (
+            <li
+              key={sessionId}
+              className="border-surface-100 dark:border-dark-surface-700 flex flex-col gap-2 rounded border p-2 sm:flex-row sm:items-center sm:justify-between">
+              <span className="min-w-0 break-all">
+                <span className="text-text-muted mr-2 text-xs">{t('fleet.session_label')}</span>
+                <span className="font-mono text-xs">{sessionId}</span>
+              </span>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                {/* Open the running session in the normal chat surface by ADOPTING
+                    it (session/new + contenox.adopt) — watch its replay and, if
+                    no one else controls it, answer its permission asks. */}
+                {canAdopt && (
+                  <Button
+                    variant="outline"
+                    palette="neutral"
+                    size="xs"
+                    className="w-full sm:w-auto"
+                    aria-label={t('fleet.open_session_aria', { id: sessionId })}
+                    onClick={() => openSession(sessionId)}>
+                    {t('fleet.open_session')}
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  palette="neutral"
+                  size="xs"
+                  className="w-full sm:w-auto"
+                  aria-label={t('fleet.cancel_session_aria', { id: sessionId })}
+                  isLoading={cancelPending(sessionId)}
+                  disabled={cancelPending(sessionId)}
+                  onClick={() => cancelMutation.mutate({ instanceId: inst.id, sessionId })}>
+                  {t('fleet.cancel_session')}
+                </Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {/* Cancel-all only earns its place once there is more than one session;
+            with a single session the per-session row above already is the whole
+            fan-out. */}
+        {sessionIds.length > 1 && (
+          <Button
+            variant="outline"
+            palette="neutral"
+            size="xs"
+            aria-label={t('fleet.cancel_all_aria')}
+            isLoading={cancelPending(undefined)}
+            disabled={cancelPending(undefined)}
+            onClick={() => cancelMutation.mutate({ instanceId: inst.id })}>
+            {t('fleet.cancel_all')}
+          </Button>
+        )}
+        {/* Stop stays offered in every state: the call is idempotent, and on a
+            dead instance it IS the reap action — there is no other way to clear
+            the row. */}
+        <Button
+          variant="danger"
+          size="xs"
+          aria-label={t('fleet.stop_aria', { id: inst.id })}
+          isLoading={stopPending}
+          disabled={stopPending}
+          onClick={() => onRequestStop(inst)}>
+          {t('fleet.stop')}
+        </Button>
+      </div>
+
+      {(stopFailed || cancelFailed) && (
+        <InlineNotice variant="error" role="alert">
+          {stopFailed
+            ? `${t('fleet.stop_error')} ${stopMutation.error?.message ?? ''}`
+            : `${t('fleet.cancel_error')} ${cancelMutation.error?.message ?? ''}`}
+        </InlineNotice>
+      )}
+    </div>
+  );
+}
+
+export default function FleetPage() {
+  const { t } = useTranslation();
   const { data, isLoading, error, refetch } = useFleet();
   // Missions carry InstanceID (missionservice.Mission), so the board joins to
   // them client-side rather than the server threading mission data through
   // FleetEntry. A failure here degrades silently — the row still renders,
-  // just without its intent — because the fleet board's own load/error state
-  // must not depend on a second, unrelated feed.
+  // just without its mission facts.
   const { data: missionsData } = useMissions();
+  // Report feed, purely to know which missions are blocked (latest report is a
+  // blocker) so the board can surface a "waiting on a human" chip first-class.
+  // Cache-shared with the inbox and mission detail (same per-mission report
+  // query keys), so mounting it here is close to free when navigating between
+  // the fleet surfaces.
+  const inboxReports = useInboxReports();
   const stopInstance = useStopInstance();
   const cancelInstance = useCancelInstance();
-  // The instance awaiting Stop confirmation, or null. Stop is the one verb here
-  // that destroys state, so it never fires straight off the click.
   const [stopTarget, setStopTarget] = useState<InstanceStatus | null>(null);
   const stopFlow = createStopFlow(stopInstance.mutate, setStopTarget);
 
@@ -200,67 +386,88 @@ export default function FleetPage() {
   if (error) {
     return (
       <Page bodyScroll="auto">
-        <GridLayout variant="body" minWidth="minmax(0, 1fr)" className="gap-8 pb-8">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 p-4 md:p-6">
           <ErrorState error={error} onRetry={() => void refetch()} title={t('fleet.load_error')} />
-        </GridLayout>
+        </div>
       </Page>
     );
   }
 
   const fleet = data ?? [];
 
-  // Client-side join, keyed by InstanceID — see the useMissions() call above
-  // for why this is a join rather than a server-side field. A mission not yet
-  // bound to an instance (still being created) or one whose instance already
-  // moved on both simply find no row here, which is correct: this map only
-  // ever answers "which mission is THIS instance currently running."
   const missionByInstanceId = new Map<string, Mission>(
     (missionsData ?? [])
       .filter((m): m is Mission & { instanceId: string } => !!m.instanceId)
       .map(m => [m.instanceId, m]),
   );
+  const blocked = blockedMissionIds(inboxReports.items.map(i => i.report));
 
-  // Attention-first: every error/warning instance (with its agent) hoisted to
-  // the top, error before warning, then most-recently-started first.
-  const attention = fleet
-    .flatMap(entry =>
-      (entry.instances ?? [])
-        .filter(inst => ATTENTION_STATES.includes(inst.state))
-        .map(inst => ({ entry, inst })),
-    )
-    .sort((a, b) => {
-      const byState = attentionRank(a.inst.state) - attentionRank(b.inst.state);
-      if (byState !== 0) return byState;
-      return Date.parse(b.inst.startedAt) - Date.parse(a.inst.startedAt);
-    });
+  // Every instance across every agent, split into the two piles the board is
+  // organised around: what needs attention (error/warning) and what is
+  // running-or-recently-live (everything else). Idle agents — declared but with
+  // no live instance — collapse into one compact secondary list, not a card each.
+  const attention: { entry: (typeof fleet)[number]; inst: InstanceStatus }[] = [];
+  const live: { entry: (typeof fleet)[number]; inst: InstanceStatus }[] = [];
+  for (const entry of fleet) {
+    for (const inst of entry.instances ?? []) {
+      if (ATTENTION_STATES.includes(inst.state)) attention.push({ entry, inst });
+      else live.push({ entry, inst });
+    }
+  }
+  attention.sort((a, b) => {
+    const byState = attentionRank(a.inst.state) - attentionRank(b.inst.state);
+    if (byState !== 0) return byState;
+    return Date.parse(b.inst.startedAt) - Date.parse(a.inst.startedAt);
+  });
+  live.sort((a, b) => Date.parse(b.inst.startedAt) - Date.parse(a.inst.startedAt));
 
-  const absoluteTime = (iso: string) => {
-    const parsed = Date.parse(iso);
-    return Number.isNaN(parsed) ? iso : new Date(parsed).toLocaleString(i18n.language);
+  const idleEntries = fleet.filter(entry => (entry.instances ?? []).length === 0);
+  const runningCount = live.filter(x => LIVE_STATES.includes(x.inst.state)).length;
+
+  const isBlocked = (mission?: Mission) => (mission ? blocked.has(mission.id) : false);
+
+  const renderRow = (
+    entry: (typeof fleet)[number],
+    inst: InstanceStatus,
+    rowTone?: 'attention',
+  ) => {
+    const mission = missionByInstanceId.get(inst.id);
+    return (
+      <InstanceRow
+        key={inst.id}
+        entry={entry}
+        inst={inst}
+        mission={mission}
+        blocked={isBlocked(mission)}
+        tone={rowTone}
+        stopMutation={stopInstance}
+        cancelMutation={cancelInstance}
+        onRequestStop={stopFlow.request}
+      />
+    );
   };
-
-  // One mutation hook serves the whole board, so pending/error state is scoped
-  // back to a row by comparing against the in-flight `variables`. Without this,
-  // clicking Cancel on one session would grey out every button on the page.
-  const stopPending = (instanceId: string) =>
-    stopInstance.isPending && stopInstance.variables === instanceId;
-  const cancelPending = (instanceId: string, sessionId?: string) =>
-    cancelInstance.isPending &&
-    cancelInstance.variables?.instanceId === instanceId &&
-    cancelInstance.variables.sessionId === sessionId;
-  const stopFailed = (instanceId: string) =>
-    stopInstance.error !== null && stopInstance.variables === instanceId;
-  const cancelFailed = (instanceId: string) =>
-    cancelInstance.error !== null && cancelInstance.variables?.instanceId === instanceId;
 
   return (
     <Page bodyScroll="auto">
-      <GridLayout variant="body" minWidth="minmax(0, 1fr)" className="gap-8 pb-8">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 p-4 md:p-6">
         <div>
           <H1 variant="page">{t('fleet.title')}</H1>
           <P variant="muted" className="mt-2">
             {t('fleet.description')}
           </P>
+          {fleet.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Badge variant="secondary" size="sm">
+                {t('fleet.count_running', { n: runningCount })}
+              </Badge>
+              <Badge variant={attention.length > 0 ? 'error' : 'secondary'} size="sm">
+                {t('fleet.count_attention', { n: attention.length })}
+              </Badge>
+              <Badge variant="secondary" size="sm">
+                {t('fleet.count_idle', { n: idleEntries.length })}
+              </Badge>
+            </div>
+          )}
         </div>
 
         {fleet.length === 0 ? (
@@ -271,252 +478,53 @@ export default function FleetPage() {
               <Section
                 title={t('fleet.attention_title')}
                 description={t('fleet.attention_description')}>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  {attention.map(({ entry, inst }) => {
-                    const mission = missionByInstanceId.get(inst.id);
-                    return (
-                      <Card
-                        key={inst.id}
-                        variant="surface"
-                        statusBorder={inst.state === 'error' ? 'error' : 'warning'}>
-                        <div className="flex items-center justify-between gap-3">
-                          <StatusIndicator
-                            status={STATE_STATUS[inst.state]}
-                            label={t(STATE_LABEL_KEY[inst.state])}
-                            showIcon
-                            size="sm"
-                          />
-                          <Badge variant="secondary" size="sm">
-                            {entry.kind}
-                          </Badge>
-                        </div>
-                        <H3 className="mt-3">{entry.agentName}</H3>
-                        <div className="mt-2 space-y-1">
-                          {mission && (
-                            <KeyValue
-                              label={t('fleet.mission_intent_label')}
-                              value={
-                                <Link
-                                  to={`/missions/${mission.id}`}
-                                  className="hover:underline"
-                                  title={mission.intent}>
-                                  {mission.intent}
-                                </Link>
-                              }
-                            />
-                          )}
-                          <KeyValue
-                            label={t('fleet.col_instance')}
-                            value={<span className="font-mono text-xs">{inst.id}</span>}
-                          />
-                          <KeyValue label={t('fleet.col_sessions')} value={inst.sessions} />
-                          <KeyValue label={t('fleet.col_viewers')} value={inst.viewers} />
-                          <KeyValue
-                            label={t('fleet.col_started')}
-                            value={
-                              <span title={absoluteTime(inst.startedAt)}>
-                                {relativeTime(inst.startedAt, i18n.language, t('common.just_now'))}
-                              </span>
-                            }
-                          />
-                        </div>
-                      </Card>
-                    );
-                  })}
+                <div className="mt-4 space-y-3">
+                  {attention.map(({ entry, inst }) => renderRow(entry, inst, 'attention'))}
                 </div>
               </Section>
             )}
 
-            {fleet.map(entry => {
-              const instances = entry.instances ?? [];
-              const idle = instances.length === 0;
-              const running = instances.filter(i => i.state === 'running').length;
-              return (
-                <Section key={entry.agentId}>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <H2>{entry.agentName}</H2>
-                    <Badge variant="secondary" size="sm">
-                      {entry.kind}
-                    </Badge>
-                    {idle ? (
-                      <Badge variant="outline" size="sm">
-                        {t('fleet.idle')}
+            <Section title={t('fleet.running_title')}>
+              <div className="mt-4 space-y-3">
+                {live.length === 0 ? (
+                  <P variant="muted">{t('fleet.running_none')}</P>
+                ) : (
+                  live.map(({ entry, inst }) => renderRow(entry, inst))
+                )}
+              </div>
+            </Section>
+
+            {idleEntries.length > 0 && (
+              <Section
+                title={t('fleet.idle_agents_title')}
+                description={t('fleet.idle_agents_description')}>
+                <ul className="border-surface-200 dark:border-dark-surface-600 divide-surface-200 dark:divide-dark-surface-600 mt-4 divide-y rounded-lg border">
+                  {idleEntries.map(entry => (
+                    <li key={entry.agentId} className="flex flex-wrap items-center gap-2 px-3 py-2">
+                      <span className="font-medium">{entry.agentName}</span>
+                      <Badge variant="secondary" size="sm">
+                        {entry.kind}
                       </Badge>
-                    ) : (
-                      <Span className="text-text-muted dark:text-dark-text-muted text-sm">
-                        {t('fleet.instances_running', { n: running })}
-                      </Span>
-                    )}
-                  </div>
-
-                  {idle ? (
-                    <P variant="muted" className="mt-3">
-                      {t('fleet.idle_description')}
-                    </P>
-                  ) : (
-                    <div className="mt-4">
-                      <Table
-                        columns={[
-                          t('fleet.col_state'),
-                          t('fleet.col_instance'),
-                          t('fleet.col_sessions'),
-                          t('fleet.col_viewers'),
-                          t('fleet.col_started'),
-                          t('fleet.col_actions'),
-                        ]}>
-                        {instances.map(inst => {
-                          const sessionIds = inst.sessionIds ?? [];
-                          const mission = missionByInstanceId.get(inst.id);
-                          return (
-                            <Fragment key={inst.id}>
-                              <TableRow>
-                                <TableCell>
-                                  <StatusIndicator
-                                    status={STATE_STATUS[inst.state]}
-                                    label={t(STATE_LABEL_KEY[inst.state])}
-                                    showIcon
-                                    size="sm"
-                                  />
-                                </TableCell>
-                                <TableCell className="font-mono text-xs">
-                                  <div>{inst.id}</div>
-                                  {/* Missions carry InstanceID; this is the client-side
-                                      join (see missionByInstanceId above). Additive only —
-                                      a row with no matching mission renders exactly as
-                                      before. Linked to the mission's own detail page rather
-                                      than duplicating its report feed here. */}
-                                  {mission && (
-                                    <Link
-                                      to={`/missions/${mission.id}`}
-                                      className="text-text-muted dark:text-dark-text-muted mt-1 block max-w-[16rem] truncate font-sans text-xs italic hover:underline"
-                                      title={mission.intent}>
-                                      {mission.intent}
-                                    </Link>
-                                  )}
-                                </TableCell>
-                                <TableCell className="tabular-nums">{inst.sessions}</TableCell>
-                                <TableCell className="tabular-nums">{inst.viewers}</TableCell>
-                                <TableCell title={absoluteTime(inst.startedAt)}>
-                                  {relativeTime(inst.startedAt, i18n.language, t('common.just_now'))}
-                                </TableCell>
-                                <TableCell>
-                                  <div className="flex flex-wrap items-center justify-end gap-2">
-                                    {/* Cancel-all only earns its place once there is
-                                        more than one session; with a single session the
-                                        per-session row below already is the whole fan-out. */}
-                                    {sessionIds.length > 1 && (
-                                      <Button
-                                        variant="outline"
-                                        palette="neutral"
-                                        size="xs"
-                                        aria-label={t('fleet.cancel_all_aria')}
-                                        isLoading={cancelPending(inst.id, undefined)}
-                                        disabled={cancelPending(inst.id, undefined)}
-                                        onClick={() =>
-                                          cancelInstance.mutate({ instanceId: inst.id })
-                                        }>
-                                        {t('fleet.cancel_all')}
-                                      </Button>
-                                    )}
-                                    {/* Stop stays offered in every state: the call is
-                                        idempotent, and on a dead instance it IS the reap
-                                        action — there is no other way to clear the row. */}
-                                    <Button
-                                      variant="danger"
-                                      size="xs"
-                                      aria-label={t('fleet.stop_aria', { id: inst.id })}
-                                      isLoading={stopPending(inst.id)}
-                                      disabled={stopPending(inst.id)}
-                                      onClick={() => stopFlow.request(inst)}>
-                                      {t('fleet.stop')}
-                                    </Button>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-
-                              {/* One addressable row per attached session. These are
-                                  DOWNSTREAM ACP session ids; beam's /chat/:id routes are
-                                  keyed by UPSTREAM contenox session ids, and acpsvc holds
-                                  that mapping in one direction only (acpsvc/session.go).
-                                  So the id is shown, not linked — a link here would be a
-                                  dead link into the wrong id space. */}
-                              {sessionIds.length === 0 ? (
-                                <TableRow>
-                                  <TableCell />
-                                  <TableCell colSpan={5} className="text-text-muted text-xs">
-                                    {t('fleet.no_sessions')}
-                                  </TableCell>
-                                </TableRow>
-                              ) : (
-                                sessionIds.map(sessionId => (
-                                  <TableRow key={`${inst.id}:${sessionId}`}>
-                                    <TableCell />
-                                    <TableCell colSpan={4}>
-                                      <span className="text-text-muted mr-2 text-xs">
-                                        {t('fleet.session_label')}
-                                      </span>
-                                      <span className="font-mono text-xs">{sessionId}</span>
-                                    </TableCell>
-                                    <TableCell>
-                                      <div className="flex justify-end">
-                                        <Button
-                                          variant="outline"
-                                          palette="neutral"
-                                          size="xs"
-                                          aria-label={t('fleet.cancel_session_aria', {
-                                            id: sessionId,
-                                          })}
-                                          isLoading={cancelPending(inst.id, sessionId)}
-                                          disabled={cancelPending(inst.id, sessionId)}
-                                          onClick={() =>
-                                            cancelInstance.mutate({
-                                              instanceId: inst.id,
-                                              sessionId,
-                                            })
-                                          }>
-                                          {t('fleet.cancel_session')}
-                                        </Button>
-                                      </div>
-                                    </TableCell>
-                                  </TableRow>
-                                ))
-                              )}
-
-                              {/* A failed lifecycle call never disappears quietly: it
-                                  lands on the row it belongs to, with the server's own
-                                  message. */}
-                              {(stopFailed(inst.id) || cancelFailed(inst.id)) && (
-                                <TableRow>
-                                  <TableCell colSpan={6}>
-                                    <InlineNotice variant="error" role="alert">
-                                      {stopFailed(inst.id)
-                                        ? `${t('fleet.stop_error')} ${stopInstance.error?.message ?? ''}`
-                                        : `${t('fleet.cancel_error')} ${cancelInstance.error?.message ?? ''}`}
-                                    </InlineNotice>
-                                  </TableCell>
-                                </TableRow>
-                              )}
-                            </Fragment>
-                          );
-                        })}
-                      </Table>
-                    </div>
-                  )}
-                </Section>
-              );
-            })}
+                      <span className="ml-auto">
+                        <StatusIndicator status="planned" label={t('fleet.idle')} size="sm" />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </Section>
+            )}
           </>
         )}
 
         {stopTarget && (
           <StopConfirmDialog
             instance={stopTarget}
-            pending={stopPending(stopTarget.id)}
+            pending={stopInstance.isPending && stopInstance.variables === stopTarget.id}
             onClose={stopFlow.dismiss}
             onConfirm={() => stopFlow.confirm(stopTarget)}
           />
         )}
-      </GridLayout>
+      </div>
     </Page>
   );
 }

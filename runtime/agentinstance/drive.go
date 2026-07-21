@@ -2,6 +2,7 @@ package agentinstance
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -62,6 +63,13 @@ type SessionSpec struct {
 	// initialize-advertised mcpCapabilities cannot consume. Nil/empty forwards none.
 	McpServers []libacp.McpServer
 
+	// Meta is an OPAQUE session/new `_meta` blob the consumer wants forwarded to the downstream
+	// verbatim. The kernel stays policy-free: it neither reads nor interprets this — it forwards
+	// exactly what it is handed, the same contract McpServers has. A dispatcher (fleetservice)
+	// uses it to hand a spawned unit its mission id at construction (missionservice.MissionMetaKey);
+	// the kernel does not know or care that that is what the bytes mean. Nil forwards no `_meta`.
+	Meta json.RawMessage
+
 	// Terminal advertises the terminal CLIENT capability to the downstream at initialize —
 	// telling the agent it MAY route shell commands through the terminal/* callback family.
 	//
@@ -113,6 +121,14 @@ func newSessionDriver() *sessionDriver {
 // loop may already have delivered a live update.)
 type driveSession struct {
 	mu sync.Mutex
+
+	// cwd is the session's working directory, the SessionSpec.Cwd this session was
+	// opened with (session/new's cwd). It is captured here purely so a policy-free
+	// reader can recover a session's workspace root without attaching — the
+	// attention layer's scope-anomaly check needs "which tree was this unit
+	// supposed to work in" to tell an in-scope touch from a wander. The kernel
+	// neither interprets nor enforces it; containment is the tool/HITL layer's job.
+	cwd string
 
 	// configOptions is the downstream agent's OWN advertised config-option set
 	// (full-replacement per spec); configReceived records that a LIVE update or a confirmed
@@ -189,6 +205,28 @@ func (sd *sessionDriver) sessionIDs() []string {
 	return ids
 }
 
+// owns reports whether sid is currently open on this driver — the same
+// authoritative membership fact sessionIDs exposes as a slice, answered directly
+// against the map so the Manager's DeliverToSession scan need not allocate one
+// slice per instance just to test containment. Same mu discipline as
+// sessionIDs/get/peek/drop.
+func (sd *sessionDriver) owns(sid libacp.SessionID) bool {
+	sd.mu.Lock()
+	defer sd.mu.Unlock()
+	_, ok := sd.sessions[sid]
+	return ok
+}
+
+// cwd returns sid's recorded working directory, or "" when the session is
+// unknown or was opened without one. Peek semantics (never creates state),
+// matching the other read accessors.
+func (sd *sessionDriver) cwd(sid libacp.SessionID) string {
+	if ds := sd.peek(sid); ds != nil {
+		return ds.getCwd()
+	}
+	return ""
+}
+
 // capture folds a downstream session/update into the session's captured state. It is called
 // from the instance's journaling harness on the read-loop goroutine, BEFORE the fan-out, so
 // an accessor called right after a viewer observed an update sees the same value. Only the
@@ -242,6 +280,24 @@ func (ds *driveSession) seed(opts []libacp.SessionConfigOption, modes *libacp.Se
 		cp := *models
 		ds.modelState = &cp
 	}
+}
+
+// setCwd records the session's working directory (OpenSession's spec.Cwd). Under
+// ds.mu like every other field, so a concurrent reader (the scope-anomaly
+// accessor) sees a consistent value.
+func (ds *driveSession) setCwd(cwd string) {
+	ds.mu.Lock()
+	ds.cwd = cwd
+	ds.mu.Unlock()
+}
+
+// getCwd returns the session's recorded working directory, or "" when none was
+// set. "" reads as "no known workspace root", which the attention layer treats
+// as "no lane to have left" (anomaly detection disabled) rather than guessing.
+func (ds *driveSession) getCwd() string {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	return ds.cwd
 }
 
 // applyConfigOptions adopts a downstream-confirmed option set (from a set_config_option
@@ -407,11 +463,14 @@ func (i *instance) openSession(ctx context.Context, spec SessionSpec) (libacp.Se
 		Cwd:                   spec.Cwd,
 		AdditionalDirectories: spec.AdditionalDirectories,
 		McpServers:            forwarded,
+		Meta:                  spec.Meta,
 	})
 	if err != nil {
 		return "", fmt.Errorf("agentinstance: session/new: %w", err)
 	}
-	i.driver.get(resp.SessionID).seed(resp.ConfigOptions, resp.Modes, resp.Models)
+	ds := i.driver.get(resp.SessionID)
+	ds.seed(resp.ConfigOptions, resp.Modes, resp.Models)
+	ds.setCwd(spec.Cwd)
 	return resp.SessionID, nil
 }
 

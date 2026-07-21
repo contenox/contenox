@@ -3,6 +3,7 @@ package agentinstance
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/contenox/runtime/libacp"
@@ -372,4 +373,57 @@ func (h *viewerHub) viewerCount() int {
 		viewers += len(s.viewers)
 	}
 	return viewers
+}
+
+// journalSnapshot returns a copy of every downstream update retained in
+// sessionID's replay journal, in arrival order — the RAW counterpart of
+// agentText. Where agentText interprets the journal down to the unit's words,
+// this returns it uninterpreted, so a consumer that needs a different slice of
+// it (the attention layer folds the tool-call updates for changed-files and
+// scope) does its own interpretation and the kernel stays policy-free. A session
+// with no state yet yields nil. Held under mu like every other journal access;
+// the journal captures every downstream update whether or not a viewer is
+// watching, which is why a dispatched, unwatched unit's diffs are recoverable
+// here at all.
+func (h *viewerHub) journalSnapshot(sessionID libacp.SessionID) []libacp.SessionNotification {
+	h.mu.Lock()
+	s := h.sessions[sessionID]
+	if s == nil {
+		h.mu.Unlock()
+		return nil
+	}
+	snapshot := s.journal.snapshot()
+	h.mu.Unlock()
+	return snapshot
+}
+
+// agentText concatenates the text of every agent_message_chunk retained in
+// sessionID's replay journal, in arrival order — the unit's own words as they
+// streamed. It is the READ side of the journal the hub already keeps for replay:
+// a session with no state yet (nothing delivered, no viewer ever attached) yields
+// "". Held under mu like every other journal access, and it interprets nothing
+// beyond "which updates are agent text", so it stays as policy-free as the journal
+// it reads. The journal captures every downstream update whether or not a viewer
+// is watching (deliver journals unconditionally), which is exactly why a
+// dispatched, unwatched unit's words are recoverable here at all.
+func (h *viewerHub) agentText(sessionID libacp.SessionID) string {
+	h.mu.Lock()
+	s := h.sessions[sessionID]
+	if s == nil {
+		h.mu.Unlock()
+		return ""
+	}
+	snapshot := s.journal.snapshot()
+	h.mu.Unlock()
+
+	var sb strings.Builder
+	for _, n := range snapshot {
+		if n.Update.SessionUpdate != libacp.SessionUpdateAgentMessageChunk {
+			continue
+		}
+		if c := n.Update.Content; c != nil && c.Type == string(libacp.ContentKindText) {
+			sb.WriteString(c.Text)
+		}
+	}
+	return sb.String()
 }

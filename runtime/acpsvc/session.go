@@ -19,6 +19,7 @@ import (
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/agentservice"
 	"github.com/contenox/runtime/runtime/chatservice"
+	"github.com/contenox/runtime/runtime/missionservice"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/contenox/runtime/runtime/vfs"
@@ -471,11 +472,20 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 		return libacp.NewSessionResponse{}, wrapped
 	}
 
+	// A dispatched unit's session/new carries its mission id in `_meta`
+	// (missionservice.MissionMetaKey). It has neither contenox.agent nor
+	// contenox.adopt, so it falls through to THIS native path — the unit runs its
+	// own contenox chain, which is where its mission tools live. Binding the id
+	// onto the entry here (construction) is what scopes those tools to this one
+	// mission; an ordinary chat session has no such `_meta` and reads as "".
+	missionID, _ := missionservice.ParseMissionMeta(req.Meta)
+
 	entry := &sessionEntry{
 		WorkspaceID:       workspaceID,
 		Cwd:               sessionCwd,
 		InternalSessionID: contenoxSessionID,
 		McpServerNames:    registered,
+		MissionID:         missionID,
 		driver:            &nativeDriver{t: t, agent: ag},
 		Provider:          t.provider(),
 		Model:             t.model(),

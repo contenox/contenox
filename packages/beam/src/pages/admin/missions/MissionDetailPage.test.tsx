@@ -4,14 +4,17 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import i18n from '../../../i18n';
-import { missionKeys } from '../../../lib/queryKeys';
-import type { Mission, MissionReport } from '../../../lib/types';
+import { fleetKeys, missionKeys } from '../../../lib/queryKeys';
+import type { FleetEntry, Mission, MissionReport } from '../../../lib/types';
 import MissionDetailPage from './MissionDetailPage';
 
 vi.mock('../../../lib/api', () => ({
   api: {
     getMission: vi.fn(),
     listMissionReports: vi.fn(async () => []),
+    // The detail's composed status joins the fleet for the unit's live
+    // process state; absent here, it simply contributes no process chip.
+    getFleet: vi.fn(async () => []),
   },
 }));
 
@@ -44,10 +47,12 @@ function renderDetail(
   id: string,
   mission: Mission | undefined,
   reports: MissionReport[] = [],
+  fleet: FleetEntry[] = [],
 ): string {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   if (mission) client.setQueryData(missionKeys.detail(id), mission);
   client.setQueryData(missionKeys.reports(id), reports);
+  client.setQueryData(fleetKeys.list(), fleet);
   return renderToStaticMarkup(
     createElement(
       MemoryRouter,
@@ -243,5 +248,86 @@ describe('MissionDetailPage — reports', () => {
     expect(html).toContain('Finished successfully');
     expect(html).not.toContain('Show detail');
     expect(html).not.toContain('Refs');
+  });
+});
+
+describe('MissionDetailPage — plan', () => {
+  it('renders the living plan as a checklist with revision and explanation', () => {
+    const html = renderDetail(
+      'mission-1',
+      baseMission({
+        plan: {
+          revision: 4,
+          explanation: 'Reordered after the runner came back.',
+          entries: [
+            { id: '1', content: 'Reproduce the flake', status: 'completed', priority: 'high' },
+            { id: '2', content: 'Bisect the regression', status: 'in_progress', priority: 'medium' },
+          ],
+        },
+      }),
+    );
+    expect(html).toContain('Revision 4');
+    expect(html).toContain('Reproduce the flake');
+    expect(html).toContain('Bisect the regression');
+    expect(html).toContain('Reordered after the runner came back.');
+  });
+
+  it('shows NO plan panel for an unplanned mission (the zero Plan), not an empty shell', () => {
+    const html = renderDetail('mission-1', baseMission({ plan: { entries: null, revision: 0 } }));
+    // The report section still renders; the plan's revision/why line does not.
+    expect(html).not.toContain('Revision');
+    expect(html).not.toContain('Why it changed');
+  });
+});
+
+describe('MissionDetailPage — open session (adopt)', () => {
+  const runningFleet: FleetEntry[] = [
+    {
+      agentId: 'a-1',
+      agentName: 'Researcher',
+      kind: 'claude-code',
+      instances: [
+        {
+          id: 'inst-1',
+          agentId: 'a-1',
+          agentName: 'Researcher',
+          kind: 'claude-code',
+          state: 'running',
+          sessions: 1,
+          viewers: 0,
+          startedAt: new Date().toISOString(),
+          sessionIds: ['down-1'],
+        },
+      ],
+    },
+  ];
+
+  it('offers "Open session" when the mission is bound to a running instance', () => {
+    const html = renderDetail(
+      'mission-1',
+      baseMission({ sessionId: 'down-1', instanceId: 'inst-1' }),
+      [],
+      runningFleet,
+    );
+    expect(html).toContain('Open session');
+  });
+
+  it('withholds "Open session" when the instance is not live to adopt', () => {
+    // No fleet join → no process state → nothing running to attach a viewer to.
+    const html = renderDetail(
+      'mission-1',
+      baseMission({ sessionId: 'down-1', instanceId: 'inst-1' }),
+    );
+    expect(html).not.toContain('Open session');
+  });
+
+  it('withholds "Open session" when the mission has no bound session', () => {
+    const html = renderDetail(
+      'mission-1',
+      baseMission({ sessionId: undefined, instanceId: 'inst-1' }),
+      [],
+      runningFleet,
+    );
+    expect(html).not.toContain('Open session');
   });
 });

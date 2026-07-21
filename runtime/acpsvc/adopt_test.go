@@ -133,6 +133,38 @@ func TestAdopt_MetaRoundTrips(t *testing.T) {
 	require.Equal(t, adoptRef{InstanceID: "inst-7", SessionID: "sess-9"}, ref)
 }
 
+// TestUnit_AdoptResultMeta_RoundTrips pins the RESPONSE wire shape the Beam half consumes:
+// alongside the unchanged contenox.agent attribution, the session/new response `_meta`
+// echoes contenox.adopt with the adopt outcome — instanceId, sessionId, and the controller
+// flag the UI labels "übernommen" vs "beobachten" from. It also guards the one thing that
+// could silently break by adding the key: parseAgentMeta must still read the agent name out
+// of the combined blob, so every existing attribution reader is unaffected.
+func TestUnit_AdoptResultMeta_RoundTrips(t *testing.T) {
+	raw := adoptedSessionMetaJSON("reporter", "inst-7", libacp.SessionID("sess-9"), true)
+	require.JSONEq(t,
+		`{"contenox.agent":"reporter","contenox.adopt":{"instanceId":"inst-7","sessionId":"sess-9","controller":true}}`,
+		string(raw))
+
+	res, ok := parseAdoptResultMeta(raw)
+	require.True(t, ok)
+	require.Equal(t, adoptResult{InstanceID: "inst-7", SessionID: "sess-9", Controller: true}, res)
+
+	// The added key must not shadow attribution: existing readers still find the agent.
+	require.Equal(t, "reporter", parseAgentMeta(raw),
+		"contenox.agent stays readable beside the adopt outcome")
+
+	// An observer adopt reports controller=false — the "beobachten" case.
+	observer := adoptedSessionMetaJSON("reporter", "inst-7", libacp.SessionID("sess-9"), false)
+	res, ok = parseAdoptResultMeta(observer)
+	require.True(t, ok)
+	require.False(t, res.Controller)
+
+	// Defensive decode: a response with no adopt key (an ordinary external session) reads
+	// as "no adopt outcome" rather than erroring.
+	_, ok = parseAdoptResultMeta(agentMetaJSON("reporter"))
+	require.False(t, ok, "a non-adopted session's _meta carries no adopt outcome")
+}
+
 // -----------------------------------------------------------------------------
 // The keystone: dispatch → adopt → a downstream permission request reaches the
 // adopting viewer instead of being auto-denied as unsupervised.
@@ -201,6 +233,130 @@ func TestLoopback_Adopt_DispatchedPermissionReachesAdoptingViewer(t *testing.T) 
 	require.Len(t, permReq.Options, 2, "the downstream's own permission options are forwarded intact")
 	require.Equal(t, 1, rec.count(),
 		"no further unsupervised deny: the adopter is the session's controller now")
+}
+
+// TestLoopback_Adopt_FollowUpPromptStreamsBackThroughAdoptedSession is the "talk to it"
+// half of the flagship loop: after adopting a dispatched unit's session, a follow-up prompt
+// typed into the ADOPTED upstream session routes through the kernel to the still-running
+// unit (Manager.Prompt on the instances path — the driver holds no connection of its own)
+// and the unit's reply STREAMS BACK to this client, remapped onto the upstream session id it
+// knows. This exercises the real acpsvc client connection end to end, not the kernel API
+// directly, so it proves the transport verb — not just the kernel primitive underneath it.
+func TestLoopback_Adopt_FollowUpPromptStreamsBackThroughAdoptedSession(t *testing.T) {
+	f := newInstancesFixture(t)
+	agentName := registerStubAgentInDB(t, f.db, "claude-stub-adopt-followup", nil)
+	ctx := context.Background()
+	cwd := t.TempDir()
+
+	// Dispatch: a running instance + session with NO viewer (the fleet condition adopt
+	// repairs). Adopt IMMEDIATELY, before any prompt, so the session is silent and carries
+	// no journal — the follow-up prompt's stream is then the only thing on the wire.
+	instanceID, downstreamID := dispatchLike(t, f.mgr, agentName, cwd)
+
+	c := f.connect()
+	_, err := c.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
+	require.NoError(t, err)
+	newResp, err := c.client.NewSession(ctx, libacp.NewSessionRequest{
+		Cwd:        cwd,
+		McpServers: []libacp.McpServer{},
+		Meta:       adoptMetaJSON(instanceID, downstreamID),
+	})
+	require.NoError(t, err)
+
+	// The response `_meta` reports the OUTCOME: this connection took CONTROL of the
+	// unattended dispatched session — the "übernommen" fact beam labels the tab from, echoed
+	// back beside the exact binding the client asked for.
+	res, ok := parseAdoptResultMeta(newResp.Meta)
+	require.True(t, ok, "an adopted session's response _meta carries the contenox.adopt outcome")
+	require.True(t, res.Controller, "adopting an unattended dispatched session takes control")
+	require.Equal(t, instanceID, res.InstanceID)
+	require.Equal(t, string(downstreamID), res.SessionID)
+
+	// The payoff: a follow-up prompt on the adopted session reaches the unit and its reply
+	// streams back. The stub's plain-prompt path acks with one agent_message_chunk (relayed
+	// live during the turn) and the driver pushes a post-turn session_info_update after the
+	// response — two updates in all.
+	promptResp, err := c.client.Prompt(ctx, libacp.PromptRequest{
+		SessionID: newResp.SessionID,
+		Prompt:    []libacp.ContentBlock{libacp.NewTextContent("hello from the adopter")},
+	})
+	require.NoError(t, err)
+	require.Equal(t, libacp.StopReasonEndTurn, promptResp.StopReason,
+		"the follow-up prompt round-tripped to the unit and completed")
+
+	notes := c.lc.drain(t, 2)
+	var chunk *libacp.SessionNotification
+	for i := range notes {
+		require.Equal(t, newResp.SessionID, notes[i].SessionID,
+			"every relayed update is remapped onto the UPSTREAM session id, not the downstream one")
+		if notes[i].Update.SessionUpdate == libacp.SessionUpdateAgentMessageChunk {
+			chunk = &notes[i]
+		}
+	}
+	require.NotNil(t, chunk, "the unit's reply chunk reached the adopting client")
+	require.Equal(t, "ack", chunk.Update.Content.Text,
+		"the stub's reply text streamed back through the adopted session")
+}
+
+// TestLoopback_Adopt_DetachReinstatesUnsupervisedFallback is the honest other side of
+// re-humanization: adoption hands the human the unit's permission asks, and DETACH hands
+// them back. It proves both directions on one session — while adopted, a gated tool call's
+// ask reaches the CLIENT (not the kernel's headless deny); after the connection drops (the
+// WS-drop teardown path: connCtx fires and the bridge self-detaches from the kernel's
+// fan-out), the SAME gated turn falls to the kernel's unattended fallback again. The
+// fixture wires only an event sink, so the fallback here is the kernel's built-in headless
+// deny (a wired WithPermissionFallback — serve's mission HITL envelope — would answer in its
+// place); either way, detach reinstates it the instant the last viewer leaves.
+func TestLoopback_Adopt_DetachReinstatesUnsupervisedFallback(t *testing.T) {
+	rec := &denyRecorder{}
+	f := newInstancesFixtureWith(t, func(db libdb.DBManager) agentinstance.Manager {
+		return agentinstance.New(agentregistryservice.New(db), agentinstance.WithEventSink(rec.sink))
+	})
+	agentName := registerStubAgentInDB(t, f.db, "claude-stub-adopt-detach", nil)
+	ctx := context.Background()
+	cwd := t.TempDir()
+
+	instanceID, downstreamID := dispatchLike(t, f.mgr, agentName, cwd)
+
+	// Adopt and take control, then drive a gated turn: the stub's callbacks scenario asks a
+	// permission, which now reaches the human surface instead of being auto-denied.
+	c := f.connect()
+	_, err := c.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
+	require.NoError(t, err)
+	c.lc.setPermissionResponse(cancelPermission)
+	newResp, err := c.client.NewSession(ctx, libacp.NewSessionRequest{
+		Cwd:        cwd,
+		McpServers: []libacp.McpServer{},
+		Meta:       adoptMetaJSON(instanceID, downstreamID),
+	})
+	require.NoError(t, err)
+
+	_, err = c.client.Prompt(ctx, libacp.PromptRequest{
+		SessionID: newResp.SessionID,
+		Prompt:    []libacp.ContentBlock{libacp.NewTextContent("callbacks")},
+	})
+	require.NoError(t, err)
+	_, gotWhileAdopted := c.lc.lastPermissionRequest()
+	require.True(t, gotWhileAdopted, "while adopted, the gated tool call's permission ask reaches the client")
+	require.Zero(t, rec.count(), "and NOT the kernel's unsupervised deny — a human was asked")
+
+	// Detach: drop the upstream connection. The bridge's connCtx watcher removes it from the
+	// kernel's fan-out; the session loses its controller and returns to unattended.
+	c.drop()
+	require.Eventually(t, func() bool {
+		st, gerr := f.mgr.Get(instanceID)
+		return gerr == nil && st.Viewers == 0
+	}, 2*time.Second, 10*time.Millisecond, "the dropped connection's viewer detaches from the kernel")
+
+	// The SAME gated turn on the now-unwatched session is auto-denied again by the built-in
+	// headless fallback — exactly one NEW deny, proving the fallback resumes at detach.
+	stop, err := f.mgr.Prompt(ctx, instanceID, downstreamID,
+		[]libacp.ContentBlock{libacp.NewTextContent("callbacks")})
+	require.NoError(t, err)
+	require.Equal(t, libacp.StopReasonRefusal, stop,
+		"an unwatched session's permission request is auto-denied again after detach")
+	require.Equal(t, 1, rec.count(),
+		"after detach the unsupervised fallback answers again — exactly one new deny")
 }
 
 // TestLoopback_Adopt_ReplaysJournalToAdopter is the "I can see what it did before I got
@@ -660,6 +816,10 @@ func (m *fakeAdoptManager) OpenSession(context.Context, string, agentinstance.Se
 
 func (m *fakeAdoptManager) Prompt(context.Context, string, libacp.SessionID, []libacp.ContentBlock) (libacp.StopReason, error) {
 	return libacp.StopReasonEndTurn, nil
+}
+
+func (m *fakeAdoptManager) DeliverToSession(context.Context, libacp.SessionID, libacp.SessionNotification) error {
+	return nil
 }
 
 func (m *fakeAdoptManager) Cancel(string, libacp.SessionID) error { return nil }

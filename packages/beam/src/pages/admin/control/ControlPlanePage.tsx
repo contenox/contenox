@@ -1,4 +1,4 @@
-import { GridLayout, H1, P, Page, Section, Span } from '@contenox/ui';
+import { H1, P, Page, Section, Span } from '@contenox/ui';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { adminNavItems } from '../../../config/routes';
@@ -9,7 +9,11 @@ export default function ControlPlanePage() {
 
   return (
     <Page bodyScroll="auto">
-      <GridLayout variant="body" minWidth="minmax(0, 1fr)" className="gap-8 pb-8">
+      {/* Plain vertical-stack wrapper — the same idiom InboxPage/MissionDetailPage
+          use — rather than GridLayout: GridLayout's grid is an `auto-fit`
+          MULTI-COLUMN layout, so a second top-level child added here later
+          would land beside this Section instead of stacking under it. */}
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 p-4 md:p-6">
         <Section>
           <H1 variant="page">{t('control_plane.hub_title')}</H1>
           <P variant="muted" className="mt-2">
@@ -34,7 +38,7 @@ export default function ControlPlanePage() {
             ))}
           </nav>
         </Section>
-      </GridLayout>
+      </div>
     </Page>
   );
 }

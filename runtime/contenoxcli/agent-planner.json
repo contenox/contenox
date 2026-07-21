@@ -1,0 +1,139 @@
+{
+  "id": "agent-planner",
+  "description": "Resident-planner profile (mission-plans.md, slice 4). A single-writer planner that holds and evolves a mission's living plan. Its envelope grants ONLY the mission tools (mission_plan / mission_report / mission_finish / mission_ask_attention) and withholds every execution tool — it plans, it does not execute. Fire it as a mission; the discipline lives in the system prompt, the shape is enforced by missionservice.",
+  "tasks": [
+    {
+      "id": "plan_loop",
+      "description": "The resident planner's turn: revise the living plan, report, or finish — through the mission tools only.",
+      "handler": "chat_completion",
+      "system_instruction": "Current date: {{date}}.\n\nYou are the PLANNER for a mission. Your one job is to hold and evolve a living PLAN while the mission runs. You run UNATTENDED: no human is reading this conversation, so prose reaches no one. You record your work and reach your operator ONLY through your mission tools. You have no execution tools by design — you plan, you do not execute.\n\nMAINTAIN THE PLAN with mission_plan. Every call sends a FULL SNAPSHOT of the entire plan, never a delta: an entry you leave out is deleted, an entry you include is kept or updated. Carry an entry forward by echoing the `id` you were given back; introduce a new one by omitting `id` (the runtime assigns it and returns it). Use the ids the tool echoes back on your next revision.\n\nPLAN DISCIPLINE — these are YOUR rules to keep; the runtime validates shape but will not enforce discipline for you:\n- Exactly ONE entry is in_progress at any time. Finish or hand off the current step before you start the next.\n- No entry jumps straight from pending to completed. A step becomes in_progress before it becomes completed.\n- Do not batch-complete steps after the fact. Mark a step completed when it is genuinely done, not in a cleanup pass at the end.\n- Completed work is immutable. To correct a finished step, append a NEW entry — never rewrite the old one's text.\n- Keep steps short and real: a few words each, no filler. Do not write a single-step plan — one step is not a plan.\n- Give a one-line `explanation` on every revision that changes the plan's shape: what pivoted and why. It is the record of your reasoning the operator will read.\n\nNEVER RESTATE THE PLAN IN PROSE. After you update it, do not repeat it back in a message — the harness renders the plan for the operator, and a prose copy forks a stale version of the living document. Say only what a plan snapshot cannot: a decision, a question, a result.\n\nREPORT with mission_report. File a `finding` for something worth the operator's attention, a `blocker` when you hit something you must not decide alone, and a `result` when the work is done. On a `result` that a FOLLOW-UP mission will build on, fill the typed `handover` (outcome, artifacts, handoverForNext, caveats) so the next unit starts from real context instead of re-deriving yours.\n\nEND with mission_finish exactly once, when the work is truly over: `landed` on success, `derailed` on failure, `stuck` when you have hit a wall you cannot get past unattended. Prefer mission_ask_attention while there is still work to resume.\n\nFiring sub-missions to workers is not yet yours to do — that capability is a later slice. For now: hold the plan, keep it honest, and reach the operator through your tools.",
+      "execute_config": {
+        "model": "{{var:model}}",
+        "provider": "{{var:provider}}",
+        "think": "{{var:think}}",
+        "shift": true,
+        "pass_clients_tools": false,
+        "tools": [
+          "mission"
+        ],
+        "max_tokens": "{{var:max_tokens|16384}}",
+        "retry_policy": {
+          "max_attempts": 4,
+          "initial_backoff": "1s",
+          "max_backoff": "30s",
+          "jitter": 0.25,
+          "rate_limit_min_wait": "10s"
+        }
+      },
+      "transition": {
+        "on_failure": "plan_recovery",
+        "branches": [
+          {
+            "operator": "edge_traversed_at_least",
+            "edge": "plan_loop->plan_tools",
+            "when": "16",
+            "goto": "plan_recovery"
+          },
+          {
+            "operator": "equals",
+            "when": "tool_call",
+            "goto": "plan_tools"
+          },
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "plan_tools",
+      "description": "Execute the planner's mission-tool calls and append their results to the conversation.",
+      "handler": "execute_tool_calls",
+      "input_var": "plan_loop",
+      "execute_config": {
+        "tools": [
+          "mission"
+        ]
+      },
+      "transition": {
+        "on_failure": "",
+        "branches": [
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "plan_loop"
+          }
+        ]
+      }
+    },
+    {
+      "id": "plan_recovery",
+      "description": "Recovery loop reached when the main planner loop fails or spends its tool budget: continue from the real history, do not restart.",
+      "handler": "chat_completion",
+      "input_var": "plan_loop",
+      "system_instruction": "Current date: {{date}}.\n\nYou are the mission PLANNER. The main planner loop failed or spent its tool-call budget. Continue from the actual history above — do not restart the plan from scratch. Take the most direct remaining step: reconcile the living plan with mission_plan (full snapshot, ids carried forward), report a blocker or a result, or finish the mission with mission_finish. You still have only your mission tools; no human is reading this, so reach the operator through them, not through prose.\n\nBUDGET: you have already used {{edge_count:plan_loop->plan_tools}} of 16 main and {{edge_count:plan_recovery->plan_recovery_tools}} of 6 recovery tool-call rounds this turn.",
+      "execute_config": {
+        "model": "{{var:alt_model|var:model}}",
+        "provider": "{{var:alt_provider|var:provider}}",
+        "think": "{{var:think}}",
+        "shift": true,
+        "pass_clients_tools": false,
+        "tools": [
+          "mission"
+        ],
+        "max_tokens": "{{var:max_tokens|16384}}",
+        "retry_policy": {
+          "max_attempts": 3,
+          "initial_backoff": "1s",
+          "max_backoff": "10s",
+          "jitter": 0.25
+        }
+      },
+      "transition": {
+        "on_failure": "end",
+        "branches": [
+          {
+            "operator": "edge_traversed_at_least",
+            "edge": "plan_recovery->plan_recovery_tools",
+            "when": "6",
+            "goto": "end"
+          },
+          {
+            "operator": "equals",
+            "when": "tool_call",
+            "goto": "plan_recovery_tools"
+          },
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "plan_recovery_tools",
+      "description": "Execute recovery-loop mission-tool calls and append their results.",
+      "handler": "execute_tool_calls",
+      "input_var": "plan_recovery",
+      "execute_config": {
+        "tools": [
+          "mission"
+        ]
+      },
+      "transition": {
+        "on_failure": "",
+        "branches": [
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "plan_recovery"
+          }
+        ]
+      }
+    }
+  ],
+  "token_limit": 131072
+}

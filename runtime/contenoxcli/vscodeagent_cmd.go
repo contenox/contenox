@@ -11,9 +11,11 @@ import (
 	"syscall"
 
 	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/libkvstore"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/agentservice"
 	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/presence"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/vscodeagent"
 	"github.com/spf13/cobra"
@@ -103,6 +105,19 @@ func runVSCodeAgent(cmd *cobra.Command, _ []string) error {
 	}
 	workspaceCWD, _ := os.Getwd()
 	reportChange("phase", "prep_done")
+
+	// Fleet presence: make this VS Code bridge process visible on the fleet board.
+	// It self-registers into the shared-SQLite presence store (the same $HOME/
+	// .contenox/local.db serve reads) and heartbeats on a modest interval. The
+	// kind (vscode-agent) is the client identity here — VS Code is the only thing
+	// that runs this bridge — so no separate client-name capture is wired. Fully
+	// best-effort: a presence write never blocks or fails the bridge (see
+	// runtime/presence).
+	presenceReporter := presence.StartReporter(ctx, presence.NewStore(libkvstore.NewSQLiteManager(db)), presence.Record{
+		Kind: presence.KindVSCodeAgent,
+		Cwd:  workspaceCWD,
+	})
+	defer presenceReporter.Stop()
 
 	server, err := vscodeagent.New(vscodeagent.ServerConfig{
 		DB:           db,

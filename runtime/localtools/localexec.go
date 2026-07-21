@@ -343,8 +343,13 @@ func (h *LocalExecTools) run(ctx context.Context, command string, argsSlice []st
 		limit = val
 	}
 
-	stdout := &capWriter{limit: limit}
-	stderr := &capWriter{limit: limit}
+	// Rec 4 (tool-hardening.md): never truncate silently. The spool writers keep
+	// a bounded 20%-head/80%-tail slice for the inline result AND spill the FULL
+	// stream to a durable file so the truncated result can name it concretely
+	// ("full output: <path>"). Errors cluster at the tail (gemini-cli's finding),
+	// so the 80% weight is on the end of the stream.
+	stdout := newSpoolWriter(ctx, "local_shell-stdout", limit)
+	stderr := newSpoolWriter(ctx, "local_shell-stderr", limit)
 
 	spec := CommandSpec{
 		Command:  command,
@@ -358,34 +363,43 @@ func (h *LocalExecTools) run(ctx context.Context, command string, argsSlice []st
 	exitCode, runErr := h.runner.Run(runCtx, spec, stdout, stderr)
 	result.DurationSeconds = time.Since(start).Seconds()
 
-	outStr := strings.TrimRight(stdout.buf.String(), "\r\n")
-	errStr := strings.TrimRight(stderr.buf.String(), "\r\n")
-
 	if errors.Is(runErr, ErrOutputBudgetExceeded) {
-		// Backend signalled it had already truncated its own output stream.
-		// The partial bytes in the capWriter buffers are from an incomplete
-		// write and must not be forwarded to the model.
+		// Backend signalled it had already truncated its own output stream. The
+		// partial bytes are from an incomplete write and must not be surfaced or
+		// spooled (a poisoned partial is worse than nothing).
+		stdout.discard()
+		stderr.discard()
 		result.Success = false
 		result.ExitCode = -1
-		result.Error = fmt.Sprintf("Output truncated: command exceeded the context budget (%d bytes). Re-run with a narrower scope or redirect output to a file.", limit)
-		return result, nil
-	}
-	if stdout.truncated || stderr.truncated {
-		// In-process cap fired. The capWriter holds a clean head of the stream,
-		// which is more useful than empty output.
-		result.Success = false
-		result.ExitCode = -1
-		result.Stdout = strings.TrimRight(stdout.buf.String(), "\r\n")
-		result.Stderr = strings.TrimRight(stderr.buf.String(), "\r\n")
-		result.Error = fmt.Sprintf("Output truncated: command produced more than the context budget (%d bytes). The stdout/stderr above are the first captured bytes; subsequent output was discarded.", limit)
+		result.Error = fmt.Sprintf("Output truncated: command exceeded the context budget (%d bytes). Re-run with a narrower scope or redirect output to a file. %s", limit, severityRecoverable)
 		return result, nil
 	}
 
-	result.Stdout = outStr
-	result.Stderr = errStr
+	stdoutPath := stdout.close()
+	stderrPath := stderr.close()
+	result.Stdout = strings.TrimRight(stdout.inlineOutput(), "\r\n")
+	result.Stderr = strings.TrimRight(stderr.inlineOutput(), "\r\n")
+
+	if stdout.truncated() || stderr.truncated() {
+		// Never silent: the inline Stdout/Stderr already carry the 20/80 split with
+		// an embedded spool pointer; the Error field names the concrete next step
+		// and its severity (Rec 5). A spool that could not be written is the only
+		// genuinely fatal case here (disk full / spool unwritable).
+		result.Success = false
+		result.ExitCode = -1
+		var parts []string
+		if stdout.truncated() {
+			parts = append(parts, spoolNotice("stdout", stdout, stdoutPath, limit))
+		}
+		if stderr.truncated() {
+			parts = append(parts, spoolNotice("stderr", stderr, stderrPath, limit))
+		}
+		result.Error = strings.Join(parts, " ") + " " + truncationSeverity(stdout, stderr)
+		return result, nil
+	}
 
 	if runErr != nil {
-		result.Error = runErr.Error()
+		result.Error = runErr.Error() + " " + severityRecoverable
 		result.Success = false
 		result.ExitCode = exitCode
 		return result, nil
@@ -393,9 +407,36 @@ func (h *LocalExecTools) run(ctx context.Context, command string, argsSlice []st
 	result.ExitCode = exitCode
 	result.Success = exitCode == 0
 	if !result.Success && result.Error == "" {
-		result.Error = fmt.Sprintf("command exited with status %d", exitCode)
+		result.Error = fmt.Sprintf("command exited with status %d %s", exitCode, severityRecoverable)
 	}
 	return result, nil
+}
+
+// spoolNotice renders the truncation notice for one stream: it names the exact
+// retrieval step (the spool file path and full size) per Rec 4, and always
+// contains the phrase "context budget" so callers keying on it keep working.
+func spoolNotice(stream string, w *spoolWriter, path string, budget int64) string {
+	if w.spoolErr != nil {
+		return fmt.Sprintf("Output truncated: %s exceeded the context budget (%d bytes); the full output could not be spooled (%v).", stream, budget, w.spoolErr)
+	}
+	if w.overCap {
+		return fmt.Sprintf("Output truncated: %s exceeded the context budget (%d bytes); showing the first 20%% and last 80%%; full output (first %s of a larger stream): %s.", stream, budget, humanSize(w.spooled), path)
+	}
+	return fmt.Sprintf("Output truncated: %s exceeded the context budget (%d bytes); showing the first 20%% and last 80%%; full output: %s (%s).", stream, budget, path, humanSize(w.total))
+}
+
+// truncationSeverity returns the fatal marker when a spool could not be written
+// (disk full / spool unwritable), otherwise the recoverable marker — a
+// too-large output is fixable by narrowing the command.
+func truncationSeverity(stdout, stderr *spoolWriter) string {
+	if stdout.spoolErr != nil || stderr.spoolErr != nil {
+		reason := "spool unwritable"
+		if isDiskFull(stdout.spoolErr) || isDiskFull(stderr.spoolErr) {
+			reason = "disk full"
+		}
+		return "(fatal: " + reason + ")"
+	}
+	return severityRecoverable
 }
 
 // splitShellArgs splits a string into an array of shell arguments, respecting single and double quotes and basic backslash escapes.
@@ -502,7 +543,7 @@ func (h *LocalExecTools) GetToolsForToolsByName(ctx context.Context, name string
 	}
 	allowedCommands, allowedDir, deniedCommands := h.resolvePolicy(ctx)
 	shellDesc := h.shell.ShellModeDescription()
-	desc := "Run a terminal command on the local host. Returns {stdout, stderr, exitCode, success, durationSeconds}. Output is capped at the remaining context budget; when truncated, stdout/stderr contain the first captured bytes and error describes the truncation. For file operations prefer local_fs.* tools: read_file, write_file, sed, find_files. They enforce sandbox boundaries, size limits, and a read-before-write contract that local_shell does not. Use local_shell for operations with no dedicated tool: running tests, builds, git commands, environment inspection. " + shellDesc
+	desc := "Run a terminal command on the local host. Returns {stdout, stderr, exitCode, success, durationSeconds}. Output is capped at the remaining context budget; when it exceeds the cap the FULL output is spooled to a file and stdout/stderr instead carry a 20%-head/80%-tail slice (errors cluster at the tail) with an inline pointer, while the error field names the spool concretely ('full output: <path> (N KiB)') so nothing is lost silently. Errors carry a severity marker you can key on: '(recoverable: adjust parameters and retry)' for anything a corrected call fixes (output too large, bad command, denied path), and '(fatal: <reason>)' only when the environment is broken (disk full, spool unwritable) and retrying will not help. For file operations prefer local_fs.* tools: read_file, write_file, sed, find_files. They enforce sandbox boundaries, size limits, and a read-before-write contract that local_shell does not. Use local_shell for operations with no dedicated tool: running tests, builds, git commands, environment inspection. " + shellDesc
 	if len(allowedCommands) > 0 {
 		desc += " Allowed commands: " + strings.Join(allowedCommands, ", ") + "."
 	}

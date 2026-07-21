@@ -12,6 +12,7 @@ import {
   type SessionInfo,
   type Transport,
 } from '../lib/acp';
+import { adoptMeta, type AdoptRef } from '../lib/adoptMeta';
 import { promptBlocksFromDraft, type WorkspaceFileRef } from '../pages/chat/lib/mentions';
 import type { AcpSessionAction } from './acpSessionState';
 import { EMPTY_SESSION_KEY, type AcpSessionsAction, type AcpWorkspaceAction } from './acpWorkspaceState';
@@ -77,6 +78,19 @@ export interface AcpWorkspaceController {
   refreshSessions(): Promise<void>;
   /** Lazy-creation primitive (D5): creates a session, subscribes to it, focuses it, and closes whichever session was previously focused. Returns the new session id. `cwd` overrides the default workspace root for this session (the root the user picked before the first prompt); falls back to the controller's default cwd. `agentName`, when set, binds the session to a registered external agent via the `session/new` `_meta` extension (see `AGENT_META_KEY`) — the runtime spawns/drives that agent instead of the native chain; the response `_meta` echo is threaded into the roster for attribution. */
   newSession(cwd?: string, agentName?: string | null): Promise<SessionId>;
+  /**
+   * ADOPT an already-running instance + downstream session (a fleet dispatch)
+   * into a NEW upstream chat session, via the `session/new` `contenox.adopt`
+   * `_meta` extension (see `adoptMeta.ts` / acpsvc/adopt.go). Subscribes to and
+   * focuses the resulting session and threads the response `_meta` (which
+   * carries the `controller` verdict) into the roster so the chat surface can
+   * label it. Unlike `newSession`, adoption is ADDITIVE: it does NOT tear down
+   * the previously-focused session, so opening a running unit to watch it never
+   * closes a chat the operator already had open. Returns the new upstream
+   * session id. `cwd` governs only the upstream session's own bookkeeping — the
+   * downstream cwd was fixed at dispatch and cannot be re-rooted.
+   */
+  adoptSession(ref: AdoptRef, cwd?: string): Promise<SessionId>;
   /** Single-view switch: opens `id` as a tab (see `openSessionTab`) and closes whichever session was previously focused, preserving the pre-multiplexing "one open session at a time" behavior. No-op if `id` is already focused. */
   openSession(id: SessionId): Promise<void>;
   /**
@@ -719,6 +733,48 @@ export function createAcpWorkspaceController(
   }
 
   /**
+   * Adopt an already-running instance+session into a new upstream session. The
+   * body mirrors newSession's "register a freshly-minted session" tail, with two
+   * deliberate differences: the `session/new` carries the `contenox.adopt`
+   * `_meta` (so the runtime attaches a viewer to the running dispatch instead of
+   * spawning a fresh agent), and it is ADDITIVE — no teardown of the
+   * previously-focused session, since watching a running unit must not close a
+   * chat the operator already had open (the tab UI holds several sessions live
+   * at once). The response `_meta` echo carries the `controller` verdict; it is
+   * threaded into the roster via session_upserted so the chat header can label
+   * "Übernommen"/"Beobachten" with no second round trip.
+   */
+  async function adoptSession(ref: AdoptRef, overrideCwd?: string): Promise<SessionId> {
+    if (disposed || !client) throw new Error('acp: workspace controller is not connected');
+    const c = client;
+    const sessionCwd = overrideCwd && overrideCwd.trim() !== '' ? overrideCwd : cwd;
+    const meta = adoptMeta(ref.instanceId, ref.sessionId);
+
+    const result = await runGuarded(() => c.newSession(sessionCwd, [], meta)).catch(err => {
+      // Surface a non-auth failure (e.g. the instance is no longer running, or an
+      // old serve rejected the adopt) on the same inline banner a failed prompt
+      // uses, in whatever slice is currently focused (the empty-chat slice when
+      // adopting from a bare /chat). Auth failures already became setup_required.
+      if (!isAuthRequired(err)) {
+        sessionDispatch(focusedSessionId, { type: 'prompt_error', message: errMessage(err) });
+      }
+      throw err;
+    });
+    const sid = result.sessionId;
+
+    sessionDispatch(sid, { type: 'session_reset', sessionId: sid });
+    trackSubscription(sid, c);
+    if (result.configOptions) sessionDispatch(sid, { type: 'config_options', configOptions: result.configOptions });
+    // Thread the response `_meta` echo (contenox.agent + contenox.adopt outcome)
+    // into the roster so the header can read the controller verdict + agent name.
+    workspaceDispatch({ type: 'session_upserted', session: { sessionId: sid, cwd: sessionCwd, _meta: result._meta } });
+    setFocus(sid);
+    workspaceDispatch({ type: 'session_load_succeeded' });
+    // Additive: leave every previously-open session untouched (no teardown).
+    return sid;
+  }
+
+  /**
    * Multi-session primitive: subscribe to `id` (BEFORE `session/load` — replay
    * arrives before the response resolves) and focus it, WITHOUT closing any
    * other open session. Opening an already-open session just focuses it.
@@ -986,6 +1042,7 @@ export function createAcpWorkspaceController(
     connect,
     refreshSessions,
     newSession,
+    adoptSession,
     openSession,
     openSessionTab,
     closeSessionTab,

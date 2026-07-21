@@ -68,6 +68,15 @@ import (
 // It is a contenox extension in the spec's reserved `_meta` namespace, the same precedent
 // as AgentMetaKey; a conformant client that does not recognize it ignores `_meta`
 // entirely. Absent (or malformed) = the historical routing, byte-for-byte.
+//
+// The SAME key is echoed on the session/new RESPONSE with the adopt OUTCOME (see adoptResult
+// / adoptedSessionMetaJSON), so the response `_meta` of an adopted session is:
+//
+//	_meta: { "contenox.agent": "<name>",
+//	         "contenox.adopt": { "instanceId": ..., "sessionId": ..., "controller": <bool> } }
+//
+// where controller reports whether this connection took control (Attach's controllerGranted)
+// — the fact beam labels "übernommen" vs "beobachten" from, without a second round trip.
 const AdoptMetaKey = "contenox.adopt"
 
 // adoptRef is the decoded AdoptMetaKey value: which running instance, and which of ITS
@@ -109,13 +118,66 @@ func parseAdoptMeta(meta json.RawMessage) (adoptRef, bool) {
 }
 
 // adoptMetaJSON builds the `{"contenox.adopt": {...}}` object a client sends on
-// session/new to adopt. It is the single definition of the wire shape — beam's fleet
-// board and a future `contenox fleet attach` both mirror THIS, and it keeps the encode
-// and the decode (parseAdoptMeta) provably symmetrical.
+// session/new to adopt. It is the single definition of the REQUEST wire shape — beam's
+// fleet board and a future `contenox fleet attach` both mirror THIS, and it keeps the
+// encode and the decode (parseAdoptMeta) provably symmetrical.
 func adoptMetaJSON(instanceID string, sessionID libacp.SessionID) json.RawMessage {
 	return mustJSON(map[string]any{
 		AdoptMetaKey: adoptRef{InstanceID: instanceID, SessionID: string(sessionID)},
 	})
+}
+
+// adoptResult is the RESPONSE-side value of the contenox.adopt `_meta` key: the OUTCOME of
+// an adopt, echoed on the session/new response so the adopting client learns what it bound
+// to and — the one fact it cannot compute for itself — whether it became the session's
+// CONTROLLER. The kernel decides control (Attach's controllerGranted: the first viewer of
+// an unattended dispatched session takes control; a later adopter of a session that already
+// has one joins as an OBSERVER), so the client must be TOLD rather than assume. The UI
+// labels the two outcomes "übernommen" (Controller true — took control, answers the unit's
+// permission asks) vs "beobachten" (false — watching only). InstanceID/SessionID echo the
+// request's adoptRef so a client can confirm the exact binding it asked for.
+type adoptResult struct {
+	InstanceID string `json:"instanceId"`
+	SessionID  string `json:"sessionId"`
+	Controller bool   `json:"controller"`
+}
+
+// adoptedSessionMetaJSON builds the session/new RESPONSE `_meta` for an adopted session:
+// the ordinary contenox.agent attribution PLUS the contenox.adopt OUTCOME (adoptResult). It
+// is the single definition of the adopted-response wire shape — beam reads
+// _meta["contenox.adopt"].controller off it to label the tab, and confirms the binding from
+// instanceId/sessionId. It deliberately leaves contenox.agent unchanged so every existing
+// reader (parseAgentMeta, session/list attribution) is untouched by the added key.
+func adoptedSessionMetaJSON(agentName, instanceID string, sessionID libacp.SessionID, controller bool) json.RawMessage {
+	return mustJSON(map[string]any{
+		AgentMetaKey: agentName,
+		AdoptMetaKey: adoptResult{InstanceID: instanceID, SessionID: string(sessionID), Controller: controller},
+	})
+}
+
+// parseAdoptResultMeta decodes the RESPONSE-side contenox.adopt outcome from a session/new
+// response `_meta`. It is the counterpart of parseAdoptMeta (which decodes the REQUEST) and
+// exists so the encode here and the beam decode are provably symmetrical, and so a test can
+// pin the wire shape. Same defensive contract as parseAdoptMeta: any missing / malformed
+// shape reads as ok=false rather than an error, so a client of a future protocol revision
+// still degrades to "no adopt outcome reported" instead of failing.
+func parseAdoptResultMeta(meta json.RawMessage) (adoptResult, bool) {
+	if len(meta) == 0 {
+		return adoptResult{}, false
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal(meta, &m) != nil {
+		return adoptResult{}, false
+	}
+	raw, ok := m[AdoptMetaKey]
+	if !ok {
+		return adoptResult{}, false
+	}
+	var r adoptResult
+	if json.Unmarshal(raw, &r) != nil {
+		return adoptResult{}, false
+	}
+	return r, true
 }
 
 // resolveAdoptTarget validates that ref names a session it is legitimate to attach a
@@ -198,12 +260,13 @@ func containsSessionID(ids []string, sid string) bool {
 //
 // # Controller semantics
 //
-// None are implemented here on purpose — the kernel already has them. Attach makes the
-// first viewer of a controller-less session its controller, so adopting a dispatched
-// session (which by construction has none) hands this connection the permission answers:
-// the whole point. If another beam tab adopted first, the kernel makes this viewer an
-// OBSERVER and reports controllerGranted=false. Both outcomes are correct and neither is
-// fought over here.
+// None are DECIDED here on purpose — the kernel already owns that. Attach makes the first
+// viewer of a controller-less session its controller, so adopting a dispatched session
+// (which by construction has none) hands this connection the permission answers: the whole
+// point. If another beam tab adopted first, the kernel makes this viewer an OBSERVER and
+// reports controllerGranted=false. Both outcomes are correct and neither is fought over
+// here — this function only REPORTS which one happened, threading granted into the response
+// `_meta` (adoptedSessionMetaJSON) so the UI can label control vs observation.
 func (t *Transport) newAdoptedSession(
 	ctx context.Context,
 	internalID string,
@@ -331,6 +394,11 @@ func (t *Transport) newAdoptedSession(
 	return libacp.NewSessionResponse{
 		SessionID:     sessionID,
 		ConfigOptions: t.sessionConfigOptions(ctx, entry),
-		Meta:          agentMetaJSON(agentName),
+		// The response `_meta` carries the adopt OUTCOME, not just attribution: alongside
+		// contenox.agent it echoes contenox.adopt with `controller` set to Attach's granted,
+		// so the client can label the surface "übernommen" (took control) vs "beobachten"
+		// (observing) the moment the session opens — no second round trip. See
+		// adoptedSessionMetaJSON for the wire shape.
+		Meta: adoptedSessionMetaJSON(agentName, ref.InstanceID, downstreamID, granted),
 	}, nil
 }

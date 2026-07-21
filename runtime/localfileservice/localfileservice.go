@@ -67,6 +67,29 @@ func New(root string) (Service, error) {
 	return &localService{root: abs, view: view}, nil
 }
 
+// NewPrivileged is New over a vfs.OpenPrivilegedView: the runtime reading its
+// OWN control plane (chain-agent discovery, serve's chain wiring, the
+// operator's chain-editor API — all deliberately rooted at ~/.contenox). See
+// OpenPrivilegedView's doc for the invariant boundary; agent-facing consumers
+// must keep using New.
+func NewPrivileged(root string) (Service, error) {
+	if strings.TrimSpace(root) == "" {
+		return nil, fmt.Errorf("%w: root is required", ErrInvalidPath)
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve root: %w", err)
+	}
+	if err := os.MkdirAll(abs, 0750); err != nil {
+		return nil, fmt.Errorf("create root: %w", err)
+	}
+	view, err := vfs.OpenPrivilegedView(abs)
+	if err != nil {
+		return nil, fmt.Errorf("resolve root: %w", err)
+	}
+	return &localService{root: abs, view: view}, nil
+}
+
 func (s *localService) Root() string {
 	return s.root
 }

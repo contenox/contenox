@@ -98,7 +98,8 @@ func (wh *workspaceHandler) wrap(fn func(*handler, http.ResponseWriter, *http.Re
 		resolved, ok := wh.factory.Allows(root)
 		if !ok {
 			_ = apiframework.Error(w, r,
-				fmt.Errorf("%w: workspace root %q is not permitted", apiframework.ErrUnprocessableEntity, root),
+				fmt.Errorf("%w: workspace root %q is not under any configured workspace root; roots: %s",
+					apiframework.ErrUnprocessableEntity, root, wh.factory.DescribeRoots()),
 				apiframework.ListOperation)
 			return
 		}
