@@ -54,14 +54,25 @@ try {
   await page.goto(BASE + '/#/chat');
   await page.waitForLoadState('networkidle');
 
-  // Auth: the LAN serve gates on a token. Fill the login field if present.
-  const tokenField = page.getByRole('textbox').first();
-  if (await tokenField.isVisible().catch(() => false)) {
-    await tokenField.fill(TOKEN);
-    await page.getByRole('button', { name: /^login$/i }).click();
+  // Auth: a token-gated (LAN) serve shows a login page; a loopback serve goes
+  // straight to chat. Key on the Login BUTTON — any-visible-textbox is a false
+  // positive on the chat composer.
+  const loginButton = page.getByRole('button', { name: /^login$/i });
+  if (await loginButton.isVisible().catch(() => false)) {
+    await page.getByRole('textbox').first().fill(TOKEN);
+    await loginButton.click();
     await page.waitForLoadState('networkidle');
   }
   await hold(1200);
+
+  // A fresh recording context can see the one-time setup wizard (its dismissal
+  // lives in localStorage only). Click it away before the story starts.
+  const wizardDone = page.getByRole('button', { name: /start using contenox|skip setup/i }).last();
+  if (await wizardDone.isVisible().catch(() => false)) {
+    await wizardDone.click();
+    await page.waitForLoadState('networkidle');
+    await hold(600);
+  }
 
   // Opening: the seeded sidebar on camera briefly.
   await hold(1600);

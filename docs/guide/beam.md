@@ -16,15 +16,12 @@ agent is bound to, which files its policy lets it touch, every tool call as a
 card, and — before any gated write or command runs — a diff you approve or reject
 yourself.
 
-<!-- TODO(recapture): beam-demo.webm ends on the retired modal approval gate and
-     predates the sidebar agent picker + inline permission card. Re-record per the
-     "Hero loop" take in docs/development/recording-shot-list.md (include the
-     agent-picker flow), then swap this src + poster. -->
 <video src="/beam-demo.webm" poster="/beam-video-cover.png" controls muted playsinline style="width:100%;border-radius:8px"></video>
 
-*The whole loop in 30 seconds: a prompt in a project workspace, the agent reads
-the files, the gated write pauses at the approval gate with a diff, one keypress
-approves it, and the agent-view overlay shows what the policy lets it touch.*
+*The whole loop in 30 seconds: a chat with a registered Claude Code agent in a
+project workspace — the agent reads the files, the gated write pauses at the
+inline permission card, one click allows it, and the agent-view overlay shows
+what the policy lets it touch.*
 
 ---
 
@@ -132,10 +129,7 @@ under an **Options** dropdown on narrow viewports):
 Changing a control affects only that session, so you can keep one session on a
 local model with a strict policy and another on a hosted model — side by side.
 
-<!-- TODO(recapture): beam-new-chat.png predates the staged-agent picker on the
-     empty surface and the sidebar's "New chat with an agent" chevron. Re-shoot
-     per the "New-chat surface" take in docs/development/recording-shot-list.md. -->
-![A new Beam session bound to a project workspace, with the per-session Model, HITL Policy, Think, Token Limit, and Workspace controls above an empty chat](/beam-new-chat.png)
+![A new Beam session bound to a project workspace, with the per-session Model, HITL Policy, Think, Token Limit, and Workspace controls above an empty chat, and the sidebar's "New chat with an agent" chevron beside seeded sessions](/beam-new-chat.png)
 
 ### Chat with a registered agent
 
@@ -156,6 +150,8 @@ approvals.
    moment you send the first message. The binding is fixed for the life of the
    session — an agent is chosen at creation, never switched mid-conversation, so
    there is no in-chat agent switcher.
+
+![The agent picker open in the sidebar: Contenox (default) at the top, registered agents below, beside seeded sessions with per-session agent attribution](/agent-picker.png)
 
 An external-agent session's toolbar surfaces the config options that *agent*
 advertises for the session — for example a Claude Code session exposes its own
@@ -211,6 +207,8 @@ The prompt composer understands three inline prefixes:
 - **`!`** runs the rest of the line as a shell command in the workspace Terminal
   tab (above), with no LLM turn.
 
+![The command-suggestions menu open above the composer in a Claude Code session: the agent-advertised slash commands with their descriptions](/agent-slash-menu.png)
+
 ### The approval gate
 
 When a tool call matches an **approve** rule in the active HITL policy, the run
@@ -230,11 +228,7 @@ deliberate. The gate is no longer a modal you could accidentally dismiss, and th
 old "click outside to deny" footgun is gone; there is likewise no maximize-to-tab
 step — the card is already inline.
 
-<!-- TODO(recapture): beam-approval-gate.png shows the RETIRED modal gate and
-     contradicts the inline-card prose above. Replace it with the new
-     agent-permission-card.png — see the "Permission card" take in
-     docs/development/recording-shot-list.md — then re-enable this embed. -->
-<!-- ![The inline permission card in the transcript: a pending CHANGELOG.md write rendered as a diff with Allow and Deny](/agent-permission-card.png) -->
+![The inline permission card in the transcript: a registered agent's pending CHANGELOG.md edit with its raw input expanded, and the Always Allow / Allow / Reject buttons](/agent-permission-card.png)
 
 Nothing gated runs until you say so, and the decision is recorded in the session
 transcript alongside the tool-call card, where the card itself persists. Because

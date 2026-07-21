@@ -154,3 +154,45 @@ func TestHost_DriveTurn_RequiresCwdAndPrompt(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Prompt")
 }
+
+// The DenyingHarness must answer a permission ask by selecting the agent's own
+// reject option — reject_once preferred, reject_always next — and fall back to
+// the "cancelled" outcome only when the agent offered no reject option at all.
+// A MethodNotFound here is exactly the broken-client signal the type exists to
+// avoid, so every path must produce a well-formed response and record the ask.
+func TestUnit_DenyingHarness_SelectsRejectOptionAndRecords(t *testing.T) {
+	h := &agenthost.DenyingHarness{}
+
+	resp, err := h.RequestPermission(context.Background(), libacp.RequestPermissionRequest{
+		ToolCall: libacp.PermissionToolCall{ToolCallID: "tc-1", Title: "Write TODO.md"},
+		Options: []libacp.PermissionOption{
+			{OptionID: "ok", Name: "Allow", Kind: libacp.PermissionAllowOnce},
+			{OptionID: "no-always", Name: "Reject always", Kind: libacp.PermissionRejectAlways},
+			{OptionID: "no", Name: "Reject", Kind: libacp.PermissionRejectOnce},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, libacp.PermissionOutcomeSelected, resp.Outcome.Outcome)
+	require.Equal(t, "no", resp.Outcome.OptionID, "reject_once must win over reject_always")
+
+	resp, err = h.RequestPermission(context.Background(), libacp.RequestPermissionRequest{
+		ToolCall: libacp.PermissionToolCall{ToolCallID: "tc-2"},
+		Options: []libacp.PermissionOption{
+			{OptionID: "no-always", Name: "Reject always", Kind: libacp.PermissionRejectAlways},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "no-always", resp.Outcome.OptionID)
+
+	resp, err = h.RequestPermission(context.Background(), libacp.RequestPermissionRequest{
+		ToolCall: libacp.PermissionToolCall{ToolCallID: "tc-3", Title: "Run rm -rf"},
+		Options: []libacp.PermissionOption{
+			{OptionID: "ok", Name: "Allow", Kind: libacp.PermissionAllowOnce},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, libacp.PermissionOutcomeCancelled, resp.Outcome.Outcome, "no reject option offered → cancelled")
+
+	require.Equal(t, []string{"Write TODO.md", "tc-2", "Run rm -rf"}, h.Denied(),
+		"every ask recorded, titled by ToolCall.Title with the id as fallback")
+}

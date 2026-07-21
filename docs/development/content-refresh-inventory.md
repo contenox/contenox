@@ -19,17 +19,18 @@ UI/commands that no longer exist, or a shipped command has no reference at all);
 **P1** = a shipped capability is *undocumented / unshown* (incomplete);
 **P2** = polish, cleanup, or an optional new selling point.
 
-**Status (2026-07-21 refresh pass):** every prose row in §1 and §2 is DONE
-(CLI-reference `agent` section, beam.md picker + inline-card rewrite, the
-`external-acp-agents` integration guide, README section, blueprint status note,
-TODO prune, landing points EN+DE), as is the recording *infrastructure*
-(`record-beam.mjs` retargeted, `RECORDING.md` + the shot list updated,
-`agent-check.tape` authored). What remains OPEN is the §3 **media itself** —
-maintainer-led per the recording standards: re-record `beam-demo.webm`, shoot
-`agent-permission-card.png` / `agent-picker` / `agent-slash-menu.png` /
-`agent-check.gif`, re-shoot `beam-new-chat.png`, verify `beam-agent-view.png`,
-and retire the orphans (`beam-approval-gate.png`, `beam-chat.png`,
-`beam-modeld.png`). Take-by-take plan: `recording-shot-list.md`.
+**Status (2026-07-21, post-shoot):** every row in §1, §2, AND §3 is DONE. The
+prose pass landed first (CLI-reference `agent` section, beam.md picker +
+inline-card rewrite, the `external-acp-agents` integration guide, README
+section, blueprint status note, TODO prune, landing points EN+DE), then the
+media was shot per `recording-shot-list.md`: `beam-demo.webm` re-recorded
+(agent-picker → inline-card → agent-view story, ~33 s, + new
+`beam-video-cover.png`), `agent-permission-card.png` / `agent-picker.png` /
+`agent-slash-menu.png` / `agent-check.gif` shot and embedded (beam.md, the
+agents integration guide, the CLI reference), `beam-new-chat.png` re-shot (both
+embeds), `beam-agent-view.png` verified (picker not in frame — kept), and the
+orphans deleted (`beam-approval-gate.png`, `beam-chat.png`, `beam-modeld.png`).
+All `TODO(recapture)` markers are removed.
 
 The website owns no doc content: every `/docs/**` page renders markdown straight
 from this repo's `docs/` tree (`website/src/content.config.ts`,

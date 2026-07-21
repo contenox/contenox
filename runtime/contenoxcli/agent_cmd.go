@@ -446,9 +446,11 @@ works: it exercises the same client-host path the runtime itself uses
 (runtime/agenthost), not a lighter fake.
 
 The check drives one plain text turn rooted in the current working directory.
-Agent-initiated callbacks (file system, terminal, permission requests) are
-declined, so an agent that insists on them may stop early; answering a simple
-prompt should not need any.
+Agent-initiated file system and terminal callbacks are unavailable, and every
+permission ask is answered with a clean DENIAL (a check never grants) rather
+than a protocol error. Each denial is reported. Answering a simple prompt
+should not need any; an agent that insists on gated work may end its turn
+right after the denial, which the check then judges on what was streamed.
 
 If the agent's config declares an mcp_servers allowlist (registered MCP
 server names, see 'contenox mcp list' and 'contenox agent edit'), those
@@ -469,10 +471,13 @@ Examples:
 }
 
 // checkHarness streams agent_message_chunk text to out as it arrives while
-// recording everything via the embedded RecordingHarness, so `agent check`
-// shows the reply live and can still run turn-level verification afterwards.
+// recording everything via the embedded harness, so `agent check` shows the
+// reply live and can still run turn-level verification afterwards. The
+// embedded DenyingHarness answers permission asks with a clean denial (never
+// a grant): a check verifies plumbing, and a MethodNotFound would read to the
+// agent as a broken client rather than a declined action.
 type checkHarness struct {
-	agenthost.RecordingHarness
+	agenthost.DenyingHarness
 	out io.Writer
 }
 
@@ -482,7 +487,7 @@ func (h *checkHarness) SessionUpdate(ctx context.Context, n libacp.SessionNotifi
 			fmt.Fprint(h.out, c.Text)
 		}
 	}
-	return h.RecordingHarness.SessionUpdate(ctx, n)
+	return h.DenyingHarness.SessionUpdate(ctx, n)
 }
 
 func runAgentCheck(cmd *cobra.Command, args []string) error {
@@ -550,6 +555,13 @@ func runAgentCheck(cmd *cobra.Command, args []string) error {
 	})
 	if harness.MessageText() != "" {
 		fmt.Fprintln(out)
+	}
+	// Surface denials before any verdict: a failed or silent turn is judged
+	// differently when the agent was refused mid-way (some adapters end the
+	// turn right after a rejection, without a closing message).
+	if denied := harness.Denied(); len(denied) > 0 {
+		fmt.Fprintf(out, "Denied %d permission ask(s) during the turn — a check never grants: %s\n",
+			len(denied), strings.Join(denied, ", "))
 	}
 	if err != nil {
 		if s := agentStderr.String(); s != "" {

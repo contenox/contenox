@@ -18,7 +18,10 @@ Set Padding 24
 Set TypingSpeed 45ms
 Set WaitTimeout 4m
 
-Type `contenox agent check demo-agent "summarize this repo in one line"`
+# Keep the prompt tool-free: a check DENIES permission asks, and an agent that
+# reaches for tools may end its turn silently after the denial — a failed step
+# on camera. "introduce yourself" answers deterministically without tools.
+Type `contenox agent check demo-agent "introduce yourself in one line"`
 Sleep 800ms
 Enter
 

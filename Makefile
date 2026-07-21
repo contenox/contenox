@@ -787,7 +787,7 @@ acp-client-e2e:
 ACP_CLAUDE_ACP_BIN ?=
 
 acp-host-e2e:
-	ACP_TESTY_BIN=$(ACP_TESTY_BIN) ACP_CLAUDE_ACP_BIN=$(ACP_CLAUDE_ACP_BIN) go test -C $(PROJECT_ROOT) -run '^TestHostE2E_' -v ./runtime/agenthost/...
+	ACP_TESTY_BIN=$(ACP_TESTY_BIN) ACP_MCP_ECHO_BIN=$(ACP_MCP_ECHO_BIN) ACP_CLAUDE_ACP_BIN=$(ACP_CLAUDE_ACP_BIN) go test -C $(PROJECT_ROOT) -run '^TestHostE2E_' -v ./runtime/agenthost/...
 
 # dev
 dev-beam:

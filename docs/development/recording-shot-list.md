@@ -12,6 +12,16 @@ House style: real turns only, a **meaningful seeded sidebar** (no trash
 sessions), secrets scrubbed, and a fast cloud model on camera. Every take below
 names its output filename and embed target so nothing is shot blind.
 
+**Status: ALL SIX TAKES SHOT AND EMBEDDED (2026-07-21).** Assets live flat under
+`website/public/`; the `TODO(recapture)` markers are gone and the orphans are
+deleted. This file stays as the re-shoot recipe. Lessons from the shoot, for
+next time: run vhs with `VHS_NO_SANDBOX=true` on kernels that refuse Chromium's
+sandbox; keep the `agent check` tape prompt tool-free (a check DENIES permission
+asks); a hash-only navigation does NOT reload the Beam SPA — force a real
+`location.reload()` before judging registry-backed UI state; pick the on-camera
+model from what `contenox model list` actually shows; seed the sidebar in the
+demo workspace itself (sessions are workspace-scoped).
+
 ## Shared pre-flight (every Beam take)
 
 Do this once before any Beam capture, then leave it running for the whole
@@ -142,8 +152,10 @@ forwarded MCP servers.
 - **Steps (tape):**
   1. `Set Theme "Catppuccin Mocha"`, `Set FontSize 18`, fixed Width/Height/Padding
      to match the other tapes.
-  2. `Type "contenox agent check demo-agent \"summarize this repo in one line\""`
-     → `Enter`.
+  2. `Type "contenox agent check demo-agent \"introduce yourself in one line\""`
+     → `Enter`. (Tool-free on purpose: a check DENIES permission asks, and an
+     agent that reaches for tools may end its turn silently after the denial —
+     a failed step on camera.)
   3. `Wait+Screen` on a loose regex of the reply, then let these lines land:
      `Forwarding MCP servers: …`, the streamed reply, `Turn completed (agent …
      stopReason=end_turn).`, `Agent advertises N command(s): …`.

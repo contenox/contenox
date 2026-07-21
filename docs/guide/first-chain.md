@@ -54,9 +54,6 @@ CLI picks one per invocation with `--chain`, or falls back to the configured
 default chain, with the model, HITL policy, and reasoning effort switchable per
 session:
 
-<!-- TODO(recapture): beam-new-chat.png predates the sidebar agent-picker chevron —
-     re-shoot per docs/development/recording-shot-list.md Take 6 (same framing; this
-     embed and the one in docs/guide/beam.md swap together). -->
 ![Beam's new-session page: per-session Model, HITL Policy, Think, Token Limit, and Workspace controls above an empty chat](/beam-new-chat.png)
 
 ---

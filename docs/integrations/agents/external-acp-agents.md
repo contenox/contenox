@@ -95,6 +95,8 @@ client-host path (`runtime/agenthost`) the runtime uses when you chat with the
 agent in Beam, not a lighter fake — and streams the reply to stdout. It then
 prints the stop reason and any slash-commands the agent advertised:
 
+![contenox agent check driving a live turn: the forwarded MCP servers line, the streamed reply, the stop reason, and the advertised commands](/agent-check.gif)
+
 ```
 Checking agent "my-goose": npx -y @acme/goose-acp
 
@@ -105,11 +107,13 @@ Agent advertises 2 command(s): /compact /review
 ```
 
 The turn is rooted in the current directory and drives one plain-text prompt.
-Agent-initiated callbacks (file system, terminal, permission requests) are
-declined, so an agent that insists on them may stop early — a simple prompt
-should not need any. A normal turn that produces no displayable output fails the
-check rather than reporting a false success on a silent agent. Use `--timeout`
-(default `2m`) to bound a slow agent.
+Agent-initiated file system and terminal callbacks are unavailable, and every
+permission ask is answered with a clean **denial** — a check never grants — with
+each denial reported on its own line. A simple prompt should not need any; an
+agent that insists on gated work may end its turn right after the denial. A
+normal turn that produces no displayable output fails the check rather than
+reporting a false success on a silent agent. Use `--timeout` (default `2m`) to
+bound a slow agent.
 
 `agent check` is the user-facing twin of the `make acp-host-e2e` harness that
 pins this path in CI — see [the ACP client library](/docs/development/acp-client/)
@@ -165,6 +169,8 @@ cards, and any permission it requests raises the same inline
 [approval card](/docs/guide/beam/#the-approval-gate) your own chains do, gated by
 the session's contenox HITL policy. The session row is labelled `Agent: {name}`
 so you can tell which sessions drove a foreign agent.
+
+![The agent picker open in Beam's sidebar: Contenox (default) at the top, registered agents below](/agent-picker.png)
 
 ---
 

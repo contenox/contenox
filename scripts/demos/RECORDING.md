@@ -18,10 +18,12 @@ Prefer scripted/deterministic capture (vhs, CDP screenshots) over `x11grab`.
 ## Before any recording
 
 1. **Fast, clean model on camera.** Set a snappy cloud model so responses are quick
-   and reliable; restore afterward:
+   and reliable; restore afterward. Pick one that `contenox model list` actually
+   shows for the backend — a stale model name here silently re-raises the Beam
+   setup wizard ("default_model_not_available") and breaks turns:
    ```bash
    contenox config set default-provider vertex-google
-   contenox config set default-model    gemini-3-flash-preview
+   contenox config set default-model    gemini-2.5-flash
    contenox config set default-think     off      # crisp output, no <think> noise
    # …record…
    # restore your real default:

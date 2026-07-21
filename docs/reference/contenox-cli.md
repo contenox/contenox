@@ -353,7 +353,9 @@ contenox agent check claude Say hello     # everything after the name is the pro
 contenox agent check local-bot --timeout 30s
 ```
 
-The turn is rooted in the current working directory and drives one plain-text prompt; with no prompt the agent is asked to confirm the connection. Agent-initiated callbacks (file system, terminal, permission requests) are declined, so an agent that insists on them may stop early — answering a simple prompt should not need any.
+The turn is rooted in the current working directory and drives one plain-text prompt; with no prompt the agent is asked to confirm the connection. Agent-initiated file system and terminal callbacks are unavailable, and every permission ask is answered with a clean **denial** (a check never grants) rather than a protocol error; each denial is reported (`Denied N permission ask(s) during the turn …`). Answering a simple prompt should not need any; an agent that insists on gated work may end its turn right after the denial.
+
+![contenox agent check driving a live turn: the forwarded MCP servers line, the streamed reply, the stop reason, and the advertised commands](/agent-check.gif)
 
 If the agent's config declares an `mcp_servers` allowlist, `check` forwards those servers in `session/new` exactly as a real session would, printing a `Forwarding MCP servers:` line; entries the agent's advertised capabilities cannot consume are reported (`Note: MCP servers NOT forwarded …`), not silently dropped. After the reply it prints the turn's stop reason (`Turn completed (agent … stopReason=end_turn)`) and any slash commands the agent advertised (`Agent advertises N command(s): …`). A normal turn that produces no displayable output fails the check rather than reporting success on a silent agent.
 

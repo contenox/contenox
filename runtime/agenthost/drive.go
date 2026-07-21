@@ -17,8 +17,9 @@ import (
 // whose turn only needs to be observed, not interacted with: it records every
 // session/update notification and, via the embedded UnimplementedClient,
 // rejects the request-shaped callbacks (permission, fs/*, terminal/*). A turn
-// that needs a permission answered needs a scripted harness instead — this
-// one exists so a caller can read an agent's streamed reply after the fact.
+// that needs a permission answered needs a scripted harness instead (see
+// DenyingHarness for the deny-everything one) — this one exists so a caller
+// can read an agent's streamed reply after the fact.
 //
 // Safe for concurrent use: updates arrive on the connection's read-loop
 // goroutine while callers read snapshots from their own.
@@ -79,6 +80,56 @@ func (h *RecordingHarness) MessageText() string {
 		}
 	}
 	return sb.String()
+}
+
+// DenyingHarness is RecordingHarness plus one scripted answer: every
+// session/request_permission ask is DENIED, by selecting the agent's own
+// reject_once option (reject_always as the fallback; outcome "cancelled" when
+// the agent offered no reject option at all). It exists for observe-only
+// drivers that must still be interactable enough for a spec-correct agent to
+// finish its turn gracefully: the bare RecordingHarness answers a permission
+// ask with MethodNotFound, which agents surface as a BROKEN CLIENT and derail
+// their reply into an error narrative (`contenox agent check` hit exactly
+// this), while a clean denial lets the agent report the denial and end the
+// turn on its own terms. Denied() names each ask so a caller can surface what
+// the agent tried.
+type DenyingHarness struct {
+	RecordingHarness
+
+	denyMu sync.Mutex
+	denied []string
+}
+
+// RequestPermission denies the ask (see the type doc) and records its title.
+func (h *DenyingHarness) RequestPermission(_ context.Context, req libacp.RequestPermissionRequest) (libacp.RequestPermissionResponse, error) {
+	title := strings.TrimSpace(req.ToolCall.Title)
+	if title == "" {
+		title = req.ToolCall.ToolCallID
+	}
+	h.denyMu.Lock()
+	h.denied = append(h.denied, title)
+	h.denyMu.Unlock()
+	for _, kind := range []libacp.PermissionOptionKind{libacp.PermissionRejectOnce, libacp.PermissionRejectAlways} {
+		for _, opt := range req.Options {
+			if opt.Kind == kind {
+				return libacp.RequestPermissionResponse{Outcome: libacp.RequestPermissionOutcome{
+					Outcome:  libacp.PermissionOutcomeSelected,
+					OptionID: opt.OptionID,
+				}}, nil
+			}
+		}
+	}
+	return libacp.RequestPermissionResponse{Outcome: libacp.RequestPermissionOutcome{
+		Outcome: libacp.PermissionOutcomeCancelled,
+	}}, nil
+}
+
+// Denied returns a snapshot of the permission asks denied so far, in arrival
+// order, each named by its tool-call title (id when untitled).
+func (h *DenyingHarness) Denied() []string {
+	h.denyMu.Lock()
+	defer h.denyMu.Unlock()
+	return append([]string(nil), h.denied...)
 }
 
 // TurnRequest describes the one prompt turn DriveTurn drives.
