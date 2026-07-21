@@ -87,11 +87,15 @@ type Deps struct {
 
 	// Fleet, when set, is what the `/mission` slash command fires through — the
 	// same fleetservice.Dispatch the REST path and `contenox mission fire` use, so
-	// firing a mission from a chat reimplements nothing. serve sets it together
-	// with Agents (below); the stdio `contenox acp` path (what Zed spawns) has no
-	// fleet kernel of its own and leaves both nil. It is the narrow
+	// firing a mission from a chat reimplements nothing. It is the narrow
 	// MissionDispatcher slice (Dispatch only), not the whole Service — /mission
-	// needs no more.
+	// needs no more. Three shapes wire it: serve's in-process kernel; a standalone
+	// `contenox acp` editor that embeds the fleet IN-PROCESS (the default — the
+	// mission is a subagent of THIS process, reporting back into this session; see
+	// runtime/contenoxcli/acp_cmd.go); and, only as an explicit opt-in
+	// (CONTENOX_SERVER_URL set), a FORWARDING pair over a running serve's REST API.
+	// A process that is ITSELF a dispatched unit, or a setup-only editor with no
+	// model, leaves both nil.
 	Fleet MissionDispatcher
 
 	// Agents, when set, resolves a declared agent by name so /mission can tell its
@@ -100,36 +104,27 @@ type Deps struct {
 	//
 	// Fleet and Agents together are this transport's mission capability
 	// (hasMissionCapability, in mission.go): BOTH non-nil is what gates whether
-	// `/mission` is advertised to the client at all (acpCommands, in
-	// commands.go) and whether handleMission treats an invocation as possible.
-	// ACP is advertise-what-works — a standalone `contenox acp` session must
-	// never list a command that can only error out, so it never sees `/mission`
-	// in its menu. A client that sends it anyway (stale menu state, a
-	// remembered command) gets handleMission's teaching error, which names the
-	// paths that do work: a Beam/serve-connected session, or `contenox mission
-	// fire` against a running serve.
-	//
-	// The standalone `contenox acp` process (what Zed spawns) now ALSO wires
-	// these — as a FORWARDING pair that reaches a running serve over its REST
-	// API — together with MissionForwarded below, so `/mission` works from the
-	// editor. serve's own in-process kernel leaves MissionForwarded nil.
+	// `/mission` is advertised to the client at all (acpCommands, in commands.go)
+	// and whether handleMission treats an invocation as possible. ACP is
+	// advertise-what-works — a process with no dispatcher wired (a dispatched unit,
+	// or a setup-only editor) never lists `/mission`. A client that sends it anyway
+	// (stale menu state, a remembered command) gets handleMission's teaching error.
 	Agents MissionAgentResolver
 
-	// MissionForwarded, when non-nil, marks Fleet/Agents as a REMOTE serve
-	// reached over REST from a standalone `contenox acp` process — not serve's
-	// own in-process kernel. It changes two honest details for that case, and
-	// nothing else (serve leaves it nil, so serve's path is byte-identical):
+	// MissionForwarded, when non-nil, marks Fleet/Agents as a REMOTE serve reached
+	// over REST from a standalone `contenox acp` process — the explicit OPT-IN path
+	// (CONTENOX_SERVER_URL set) an operator uses to fire onto a bigger box, not the
+	// in-process default. It changes two honest details for that case, and nothing
+	// else (the in-process editor and serve both leave it nil):
 	//
-	//   - hasMissionCapability ADDITIONALLY requires the target serve to answer
-	//     right now (Reachable), so `/mission` is advertised per session exactly
-	//     when it can work: a serve that has stopped since this process launched
-	//     drops off a fresh session's menu, and one that comes back reappears.
-	//   - the impossible-invocation teaching error, and the fired-mission
-	//     confirmation, are forwarding-aware (see handleMission): the error names
-	//     the serve URL and how to bring it back, and the confirmation states that
-	//     reports land in the OPERATOR INBOX — because the firing session lives in
-	//     THIS acp process, not serve's kernel, so serve's report router cannot
-	//     deliver back into it and falls back to the inbox as parent-gone.
+	//   - handleMission checks the target serve answers right now (Reachable) at
+	//     INVOCATION and teaches when it does not — advertisement stays
+	//     unconditional (a stable menu), honesty lives at the point of use.
+	//   - the fired-mission confirmation is forwarding-aware: reports land in the
+	//     OPERATOR INBOX on that serve as parent-gone — because the firing session
+	//     lives in THIS acp process, which the remote serve's kernel does not own,
+	//     so its report router cannot deliver back into it (the in-process default
+	//     is exactly what fixes this: it delivers live via DeliverToContenoxSession).
 	MissionForwarded *MissionForwardConfig
 }
 

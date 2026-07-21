@@ -88,9 +88,10 @@ await card.waitFor({ state: 'visible', timeout: 60000 });
 await card.getByRole('button', { name: /allow|erlauben/i }).first().click(); // no click-outside/Escape shortcut — the buttons are the only path
 ```
 
-Note: `record-beam.mjs` still waits on `[role="dialog"], [role="alertdialog"]`
-(`record-beam.mjs:94`) and its `y`-keypress approval — retarget both to the card
-before re-recording the hero, per `docs/development/recording-shot-list.md`.
+`record-beam.mjs` is already retargeted: it waits on the `role="group"` card and
+clicks **Allow** (no dialog wait, no `y`), and its story opens with the
+agent-picker beat — ready for the hero re-record per
+`docs/development/recording-shot-list.md`.
 
 **Agent-picker + external-agent chat flow.** To capture chatting with a registered
 external agent, seed one first (fast cloud creds still apply — see step 1 above):

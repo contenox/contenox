@@ -514,6 +514,13 @@ Binds `127.0.0.1:32123` by default (override with `ADDR`/`PORT`). Set `TOKEN` to
 | `ADDR` / `PORT` | Override the bind address/port. |
 | `TOKEN` | Bearer token required on mutating API requests and cross-origin reads. |
 | `BEAM_DEV_PROXY_URL` | Proxy Beam UI requests to a Vite dev server while keeping `/api` on this server. |
+| `TERMINAL_ENABLED` | Terminal routes under `/api/terminal/sessions`, on by default (`false` disables). |
+| `TERMINAL_ALLOWED_ROOT` | Directory terminal sessions are confined to (default: the workspace root). |
+| `TERMINAL_MAX_SESSIONS` | Concurrent terminal session cap (default 8; 0 = unlimited). |
+| `TERMINAL_SHELL` | Shell binary for terminal sessions (default: `$SHELL`). |
+| `TERMINAL_IDLE_TIMEOUT` | Idle duration after which a terminal session is reaped. |
+| `HITL_APPROVAL_TIMEOUT` | Ceiling for pending HITL approvals, a Go duration (e.g. `1h`); expired asks are auto-resolved. |
+| `ALLOWED_API_ORIGINS` / `PROXY_ORIGIN` | CORS: extra allowed API origins / the trusted reverse-proxy origin. |
 
 ### `contenox fleet`
 
@@ -541,7 +548,7 @@ contenox fleet cancel <instance-id> --session <session-id>   # cancel just that 
 
 ### `contenox mission`
 
-Work with an agent in **mission mode** — the dual of chat mode. In chat you prompt turn by turn and approve each gated action yourself. In mission mode you fire a one-line intent at a declared agent under an **envelope** (a HITL policy that bounds what it may do unattended) and detach; the unit acts inside the envelope and only crossing it costs your attention, in the [approvals inbox](#contenox-approvals). Missions live in a running `contenox serve`, reached over the same REST API as `contenox fleet`.
+Work with an agent in **mission mode** — the dual of chat mode. In chat you prompt turn by turn and approve each gated action yourself. In mission mode you fire a one-line intent at a declared agent under an **envelope** (a HITL policy that bounds what it may do unattended) and detach; the unit acts inside the envelope and only crossing it costs your attention, in the [approvals inbox](#contenox-approvals). A mission is a subagent of whatever process fires it — the [`/mission` slash command](#the-mission-slash-command) runs one in-process inside your editor session; **these CLI verbs** are the operator's remote lever, firing onto (and reading from) a running `contenox serve` over the same REST API as `contenox fleet`.
 
 ```bash
 contenox mission fire --agent reviewer --intent "triage the failing CI run" --policy hitl-policy-strict.json
@@ -572,6 +579,29 @@ From inside a chat (`contenox acp`, or the Beam chat) you can fire a mission wit
 - `/mission <agent-name> <intent>` — fires the named agent instead.
 
 The two forms are the same shape, so contenox resolves the first token against the declared-agent registry: a hit is the named form, a miss means the whole line is the intent for the default agent. The confirmation always states which agent was chosen and echoes the intent, so a misread is visible immediately. A mission fired this way is supervised by the calling session — its reports return there rather than to the operator inbox.
+
+In a standalone `contenox acp` editor session the dispatch runs **in-process** by default: the fired unit is a child subprocess of the editor process itself, no running serve is needed, and the unit's reports stream live back into the firing session as they land (the operator inbox only catches a report whose firing session has already ended). Setting `CONTENOX_SERVER_URL` opts into **forwarding** the dispatch to that serve instead — for firing onto a bigger box — in which case reports land in that serve's operator inbox (`contenox approvals`), since a remote kernel cannot deliver into an editor session it does not own. The hardened `acpx` profile never offers `/mission`.
+
+### `contenox approvals`
+
+List and answer the pending human-in-the-loop approvals a running `contenox serve` is holding — the inbox for asks raised by an agent working with no attached session (dispatched fleet work, a headless API caller). A permission request that would otherwise hang until its policy-rule timeout, or the serve-level ceiling, is answerable here as soon as it lands.
+
+A pending approval is a goroutine parked inside the running serve process — answering it has to reach that process, not just its database — so, unlike `contenox state`/`session`, this command talks to serve's REST API (default `http://127.0.0.1:32123`; override with `--server`/`--token` or `CONTENOX_SERVER_URL`/`CONTENOX_SERVER_TOKEN`).
+
+```bash
+contenox approvals list                     # pending asks, newest first
+contenox approvals list --json              # raw records, including full diff content
+contenox approvals answer <id> --approve
+contenox approvals answer <id> --deny
+```
+
+`list` prints each ask's id, tool, args summary, policy and matched rule, diff presence, the agent/mission/instance/session attribution (with several units running, the row has to say **whose** action is gated; `-` for an ask raised outside the fleet), and the created/expires timestamps. `answer` requires exactly one of `--approve`/`--deny`; an id that is unknown, already answered, or expired (auto-resolved by serve's sweeper) fails with a non-zero exit status saying which — answering twice is never silently a no-op.
+
+| Flag | Description |
+| ---- | ----------- |
+| `--server <url>` / `--token <token>` | Reach a running `contenox serve` (as `contenox fleet`). |
+| `--limit <n>` | Cap the pending list (`list`; 0 = server default cap). |
+| `--json` | Emit raw records (`list`) or the answer result (`answer`). |
 
 ### `contenox workspace`
 
@@ -659,3 +689,9 @@ contenox version
 |---|---|
 | `CONTENOX_ACP_CHAIN_PATH` | Override the chain file used by ACP sessions |
 | `CONTENOX_ACPX_CHAIN_PATH`| Override the chain file used by headless ACPX sessions |
+| `CONTENOX_SERVER_URL` | Base URL of a running `contenox serve` for `fleet`/`mission`/`approvals` (instead of `--server`). In a `contenox acp` editor session, setting it is also the explicit opt-in that **forwards** `/mission` dispatches to that serve instead of running them in-process. |
+| `CONTENOX_SERVER_TOKEN` | Bearer token for the serve API (instead of `--token`). |
+| `CONTENOX_DEFAULT_MODEL` / `CONTENOX_DEFAULT_PROVIDER` | Process-level override of the configured default model/provider (nothing is persisted). Also the ACP `env_var` auth-method contract for non-interactive setup. |
+| `CONTENOX_DEFAULT_ALT_MODEL` / `CONTENOX_DEFAULT_ALT_PROVIDER` | Same, for the alt model pair. |
+| `CONTENOX_DEFAULT_MAX_TOKENS` / `CONTENOX_DEFAULT_THINK` | Same, for the response token cap and reasoning level. |
+| `CONTENOX_BASE_URL` | Endpoint URL for account-specific providers whose URL cannot be defaulted (e.g. Vertex: project + region). |

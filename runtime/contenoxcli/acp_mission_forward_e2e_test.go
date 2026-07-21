@@ -26,13 +26,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestSystem_ACPMissionForward is the acceptance for the flagship editor journey
-// this slice builds: a STANDALONE `contenox acp` process (what Zed spawns, with
-// NO fleet kernel of its own) fires `/mission` at a running `contenox serve` by
-// forwarding the dispatch over serve's REST API. It runs END TO END against the
-// REAL binary — a hermetic serve subprocess and a hermetic `contenox acp`
-// subprocess driven over stdio by a real libacp client, nothing mocked below the
-// process boundary — and pins the honesty contract the forwarding rests on:
+// TestSystem_ACPMissionForward is the acceptance for the OPT-IN forwarding path:
+// a `contenox acp` editor launched with CONTENOX_SERVER_URL set fires `/mission`
+// at a running `contenox serve` over its REST API instead of the in-process fleet
+// (the operator's explicit choice to fire onto a bigger box; the in-process
+// default is TestSystem_ACPMissionInProcess). It runs END TO END against the REAL
+// binary — a hermetic serve subprocess and a hermetic `contenox acp` subprocess
+// driven over stdio by a real libacp client, nothing mocked below the process
+// boundary — and pins the honesty contract the forwarding rests on:
 //
 //	serve up   → /mission IS advertised on a new acp session; invoking it
 //	             dispatches a REAL unit on the SERVE side (the mission record and
@@ -40,9 +41,9 @@ import (
 //	             confirmation names the OPERATOR INBOX (not this editor session),
 //	             and the unit's report really lands there as parent-gone — the
 //	             designed cross-process fallback, never an error.
-//	serve down → /mission is ABSENT from a fresh session's menu (advertise only
-//	             what works), and an invocation typed anyway yields the teaching
-//	             error naming the serve that went silent.
+//	serve down → /mission STAYS advertised (advertisement is unconditional now — a
+//	             stable menu), and an invocation yields the teaching error naming
+//	             the serve that went silent (honesty lives at the point of use).
 //
 // Hermetic like scripts/run_apitests.sh: an isolated HOME, `contenox init`, a
 // deterministic no-model chain-agent fixture seeded before boot, a fake default
@@ -206,21 +207,26 @@ func TestSystem_ACPMissionForward(t *testing.T) {
 	}, 60*time.Second, 200*time.Millisecond,
 		"the forwarded unit's report must fall back to the operator inbox as parent-gone\nserve log:\n%s", serveLog())
 
-	// ── serve DOWN: advertisement absent on a fresh session, invocation teaches ──
+	// ── serve DOWN: /mission stays advertised, invocation teaches ──────────────
 	stopServe()
 
-	var downSID libacp.SessionID
-	require.Eventually(t, func() bool {
-		s, names := h.newSessionCommands(t, ctx, projectDir)
-		downSID = s
-		return !containsString(names, "mission")
-	}, 15*time.Second, 500*time.Millisecond,
-		"with the serve stopped, /mission must drop off a fresh session's menu")
+	// The refit makes advertisement UNCONDITIONAL (a stable menu the operator can
+	// rely on): /mission is still listed on a fresh session even with the serve
+	// down. Honesty now lives at INVOCATION, not in a vanishing menu entry.
+	downSID, names := h.newSessionCommands(t, ctx, projectDir)
+	require.Containsf(t, names, "mission",
+		"/mission stays advertised even with the serve down — honesty lives at invocation now\nacp stderr:\n%s", h.stderr())
 
-	teaching := h.promptFor(t, ctx, downSID, "/mission "+fwdAgentName+" "+fwdIntent)
-	require.Contains(t, teaching, "unavailable", "a /mission typed at a dead serve yields the teaching error")
-	require.Contains(t, teaching, "stopped answering", "the teaching error explains the serve went silent")
-	require.Contains(t, teaching, serverURL, "the teaching error names the specific serve to bring back")
+	// Typed at a dead serve it teaches, naming the serve that went silent. Polled:
+	// the reachability probe is cached (~1s), so the honest verdict may take a beat
+	// after the serve stops, and the first attempt may surface a raw dispatch error.
+	require.Eventuallyf(t, func() bool {
+		teaching := h.promptFor(t, ctx, downSID, "/mission "+fwdAgentName+" "+fwdIntent)
+		return strings.Contains(teaching, "unavailable") &&
+			strings.Contains(teaching, "stopped answering") &&
+			strings.Contains(teaching, serverURL)
+	}, 20*time.Second, 750*time.Millisecond,
+		"a /mission typed at a dead serve must yield the teaching error naming the serve\nacp stderr:\n%s", h.stderr())
 }
 
 // ── ACP client harness over the acp subprocess's stdio ──────────────────────
@@ -239,8 +245,8 @@ func (c *fwdACPClient) SessionUpdate(_ context.Context, n libacp.SessionNotifica
 }
 
 type fwdACPHarness struct {
-	client   *libacp.ClientSideConnection
-	lc       *fwdACPClient
+	client    *libacp.ClientSideConnection
+	lc        *fwdACPClient
 	stderrBuf *fwdLockedBuffer
 }
 
@@ -415,15 +421,6 @@ func (b *fwdLockedBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.buf.String()
-}
-
-func containsString(ss []string, want string) bool {
-	for _, s := range ss {
-		if s == want {
-			return true
-		}
-	}
-	return false
 }
 
 // ── self-contained build/CLI/port helpers (no dependency on sibling test files) ──

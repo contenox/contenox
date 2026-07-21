@@ -27,10 +27,18 @@ if ! echo "$HELP_OUTPUT" | grep -q "Version:"; then
   exit 1
 fi
 
-# 3. Every core subcommand must appear in the help output.
+# 3. Every top-level subcommand must appear in the help output. Keep this list
+# in lockstep with the registrations in runtime/contenoxcli/cli.go — a command
+# added there but not here is invisible to this gate, and vice versa.
 EXPECTED_CMDS=(
+  "acp"
+  "acpx"
+  "agent"
+  "approvals"
   "backend"
+  "cache"
   "chat"
+  "code"
   "config"
   "doctor"
   "fleet"
@@ -38,12 +46,16 @@ EXPECTED_CMDS=(
   "mcp"
   "mission"
   "model"
+  "modeld"
   "run"
+  "serve"
   "session"
+  "setup"
   "state"
   "tools"
   "update"
   "version"
+  "vscode-agent"
   "workspace"
 )
 

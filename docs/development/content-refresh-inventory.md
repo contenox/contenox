@@ -19,6 +19,18 @@ UI/commands that no longer exist, or a shipped command has no reference at all);
 **P1** = a shipped capability is *undocumented / unshown* (incomplete);
 **P2** = polish, cleanup, or an optional new selling point.
 
+**Status (2026-07-21 refresh pass):** every prose row in §1 and §2 is DONE
+(CLI-reference `agent` section, beam.md picker + inline-card rewrite, the
+`external-acp-agents` integration guide, README section, blueprint status note,
+TODO prune, landing points EN+DE), as is the recording *infrastructure*
+(`record-beam.mjs` retargeted, `RECORDING.md` + the shot list updated,
+`agent-check.tape` authored). What remains OPEN is the §3 **media itself** —
+maintainer-led per the recording standards: re-record `beam-demo.webm`, shoot
+`agent-permission-card.png` / `agent-picker` / `agent-slash-menu.png` /
+`agent-check.gif`, re-shoot `beam-new-chat.png`, verify `beam-agent-view.png`,
+and retire the orphans (`beam-approval-gate.png`, `beam-chat.png`,
+`beam-modeld.png`). Take-by-take plan: `recording-shot-list.md`.
+
 The website owns no doc content: every `/docs/**` page renders markdown straight
 from this repo's `docs/` tree (`website/src/content.config.ts`,
 `website/README.md`). Editing a doc here *is* editing the site. The auto-generated
@@ -74,7 +86,7 @@ on camera, secrets scrubbed. Optimized assets live flat under `website/public/`;
 | Asset | Embedded in | What's stale | Verdict |
 |---|---|---|---|
 | `beam-demo.webm` (+ `beam-video-cover.png` poster) | `website/src/components/Landing.astro:72-73` (homepage hero), `docs/guide/beam.md:19` | The 30-second hero loop ends on the **old modal approval gate**; the whole flow predates the agent picker and inline card. Most prominent asset on the site. | **retire + re-record** — **P0** |
-| `beam-approval-gate.png` | `docs/guide/beam.md:165` | Shows the retired modal gate. Approvals are now an inline transcript `PermissionCard`. | **retire + re-shoot** — **P0** |
+| `beam-approval-gate.png` | *(embed removed — a commented-out `agent-permission-card.png` placeholder sits in `docs/guide/beam.md`'s approval section)* | Showed the retired modal gate; no longer shown anywhere. The PNG is an orphan in `website/public/` until its replacement is shot. | shoot the replacement, then delete the orphan — **P1** |
 | `beam-new-chat.png` | `docs/guide/beam.md:124`, `docs/guide/first-chain.md:57` | Empty new-chat with per-session controls, but no **staged-agent picker** (now on the empty surface) and no sidebar "New chat with an agent." | **update** — **P1** |
 | `beam-agent-view.png` | `docs/guide/beam.md:145` | Agent-view overlay itself is unchanged, but the sidebar chrome now carries the agent-picker chevron. | verify; re-shoot only if the picker is visible in-frame — **P2** |
 | `beam-login.png` | `docs/guide/beam.md:61` | Login page unaffected. | keep |
@@ -85,8 +97,8 @@ on camera, secrets scrubbed. Optimized assets live flat under `website/public/`;
 
 | File | What's stale | What to do | Prio |
 |---|---|---|---|
-| `scripts/demos/record-beam.mjs` | Waits for the approval gate via `[role="dialog"], [role="alertdialog"]` (`:94-95`); the new inline `PermissionCard` is `role="group"`, so the take now stalls at that selector. The story comment covers only the native (non-agent) flow. | Retarget the inline card; optionally extend the story to open the sidebar agent picker and attribute the session. | **P1** |
-| `scripts/demos/RECORDING.md` | Beam section predates the agent picker / inline-card change; no selector guidance for the new gate. | Add the agent-picker + external-agent chat flows; note modal→inline-card so future captures use the right selector. | **P2** |
+| `scripts/demos/record-beam.mjs` | ~~stale dialog selector~~ **DONE** — waits on the `role="group"` card, clicks Allow, and the story opens with the agent-picker beat. | Run as-is for the hero re-record. | done |
+| `scripts/demos/RECORDING.md` | ~~predated the inline card~~ **DONE** — documents the modal→inline-card selector change and the agent-picker/external-agent flows. | Keep. | done |
 
 ### Proposed NEW media (per house standards: seeded sidebar, beam-led, real turns)
 
@@ -94,7 +106,7 @@ on camera, secrets scrubbed. Optimized assets live flat under `website/public/`;
 |---|---|---|---|
 | `agent-picker` GIF/PNG (beam) | new `docs/integrations/agents/*` + `docs/guide/beam.md` | Seeded sidebar → "New chat with an agent" chevron → `AgentPicker` (native contenox at top + registered agents) → pick → empty chat shows `Agent: {name}` → send. | **P1** |
 | `agent-permission-card` PNG (beam) | `docs/guide/beam.md` (replaces `beam-approval-gate.png`) | A real turn against a registered agent (e.g. claude) hitting a gated action → inline `PermissionCard` in the transcript with Allow/Deny; click-outside no longer denies. | **P1** |
-| `agent-check` GIF — new `scripts/demos/agent-check.tape` | new `docs/integrations/agents/*` + CLI reference `agent check` subsection | `contenox agent check <name>` streaming a reply, `Turn completed (agent … stopReason=end_turn)`, `Agent advertises N command(s): …`, and the `Forwarding MCP servers:` line. | **P1** |
+| `agent-check` GIF — tape AUTHORED (`scripts/demos/agent-check.tape`), GIF unshot | new `docs/integrations/agents/*` + CLI reference `agent check` subsection | `contenox agent check <name>` streaming a reply, `Turn completed (agent … stopReason=end_turn)`, `Agent advertises N command(s): …`, and the `Forwarding MCP servers:` line. Seed a `demo-agent` per the tape header, then `vhs agent-check.tape && ./mkgif.sh agent-check`. | **P1** |
 | `agent-slash-menu` PNG (beam) | `docs/guide/beam.md` | The proxied agent-advertised `/commands` menu in the composer. | **P2** |
 
 ## 4. OpenAPI and auto-served docs

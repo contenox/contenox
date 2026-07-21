@@ -51,6 +51,8 @@ That's it — pick **Contenox** as the active agent and start a session.
 
 **Same everything else.** Models, chains, and MCP servers come from your global contenox config — switch the model with `contenox config set default-model …`, register MCP once with `contenox mcp add`, and AionUi sessions pick it up.
 
+**Missions from the composer.** `/mission <intent>` (or `/mission <agent-name> <intent>`) fires a declared agent at the intent unattended, as a child subprocess of this editor session — no `contenox serve` needed — and its reports stream live back into the firing session. Configure the fallbacks first (`contenox config set default-mission-agent` / `default-mission-policy`); details in the [Zed guide](/docs/integrations/editors/zed/#fire-missions-with-mission) and the [CLI reference](/docs/reference/contenox-cli/#the-mission-slash-command).
+
 AionUi layers its own chat UI and skill ecosystem on top; the agent itself — the chain, tools, and policy — is your contenox.
 
 ---

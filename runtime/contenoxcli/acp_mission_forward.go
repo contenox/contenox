@@ -1,40 +1,32 @@
-// acp_mission_forward.go makes `/mission` work from a STANDALONE `contenox acp`
-// session — the one Zed spawns — by forwarding the dispatch to a running
-// `contenox serve` over its REST API, instead of requiring an in-process fleet
-// kernel the editor process does not (and should not) have.
+// acp_mission_forward.go is the EXPLICIT OPT-IN forwarding path for `/mission`
+// in a standalone `contenox acp` process: when — and only when — the operator
+// sets CONTENOX_SERVER_URL, the dispatch is forwarded to a running `contenox
+// serve` over its REST API instead of running on the editor's own in-process
+// fleet.
 //
-// acpsvc declares two NARROW interfaces the `/mission` slash command needs
-// (acpsvc.MissionDispatcher = Dispatch, acpsvc.MissionAgentResolver = GetByName);
-// missionForwarder implements BOTH over the same serveClient the `contenox
-// fleet`/`contenox mission` CLIs use, so there is one dispatch path and one
-// notion of "what can I fire", not a second hand-rolled client. serve satisfies
-// those interfaces with its own in-process fleetservice; a standalone acp
-// session satisfies them with this remote forwarder, and acpsvc treats the two
-// identically except for the honesty details it keys off Deps.MissionForwarded
-// (advertise-only-when-reachable, inbox-routing confirmation, serve-named
-// teaching error) — see runtime/acpsvc/mission.go.
+// This used to be the DEFAULT (and auto-discovered a serve via a presence row or
+// the loopback bind), built on the false premise that a standalone `contenox acp`
+// has no fleet kernel of its own — it does; the kernel is an embeddable library
+// (runtime/agentinstance), which the acp process now embeds so `/mission` runs
+// IN-PROCESS and its reports come back live into the firing editor session (the
+// ontology: a mission is a subagent of the process that fired it — see
+// docs/development/blueprints/open-work-2026-07-21 §2, and acp_cmd.go's embedding).
 //
-// # Discovery is lazy and health-probed
+// Forwarding survives ONLY as the explicit opt-in an operator reaches for to fire
+// a mission onto a bigger box: presence-based auto-discovery is gone, and the
+// target is the CONTENOX_SERVER_URL the operator set, nothing else. acpsvc keys
+// its forwarding-honesty details off Deps.MissionForwarded — an unreachable serve
+// teaches at invocation (not a hidden menu), and the confirmation states reports
+// land in that serve's OPERATOR INBOX as parent-gone (the remote serve's kernel
+// does not own this process's firing session) — see runtime/acpsvc/mission.go.
 //
-// Construction contacts nothing. Discovery runs per call, in a fixed order:
-//
-//	1. CONTENOX_SERVER_URL env — the operator explicitly pointed acp at a serve.
-//	2. a live serve's presence row Address over the shared KV store — zero-config
-//	   auto-discovery of a serve on a non-default port (the presence-record
-//	   extension this slice added; see runtime/presence).
-//	3. serve's own loopback bind default (127.0.0.1:32123) — a zero-config local
-//	   serve needs no acp configuration either.
-//
-// The bearer token ALWAYS comes from CONTENOX_SERVER_TOKEN, never from presence
-// (which is world-readable): a tokenless loopback serve needs nothing, and a
-// token-protected serve is reached only by an operator who set that env on the
-// Zed-launched process.
+// The bearer token comes from CONTENOX_SERVER_TOKEN: a tokenless loopback serve
+// needs nothing, a token-protected serve is reached only by an operator who set
+// that env on the launched process.
 package contenoxcli
 
 import (
 	"context"
-	"fmt"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -44,33 +36,27 @@ import (
 
 	"github.com/contenox/runtime/runtime/acpsvc"
 	"github.com/contenox/runtime/runtime/fleetservice"
-	"github.com/contenox/runtime/runtime/presence"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 )
 
 const (
 	// missionForwardProbeTTL coalesces reachability probes: /mission's
-	// advertisement is recomputed every session (and on /help, /mission), and a
-	// short cache keeps a burst of session opens from each hitting /health while
-	// still letting a serve that stops be noticed within a second on the next
-	// fresh session.
+	// invocation guard consults Reachable, and a short cache keeps a burst from
+	// each hitting /health while still noticing a serve that stops within a second.
 	missionForwardProbeTTL = 1 * time.Second
 	// missionForwardHealthTimeout bounds one /health probe so a wedged or
-	// vanished serve cannot freeze the slash-command menu — a connection refused
+	// vanished serve cannot freeze the slash-command flow — a connection refused
 	// on loopback returns near-instantly, a hung one at this ceiling.
 	missionForwardHealthTimeout = 1500 * time.Millisecond
 )
 
 // missionForwarder forwards `/mission` dispatch and agent-name resolution from a
-// standalone `contenox acp` session to a running serve. It implements the two
-// narrow acpsvc mission interfaces and supplies the Reachable/TargetURL hooks
-// acpsvc.MissionForwardConfig needs.
+// standalone `contenox acp` session to the serve named by CONTENOX_SERVER_URL. It
+// implements the two narrow acpsvc mission interfaces and supplies the
+// Reachable/TargetURL hooks acpsvc.MissionForwardConfig needs.
 type missionForwarder struct {
-	// presenceStore backs discovery order 2; nil disables presence discovery
-	// (order 1 and 3 still apply).
-	presenceStore *presence.Store
-	// getenv is the environment accessor (a seam so tests drive discovery order
-	// without mutating the real process environment).
+	// getenv is the environment accessor (a seam so tests drive discovery without
+	// mutating the real process environment).
 	getenv     func(string) string
 	httpClient *http.Client
 	now        func() time.Time
@@ -88,15 +74,16 @@ var (
 	_ acpsvc.MissionAgentResolver = (*missionForwarder)(nil)
 )
 
-// newMissionForwarder builds a forwarder that auto-discovers a serve. presenceStore
-// may be nil to disable presence discovery (leaving env + default).
-func newMissionForwarder(presenceStore *presence.Store) *missionForwarder {
+// newMissionForwarder builds a forwarder targeting CONTENOX_SERVER_URL. It is
+// constructed only on the explicit opt-in (acp_cmd.go builds it solely when that
+// env is set), so discovery is env-only — no presence auto-discovery, no loopback
+// default.
+func newMissionForwarder() *missionForwarder {
 	return &missionForwarder{
-		presenceStore: presenceStore,
-		getenv:        os.Getenv,
-		httpClient:    &http.Client{Timeout: serveClientTimeout},
-		now:           time.Now,
-		probeTTL:      missionForwardProbeTTL,
+		getenv:     os.Getenv,
+		httpClient: &http.Client{Timeout: serveClientTimeout},
+		now:        time.Now,
+		probeTTL:   missionForwardProbeTTL,
 	}
 }
 
@@ -108,47 +95,18 @@ func (f *missionForwarder) forwardConfig() *acpsvc.MissionForwardConfig {
 	}
 }
 
-// discover resolves (baseURL, token) in the slice's fixed order (see file doc).
-func (f *missionForwarder) discover(ctx context.Context) (baseURL, token string) {
+// discover resolves (baseURL, token) from the environment only:
+// CONTENOX_SERVER_URL is the target (the caller guarantees it is set) and
+// CONTENOX_SERVER_TOKEN authenticates. No presence row, no loopback default —
+// forwarding is the operator's explicit choice, pointed at exactly one serve.
+func (f *missionForwarder) discover(_ context.Context) (baseURL, token string) {
 	token = strings.TrimSpace(f.getenv(envServeToken))
-	if u := strings.TrimSpace(f.getenv(envServeURL)); u != "" {
-		return normalizeBaseURL(u), token
-	}
-	if f.presenceStore != nil {
-		if addr := f.serveAddressFromPresence(ctx); addr != "" {
-			return "http://" + addr, token
-		}
-	}
-	return fmt.Sprintf("http://%s:%s", defaultServeAddr, defaultServePort), token
+	return normalizeBaseURL(strings.TrimSpace(f.getenv(envServeURL))), token
 }
 
-// serveAddressFromPresence returns the reachable host:port of the freshest live
-// serve presence row, or "" when none is discoverable. Stale rows (a serve that
-// has likely died) are skipped so discovery does not hand back a dead address.
-func (f *missionForwarder) serveAddressFromPresence(ctx context.Context) string {
-	entries, err := f.presenceStore.List(ctx)
-	if err != nil {
-		return ""
-	}
-	var best *presence.Entry
-	for i := range entries {
-		e := &entries[i]
-		if e.Kind != presence.KindServe || e.Stale || strings.TrimSpace(e.Address) == "" {
-			continue
-		}
-		if best == nil || e.LastSeen.After(best.LastSeen) {
-			best = e
-		}
-	}
-	if best == nil {
-		return ""
-	}
-	return normalizeServeHostPort(best.Address)
-}
-
-// Reachable reports whether the discovered serve answers /health right now,
+// Reachable reports whether the configured serve answers /health right now,
 // cached for probeTTL. It re-discovers on each uncached probe, so a serve that
-// moves ports (a fresh presence Address) or comes back after a stop is picked up.
+// comes back after a stop is picked up.
 func (f *missionForwarder) Reachable() bool {
 	f.mu.Lock()
 	if f.haveCache && f.now().Sub(f.cachedAt) < f.probeTTL {
@@ -161,7 +119,7 @@ func (f *missionForwarder) Reachable() bool {
 	ctx, cancel := context.WithTimeout(context.Background(), missionForwardHealthTimeout)
 	defer cancel()
 	baseURL, _ := f.discover(ctx)
-	reach := f.probeHealth(ctx, baseURL)
+	reach := baseURL != "" && f.probeHealth(ctx, baseURL)
 
 	f.mu.Lock()
 	f.cachedReach, f.cachedAt, f.haveCache, f.lastTarget = reach, f.now(), true, baseURL
@@ -201,14 +159,14 @@ func (f *missionForwarder) TargetURL() string {
 	return baseURL
 }
 
-// Dispatch forwards a mission to the discovered serve (POST /fleet/dispatch),
+// Dispatch forwards a mission to the configured serve (POST /fleet/dispatch),
 // the same route `contenox mission fire` posts to.
 func (f *missionForwarder) Dispatch(ctx context.Context, req fleetservice.DispatchRequest) (fleetservice.DispatchResult, error) {
 	baseURL, token := f.discover(ctx)
 	return f.clientAt(baseURL, token).dispatchMission(ctx, req)
 }
 
-// GetByName resolves a declared agent by name against the discovered serve
+// GetByName resolves a declared agent by name against the configured serve
 // (GET /agents/by-name/{name}) so `/mission`'s two-shape grammar can tell a
 // named agent apart from the first word of an intent. Any error reads as "not a
 // named agent" to the caller (resolveMissionAgentAndIntent), so a serve blip
@@ -251,19 +209,4 @@ func normalizeBaseURL(u string) string {
 		return "http://" + u
 	}
 	return u
-}
-
-// normalizeServeHostPort maps a serve's advertised bind address to one a sibling
-// on the same host can actually dial: a wildcard bind (0.0.0.0 / ::) is not a
-// connect target, so it becomes loopback. A concrete host is returned unchanged.
-func normalizeServeHostPort(addr string) string {
-	host, port, err := net.SplitHostPort(strings.TrimSpace(addr))
-	if err != nil {
-		return strings.TrimSpace(addr)
-	}
-	switch strings.Trim(host, "[]") {
-	case "", "0.0.0.0", "::":
-		host = "127.0.0.1"
-	}
-	return net.JoinHostPort(host, port)
 }

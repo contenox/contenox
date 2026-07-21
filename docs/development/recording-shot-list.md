@@ -68,8 +68,8 @@ modal approval gate and predates the agent picker + inline card.
      the poster.
 - **Selectors / timing:** wait on the card via `getByRole('group', { name: /permission required/i })`, **not** a dialog role, and click **Allow** (no
   click-outside/`y` shortcut). Full selector snippet in
-  [`RECORDING.md` §2](../../scripts/demos/RECORDING.md). `record-beam.mjs:94` still
-  waits on `[role="dialog"]` and presses `y` — retarget both first.
+  [`RECORDING.md` §2](../../scripts/demos/RECORDING.md). `record-beam.mjs` is
+  already retargeted to the card and the agent-picker beat — run it as-is.
 
 ---
 

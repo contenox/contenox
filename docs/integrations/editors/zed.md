@@ -89,6 +89,21 @@ To skip Contenox HITL entirely (trusted/scripted contexts), launch with `--auto`
 
 ---
 
+## Fire missions with `/mission`
+
+Type `/mission <intent>` (or `/mission <agent-name> <intent>`) in the agent panel to fire a [mission](/docs/reference/contenox-cli/#contenox-mission) without leaving the conversation: a declared agent runs the intent unattended under its envelope, as a child subprocess of this editor session — no `contenox serve` needed. The unit's reports stream live back into the session that fired it; if that session has ended when a report lands, it waits in the operator inbox (`contenox approvals`).
+
+Set the fallbacks the bare form uses first:
+
+```bash
+contenox config set default-mission-agent  <agent-name>
+contenox config set default-mission-policy <hitl-policy-file>
+```
+
+Setting `CONTENOX_SERVER_URL` (in the shell that launches Zed) forwards `/mission` dispatches to that running serve instead — reports then land in its operator inbox.
+
+---
+
 ## Troubleshooting
 
 **Nothing happens when I select Contenox.** Make sure `contenox` is on Zed's `PATH`. Zed inherits the shell environment of the GUI process — on Linux that's usually your login shell's `PATH`. Test with `which contenox` in a shell launched from the same desktop session.

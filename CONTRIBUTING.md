@@ -87,13 +87,14 @@ without direct package coupling.
 ## Repository structure
 
 The `contenox` binary is the main entrypoint. Current commands include `setup`,
-`init`, `chat`, `run`, `tools`, `mcp`, `backend`, `cache`, `config`, `model`,
-`state`, `doctor`, `session`, `acp`, `acpx`, `vscode-agent`, `approvals`,
-`fleet`, `mission`, `workspace`, `update`, and `version`. (`fleet` and `mission`
-operate the supervised agent fleet over a running `contenox serve`; `workspace`
-grants or revokes the workspace roots a session may run in, written to the shared
-config and applied to a running serve live via a reload doorbell; the others work
-against the local database directly.)
+`init`, `chat`, `run`, `tools`, `mcp`, `backend`, `agent`, `cache`, `config`,
+`model`, `modeld`, `code`, `state`, `doctor`, `session`, `acp`, `acpx`,
+`vscode-agent`, `serve`, `approvals`, `fleet`, `mission`, `workspace`, `update`,
+and `version`. (`fleet`, `mission`, and `approvals` are REST clients to a running
+`contenox serve`; `workspace` grants or revokes the workspace roots a session may
+run in, written to the shared config and applied to a running serve live via a
+reload doorbell; `acp`, `acpx`, and `vscode-agent` speak stdio protocols for
+editors; most of the rest work against the local database directly.)
 
 All AI workflow packages live under `runtime/`. Infrastructure libraries
 (`libauth`, `libbus`, `libcipher`, `libdbexec`, `libkvstore`, `libprocess`,
@@ -136,7 +137,7 @@ Version bumps and release notes for the **contenox runtime** live in
 Keep these files in sync when changing public surface area:
 
 - `docs/development/blueprints/v1-feature-map.md`
-- `docs/contenox-cli.md`
+- `docs/reference/contenox-cli.md`
 - `docs/development/modeld-source-build.md`
 - `docs/development/windows-development.md`
 - `packages/vscode/README.md`

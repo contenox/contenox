@@ -45,7 +45,10 @@ The fleet is not in the database: it is a set of live subprocesses owned by the
 serve process's in-memory Manager, so — unlike 'contenox state'/'session' —
 these verbs reach serve over its REST API instead of opening the database. By
 default that is http://127.0.0.1:32123; override with --server/--token or the
-CONTENOX_SERVER_URL/CONTENOX_SERVER_TOKEN environment variables.
+CONTENOX_SERVER_URL/CONTENOX_SERVER_TOKEN environment variables. (Units an
+editor session fired in-process via /mission belong to that editor process, not
+to serve, so they do not appear on this board — follow their durable record with
+'contenox mission show' instead.)
 
   contenox fleet list                       # the board: every declared agent + its live units
   contenox fleet list --json                # the raw /fleet records (declared agents + instances)

@@ -5,86 +5,47 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/contenox/runtime/libdbexec"
-	"github.com/contenox/runtime/libkvstore"
 	"github.com/contenox/runtime/runtime/fleetservice"
-	"github.com/contenox/runtime/runtime/presence"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/stretchr/testify/require"
 )
 
 // envMap is the getenv seam for discovery tests: it drives the CONTENOX_SERVER_*
-// resolution order without mutating the real process environment.
+// resolution without mutating the real process environment.
 func envMap(m map[string]string) func(string) string {
 	return func(k string) string { return m[k] }
 }
 
-func newTestForwarder(t *testing.T, env map[string]string, store *presence.Store) *missionForwarder {
+func newTestForwarder(t *testing.T, env map[string]string) *missionForwarder {
 	t.Helper()
-	f := newMissionForwarder(store)
+	f := newMissionForwarder()
 	f.getenv = envMap(env)
 	return f
 }
 
-// newPresenceStore builds a real file-backed presence store (the shared-SQLite
-// path serve writes and a forwarder reads), so discovery order 2 is exercised
-// against the actual store, not a stand-in.
-func newPresenceStore(t *testing.T) *presence.Store {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "local.db")
-	db, err := libdbexec.NewSQLiteDBManager(context.Background(), path, libkvstore.SQLiteSchema)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
-	return presence.NewStore(libkvstore.NewSQLiteManager(db))
-}
-
-// TestUnit_MissionForwarder_DiscoveryOrder pins the fixed resolution order:
-// explicit env URL beats a serve presence row beats the loopback default.
-func TestUnit_MissionForwarder_DiscoveryOrder(t *testing.T) {
+// TestUnit_MissionForwarder_DiscoveryIsEnvOnly pins the opt-in shape: the target
+// is CONTENOX_SERVER_URL and nothing else. Presence-based auto-discovery and the
+// loopback default were REMOVED with the refit — forwarding is only ever the
+// operator's explicit choice, so an unset env resolves to "" (the caller builds
+// the forwarder solely when the env is set, so this is a defensive floor).
+func TestUnit_MissionForwarder_DiscoveryIsEnvOnly(t *testing.T) {
 	ctx := context.Background()
-	store := newPresenceStore(t)
-	require.NoError(t, store.Register(ctx, presence.Record{
-		InstanceID: "serve-1",
-		Kind:       presence.KindServe,
-		Address:    "127.0.0.1:39999",
-	}))
 
-	// 1. Explicit CONTENOX_SERVER_URL wins over everything.
-	f := newTestForwarder(t, map[string]string{envServeURL: "http://serve.example:8080"}, store)
-	url, _ := f.discover(ctx)
-	require.Equal(t, "http://serve.example:8080", url, "explicit env URL must win")
+	f := newTestForwarder(t, map[string]string{envServeURL: "http://serve.example:8080"})
+	u, _ := f.discover(ctx)
+	require.Equal(t, "http://serve.example:8080", u, "the target is exactly CONTENOX_SERVER_URL")
 
-	// 2. No env URL → the serve presence row's address.
-	f = newTestForwarder(t, map[string]string{}, store)
-	url, _ = f.discover(ctx)
-	require.Equal(t, "http://127.0.0.1:39999", url, "presence row address is discovery order 2")
+	f = newTestForwarder(t, map[string]string{envServeURL: "serve.example:8080"})
+	u, _ = f.discover(ctx)
+	require.Equal(t, "http://serve.example:8080", u, "a bare host:port defaults to http")
 
-	// 3. No env URL and no presence store → serve's loopback bind default.
-	f = newTestForwarder(t, map[string]string{}, nil)
-	url, _ = f.discover(ctx)
-	require.Equal(t, "http://"+defaultServeAddr+":"+defaultServePort, url, "the loopback default is the last resort")
-}
-
-// TestUnit_MissionForwarder_PresenceDiscovery_SkipsStaleAndWrongKind proves
-// discovery only trusts a LIVE serve row: a stale serve (likely dead) and an
-// editor (acp) row are ignored, and a wildcard bind is normalized to loopback.
-func TestUnit_MissionForwarder_PresenceDiscovery_SkipsStaleAndWrongKind(t *testing.T) {
-	ctx := context.Background()
-	store := newPresenceStore(t)
-
-	// An acp editor row (wrong kind, and carries no address anyway).
-	require.NoError(t, store.Register(ctx, presence.Record{InstanceID: "acp-x", Kind: presence.KindACP, Cwd: "/tmp"}))
-	// A wildcard-bound serve row: 0.0.0.0 is not a dial target, must become loopback.
-	require.NoError(t, store.Register(ctx, presence.Record{InstanceID: "serve-live", Kind: presence.KindServe, Address: "0.0.0.0:41000"}))
-
-	f := newTestForwarder(t, map[string]string{}, store)
-	url, _ := f.discover(ctx)
-	require.Equal(t, "http://127.0.0.1:41000", url, "wildcard bind normalized to loopback; editor row ignored")
+	f = newTestForwarder(t, map[string]string{})
+	u, _ = f.discover(ctx)
+	require.Equal(t, "", u, "no presence fallback, no loopback default: an unset env resolves to empty")
 }
 
 // fakeServe is an httptest stand-in for a running serve: it answers /health,
@@ -137,7 +98,7 @@ func newFakeServe(t *testing.T) *fakeServe {
 // cached for probeTTL (a burst of session advertisements does not spam /health).
 func TestUnit_MissionForwarder_ReachableProbesHealthAndCaches(t *testing.T) {
 	fs := newFakeServe(t)
-	f := newTestForwarder(t, map[string]string{envServeURL: fs.srv.URL}, nil)
+	f := newTestForwarder(t, map[string]string{envServeURL: fs.srv.URL})
 	now := time.Unix(0, 0)
 	f.now = func() time.Time { return now }
 	f.probeTTL = time.Second
@@ -167,7 +128,7 @@ func TestUnit_MissionForwarder_Reachable_ConnectionRefused(t *testing.T) {
 	fs := newFakeServe(t)
 	url := fs.srv.URL
 	fs.srv.Close() // nothing listens now
-	f := newTestForwarder(t, map[string]string{envServeURL: url}, nil)
+	f := newTestForwarder(t, map[string]string{envServeURL: url})
 	require.False(t, f.Reachable(), "a serve with nothing listening reads unreachable")
 	require.Equal(t, url, f.TargetURL(), "TargetURL still names the configured serve for the teaching error")
 }
@@ -177,7 +138,7 @@ func TestUnit_MissionForwarder_Reachable_ConnectionRefused(t *testing.T) {
 // supervision edge — and decodes serve's DispatchResult.
 func TestUnit_MissionForwarder_Dispatch(t *testing.T) {
 	fs := newFakeServe(t)
-	f := newTestForwarder(t, map[string]string{envServeURL: fs.srv.URL, envServeToken: "sekret"}, nil)
+	f := newTestForwarder(t, map[string]string{envServeURL: fs.srv.URL, envServeToken: "sekret"})
 
 	res, err := f.Dispatch(context.Background(), fleetservice.DispatchRequest{
 		AgentName:       "reporter",
@@ -201,7 +162,7 @@ func TestUnit_MissionForwarder_Dispatch(t *testing.T) {
 func TestUnit_MissionForwarder_GetByName(t *testing.T) {
 	fs := newFakeServe(t)
 	fs.knownAgents["planner"] = true
-	f := newTestForwarder(t, map[string]string{envServeURL: fs.srv.URL}, nil)
+	f := newTestForwarder(t, map[string]string{envServeURL: fs.srv.URL})
 
 	agent, err := f.GetByName(context.Background(), "planner")
 	require.NoError(t, err)
@@ -209,12 +170,6 @@ func TestUnit_MissionForwarder_GetByName(t *testing.T) {
 
 	_, err = f.GetByName(context.Background(), "not-an-agent")
 	require.Error(t, err, "an unknown agent must surface as an error (read as 'not a named agent')")
-}
-
-func TestUnit_NormalizeServeHostPort(t *testing.T) {
-	require.Equal(t, "127.0.0.1:32123", normalizeServeHostPort("0.0.0.0:32123"))
-	require.Equal(t, "127.0.0.1:8080", normalizeServeHostPort("[::]:8080"))
-	require.Equal(t, "10.0.0.5:9000", normalizeServeHostPort("10.0.0.5:9000"))
 }
 
 func TestUnit_NormalizeBaseURL(t *testing.T) {

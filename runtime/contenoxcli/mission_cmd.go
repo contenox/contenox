@@ -51,8 +51,11 @@ HITL policy that bounds what it may do unattended) and detach; the unit acts
 inside the envelope and only crossing it costs your attention, in the approvals
 inbox ('contenox approvals').
 
-Missions live in a running 'contenox serve', so these verbs reach it over its
-REST API (default http://127.0.0.1:32123; override with --server/--token or
+A mission is a subagent of whatever process fires it: /mission in an editor
+session ('contenox acp') dispatches in-process and its reports arrive live back
+in that session. THESE verbs are the operator's remote lever — they fire onto,
+and read from, a running 'contenox serve' over its REST API (default
+http://127.0.0.1:32123; override with --server/--token or
 CONTENOX_SERVER_URL/CONTENOX_SERVER_TOKEN).
 
   contenox mission fire --agent reviewer --intent "triage the failing CI run" --policy hitl-policy-strict.json

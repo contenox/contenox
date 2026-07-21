@@ -104,10 +104,14 @@ contenox config list   # review current settings and their scope
 | `default-think` | global | Default reasoning level for supported models (`auto`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh`) |
 | `telemetry-enabled` | global | Enable local telemetry logs (`true` / `false`) |
 | `update-check` | global | Enable automatic update checks (`true` / `false`) |
+| `default-mission-agent` | global | Declared agent `/mission` and `mission fire` fall back to when none is named |
+| `default-mission-policy` | global | Envelope (HITL policy) `/mission` and `mission fire` fall back to when none is named |
 | `default-chain` | workspace | Chain file used in this workspace; falls back to the global value when unset |
 | `hitl-policy-name` | workspace | Active HITL policy for this workspace; falls back to the global value when unset |
 
 `contenox config list` shows each key's current value **and its scope** (`global` / `workspace`) so you can see whether a setting is inherited or overridden locally.
+
+The `default-*` model settings can also be overridden per process — without persisting anything — via the `CONTENOX_DEFAULT_*` environment variables; see the [environment variables table](/docs/reference/contenox-cli/#environment-variables) in the CLI reference.
 
 ## Manage backends
 

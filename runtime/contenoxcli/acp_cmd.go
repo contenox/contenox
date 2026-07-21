@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -17,15 +18,20 @@ import (
 	"github.com/contenox/runtime/libkvstore"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/acpsvc"
+	"github.com/contenox/runtime/runtime/agentinstance"
+	"github.com/contenox/runtime/runtime/agentregistryservice"
 	"github.com/contenox/runtime/runtime/enginesvc"
+	"github.com/contenox/runtime/runtime/fleetservice"
 	"github.com/contenox/runtime/runtime/hitlservice"
 	"github.com/contenox/runtime/runtime/internal/updatecheck"
 	"github.com/contenox/runtime/runtime/localtools"
 	"github.com/contenox/runtime/runtime/missionservice"
 	"github.com/contenox/runtime/runtime/missiontools"
 	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/operatorinbox"
 	"github.com/contenox/runtime/runtime/presence"
 	"github.com/contenox/runtime/runtime/reasoning"
+	"github.com/contenox/runtime/runtime/reportrouter"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/spf13/cobra"
@@ -45,7 +51,12 @@ The default model is read from the global 'default-model' / 'default-provider' c
 reserved for the JSON-RPC stream.
 
 HITL is on by default — gated tool calls route through the ACP session/request_permission
-flow so the editor's UI controls approval. Pass --auto to disable (unattended/testing).`,
+flow so the editor's UI controls approval. Pass --auto to disable (unattended/testing).
+
+The /mission slash command dispatches a mission in-process: the fired unit is a child
+subprocess of this editor session and its reports arrive live back in the firing session.
+No 'contenox serve' is needed. Setting CONTENOX_SERVER_URL opts into forwarding the
+dispatch to that serve instead (reports then land in its operator inbox).`,
 	RunE: runACP,
 }
 
@@ -87,20 +98,22 @@ type acpProfile struct {
 	chainFile  string
 	chainEnv   string
 	seedChain  func(contenoxDir string) error
-	// forwardMissions wires the standalone `/mission` forwarder (fire a mission at
-	// a running serve over REST). Enabled for the editor profile (acp — the Zed
-	// journey); DISABLED for acpx: that profile is the hardened surface for an
-	// untrusted driver (OpenClaw), which must not be handed a lever to dispatch
-	// fleet units at the operator's serve.
-	forwardMissions bool
+	// embedFleet gives this profile the `/mission` slash command. The editor
+	// profile (acp — the Zed journey) embeds the fleet IN-PROCESS so a mission is a
+	// subagent of THIS editor, reporting back live into the firing session (see the
+	// mission block in runACPProfile and docs/development/blueprints/
+	// open-work-2026-07-21 §2). DISABLED for acpx: that profile is the hardened
+	// surface for an untrusted driver (OpenClaw), which must not be handed a lever
+	// to dispatch fleet units at all — neither in-process nor forwarded.
+	embedFleet bool
 }
 
 var acpProfileACP = acpProfile{
-	hitlPolicy:      "hitl-policy-acp.json",
-	chainFile:       "default-acp-chain.json",
-	chainEnv:        "CONTENOX_ACP_CHAIN_PATH",
-	seedChain:       seedACPChainIfMissing,
-	forwardMissions: true,
+	hitlPolicy: "hitl-policy-acp.json",
+	chainFile:  "default-acp-chain.json",
+	chainEnv:   "CONTENOX_ACP_CHAIN_PATH",
+	seedChain:  seedACPChainIfMissing,
+	embedFleet: true,
 }
 
 var acpProfileACPX = acpProfile{
@@ -243,6 +256,24 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	_, _, end := tracker.Start(ctx, "load", "acp_chain", "source", chains.Source(), "id", chains.Default().ID)
 	end()
 
+	// The ONE bus this process owns, over the shared $HOME/.contenox/local.db. It is
+	// created here — before the tools and the engine — because the mission tools
+	// need a publisher at construction time, and the fleet's report router (embedded
+	// below) needs the same subject stream. Sharing it is deliberate: the engine
+	// would otherwise mint its OWN bus (enginesvc.Build, when Config.Bus is nil), and
+	// the mission tools a THIRD, so a single shared bus is what "don't double up"
+	// means here. Closed on shutdown; the engine does NOT own it (ownsBus stays
+	// false when Config.Bus is supplied), so engine.Stop leaves it for this defer.
+	bus := libbus.NewSQLite(db.WithoutTransaction())
+	defer bus.Close()
+	// The durable mission store, publisher-wired so AddReport emits a
+	// ReportAddedEvent. In the DISPATCHER (editor) process the embedded report
+	// router below consumes it; in a dispatched UNIT process the same publisher is
+	// what carries the unit's own report across the process boundary to whichever
+	// process fired it. Shared between the mission tools here and the fleetservice
+	// embedded below, exactly as serve shares one missionservice.
+	missions := missionservice.New(db, missionservice.WithEventPublisher(bus))
+
 	tools := map[string]taskengine.ToolsRepo{
 		"echo":     localtools.NewEchoTools(),
 		"print":    localtools.NewPrint(tracker),
@@ -269,17 +300,14 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 		// than a durable permission ask — wiring the ask to the operator inbox from
 		// a viewer-less unit is fleet-consolidation.md's M5, a separate slice.
 		//
-		// The mission service MUST carry an event publisher: report routing runs in
-		// the DISPATCHER's process (serve's reportrouter), subscribed to the SQLite
-		// bus over this same shared $HOME/.contenox/local.db, and it routes purely
-		// off ReportAddedEvent. A publisher-less service here would store a unit's
-		// report durably but never publish, so the supervision edge would silently
-		// go nowhere — the exact cross-process seam the composed round-trip e2e
-		// (acpsvc/e2e_mission_roundtrip_test.go) exists to keep closed.
-		missiontools.ToolsProviderName: missiontools.New(
-			missionservice.New(db, missionservice.WithEventPublisher(libbus.NewSQLite(db.WithoutTransaction()))),
-			nil,
-		),
+		// It shares the publisher-wired `missions` created above: report routing
+		// runs in the DISPATCHER's process (the report router this editor embeds
+		// below, OR serve's), subscribed to the SQLite bus over this same shared
+		// $HOME/.contenox/local.db, and it routes purely off ReportAddedEvent. A
+		// publisher-less service here would store a unit's report durably but never
+		// publish, so the supervision edge would silently go nowhere — the exact
+		// cross-process seam the composed round-trip e2e keeps closed.
+		missiontools.ToolsProviderName: missiontools.New(missions, nil),
 	}
 
 	var askApproval localtools.AskApproval
@@ -313,6 +341,8 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 			LocalTools:         tools,
 			Tracker:            tracker,
 			WorkspaceID:        workspaceID,
+			// Reuse the one bus (see above), so the engine does not mint a second.
+			Bus: bus,
 		}
 		if enableHITL {
 			cfg.EnableHITL = true
@@ -331,28 +361,66 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	updateBanner := acpUpdateBanner(dbCtx, db, contenoxDir)
 
 	// Fleet presence store (shared-SQLite over the same $HOME/.contenox/local.db
-	// serve reads): serve REGISTERS its reachable address here, and a forwarding
-	// `/mission` session DISCOVERS it here. One store, used by the mission
-	// forwarder just below and the presence reporter further down.
+	// serve reads): serve REGISTERS its reachable address here; this process
+	// self-registers below. Presence is now board-only telemetry — the `/mission`
+	// forwarder no longer discovers a serve through it (forwarding is the explicit
+	// CONTENOX_SERVER_URL opt-in), so a serve's Address publishes here harmlessly.
 	presenceStore := presence.NewStore(libkvstore.NewSQLiteManager(db))
 
-	// Mission forwarding: in a standalone `contenox acp` session (what Zed spawns)
-	// `/mission` fires at a running serve over its REST API — discovered lazily
-	// (CONTENOX_SERVER_URL → serve's presence row → the loopback default) and
-	// health-probed, so the command is advertised per session exactly when a serve
-	// is reachable. The pair is the narrow MissionDispatcher/MissionAgentResolver
-	// acpsvc needs; MissionForwarded marks it REMOTE so acpsvc's advertisement,
-	// fired-mission confirmation, and teaching error stay forwarding-honest (see
-	// runtime/acpsvc/mission.go). Gated to the editor profile — acpx (untrusted
-	// driver) is deliberately never handed a lever to dispatch at the operator's serve.
+	// The `/mission` slash command. A mission is a SUBAGENT of the process that
+	// fired it (docs/development/blueprints/open-work-2026-07-21, the Preamble): the
+	// editor embeds the fleet IN-PROCESS and dispatches there BY DEFAULT — the fired
+	// unit is a child subprocess of THIS process, and its report comes back LIVE
+	// into the firing session (missionReportDeliverer, via the report router). Mission
+	// lifetime ≤ this process's lifetime: kernel teardown on shutdown reaps the child.
+	// Forwarding to a serve survives ONLY as an explicit opt-in (CONTENOX_SERVER_URL
+	// set) for firing onto a bigger box.
+	//
+	// Two guards shape which path — if any — is wired:
+	//   - embedFleet gates the whole thing to the editor profile (acpx, the
+	//     untrusted driver, gets no mission lever at all).
+	//   - a DISPATCHED UNIT must not host its own fleet. It would double-route its
+	//     own report — delivered live by its parent AND inboxed here as parent-gone,
+	//     since the SQLite bus BROADCASTS every event to every subscriber — and would
+	//     recursively spawn fleets. A unit IS a `contenox acp` bound to a specific
+	//     chain via the chain env (chainSpawner sets it for chain agents; declared
+	//     mission agents set it too), so that env being set is exactly the signal
+	//     "this process is itself a unit" — it hosts no fleet of its own.
 	var (
-		missionFleet   acpsvc.MissionDispatcher
-		missionAgents  acpsvc.MissionAgentResolver
-		missionForward *acpsvc.MissionForwardConfig
+		missionFleet      acpsvc.MissionDispatcher
+		missionAgents     acpsvc.MissionAgentResolver
+		missionForward    *acpsvc.MissionForwardConfig
+		stopFleetTeardown func()
 	)
-	if profile.forwardMissions {
-		fwd := newMissionForwarder(presenceStore)
+	isDispatchedUnit := strings.TrimSpace(os.Getenv(profile.chainEnv)) != ""
+	switch {
+	case !profile.embedFleet || isDispatchedUnit:
+		// No mission capability in this process (acpx, or this process is a unit).
+	case strings.TrimSpace(os.Getenv(envServeURL)) != "":
+		// OPT-IN forwarding: fire onto the serve named by CONTENOX_SERVER_URL.
+		fwd := newMissionForwarder()
 		missionFleet, missionAgents, missionForward = fwd, fwd, fwd.forwardConfig()
+	case engine != nil:
+		// IN-PROCESS fleet (the default editor journey — needs a configured model,
+		// since the dispatched unit resolves the same $HOME state this editor runs on).
+		fleet, agents, stop, buildErr := buildInProcessFleet(ctx, inProcessFleetDeps{
+			db:          db,
+			bus:         bus,
+			missions:    missions,
+			contenoxDir: contenoxDir,
+			tracker:     tracker,
+			transport:   func() *acpsvc.Transport { return transport },
+		})
+		if buildErr != nil {
+			return buildErr
+		}
+		missionFleet, missionAgents, stopFleetTeardown = fleet, agents, stop
+	}
+	if stopFleetTeardown != nil {
+		// Children die with the parent: stop the report router and Close the kernel
+		// (killing every dispatched child subprocess) on process shutdown — the
+		// ontology's "mission lifetime ≤ acp process lifetime".
+		defer stopFleetTeardown()
 	}
 
 	transportFactory := acpsvc.New(acpsvc.Deps{
@@ -370,8 +438,9 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 		KnownPolicies:         embeddedPolicyNames(),
 		HITLDefaultPolicyName: profile.hitlPolicy,
 		UpdateBanner:          updateBanner,
-		// Standalone `/mission` forwarding to a running serve (nil on the acpx
-		// profile, and nil-safe throughout acpsvc when not wired).
+		// `/mission` dispatch: the in-process fleet by default, the opt-in serve
+		// forwarder when CONTENOX_SERVER_URL is set, or all nil (acpx, a dispatched
+		// unit, or a setup-only editor) — nil-safe throughout acpsvc when unwired.
 		Fleet:            missionFleet,
 		Agents:           missionAgents,
 		MissionForwarded: missionForward,
@@ -411,6 +480,113 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 		return fmt.Errorf("acp run: %w", runErr)
 	}
 	return nil
+}
+
+// inProcessFleetDeps are the collaborators buildInProcessFleet wires the
+// editor's embedded fleet from — all over the SAME shared db handle and bus the
+// acp process already opened.
+type inProcessFleetDeps struct {
+	db          libdb.DBManager
+	bus         libbus.Messenger
+	missions    missionservice.Service
+	contenoxDir string
+	tracker     libtracker.ActivityTracker
+	// transport late-binds this connection's live acpsvc.Transport (nil until the
+	// conn factory runs), so the report deliverer can reach the firing editor
+	// session a mission was fired from.
+	transport func() *acpsvc.Transport
+}
+
+// buildInProcessFleet embeds the fleet the standalone editor dispatches
+// `/mission` through — the ontology's in-process subagent kernel (a mission is a
+// subagent of THIS process; docs/development/blueprints/open-work-2026-07-21 §2).
+// It mirrors serve_cmd.go's composition (agentregistryservice + agentinstance
+// kernel + operatorinbox + reportrouter + fleetservice) minimally, over the same
+// db and bus this process opened. It returns the dispatcher, the agent resolver,
+// and ONE teardown that stops the router and Closes the kernel — reaping every
+// dispatched child subprocess — on process shutdown.
+func buildInProcessFleet(ctx context.Context, deps inProcessFleetDeps) (fleetservice.Service, agentregistryservice.Service, func(), error) {
+	agents := agentregistryservice.New(deps.db)
+
+	// Declare the operator's agent-*.json chains (and any registered external
+	// agents) as dispatchable, exactly as serve does — the privileged discovery
+	// lane, safe. Best-effort: a failed pass leaves the fleet whatever was already
+	// declared rather than refusing to start the editor.
+	discoverChainAgents(ctx, agents, deps.contenoxDir)
+
+	// The kernel is an embeddable LIBRARY, not a serve-bound service — the false
+	// premise the old forwarding path rested on. WithStderr routes a dispatched
+	// unit's stderr to this process's stderr (the editor's log) so a unit that
+	// fails to boot is diagnosable. No unattended permission answerer is wired here
+	// (unlike serve): a dispatched unit runs bounded/ungated work or `--auto`, and
+	// routing a unit's permission ask into the PARENT editor's permission UI is the
+	// named follow-up (open-work-2026-07-21 §2 design note).
+	kernel := agentinstance.New(agents, agentinstance.WithStderr(os.Stderr))
+
+	operatorInbox := operatorinbox.New(deps.db)
+
+	// The report router delivers a fired unit's report onto the session that fired
+	// it (missionReportDeliverer: the live editor session first, the kernel second),
+	// falling back to the operator inbox when no live parent owns it. It runs off
+	// the shared SQLite bus, so a unit's cross-process ReportAddedEvent reaches it.
+	router, err := reportrouter.New(reportrouter.Deps{
+		Bus:      deps.bus,
+		Sessions: missionReportDeliverer{transport: deps.transport, kernel: kernel},
+		Inbox:    operatorInbox,
+		Tracker:  deps.tracker,
+	})
+	if err != nil {
+		_ = kernel.Close()
+		return nil, nil, nil, fmt.Errorf("build report router: %w", err)
+	}
+	stopRouter, err := router.Start(ctx)
+	if err != nil {
+		_ = kernel.Close()
+		return nil, nil, nil, fmt.Errorf("start report router: %w", err)
+	}
+
+	// A dispatched mission's cwd defaults to this editor's working directory (the
+	// project Zed launched us in) when the request names none.
+	projectRoot, _ := os.Getwd()
+	fleet := fleetservice.New(kernel, agents, deps.missions, nil, projectRoot, deps.tracker)
+
+	stop := func() {
+		stopRouter()
+		_ = kernel.Close()
+	}
+	return fleet, agents, stop, nil
+}
+
+// missionReportDeliverer is the report router's SessionDeliverer for the
+// IN-PROCESS editor topology. Per the ontology (open-work-2026-07-21, the
+// Preamble), a mission is a subagent of the editor process that fired it, and its
+// report must reach THAT parent — which, for a `/mission` fired from the editor,
+// is one of THIS process's own native stdio sessions, NOT a kernel-owned unit. So
+// the live editor transport is tried FIRST (Transport.DeliverToContenoxSession
+// maps the firing session's contenox id onto the ACP connection and pushes the
+// update); the kernel is tried second, for the rarer case of a mission fired by
+// an in-process kernel unit's own session. When neither owns the firing session —
+// it has ended, or was never here — both miss and the report router inboxes the
+// report (the true no-live-parent fallback). This is exactly the live delivery
+// the serve-forwarded topology could not make: there the firing session lived in
+// a different process, so the report fell to the inbox as parent-gone.
+type missionReportDeliverer struct {
+	transport func() *acpsvc.Transport
+	kernel    agentinstance.Manager
+}
+
+var _ reportrouter.SessionDeliverer = missionReportDeliverer{}
+
+func (d missionReportDeliverer) DeliverToSession(ctx context.Context, sessionID libacp.SessionID, n libacp.SessionNotification) error {
+	if t := d.transport(); t != nil {
+		if err := t.DeliverToContenoxSession(ctx, string(sessionID), n); err == nil {
+			return nil
+		}
+	}
+	if d.kernel != nil {
+		return d.kernel.DeliverToSession(ctx, sessionID, n)
+	}
+	return acpsvc.ErrSessionNotLive
 }
 
 func acpPolicySource() hitlservice.PolicySource {

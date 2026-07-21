@@ -1,6 +1,8 @@
 # Blueprint: Agent servers and client-host e2e
 
-**Status:** direction. Scopes how a declared agent is *served* as an ACP agent and
+**Status:** largely landed — the composed-path harness exists (`make acp-host-e2e`,
+`runtime/agenthost/e2e_{loopback,testy,claude,mcp}_test.go`) and `contenox agent
+check` is its user-facing twin. Scopes how a declared agent is *served* as an ACP agent and
 how the runtime's new **client-host** role (`runtime/agenthost`) is verified
 end-to-end. Sits on top of the landed external-agent plumbing (`agents` table,
 `agentregistryservice`, `agenthost`) and the registration UX
