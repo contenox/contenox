@@ -79,6 +79,20 @@ Non-browser callers pass the raw token as `Authorization: Bearer <TOKEN>` (or
 WebSocket client cannot set the cookie. This is the mvp pattern and is unaffected
 by the browser going cookie-only.
 
+### The `serve-token.txt` convention
+
+So one credential is shared without re-passing `TOKEN`, serve persists its token
+to `~/.contenox/serve-token.txt` (`runtime/contenoxcli/serve_token.go`). Serve
+resolves its token as `TOKEN` env → that file → (with `--remote`) a generated
+token written there (`0600`); the same-machine clients (`newServeClient` in
+`serveclient.go`, used by `approvals`/`mission`/`fleet`) resolve `--token` →
+`CONTENOX_SERVER_TOKEN` → that file. It lives in the **global** `~/.contenox` (not
+a workspace-local `.contenox`) so clients find it without knowing serve's
+workspace, and because `controlPlaneDirs` always denies `~/.contenox`
+(`cli.go`), the token file is inside the control-plane isolation boundary — no
+session, browse root, or agent fs tool can read it. A remote client on another
+host has no such file and still sets `--token`/`CONTENOX_SERVER_TOKEN` explicitly.
+
 ## CORS
 
 `apiframework/middleware/cors.go` (`EnableCORS`), wired in

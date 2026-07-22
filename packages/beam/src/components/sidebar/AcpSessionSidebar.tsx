@@ -1,5 +1,5 @@
 import { Button, Span, Spinner } from '@contenox/ui';
-import { ChevronDown, Trash2 } from 'lucide-react';
+import { ChevronDown, Folder, Trash2 } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useMatch, useNavigate } from 'react-router-dom';
@@ -9,7 +9,7 @@ import { adoptResultFromMeta } from '../../lib/adoptMeta';
 import { relativeTime } from '../../lib/relativeTime';
 import { useStagedAgent } from '../../lib/stagedAgent';
 import { AgentPicker } from '../AgentPicker';
-import { meaningfulTitle } from '../../pages/chat/lib/sessionLabel';
+import { meaningfulTitle, workspaceLabel } from '../../pages/chat/lib/sessionLabel';
 import { startNewChat } from './newChatIntent';
 
 /**
@@ -112,6 +112,9 @@ export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =>
               ? relativeTime(session.updatedAt, i18n.language, t('common.just_now'))
               : null;
             const agentName = externalAgentFromMeta(session._meta);
+            // The workspace (cwd basename) a session was opened in — a new session
+            // is allowed under any granted root, so this disambiguates which one.
+            const workspaceName = workspaceLabel(session.cwd);
             // Adopted sessions expose NO delete affordance here: deleting one
             // stops the running dispatch (see handleDelete). Detach is via close.
             const adopted = adoptResultFromMeta(session._meta) != null;
@@ -152,8 +155,20 @@ export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =>
                       {agentName}
                     </Span>
                   )}
-                  {relative && (
-                    <Span className="text-text-muted dark:text-dark-text-muted mt-1 block text-xs">{relative}</Span>
+                  {(workspaceName || relative) && (
+                    <div className="text-text-muted dark:text-dark-text-muted mt-1 flex items-center justify-between gap-2 text-xs">
+                      {workspaceName ? (
+                        <span
+                          className="flex min-w-0 items-center gap-1"
+                          title={t('acp_sidebar.workspace_label', { path: session.cwd ?? '' })}>
+                          <Folder className="h-3 w-3 shrink-0" aria-hidden />
+                          <span className="truncate">{workspaceName}</span>
+                        </span>
+                      ) : (
+                        <span />
+                      )}
+                      {relative && <span className="shrink-0">{relative}</span>}
+                    </div>
                   )}
                 </Link>
                 {!adopted && (

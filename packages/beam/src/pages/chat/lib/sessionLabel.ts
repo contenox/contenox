@@ -14,3 +14,17 @@ export function meaningfulTitle(session: SessionInfo): string | null {
   if (title && title !== session.sessionId) return title;
   return null;
 }
+
+/**
+ * The short workspace label for a session's working directory — the basename of
+ * `cwd` — so the session list can show which (sub)directory a session was opened
+ * in (a new session is allowed under any granted root). Returns `null` for an
+ * absent cwd or the filesystem root, where there is nothing meaningful to show.
+ * The full path belongs in a tooltip; this stays `t()`-free like {@link meaningfulTitle}.
+ */
+export function workspaceLabel(cwd?: string | null): string | null {
+  if (!cwd) return null;
+  const parts = cwd.split('/').filter(Boolean);
+  if (parts.length === 0) return null; // "/" or empty — nothing to disambiguate
+  return parts[parts.length - 1];
+}

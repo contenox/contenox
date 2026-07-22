@@ -50,12 +50,39 @@ contenox serve
 # Contenox serve <version> ready: http://127.0.0.1:32123
 ```
 
-Beam is now at **http://127.0.0.1:32123**. The server binds to `127.0.0.1:32123`
-by default; override with the `ADDR` and `PORT` environment variables. A bearer
-`TOKEN` is optional on loopback and mandatory when you bind a non-loopback
-address.
+Beam is now at **http://127.0.0.1:32123**. By default the server binds to
+`127.0.0.1:32123` — reachable only from this machine. To let other machines on
+your LAN reach it, add `--remote` (binds all interfaces, `0.0.0.0`); set `ADDR`
+and `PORT` for a specific bind. A bearer `TOKEN` is optional on loopback and
+**mandatory** for any non-loopback bind (`--remote` or a LAN `ADDR`), so serving
+to the network always requires one.
 
 ### Remote access and login
+
+Serve to your LAN with `--remote`. It needs a bearer token (mandatory off
+loopback) and provisions one automatically: it uses `TOKEN` if set, otherwise the
+token saved at `~/.contenox/serve-token.txt`, otherwise it generates one and saves
+it there (mode `0600`):
+
+```bash
+contenox serve --remote
+# serve token: generated and saved to ~/.contenox/serve-token.txt (0600) — clients auto-discover it there; `cat` it to log in, or set TOKEN to override
+# contenox serve <version> ready: http://0.0.0.0:32123
+#   reachable on LAN: http://192.168.1.50:32123
+#   note: plain HTTP — the TOKEN travels in cleartext; front with a TLS reverse proxy on untrusted networks
+```
+
+Other machines open the printed **reachable on LAN** URL and log in with the token
+(`cat ~/.contenox/serve-token.txt`). Programmatic clients on the same machine —
+`contenox approvals`, `mission`, `fleet` — discover that file automatically, so
+they need no `--token` / `CONTENOX_SERVER_TOKEN`. The file lives in `~/.contenox`,
+which is always control-plane-denied, so no agent or workspace tool can read it.
+To rotate the token, delete the file (a fresh one is generated on the next
+`--remote` start); to return to a tokenless loopback dev server, remove the file
+and don't pass `--remote`. Serving is plain HTTP, so on any untrusted network put
+a TLS-terminating reverse proxy in front (the login cookie is marked `Secure`
+automatically once the connection is HTTPS, directly or via
+`X-Forwarded-Proto: https`).
 
 When a `TOKEN` is set (required for any non-loopback bind), Beam gates the whole
 UI behind a login page: opening the site shows a single **Access token** field.

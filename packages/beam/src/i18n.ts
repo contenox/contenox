@@ -2030,6 +2030,7 @@ const resources = {
         confirm_delete: 'Delete "{{name}}"? This cannot be undone.',
         new_session_with_agent: 'New chat with an agent',
         pending_permission: 'Approval needed',
+        workspace_label: 'Workspace: {{path}}',
       },
       // Session workspace: the shared directory a chat session operates in — the
       // file explorer panel, its file peek, and the composer's @-mention picker.
@@ -3853,6 +3854,7 @@ const resources = {
         confirm_delete: '„{{name}}“ löschen? Dies kann nicht rückgängig gemacht werden.',
         new_session_with_agent: 'Neuer Chat mit einem Agenten',
         pending_permission: 'Freigabe erforderlich',
+        workspace_label: 'Arbeitsbereich: {{path}}',
       },
       workspace: {
         panel_title: 'Arbeitsbereich',

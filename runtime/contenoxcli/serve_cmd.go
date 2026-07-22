@@ -58,6 +58,9 @@ import (
 const (
 	defaultServeAddr = "127.0.0.1"
 	defaultServePort = "32123"
+	// remoteBindAddr is the bind host --remote selects: all interfaces, so other
+	// machines on the LAN can reach the API and Beam UI.
+	remoteBindAddr = "0.0.0.0"
 )
 
 var serveCmd = &cobra.Command{
@@ -86,11 +89,16 @@ Terminal routes are enabled by default on local serve under /api/terminal/sessio
 Set TERMINAL_ENABLED=false to disable them. TERMINAL_ALLOWED_ROOT defaults to the
 workspace root. TERMINAL_MAX_SESSIONS defaults to 8 (0 = unlimited).
 
-The server binds to 127.0.0.1:32123 by default. Override with ADDR and PORT.
-Set TOKEN to require a bearer token on mutating API requests and cross-origin
-browser reads; TOKEN is mandatory when ADDR is not a loopback address. Set
-BEAM_DEV_PROXY_URL to proxy Beam UI requests to a Vite dev server while keeping
-/api on this server. A configured model is required — run
+The server binds to 127.0.0.1:32123 by default (local-only). Pass --remote to
+bind all interfaces (0.0.0.0) so other machines on your LAN can reach it, or set
+ADDR/PORT to bind a specific address. TOKEN gates every API request and the Beam
+login, and is MANDATORY for any non-loopback bind (--remote or a LAN ADDR). The
+token is resolved as: TOKEN env, else ~/.contenox/serve-token.txt, else (with
+--remote) a freshly generated token saved there (0600); programmatic clients
+(contenox approvals/mission/fleet) discover the same file automatically. Serving
+is plain HTTP — put a TLS-terminating reverse proxy in front for untrusted
+networks. Set BEAM_DEV_PROXY_URL to proxy Beam UI requests to a Vite dev server
+while keeping /api on this server. A configured model is required — run
 ` + "`contenox setup`" + ` first if you have not configured one.`,
 	RunE: runServe,
 }
@@ -98,6 +106,46 @@ BEAM_DEV_PROXY_URL to proxy Beam UI requests to a Vite dev server while keeping
 func init() {
 	serveCmd.Flags().StringArray("workspace-root", nil,
 		"Directory a browser client may choose as a session workspace (repeatable). The serve directory is always the default; these extend the allowlist. Also settable via WORKSPACE_ROOTS (OS path-list separated) or as `contenox serve [dir]...` positional arguments.")
+	serveCmd.Flags().Bool("remote", false,
+		"Serve on all network interfaces (0.0.0.0) so other machines on your LAN can reach the API and Beam UI. Auto-provisions a TOKEN (env, else ~/.contenox/serve-token.txt, else generated and saved there) since a token is mandatory off loopback. A shorthand for ADDR=0.0.0.0; an explicit ADDR still wins. Plain HTTP — front with a TLS reverse proxy for untrusted networks.")
+}
+
+// resolveServeAddr picks the bind host for `contenox serve`. An explicitly
+// configured ADDR (env) always wins; otherwise --remote binds all interfaces
+// (0.0.0.0) so the server is reachable on the LAN, and the default is
+// loopback-only (127.0.0.1). Binding a non-loopback address requires a TOKEN
+// (enforced by ValidateLocalServeSecurity), so --remote without a TOKEN is
+// refused before this ever binds.
+func resolveServeAddr(remote bool, envAddr string) string {
+	if a := strings.TrimSpace(envAddr); a != "" {
+		return a
+	}
+	if remote {
+		return remoteBindAddr
+	}
+	return defaultServeAddr
+}
+
+// lanURLs returns browsable http URLs for each non-loopback IPv4 the host has —
+// the addresses other machines actually use to reach a --remote serve, since the
+// bind banner shows the unhelpful "0.0.0.0". Best-effort: an interface-enumeration
+// error yields nil and the banner just omits the list.
+func lanURLs(port string) []string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	var urls []string
+	for _, a := range addrs {
+		ipNet, ok := a.(*net.IPNet)
+		if !ok || ipNet.IP.IsLoopback() {
+			continue
+		}
+		if ip4 := ipNet.IP.To4(); ip4 != nil {
+			urls = append(urls, "http://"+net.JoinHostPort(ip4.String(), port))
+		}
+	}
+	return urls
 }
 
 // buildWorkspaceBaseRoots assembles the LAUNCH-time workspace-root set — the
@@ -145,13 +193,41 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if err := serverapi.LoadConfig(config); err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	if config.Addr == "" {
-		config.Addr = defaultServeAddr
-	}
+	remote, _ := cmd.Flags().GetBool("remote")
+	config.Addr = resolveServeAddr(remote, config.Addr)
 	if config.Port == "" {
 		config.Port = defaultServePort
 	}
 	config.Token = strings.TrimSpace(config.Token)
+	// Token resolution, the serve-token.txt convention: an explicit TOKEN env wins;
+	// else the token persisted at ~/.contenox/serve-token.txt (shared with
+	// programmatic clients, and control-plane-denied so no agent can read it); else
+	// --remote provisions one — it mandates a token — by generating and persisting
+	// it. Loopback with nothing configured stays zero-friction (no token, no login).
+	if config.Token == "" {
+		if fileTok := readServeTokenFile(); fileTok != "" {
+			config.Token = fileTok
+			fmt.Fprintf(cmd.OutOrStdout(), "serve token: loaded from %s\n", serveTokenPathHint())
+		} else if remote {
+			gen, err := generateServeToken()
+			if err != nil {
+				return fmt.Errorf("generate serve token: %w", err)
+			}
+			if err := writeServeTokenFile(gen); err != nil {
+				return fmt.Errorf("persist serve token to %s: %w", serveTokenPathHint(), err)
+			}
+			config.Token = gen
+			fmt.Fprintf(cmd.OutOrStdout(),
+				"serve token: generated and saved to %s (0600) — clients auto-discover it there; `cat` it to log in, or set TOKEN to override\n",
+				serveTokenPathHint())
+		}
+	}
+	// Defensive backstop: --remote (any non-loopback bind) requires a token. After
+	// the resolution above this only fires if generation/persistence was skipped.
+	if remote && config.Token == "" {
+		return fmt.Errorf("--remote binds all network interfaces (%s) and requires a TOKEN; set one, or ensure %s is writable so serve can provision it",
+			remoteBindAddr, serveTokenPathHint())
+	}
 	if err := serverapi.ValidateLocalServeSecurity(config.Addr, config.Token); err != nil {
 		return err
 	}
@@ -683,6 +759,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 	errCh := make(chan error, 1)
 	go func() {
 		fmt.Fprintf(cmd.OutOrStdout(), "contenox serve %s ready: http://%s\n", version.Get(), srv.Addr)
+		// Off loopback (--remote or a LAN ADDR) the "0.0.0.0" bind is not browsable,
+		// so print the concrete LAN URLs other machines use, and flag the plain-HTTP
+		// exposure (the TOKEN travels in cleartext).
+		if !serverapi.IsLoopbackAddress(config.Addr) {
+			for _, u := range lanURLs(config.Port) {
+				fmt.Fprintf(cmd.OutOrStdout(), "  reachable on LAN: %s\n", u)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "  note: plain HTTP — the TOKEN travels in cleartext; front with a TLS reverse proxy on untrusted networks\n")
+		}
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}

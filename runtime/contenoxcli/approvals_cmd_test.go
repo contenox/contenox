@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -96,6 +97,7 @@ func newApprovalsAnswerTestCmd() *cobra.Command {
 // ─── serveClient ────────────────────────────────────────────────────────
 
 func TestUnit_NewServeClient_DefaultsToServeAddrPort(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // isolate ~/.contenox so no persisted serve-token.txt leaks in
 	c := newApprovalsListTestCmd()
 	c.SetArgs([]string{})
 	require.NoError(t, c.ParseFlags(nil))
@@ -104,6 +106,37 @@ func TestUnit_NewServeClient_DefaultsToServeAddrPort(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "http://127.0.0.1:32123", client.baseURL)
 	require.Empty(t, client.token)
+}
+
+func TestUnit_NewServeClient_DiscoversServeTokenFileWhenDefaulted(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	require.NoError(t, os.MkdirAll(filepath.Join(home, ".contenox"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(home, ".contenox", serveTokenFileName), []byte("file-token\n"), 0o600))
+
+	c := newApprovalsListTestCmd()
+	c.SetArgs([]string{})
+	require.NoError(t, c.ParseFlags(nil))
+
+	client, err := newServeClient(c)
+	require.NoError(t, err)
+	require.Equal(t, "file-token", client.token,
+		"a zero-config client targeting the default local serve discovers the persisted serve token")
+}
+
+func TestUnit_NewServeClient_IgnoresServeTokenFileForExplicitServer(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	require.NoError(t, os.MkdirAll(filepath.Join(home, ".contenox"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(home, ".contenox", serveTokenFileName), []byte("local-token\n"), 0o600))
+
+	c := newApprovalsListTestCmd()
+	require.NoError(t, c.ParseFlags([]string{"--server", "http://other-host:9000"}))
+
+	client, err := newServeClient(c)
+	require.NoError(t, err)
+	require.Empty(t, client.token,
+		"the local token must NOT be sent to an explicitly-named (possibly remote) server")
 }
 
 func TestUnit_NewServeClient_ServerFlagOverridesDefault(t *testing.T) {

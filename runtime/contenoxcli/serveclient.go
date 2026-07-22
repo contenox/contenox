@@ -108,6 +108,15 @@ func newServeClient(cmd *cobra.Command) (*serveClient, error) {
 	if strings.TrimSpace(token) == "" {
 		token = os.Getenv(envServeToken)
 	}
+	if strings.TrimSpace(token) == "" && defaulted {
+		// The serve-token.txt convention: when targeting the DEFAULT local serve
+		// (no --server / CONTENOX_SERVER_URL), authenticate with the token serve
+		// persisted at ~/.contenox/serve-token.txt, so a same-machine client needs
+		// zero config. Gated on `defaulted`: the local token must NEVER be sent to
+		// an explicitly-named server, which may be a remote host with a different
+		// (or no) token — that caller sets --token / CONTENOX_SERVER_TOKEN itself.
+		token = readServeTokenFile()
+	}
 
 	if defaulted {
 		// Hint on stderr only, so the stdout contract (e.g. `mission fire -q`
