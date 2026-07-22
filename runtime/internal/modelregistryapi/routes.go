@@ -46,6 +46,7 @@ type downloadRequest struct {
 	Name string `json:"name"`
 }
 
+// create adds a model registry entry and returns it with its assigned ID.
 func (h *handler) create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	e, err := apiframework.Decode[runtimetypes.ModelRegistryEntry](r) // @request runtimetypes.ModelRegistryEntry
@@ -61,6 +62,7 @@ func (h *handler) create(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusCreated, e) // @response runtimetypes.ModelRegistryEntry
 }
 
+// list returns the registered models as descriptors, paginated by cursor.
 func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	entries, err := h.reg.List(ctx)
@@ -71,6 +73,7 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, entries) // @response []modelregistry.ModelDescriptor
 }
 
+// get returns one model registry entry by ID.
 func (h *handler) get(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := apiframework.GetPathParam(r, "id", "The unique identifier for the model registry entry.")
@@ -86,6 +89,8 @@ func (h *handler) get(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, e) // @response runtimetypes.ModelRegistryEntry
 }
 
+// update replaces a model registry entry by ID and returns the stored
+// result.
 func (h *handler) update(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := apiframework.GetPathParam(r, "id", "The unique identifier for the model registry entry.")
@@ -106,6 +111,7 @@ func (h *handler) update(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, e) // @response runtimetypes.ModelRegistryEntry
 }
 
+// delete removes a model registry entry by ID.
 func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := apiframework.GetPathParam(r, "id", "The unique identifier for the model registry entry.")
@@ -120,6 +126,8 @@ func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, "model registry entry removed") // @response string
 }
 
+// download fetches a registered model's artifact to the local model store,
+// reporting whether it was already present.
 func (h *handler) download(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 

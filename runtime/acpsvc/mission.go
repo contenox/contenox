@@ -43,8 +43,7 @@ type MissionAgentResolver interface {
 // two-shape grammar (Deps.Agents). Both are wired together in three shapes — a
 // serve-hosted ACP session (serve_cmd.go); a standalone `contenox acp` editor
 // that embeds the fleet IN-PROCESS, which is the DEFAULT now (a mission is a
-// subagent of THIS process; see docs/development/blueprints/open-work-2026-07-21
-// §2 and runtime/contenoxcli/acp_cmd.go); and, only as an explicit opt-in
+// subagent of THIS process; see runtime/contenoxcli/acp_cmd.go); and, only as an explicit opt-in
 // (CONTENOX_SERVER_URL set), a FORWARDING pair pointed at a running serve
 // (Deps.MissionForwarded).
 //
@@ -73,7 +72,7 @@ func (t *Transport) hasMissionCapability() bool {
 //
 // # Where reports go: this session, live (the default)
 //
-// The governing ontology (open-work-2026-07-21, the Preamble): a mission is a
+// The governing ontology: a mission is a
 // SUBAGENT of the process that fired it, and its report notifies exactly the
 // parent that fired it. In the default topology the editor embeds the fleet and
 // its report router IN-PROCESS (acp_cmd.go), so the fired unit's report is
@@ -199,7 +198,7 @@ func (t *Transport) resolveMissionAgentAndIntent(ctx context.Context, store runt
 // session id (the mission's ParentSessionID, which handleMission set above).
 //
 // It is the in-process editor's half of the supervision edge the ontology
-// demands (open-work-2026-07-21, the Preamble): a mission is a subagent of the
+// demands: a mission is a subagent of the
 // process that fired it, and its report notifies exactly the parent session that
 // fired it — which, for a `/mission` fired from the editor, is one of this
 // transport's OWN native sessions, not a kernel-owned unit. The report router's

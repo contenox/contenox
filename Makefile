@@ -24,7 +24,7 @@ LLAMA_LIBS_DIR ?= $(PROJECT_ROOT)lib/llamacpp
 LLAMA_LIBS_COPY ?=
 MODELD_DIST_DIR ?= $(PROJECT_ROOT)bin/dist
 
-# Release packaging (see docs/development/blueprints/modeld-release-artifacts.md).
+# Release packaging (see docs/development/blueprints/modeld/release-artifacts.md).
 # MODELD_PLATFORM names the goos-goarch of this host's outputs.
 # bundle-modeld-deps writes native dependency bundles under MODELD_DEPS_OUT; they
 # are pushed to S3 (push-modeld-deps) and consumed by package-modeld-release via
@@ -160,7 +160,7 @@ CONTENOX_DEV_URL ?= http://$(CONTENOX_DEV_ADDR):$(CONTENOX_DEV_PORT)
 	deps-modeld deps-llamacpp-ref deps-openvino deps-ui deps-vscode \
 	dev-beam dev-web-proxy dev-install dev-install-vscode dev-link dev-unlink vscode-dev-install \
 	run-modeld \
-	test test-unit test-api test-ui test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help \
+	test test-all test-unit test-api test-ui test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help \
 	tool-eval \
 	acp-conformance acp-client-e2e acp-host-e2e \
 	verify-ui-embed
@@ -170,7 +170,8 @@ help:
 	@echo "package-*  package-modeld package-modeld-prebuilt package-modeld-release package-vscode package-vscode-dev"
 	@echo "release-*  bundle-modeld-deps[-linux|-darwin|-windows] push/pull-modeld-deps package-modeld-release[-<os>] modeld-release-metadata push-modeld-release push-modeld-index"
 	@echo "           (devices publish native dep bundles; release assembly later pulls a bundle and packages modeld; see docs/development/modeld-release-runbook.md)"
-	@echo "test-*     test test-unit test-api test-ui test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help"
+	@echo "test-*     test test-all test-unit test-api test-ui test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help"
+	@echo "           (test-all = the one-command release gate: builds ui/cli/vscode/website, then unit, ui, cli-help, api, acp-conformance, acp-client-e2e, acp-host-e2e, full go test)"
 	@echo "tool-eval  gated per-model tool-eval matrix (opt-in; CONTENOX_RUN_TOOL_EVALS=1; see comment above the target)"
 	@echo "acp-conformance  validate libacp's agent-side wire dispatch against Rust reference ACP clients (needs ACP_VALIDATOR_BIN, see Makefile comment)"
 	@echo "acp-client-e2e   validate libacp's client-side wire dispatch against the Rust reference testy agent over a real subprocess (needs ACP_TESTY_BIN, see Makefile comment)"
@@ -672,8 +673,29 @@ package-vscode-dev: build-ui deps-vscode
 	@echo "Built dev VS Code extension: $(VSCODE_VSIX)"
 
 # test
+# -timeout 30m: the go-test default of 10m per package panics mid-run when a
+# live local backend (e.g. ollama) makes the TestSystem_ suites actually
+# execute instead of probe-and-skip.
 test:
-	GOMAXPROCS=1 go test -C $(PROJECT_ROOT) ./...
+	GOMAXPROCS=1 go test -C $(PROJECT_ROOT) -timeout 30m ./...
+
+# The one-command release gate: build every shippable artifact on this host and
+# run every suite that can run here, fast gates first, the full serial Go suite
+# last. The ACP harness legs run against the in-repo Rust peers (see the
+# ACP_*_BIN defaults above); they fail with a set-this-var message rather than
+# silently skipping when a peer was never built — a release gate must not
+# quietly shrink. modeld/native and packaging targets are excluded on purpose:
+# they need per-device deps (see docs/development/modeld-release-runbook.md).
+test-all: build-ui build-contenox build-vscode build-website
+	$(MAKE) --no-print-directory test-unit
+	$(MAKE) --no-print-directory test-ui
+	$(MAKE) --no-print-directory test-contenox-help
+	$(MAKE) --no-print-directory test-api
+	$(MAKE) --no-print-directory acp-conformance
+	$(MAKE) --no-print-directory acp-client-e2e
+	$(MAKE) --no-print-directory acp-host-e2e
+	$(MAKE) --no-print-directory test
+	@echo "==> test-all: all gates green"
 
 test-unit:
 	GOMAXPROCS=4 go test -C $(PROJECT_ROOT) -short -timeout 15m -run '^TestUnit_' ./...
@@ -740,8 +762,13 @@ test-contenox-help: build-contenox
 #   <crate dir>/target/debug/acp-validator.
 # ACP_YOPO_BIN: build the `yopo` binary from the agentclientprotocol rust-sdk
 #   (src/yopo); e.g. <rust-sdk checkout>/target/debug/yopo.
-ACP_VALIDATOR_BIN ?=
-ACP_YOPO_BIN ?=
+# Default every ACP peer to its in-repo build when that binary exists, so the
+# conformance targets run with zero manual env on a checkout that has built
+# them (tools/acp-validator README, rust-sdk at tools/rust-sdk). Explicit env
+# still overrides; a missing binary leaves the var empty and the target keeps
+# its clear set-this-var failure/skip behavior.
+ACP_VALIDATOR_BIN ?= $(wildcard $(PROJECT_ROOT)tools/acp-validator/target/debug/acp-validator)
+ACP_YOPO_BIN ?= $(wildcard $(PROJECT_ROOT)tools/rust-sdk/target/debug/yopo)
 
 acp-conformance:
 	@test -n "$(ACP_VALIDATOR_BIN)" || { echo "set ACP_VALIDATOR_BIN=/path/to/acp-validator (see Makefile comment above test-contenox-help)"; exit 1; }
@@ -759,8 +786,8 @@ acp-conformance:
 #   at <checkout>/target/debug/testy.
 # ACP_MCP_ECHO_BIN: build the `mcp-echo-server` binary from the same crate;
 #   e.g. <checkout>/target/debug/mcp-echo-server.
-ACP_TESTY_BIN ?=
-ACP_MCP_ECHO_BIN ?=
+ACP_TESTY_BIN ?= $(wildcard $(PROJECT_ROOT)tools/rust-sdk/target/debug/testy)
+ACP_MCP_ECHO_BIN ?= $(wildcard $(PROJECT_ROOT)tools/rust-sdk/target/debug/mcp-echo-server)
 
 acp-client-e2e:
 	@test -n "$(ACP_TESTY_BIN)" || { echo "set ACP_TESTY_BIN=/path/to/testy (see Makefile comment above acp-client-e2e)"; exit 1; }

@@ -102,11 +102,14 @@ func filterCandidates(
 		builder.WriteString(fmt.Sprintf("- provider: %q\n", providerTypes))
 		builder.WriteString(fmt.Sprintf("- model names: %v\n", req.ModelNames))
 		builder.WriteString(fmt.Sprintf("- required context length: %d\n", req.ContextLength))
+		if req.RequiresVision {
+			builder.WriteString("- requires vision (request carries images)\n")
+		}
 
 		builder.WriteString("- available models:\n")
 		for _, p := range providers {
-			builder.WriteString(fmt.Sprintf("  • %s (ID: %s, context: %d, canchat: %v, can embed: %v, canprompt: %v)\n",
-				p.ModelName(), p.GetID(), p.GetContextLength(), p.CanChat(), p.CanEmbed(), p.CanPrompt()))
+			builder.WriteString(fmt.Sprintf("  • %s (ID: %s, context: %d, canchat: %v, can embed: %v, canprompt: %v, canvision: %v)\n",
+				p.ModelName(), p.GetID(), p.GetContextLength(), p.CanChat(), p.CanEmbed(), p.CanPrompt(), p.CanVision()))
 		}
 
 		return nil, fmt.Errorf("%w\n%s", ErrNoSatisfactoryModel, builder.String())
@@ -170,6 +173,45 @@ func NormalizeModelName(modelName string) string {
 	return normalized
 }
 
+// visionCapCheck wraps a base capability check with the vision requirement
+// when the request carries image attachments, so image-bearing requests only
+// resolve to providers that report CanVision.
+func visionCapCheck(req Request, base func(libmodelprovider.Provider) bool) func(libmodelprovider.Provider) bool {
+	if !req.RequiresVision {
+		return base
+	}
+	return func(p libmodelprovider.Provider) bool {
+		return base(p) && p.CanVision()
+	}
+}
+
+// classifyVisionFailure distinguishes a vision-capability shortfall from a
+// plain no-match: when a vision-requiring request found no candidates but the
+// same request without the vision requirement would have, the failure is the
+// missing vision capability and the returned error says so. The request still
+// fails either way — degrading to a text-only model would silently drop the
+// images, which is never acceptable.
+func classifyVisionFailure(
+	ctx context.Context,
+	req Request,
+	getModels func(ctx context.Context, backendTypes ...string) ([]libmodelprovider.Provider, error),
+	base func(libmodelprovider.Provider) bool,
+	err error,
+) error {
+	if !req.RequiresVision || !errors.Is(err, ErrNoSatisfactoryModel) {
+		return err
+	}
+	textCandidates, textErr := filterCandidates(ctx, req, getModels, base)
+	if textErr != nil || len(textCandidates) == 0 {
+		return err
+	}
+	names := make([]string, 0, len(textCandidates))
+	for _, p := range textCandidates {
+		names = append(names, p.ModelName())
+	}
+	return fmt.Errorf("%w: matching models %v accept text only; use a vision-capable model for requests with images", ErrNoVisionCapableModel, names)
+}
+
 // Chat implements the chat resolution workflow using the provided dependencies.
 func Chat(
 	ctx context.Context,
@@ -188,11 +230,13 @@ func Chat(
 		"provider_types", req.ProviderTypes,
 		"model_names", req.ModelNames,
 		"context_length", req.ContextLength,
+		"requires_vision", req.RequiresVision,
 	)
 	defer endFn()
 
-	candidates, err := filterCandidates(ctx, req, getModels, libmodelprovider.Provider.CanChat)
+	candidates, err := filterCandidates(ctx, req, getModels, visionCapCheck(req, libmodelprovider.Provider.CanChat))
 	if err != nil {
+		err = classifyVisionFailure(ctx, req, getModels, libmodelprovider.Provider.CanChat, err)
 		reportErr(err)
 		return nil, nil, "", err
 	}
@@ -289,11 +333,13 @@ func Stream(
 		"provider_types", req.ProviderTypes,
 		"model_names", req.ModelNames,
 		"context_length", req.ContextLength,
+		"requires_vision", req.RequiresVision,
 	)
 	defer endFn()
 
-	candidates, err := filterCandidates(ctx, req, getModels, libmodelprovider.Provider.CanStream)
+	candidates, err := filterCandidates(ctx, req, getModels, visionCapCheck(req, libmodelprovider.Provider.CanStream))
 	if err != nil {
+		err = classifyVisionFailure(ctx, req, getModels, libmodelprovider.Provider.CanStream, err)
 		reportErr(err)
 		return nil, nil, "", err
 	}
@@ -387,6 +433,11 @@ var ErrNoAvailableModels = errors.New("no models found in runtime state")
 
 // ErrNoSatisfactoryModel is returned when providers exist but none match requirements.
 var ErrNoSatisfactoryModel = errors.New("no model matched the requirements")
+
+// ErrNoVisionCapableModel is returned when a request carries image attachments
+// but no candidate model supports vision. It wraps ErrNoSatisfactoryModel so
+// existing no-match handling (e.g. the resolution self-heal cycle) still fires.
+var ErrNoVisionCapableModel = fmt.Errorf("%w: no available model supports image input (vision)", ErrNoSatisfactoryModel)
 
 func selectRandomBackend(provider libmodelprovider.Provider) (string, error) {
 	if provider == nil {

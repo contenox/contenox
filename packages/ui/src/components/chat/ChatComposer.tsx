@@ -43,6 +43,12 @@ export type ChatComposerProps = {
   footerStart?: React.ReactNode;
   /** Extra controls after footerStart (e.g. expand editor). */
   footerEnd?: React.ReactNode;
+  /**
+   * Pending-attachment strip rendered above the textarea, inside the composer
+   * shell (e.g. removable image thumbnails). Layout/styling belongs to the
+   * caller — this is a plain slot, like footerStart/footerEnd.
+   */
+  attachments?: React.ReactNode;
   /** When set, wraps the character counter in a Tooltip */
   charCountTooltip?: string;
   /** Shown under the composer when length exceeds softMax (e.g. model context hint). */
@@ -79,6 +85,7 @@ export function ChatComposer({
   allowEmptyMessage = false,
   footerStart,
   footerEnd,
+  attachments,
   charCountTooltip,
   softLimitExceededNote,
   textareaProps,
@@ -202,6 +209,7 @@ export function ChatComposer({
   if (variant === "compact") {
     return (
       <div className={className}>
+        {attachments}
         <form
           ref={formRef}
           onSubmit={handleFormSubmit}
@@ -224,6 +232,7 @@ export function ChatComposer({
 
       <div className="space-y-4">
         <div className="space-y-3">
+          {attachments}
           <div className="flex gap-2">{textareaBlock}</div>
 
           <div className="flex items-center justify-between gap-2">

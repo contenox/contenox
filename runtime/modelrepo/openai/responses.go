@@ -79,6 +79,34 @@ type openAIResponseContent struct {
 	Text string `json:"text"`
 }
 
+// openAIResponseInputContent is one element of a Responses input message's
+// content-parts array, used only when the message carries image attachments.
+// The Responses API names the parts input_text / input_image, and image_url is
+// a bare data-URI string (not the nested {url} object the Chat Completions API
+// uses).
+type openAIResponseInputContent struct {
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	ImageURL string `json:"image_url,omitempty"`
+}
+
+// openAIResponsesImageContent renders a message's text plus its image
+// attachments as the Responses content-parts array: a leading input_text part
+// (when present) then one input_image part per image, in attachment order.
+func openAIResponsesImageContent(msg modelrepo.Message) []openAIResponseInputContent {
+	parts := make([]openAIResponseInputContent, 0, len(msg.Images)+1)
+	if msg.Content != "" {
+		parts = append(parts, openAIResponseInputContent{Type: "input_text", Text: msg.Content})
+	}
+	for _, img := range msg.Images {
+		parts = append(parts, openAIResponseInputContent{
+			Type:     "input_image",
+			ImageURL: imageDataURI(img.MimeType, img.Data),
+		})
+	}
+	return parts
+}
+
 func buildOpenAIResponsesRequestWithCapabilities(modelName string, messages []modelrepo.Message, args []modelrepo.ChatArgument, supportsThink bool) (openAIResponsesRequest, map[string]string) {
 	req := openAIResponsesRequest{
 		Model: modelName,
@@ -211,13 +239,17 @@ func buildOpenAIResponsesRequestWithCapabilities(modelName string, messages []mo
 			role = "user"
 		}
 
-		if msg.Content == "" {
+		if msg.Content == "" && len(msg.Images) == 0 {
 			continue
+		}
+		var content any = msg.Content
+		if len(msg.Images) > 0 {
+			content = openAIResponsesImageContent(msg)
 		}
 		input = append(input, openAIResponseInput{
 			Type:    "message",
 			Role:    role,
-			Content: msg.Content,
+			Content: content,
 		})
 	}
 	req.Input = input

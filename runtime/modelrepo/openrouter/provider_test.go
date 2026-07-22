@@ -26,6 +26,35 @@ func TestUnit_OpenRouterCatalog_PreservesTopProviderMaxCompletionTokens(t *testi
 	require.Equal(t, 64000, observed.ContextLength)
 	require.Equal(t, 8192, observed.MaxOutputTokens)
 	require.True(t, observed.CanChat)
+	require.False(t, observed.CanVision, "text->text model must not claim vision")
+}
+
+// TestUnit_OpenRouterCatalog_DetectsVisionFromModality asserts CanVision is
+// read from the provider's own architecture metadata — the input_modalities
+// list when present, else the legacy input->output modality string.
+func TestUnit_OpenRouterCatalog_DetectsVisionFromModality(t *testing.T) {
+	// Modern signal: input_modalities contains "image".
+	m := orModel{ID: "openai/gpt-4o"}
+	m.Architecture.Modality = "text+image->text"
+	m.Architecture.InputModalities = []string{"text", "image"}
+	observed, ok := toObservedModel(m)
+	require.True(t, ok)
+	require.True(t, observed.CanChat)
+	require.True(t, observed.CanVision)
+
+	// Fallback: legacy modality string with image on the input side.
+	m2 := orModel{ID: "some/vlm"}
+	m2.Architecture.Modality = "text+image->text"
+	observed2, ok := toObservedModel(m2)
+	require.True(t, ok)
+	require.True(t, observed2.CanVision)
+
+	// Image only on the output side is generation, not input — no vision.
+	m3 := orModel{ID: "some/imagegen"}
+	m3.Architecture.Modality = "text->text+image"
+	observed3, ok := toObservedModel(m3)
+	require.True(t, ok)
+	require.False(t, observed3.CanVision)
 }
 
 func TestUnit_OpenRouterChat_ClampsMaxTokens(t *testing.T) {

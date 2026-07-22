@@ -3,6 +3,7 @@ package openai
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -43,12 +44,26 @@ type openAIChatRequest struct {
 }
 
 // apiChatMessage is the wire-format message sent to the OpenAI REST API.
-// We use *string for Content so assistant messages with tool_calls can have null content.
+// Content is `any` so it can carry a plain string (with null for tool-only
+// assistant messages), or the content-parts array when the message has image
+// attachments.
 type apiChatMessage struct {
 	Role       string           `json:"role"`
-	Content    *string          `json:"content"`
+	Content    any              `json:"content"`
 	ToolCallID string           `json:"tool_call_id,omitempty"`
 	ToolCalls  []apiToolCallReq `json:"tool_calls,omitempty"`
+}
+
+// apiContentPart is one element of the chat/completions content-parts array,
+// used only when a message carries image attachments.
+type apiContentPart struct {
+	Type     string       `json:"type"`
+	Text     string       `json:"text,omitempty"`
+	ImageURL *apiImageURL `json:"image_url,omitempty"`
+}
+
+type apiImageURL struct {
+	URL string `json:"url"`
 }
 
 type apiToolCallReq struct {
@@ -298,17 +313,19 @@ func buildOpenAIRequestWithCapabilities(modelName string, messages []modelrepo.M
 	// • tool_call_id is preserved on tool-role messages.
 	apiMsgs := make([]apiChatMessage, 0, len(messages))
 	for _, msg := range messages {
-		content := msg.Content
-		var contentPtr *string
-		// For assistant messages that only have tool calls, content may be empty — send null.
-		if content != "" || len(msg.ToolCalls) == 0 {
-			contentPtr = &content
-		}
-
 		apiMsg := apiChatMessage{
 			Role:       msg.Role,
-			Content:    contentPtr,
 			ToolCallID: msg.ToolCallID,
+		}
+		switch {
+		case len(msg.Images) > 0:
+			// Image attachments force the content-parts array form.
+			apiMsg.Content = openAIImageContent(msg)
+		case msg.Content == "" && len(msg.ToolCalls) > 0:
+			// Assistant messages that only carry tool calls send null content.
+			apiMsg.Content = nil
+		default:
+			apiMsg.Content = msg.Content
 		}
 
 		if len(msg.ToolCalls) > 0 {
@@ -335,6 +352,32 @@ func buildOpenAIRequestWithCapabilities(modelName string, messages []modelrepo.M
 	req.Messages = apiMsgs
 
 	return req, nameMap
+}
+
+// openAIImageContent renders a message's text plus its image attachments as the
+// chat/completions content-parts array: a leading text part (when present) then
+// one image_url part per image, each an inline base64 data URI.
+func openAIImageContent(msg modelrepo.Message) []apiContentPart {
+	parts := make([]apiContentPart, 0, len(msg.Images)+1)
+	if msg.Content != "" {
+		parts = append(parts, apiContentPart{Type: "text", Text: msg.Content})
+	}
+	for _, img := range msg.Images {
+		parts = append(parts, apiContentPart{
+			Type:     "image_url",
+			ImageURL: &apiImageURL{URL: imageDataURI(img.MimeType, img.Data)},
+		})
+	}
+	return parts
+}
+
+// imageDataURI builds the data:<mime>;base64,<payload> URI OpenAI accepts for
+// inline image bytes; shared by the chat/completions and Responses builders.
+func imageDataURI(mimeType string, data []byte) string {
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
+	return "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)
 }
 
 // openAIAPIBaseModelID returns the model id segment OpenAI expects, without provider/namespace

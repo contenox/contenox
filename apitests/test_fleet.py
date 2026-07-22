@@ -101,6 +101,24 @@ def test_dispatch_missing_policy_is_400(api, base_url):
     assert_status_code(response, 400)
 
 
+def test_dispatch_nonexistent_policy_is_400(api, base_url):
+    # The envelope is the load-bearing invariant of mission mode: a dispatch that
+    # names a policy which does not load is refused up front, so a typo can never
+    # run a mission under the silently substituted default gate.
+    response = api.post(
+        api_url(base_url, "fleet", "dispatch"),
+        json={
+            "agentName": FIXTURE_AGENT,
+            "intent": "do the thing",
+            "hitlPolicyName": "no-such-policy-apitest.json",
+        },
+        timeout=15,
+    )
+    assert_status_code(response, 400)
+    body = response.json()
+    assert body.get("error", {}).get("param") == "hitlPolicyName", body
+
+
 def test_dispatch_unknown_agent_is_404(api, base_url):
     # An unknown agent is refused at resolve time, before any instance is
     # allocated — the ResolveForSpawn gate.

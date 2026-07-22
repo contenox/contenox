@@ -132,6 +132,9 @@ var (
 	inspectOpenVINOModel      = ovsession.InspectModelKVProfile
 	probeOpenVINOChatTemplate = ovsession.ProbeChatTemplate
 	newOpenVINOGenAI          = ovsession.NewGenAI
+	newOpenVINOVLM            = func(modelDir, device string) (vlmBackend, error) {
+		return ovsession.NewVLM(modelDir, device)
+	}
 )
 
 // OpenSession makes the model at req.Path (an OpenVINO IR directory, resolved by
@@ -151,6 +154,14 @@ func (s *Service) OpenSession(_ context.Context, req transport.OpenSessionReques
 	cfg, err := resolveConfigFromInfo(req.Config, info)
 	if err != nil {
 		return nil, err
+	}
+	// Exported VLM directories are served by the vision session over GenAI's
+	// VLMPipeline, a separate session type from the token-tape genaiSession:
+	// VLMPipeline exposes only its public generate() surface (private pimpl, no
+	// prefix-cache/cold-KV hook), so the ContinuousBatching tuning below does
+	// not apply to it. See visionsession.go for the v1 limitations.
+	if isVLMModelDir(req.Path) {
+		return s.openVisionSession(req, info, cfg)
 	}
 	// The OpenVINO-specific tuning (device, KV precision, sparse attention, cache
 	// size) is model-driven: read from the model's own contenox-openvino.json
@@ -234,6 +245,49 @@ func (s *Service) OpenSession(_ context.Context, req transport.OpenSessionReques
 		)
 	}
 	return sess, nil
+}
+
+// openVisionSession opens the VLM (vision) session for an exported OpenVINO
+// VLM directory. Device selection mirrors the text path's autodetect-and-try
+// loop; the NPU stays rejected (same gating policy as the text pipeline, and
+// the VLM path is not validated on NPU). CPU is the baseline device.
+func (s *Service) openVisionSession(req transport.OpenSessionRequest, info transport.ModelInfo, cfg transport.Config) (transport.Session, error) {
+	// LoRA adapters are not wired through the VLM cell in v1: VLMPipeline
+	// accepts adapters at construction, but the adapter-identity plumbing
+	// (cache keys, alpha folding) is only validated on the text path.
+	if len(req.Adapters) > 0 {
+		return nil, fmt.Errorf("%w: openvino VLM session does not support LoRA adapters in v1", transport.ErrUnsupportedFeature)
+	}
+	genaiCfg := genAIConfigFromProfile(req.Path, resolveDevice())
+	candidates := openSessionDevices(genaiCfg.Device, devicePriority())
+	if len(candidates) == 1 && openvinoDeviceBase(candidates[0]) == "NPU" {
+		return nil, fmt.Errorf("%w: OpenVINO NPU is not supported for the VLM (vision) pipeline; use CONTENOX_OPENVINO_DEVICE=GPU or CPU, or AUTO", transport.ErrUnsupportedFeature)
+	}
+	var backend vlmBackend
+	var lastErr error
+	for _, dev := range candidates {
+		b, derr := newOpenVINOVLM(req.Path, dev)
+		if derr == nil {
+			backend = b
+			genaiCfg.Device = dev
+			break
+		}
+		lastErr = derr
+		if len(candidates) > 1 {
+			slog.Warn("openvino VLM device candidate unavailable, trying next",
+				"model", req.ModelName, "device", dev, "error", derr)
+		}
+	}
+	if backend == nil {
+		if lastErr == nil {
+			lastErr = fmt.Errorf("no openvino device candidates")
+		}
+		return nil, fmt.Errorf("openvino VLM: no usable device among %v: %w", candidates, lastErr)
+	}
+	if len(candidates) > 1 {
+		slog.Info("openvino VLM device autoselected", "model", req.ModelName, "device", genaiCfg.Device)
+	}
+	return newVisionSession(backend, cfg.NumCtx, info.VisionTokensPerImage), nil
 }
 
 func openGenAIWithSparseFallback(modelPath, modelName string, cfg ovsession.GenAIConfig) (*ovsession.GenAISession, ovsession.GenAIConfig, error) {
@@ -491,6 +545,15 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 	if params.SlidingWindow > 0 {
 		info.SparseAttention = true
 		info.SlidingWindowAttentionTokens = params.SlidingWindow
+	}
+	// Vision capability is certified from the export's own IR layout (language
+	// model + vision embeddings present), never inferred from the model name.
+	// Weights already count the vision/text-embedding IRs because dirSize sums
+	// the whole directory; the per-image token estimate comes from config.json
+	// (0 = unknown, see visionTokensPerImageEstimate).
+	if isVLMModelDir(req.Path) {
+		info.SupportsVision = true
+		info.VisionTokensPerImage = visionTokensPerImageEstimate(req.Path)
 	}
 	applyOpenVINOChatTemplateProbe(&info, req.Path)
 	return info, nil

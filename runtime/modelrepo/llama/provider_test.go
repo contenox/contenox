@@ -335,6 +335,115 @@ func TestUnit_LlamaProvider_UsesModeldDetectedTemplateCapabilities(t *testing.T)
 	}
 }
 
+// ModelInfo.SupportsVision from modeld's Describe must reach the client's
+// image acceptance gate.
+func TestUnit_LlamaProvider_VisionFromModeldDescribe(t *testing.T) {
+	old := sessionFactory
+	sessionFactory = nil
+	t.Cleanup(func() { sessionFactory = old })
+
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "vlm")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "model.gguf"), []byte("fake model"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := &recordingEmbedService{
+		base: transport.NewMemoryService(),
+		info: transport.ModelInfo{
+			ModelMaxContext:  32768,
+			EffectiveContext: 8192,
+			SupportsVision:   true,
+		},
+	}
+	serveLlamaModeldForTest(t, svc)
+
+	got, err := newProvider("vlm", root, modelrepo.CapabilityConfig{}).GetChatConnection(context.Background(), "")
+	if err != nil {
+		t.Fatalf("GetChatConnection: %v", err)
+	}
+	if !got.(*client).supportsVision {
+		t.Fatal("client supportsVision = false, want ModelInfo.SupportsVision threaded through")
+	}
+}
+
+// While modeld cannot answer Describe, an mmproj.gguf beside model.gguf (the
+// exact layout modeld resolves the projector from) is the offline best-effort
+// vision signal for the catalog and the client — and its absence keeps text
+// models honest.
+func TestUnit_LlamaCatalog_MMProjFileIsOfflineVisionSignal(t *testing.T) {
+	withSessionFactory(t, func(string, Config) (Session, error) { return nil, nil })
+
+	dir := t.TempDir()
+	for name, vision := range map[string]bool{"vlm": true, "text": false} {
+		modelDir := filepath.Join(dir, name)
+		if err := os.MkdirAll(modelDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(modelDir, "model.gguf"), []byte("fake"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if vision {
+			if err := os.WriteFile(filepath.Join(modelDir, mmprojFileName), []byte("fake mmproj"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	models, err := (&catalogProvider{dir: dir}).ListModels(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 2 {
+		t.Fatalf("models = %d, want 2", len(models))
+	}
+	byName := map[string]bool{}
+	for _, m := range models {
+		byName[m.Name] = m.CapabilityConfig.CanVision
+	}
+	if !byName["vlm"] {
+		t.Fatal("vlm CanVision = false, want mmproj presence as offline signal")
+	}
+	if byName["text"] {
+		t.Fatal("text CanVision = true, want no vision claim without mmproj or Describe answer")
+	}
+}
+
+// Refuse-don't-spill: image-bearing messages toward a session without vision
+// support fail with a typed error before any prompt reaches the model.
+func TestUnit_LlamaClient_RefusesImagesWithoutVisionSupport(t *testing.T) {
+	withSessionFactory(t, func(string, Config) (Session, error) { return nil, nil })
+
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "text")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "model.gguf"), []byte("fake model"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := newProvider("text", root, modelrepo.CapabilityConfig{}).GetChatConnection(context.Background(), "")
+	if err != nil {
+		t.Fatalf("GetChatConnection: %v", err)
+	}
+	c := got.(*client)
+	if c.supportsVision {
+		t.Fatal("text model must not claim vision support")
+	}
+	_, err = c.Chat(context.Background(), []modelrepo.Message{
+		{Role: "user", Content: "what is this?", Images: []modelrepo.ImagePart{{Data: []byte("png"), MimeType: "image/png"}}},
+	})
+	if !errors.Is(err, ErrUnsupportedFeature) {
+		t.Fatalf("expected typed unsupported-feature refusal, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "image input") {
+		t.Fatalf("refusal should name the capability gap, got: %v", err)
+	}
+}
+
 func TestUnit_LlamaProvider_ProfileAdaptersReachModelRef(t *testing.T) {
 	withSessionFactory(t, func(string, Config) (Session, error) { return nil, nil })
 

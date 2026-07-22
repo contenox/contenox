@@ -101,8 +101,7 @@ type acpProfile struct {
 	// embedFleet gives this profile the `/mission` slash command. The editor
 	// profile (acp — the Zed journey) embeds the fleet IN-PROCESS so a mission is a
 	// subagent of THIS editor, reporting back live into the firing session (see the
-	// mission block in runACPProfile and docs/development/blueprints/
-	// open-work-2026-07-21 §2). DISABLED for acpx: that profile is the hardened
+	// mission block in runACPProfile). DISABLED for acpx: that profile is the hardened
 	// surface for an untrusted driver (OpenClaw), which must not be handed a lever
 	// to dispatch fleet units at all — neither in-process nor forwarded.
 	embedFleet bool
@@ -368,7 +367,7 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	presenceStore := presence.NewStore(libkvstore.NewSQLiteManager(db))
 
 	// The `/mission` slash command. A mission is a SUBAGENT of the process that
-	// fired it (docs/development/blueprints/open-work-2026-07-21, the Preamble): the
+	// fired it: the
 	// editor embeds the fleet IN-PROCESS and dispatches there BY DEFAULT — the fired
 	// unit is a child subprocess of THIS process, and its report comes back LIVE
 	// into the firing session (missionReportDeliverer, via the report router). Mission
@@ -499,7 +498,7 @@ type inProcessFleetDeps struct {
 
 // buildInProcessFleet embeds the fleet the standalone editor dispatches
 // `/mission` through — the ontology's in-process subagent kernel (a mission is a
-// subagent of THIS process; docs/development/blueprints/open-work-2026-07-21 §2).
+// subagent of THIS process).
 // It mirrors serve_cmd.go's composition (agentregistryservice + agentinstance
 // kernel + operatorinbox + reportrouter + fleetservice) minimally, over the same
 // db and bus this process opened. It returns the dispatcher, the agent resolver,
@@ -519,8 +518,8 @@ func buildInProcessFleet(ctx context.Context, deps inProcessFleetDeps) (fleetser
 	// unit's stderr to this process's stderr (the editor's log) so a unit that
 	// fails to boot is diagnosable. No unattended permission answerer is wired here
 	// (unlike serve): a dispatched unit runs bounded/ungated work or `--auto`, and
-	// routing a unit's permission ask into the PARENT editor's permission UI is the
-	// named follow-up (open-work-2026-07-21 §2 design note).
+	// routing a unit's permission ask into the PARENT editor's permission UI is a
+	// named follow-up.
 	kernel := agentinstance.New(agents, agentinstance.WithStderr(os.Stderr))
 
 	operatorInbox := operatorinbox.New(deps.db)
@@ -548,7 +547,10 @@ func buildInProcessFleet(ctx context.Context, deps inProcessFleetDeps) (fleetser
 	// A dispatched mission's cwd defaults to this editor's working directory (the
 	// project Zed launched us in) when the request names none.
 	projectRoot, _ := os.Getwd()
-	fleet := fleetservice.New(kernel, agents, deps.missions, nil, projectRoot, deps.tracker)
+	fleet := fleetservice.New(kernel, agents, deps.missions, nil, projectRoot, deps.tracker,
+		// Same envelope-existence guard the serve path enforces, over this editor's
+		// .contenox policy files, so `/mission --policy typo.json` is refused here too.
+		fleetservice.WithPolicyValidator(hitlservice.NewPolicyValidator(hitlPolicySource(deps.contenoxDir), runtimetypes.LocalTenantID, "")))
 
 	stop := func() {
 		stopRouter()
@@ -558,8 +560,8 @@ func buildInProcessFleet(ctx context.Context, deps inProcessFleetDeps) (fleetser
 }
 
 // missionReportDeliverer is the report router's SessionDeliverer for the
-// IN-PROCESS editor topology. Per the ontology (open-work-2026-07-21, the
-// Preamble), a mission is a subagent of the editor process that fired it, and its
+// IN-PROCESS editor topology. Per the governing ontology, a mission is a
+// subagent of the editor process that fired it, and its
 // report must reach THAT parent — which, for a `/mission` fired from the editor,
 // is one of THIS process's own native stdio sessions, NOT a kernel-owned unit. So
 // the live editor transport is tried FIRST (Transport.DeliverToContenoxSession

@@ -43,6 +43,8 @@ type backendManager struct {
 	stateService stateservice.Service
 }
 
+// createBackend registers a new inference backend and returns it with its
+// assigned ID.
 func (b *backendManager) createBackend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -60,6 +62,8 @@ func (b *backendManager) createBackend(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusCreated, backend) // @response runtimetypes.Backend
 }
 
+// listBackends returns the registered backends, each merged with its observed
+// runtime state (downloaded models, pull progress, last error).
 func (b *backendManager) listBackends(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -123,6 +127,8 @@ type backendDetails struct {
 	UpdatedAt    time.Time                   `json:"updatedAt" example:"2023-11-15T14:30:45Z"`
 }
 
+// getBackend returns one backend by ID, merged with its observed runtime
+// state (downloaded models, pull progress, last error).
 func (b *backendManager) getBackend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := apiframework.GetPathParam(r, "id", "The unique identifier for the backend.")
@@ -173,6 +179,8 @@ func (b *backendManager) getBackend(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, resp) // @response backendapi.backendDetails
 }
 
+// updateBackend replaces a backend's stored configuration by ID and returns
+// the updated record.
 func (b *backendManager) updateBackend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := apiframework.GetPathParam(r, "id", "The unique identifier for the backend.")
@@ -195,6 +203,7 @@ func (b *backendManager) updateBackend(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, backend) // @response runtimetypes.Backend
 }
 
+// deleteBackend removes a backend registration by ID.
 func (b *backendManager) deleteBackend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := apiframework.GetPathParam(r, "id", "The unique identifier for the backend.")

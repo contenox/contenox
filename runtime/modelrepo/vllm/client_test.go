@@ -2,6 +2,7 @@ package vllm
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,45 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TestUnit_BuildChatRequest_SerializesImageAsContentParts asserts an image
+// attachment becomes the OpenAI content-parts array vLLM's endpoint consumes,
+// while a text-only turn stays a bare-string content (unchanged wire shape).
+func TestUnit_BuildChatRequest_SerializesImageAsContentParts(t *testing.T) {
+	pngBytes := []byte{0x89, 0x50, 0x4e, 0x47}
+	req := buildChatRequest("vlm", []modelrepo.Message{
+		{Role: "user", Content: "just text"},
+		{Role: "user", Content: "describe this", Images: []modelrepo.ImagePart{
+			{Data: pngBytes, MimeType: "image/png"},
+		}},
+	}, nil)
+
+	raw, err := json.Marshal(req)
+	require.NoError(t, err)
+
+	var got struct {
+		Messages []struct {
+			Content json.RawMessage `json:"content"`
+		} `json:"messages"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &got))
+	require.Len(t, got.Messages, 2)
+	require.Equal(t, byte('"'), got.Messages[0].Content[0], "text-only content should stay a JSON string")
+
+	var parts []struct {
+		Type     string `json:"type"`
+		Text     string `json:"text"`
+		ImageURL *struct {
+			URL string `json:"url"`
+		} `json:"image_url"`
+	}
+	require.NoError(t, json.Unmarshal(got.Messages[1].Content, &parts))
+	require.Len(t, parts, 2)
+	require.Equal(t, "text", parts[0].Type)
+	require.Equal(t, "image_url", parts[1].Type)
+	require.NotNil(t, parts[1].ImageURL)
+	require.Equal(t, "data:image/png;base64,"+base64.StdEncoding.EncodeToString(pngBytes), parts[1].ImageURL.URL)
+}
 
 type capturedChange struct {
 	id   string

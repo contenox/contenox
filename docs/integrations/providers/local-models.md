@@ -10,7 +10,7 @@ Contenox can download GGUF model files directly from HuggingFace and serve them 
 
 ## Curated models
 
-Run `contenox model registry-list` to see all available models with sizes, use cases, and best-effort local fit. The table below lists the curated **GGUF** set (served by the `llama` backend); the "advisory VRAM" column is the recommended minimum GPU tier at Q4\_K\_M quantization.
+Run `contenox model registry-list` to see all available models with sizes, use cases, and best-effort local fit. The table below lists the curated **GGUF** set (served by the `llama` backend); the "advisory VRAM" column is the recommended minimum GPU tier at the curated quantization.
 
 | Name | Model | Use case | Advisory VRAM |
 | ---- | ----- | -------- | ------------- |
@@ -20,17 +20,17 @@ Run `contenox model registry-list` to see all available models with sizes, use c
 | `qwen2.5-coder-0.5b` | Qwen 2.5 Coder 0.5B | coding (smoke) | ~6 GB |
 | `qwen2.5-coder-1.5b` | Qwen 2.5 Coder 1.5B | coding | ~6 GB |
 | `qwen2.5-coder-3b` | Qwen 2.5 Coder 3B | coding | ~6 GB |
-| `gemma4-e2b` | Gemma 4 E2B | chat | ~8 GB |
-| `gemma4-e4b` | Gemma 4 E4B | chat | ~8 GB |
+| `gemma4-e4b` | Gemma 4 E4B | chat + vision | ~6 GB |
+| `gemma4-e2b` | Gemma 4 E2B | chat + vision | ~8 GB |
 | `granite-3.2-8b` | IBM Granite 3.2 8B | chat | ~8 GB |
 | `qwen3-8b` | Qwen 3 8B | chat | ~8 GB |
 | `qwen2.5-coder-7b` | Qwen 2.5 Coder 7B | coding (default) | ~8 GB |
 | `starcoder2-7b-instruct` | StarCoder2 7B Instruct | coding (FIM) | ~8 GB |
 | `deepseek-r1-0528-qwen3-8b` | DeepSeek R1 0528 (Qwen3 8B distill) | reasoning | ~8 GB |
 | `deepseek-r1-distill-qwen-7b` | DeepSeek R1 Distill Qwen 7B | reasoning | ~8 GB |
+| `gemma4-12b` | Gemma 4 12B | chat + vision | ~12 GB |
 | `qwen3-14b` | Qwen 3 14B | chat | ~16 GB |
 | `qwen2.5-coder-14b` | Qwen 2.5 Coder 14B | coding | ~16 GB |
-| `gemma4-12b` | Gemma 4 12B | chat | ~16 GB |
 | `gpt-oss-20b` | GPT-OSS 20B | chat | ~24 GB |
 | `deepseek-coder-v2-lite` | DeepSeek Coder V2 Lite (MoE) | coding | ~24 GB |
 | `codestral-22b` | Codestral 22B | coding (FIM) | ~24 GB |
@@ -41,7 +41,33 @@ Run `contenox model registry-list` to see all available models with sizes, use c
 | `gemma4-26b-a4b` | Gemma 4 26B-A4B (MoE) | chat | ~32 GB |
 
 > [!NOTE]
-> Most curated GGUF models also ship an **OpenVINO IR** counterpart for the `openvino` backend — same name with an `-ov` suffix (e.g. `qwen3-4b-ov`, `qwen2.5-coder-7b-ov`, `gpt-oss-20b-ov`). MoE models (`qwen3-30b`, `qwen3-coder-30b-a3b`, `gemma4-26b-a4b`) use far less active VRAM than their total parameter count suggests. Run `contenox model registry-list` for the authoritative, always-current list including the OpenVINO entries.
+> Most curated GGUF models also ship an **OpenVINO IR** counterpart for the `openvino` backend — same name with an `-ov` suffix (e.g. `qwen3-4b-ov`, `qwen2.5-coder-7b-ov`, `gemma4-e4b-ov`). MoE models (`qwen3-30b`, `qwen3-coder-30b-a3b`, `gemma4-26b-a4b`) use far less active VRAM than their total parameter count suggests. Run `contenox model registry-list` for the authoritative, always-current list including the OpenVINO entries.
+
+### Vision models
+
+Curated entries marked **chat + vision** accept image input in addition to text. One `model pull` installs everything vision needs:
+
+- **`llama` backend** — the pull fetches the model GGUF *and* its multimodal projector, stored beside it as `mmproj.gguf`. If the projector download fails, the pull fails loudly (never a silently text-only model); re-run the same pull to fetch it. A model pulled before it was curated for vision upgrades in place: re-running `model pull` adds the missing projector.
+- **`openvino` backend** — the multi-file snapshot already includes the vision encoder (`openvino_vision_embeddings_model.*`); nothing extra to fetch.
+
+```bash
+# 6 GB GPU tier — flagship vision default:
+contenox model pull gemma4-e4b
+
+# 12-16 GB GPU tier:
+contenox model pull gemma4-12b
+
+# CPU / iGPU via OpenVINO (needs ~7GB+ free memory):
+contenox model pull gemma4-e4b-ov
+
+# Smallest vision model (~0.8 GB, OpenVINO) for trying image input on small machines:
+contenox model pull internvl2-1b-ov
+```
+
+`contenox model list` shows a VISION column with the capability the running daemon actually reports for each model — the truth comes from `modeld` resolving the projector (or vision encoder), not from the model's name.
+
+> [!NOTE]
+> OpenVINO vision sessions run through the GenAI VLM pipeline, which in its first version has no prefix-cache reuse, no context offload, no snapshot/restore, and no tool calls or LoRA — every turn re-processes the full multimodal prompt. Text-only OpenVINO models keep all of those features; the llama backend serves vision with its usual session features.
 
 ---
 

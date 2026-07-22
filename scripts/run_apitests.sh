@@ -35,16 +35,25 @@ cleanup() {
 }
 trap cleanup EXIT
 
-python3 - <<'PY'
+PYTHON="${CONTENOX_APITEST_PYTHON:-python3}"
+VENV_DIR="$ROOT_DIR/apitests/.venv"
+
+# Prefer whatever python already has the deps; otherwise fall back to a
+# repo-local venv, creating it on first use (PEP 668 hosts can't pip-install
+# into the system python, so `make test-api` must work with zero manual setup).
+if ! "$PYTHON" - <<'PY'
 import importlib.util
 import sys
 
-missing = [name for name in ("pytest", "requests") if importlib.util.find_spec(name) is None]
-if missing:
-    print("missing Python packages: " + ", ".join(missing), file=sys.stderr)
-    print("install with: python3 -m pip install -r apitests/requirements.txt", file=sys.stderr)
-    sys.exit(1)
+sys.exit(0 if all(importlib.util.find_spec(n) for n in ("pytest", "requests")) else 1)
 PY
+then
+  if [[ ! -x "$VENV_DIR/bin/python" ]]; then
+    python3 -m venv "$VENV_DIR"
+  fi
+  "$VENV_DIR/bin/python" -m pip install --quiet -r "$ROOT_DIR/apitests/requirements.txt"
+  PYTHON="$VENV_DIR/bin/python"
+fi
 
 mkdir -p "$HOME_DIR" "$WORKSPACE_DIR"
 
@@ -80,7 +89,7 @@ export CONTENOX_DEFAULT_PROVIDER="${CONTENOX_APITEST_DEFAULT_PROVIDER:-ollama}"
 HOME="$HOME_DIR" ADDR="$HOST" PORT="$PORT" TOKEN="" "$BIN" --data-dir "$DATA_DIR" --db "$DB_PATH" serve >"$LOG_FILE" 2>&1 &
 SERVER_PID="$!"
 
-python3 - "$HOST" "$PORT" "$SERVER_PID" "$LOG_FILE" <<'PY'
+"$PYTHON" - "$HOST" "$PORT" "$SERVER_PID" "$LOG_FILE" <<'PY'
 import pathlib
 import sys
 import time
@@ -111,4 +120,4 @@ PY
 
 export CONTENOX_API_URL="http://$HOST:$PORT/api"
 export CONTENOX_BEAM_ORIGIN="http://$HOST:$PORT"
-python3 -m pytest "$ROOT_DIR/apitests" "$@"
+"$PYTHON" -m pytest "$ROOT_DIR/apitests" "$@"

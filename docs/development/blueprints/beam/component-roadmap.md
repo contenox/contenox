@@ -33,9 +33,9 @@ ordered so nothing waits on undesigned backend work.
    OpenHands' ~80-line resizable-split hook on `MissionDetailPage`, hosting
    Changes/Search/Terminal/Transcript tabs as they land. Hours.
 
-### The Sublime-nature law (binding on every tier)
+### The instant-feel law (binding on every tier)
 
-The editors that won without being IDEs (Sublime, vim, early VS Code) won on:
+The editors that won without being IDEs won on:
 instant latency, fuzzy-everything navigation over dumb text, zero ceremony
 (the folder is the project), shell composability, and plain-state honesty —
 while Eclipse-era IDEs traded the inner loop away for a semantic model. VS

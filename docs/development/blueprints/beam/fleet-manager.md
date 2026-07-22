@@ -2,10 +2,11 @@
 
 Owner: runtime
 
-Status: PROPOSED (2026-07-19). Scope draft awaiting maintainer ratification.
-Every decision herein is proposed unless explicitly marked DECIDED. Refines
-"Wave 3 — Beam fleet MVP" of
-`docs/development/blueprints/acp/declared-agents-and-harnesses.md`.
+Status: PROPOSED (2026-07-19); the fleet surfaces this scoped have since
+landed — see [`../acp/fleet-consolidation.md`](../acp/fleet-consolidation.md)
+for the executed slices. Every decision herein is proposed unless explicitly
+marked DECIDED. Refines the earlier "Beam fleet MVP" wave of the declared-agents
+direction (draft since retired).
 
 ## Purpose
 
@@ -115,7 +116,7 @@ feeds no loop is noise and is not emitted. Four loops, four consumers:
 | Mission accounting / forensics | durable record, read on incident | per-mission timeline | none (durable) | small |
 | Automation (future: scheduler, probe daemon, auto-restart) | machine bus subscribers | actionable facts | seconds | varies |
 
-RULING (maintainer, 2026-07-19): **telemetry is passive.** It observes and
+RULING: **telemetry is passive.** It observes and
 records for after-the-fact audit; it never triggers product behavior. An
 earlier draft of this section proposed an exception classifier that derives
 and publishes curated events — REJECTED: that is product machinery, not
@@ -235,8 +236,8 @@ subject to review-time reversal:
   reserved.
 - Channel model (from the maintainer's decomposition, unratified in detail):
   lifecycle = fleet plumbing (poll + passive tracker); output artifacts hang
-  off mission records by reference; harness reporting/escalation belongs to
-  the declared-agents-and-harnesses blueprint; the HITL-notification bus for
+  off mission records by reference; harness reporting/escalation is tracked
+  outside fleet v1; the HITL-notification bus for
   external agents is deferred out of fleet v1.
 
 All remaining points RESERVED to the maintainer unless marked DECIDED.

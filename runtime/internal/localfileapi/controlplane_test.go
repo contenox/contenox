@@ -35,7 +35,7 @@ import (
 // traversal this guards; the Factory's root-selection check alone would not have
 // covered it.
 func TestUnit_WorkspaceRoutes_ControlPlaneShownButUnenterable(t *testing.T) {
-	root := t.TempDir() // the granted workspace root (stands in for /home/naro)
+	root := t.TempDir() // the granted workspace root (stands in for a real home dir)
 	require.NoError(t, os.WriteFile(filepath.Join(root, "project.txt"), []byte("x"), 0o644))
 
 	// The runtime's control plane, a DIRECT CHILD of the granted root — the shape

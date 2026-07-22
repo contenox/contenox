@@ -45,7 +45,13 @@ func fitMark(level fitLevel) string {
 
 func modelUseCaseLabel(model modelregistry.ModelDescriptor) string {
 	if model.UseCase == "" {
+		if model.Vision {
+			return "vision"
+		}
 		return "-"
+	}
+	if model.Vision {
+		return model.UseCase + "+vision"
 	}
 	return model.UseCase
 }

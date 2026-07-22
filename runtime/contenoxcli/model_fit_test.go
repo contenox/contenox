@@ -64,6 +64,8 @@ func TestUnit_ModelFitMark(t *testing.T) {
 func TestUnit_ModelRecommendationLabelsAndSort(t *testing.T) {
 	assert.Equal(t, "-", modelUseCaseLabel(modelregistry.ModelDescriptor{}))
 	assert.Equal(t, "coding", modelUseCaseLabel(modelregistry.ModelDescriptor{UseCase: "coding"}))
+	assert.Equal(t, "chat+vision", modelUseCaseLabel(modelregistry.ModelDescriptor{UseCase: "chat", Vision: true}))
+	assert.Equal(t, "vision", modelUseCaseLabel(modelregistry.ModelDescriptor{Vision: true}))
 
 	smallCoding := modelregistry.ModelDescriptor{Name: "a", UseCase: "coding", Family: "qwen", SizeBytes: 1, RecommendedVRAMGB: 6}
 	largeCoding := modelregistry.ModelDescriptor{Name: "b", UseCase: "coding", Family: "qwen", SizeBytes: 2, RecommendedVRAMGB: 16}

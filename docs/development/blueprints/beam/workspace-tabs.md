@@ -1,8 +1,10 @@
 # Workspace Tabs: an in-app tabbed workspace
 
-Status: draft blueprint, 2026-07-16. Decisions settled with the maintainer.
-Supersedes the terminal-sidebar and side-panel-file-preview parts of
-shell-sessions.md / session-workspace-files.md.
+Status: implemented — the tab-manager (`WorkspaceTabs` / `useWorkspaceTabs`)
+ships in `packages/beam`. Kept as the design record; decisions settled with
+the maintainer 2026-07-16. Supersedes the terminal-sidebar and
+side-panel-file-preview parts of shell-sessions.md /
+session-workspace-files.md.
 
 ## Concept
 

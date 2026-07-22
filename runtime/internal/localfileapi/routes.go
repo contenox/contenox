@@ -13,6 +13,12 @@ import (
 	"github.com/contenox/runtime/runtime/vfs"
 )
 
+// AddRoutes registers the /files browse API in single-root mode, fixed to one
+// localfileservice root. It is the ProjectRoot FALLBACK mount: serve uses it
+// only when no workspace-root allowlist is configured (serverapi's primary
+// branch mounts AddWorkspaceRoutes instead).
+//
+// openapi:exclude fallback mount registering the same method+path surface as the primary per-root AddWorkspaceRoutes mount, which the spec documents (including its `root` query parameter)
 func AddRoutes(mux *http.ServeMux, service localfileservice.Service) {
 	h := &handler{service: service}
 	mux.HandleFunc("GET /files", h.list)
@@ -60,6 +66,8 @@ type fileContentResponse struct {
 	Metadata      localfileservice.Entry `json:"metadata"`
 }
 
+// list returns the directory entries under path, optionally filtered to a
+// server-side tree view (e.g. the agent's view with access verdicts).
 func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 	path := apiframework.GetQueryParam(r, "path", ".", "Directory path relative to the project root.")
 	entries, err := h.service.List(r.Context(), path)
@@ -108,6 +116,7 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, result) // @response []localfileapi.Entry
 }
 
+// stat returns the metadata entry for one path.
 func (h *handler) stat(w http.ResponseWriter, r *http.Request) {
 	path := apiframework.GetQueryParam(r, "path", "", "Path relative to the project root.")
 	entry, err := h.service.Stat(r.Context(), path)
@@ -118,6 +127,8 @@ func (h *handler) stat(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, entry) // @response localfileservice.Entry
 }
 
+// content returns a file's contents with metadata, UTF-8 inline or base64
+// for binary data.
 func (h *handler) content(w http.ResponseWriter, r *http.Request) {
 	path := apiframework.GetQueryParam(r, "path", "", "File path relative to the project root.")
 	data, meta, err := h.service.Read(r.Context(), path)
@@ -139,7 +150,9 @@ func (h *handler) content(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, resp) // @response localfileapi.fileContentResponse
 }
 
+// download serves a file's raw bytes with its stored content type.
 func (h *handler) download(w http.ResponseWriter, r *http.Request) {
+	// @response binary The file's raw bytes, served with its stored content type (application/octet-stream fallback).
 	path := apiframework.GetQueryParam(r, "path", "", "File path relative to the project root.")
 	data, meta, err := h.service.Read(r.Context(), path)
 	if err != nil {
@@ -156,6 +169,8 @@ func (h *handler) download(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+// createFile writes a new file from the request payload and returns its
+// entry.
 func (h *handler) createFile(w http.ResponseWriter, r *http.Request) {
 	req, err := apiframework.Decode[writeFileRequest](r) // @request localfileapi.writeFileRequest
 	if err != nil {
@@ -175,6 +190,8 @@ func (h *handler) createFile(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusCreated, entry) // @response localfileservice.Entry
 }
 
+// updateFile overwrites an existing file from the request payload and
+// returns its entry.
 func (h *handler) updateFile(w http.ResponseWriter, r *http.Request) {
 	req, err := apiframework.Decode[writeFileRequest](r) // @request localfileapi.writeFileRequest
 	if err != nil {
@@ -194,6 +211,7 @@ func (h *handler) updateFile(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, entry) // @response localfileservice.Entry
 }
 
+// createFolder creates a directory and returns its entry.
 func (h *handler) createFolder(w http.ResponseWriter, r *http.Request) {
 	req, err := apiframework.Decode[createFolderRequest](r) // @request localfileapi.createFolderRequest
 	if err != nil {
@@ -208,6 +226,8 @@ func (h *handler) createFolder(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusCreated, entry) // @response localfileservice.Entry
 }
 
+// movePath renames or moves a file or folder and returns the entry at its
+// new path.
 func (h *handler) movePath(w http.ResponseWriter, r *http.Request) {
 	req, err := apiframework.Decode[moveRequest](r) // @request localfileapi.moveRequest
 	if err != nil {

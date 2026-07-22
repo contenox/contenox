@@ -138,6 +138,30 @@ func TestUnit_Resolve_EmptyName(t *testing.T) {
 	}
 }
 
+func TestUnit_ResolveMMProj_FoundNextToModel(t *testing.T) {
+	dir := t.TempDir()
+	modelPath := filepath.Join(dir, "vlm", "model.gguf")
+	writeFile(t, modelPath, []byte("weights"))
+	writeFile(t, filepath.Join(dir, "vlm", "mmproj.gguf"), []byte("projector"))
+
+	if got, want := ResolveMMProj(modelPath), filepath.Join(dir, "vlm", "mmproj.gguf"); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestUnit_ResolveMMProj_AbsentForTextOnlyModel(t *testing.T) {
+	dir := t.TempDir()
+	modelPath := filepath.Join(dir, "llm", "model.gguf")
+	writeFile(t, modelPath, []byte("weights"))
+
+	if got := ResolveMMProj(modelPath); got != "" {
+		t.Fatalf("got %q, want empty", got)
+	}
+	if got := ResolveMMProj(""); got != "" {
+		t.Fatalf("empty model path resolved %q, want empty", got)
+	}
+}
+
 func TestUnit_FileDigest_Deterministic(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "f")

@@ -30,11 +30,18 @@ import { useStagedAgent } from '../../../lib/stagedAgent';
 import { useSetupStatus } from '../../../hooks/useSetupStatus';
 import { usePersistentToggle } from '../../../hooks/usePersistentToggle';
 import { classifyAcpExecutionError } from '../../../lib/acpFailureKind';
+import { canAttachImages } from '../lib/imageAttachments';
 import { activeMentions, mentionPreviewPath, type WorkspaceFileRef } from '../lib/mentions';
 import { resolveWorkspaceRoot } from '../lib/workspaceRoot';
 import { useFilePreview } from '../../../hooks/useFilePreview';
 import { parseTerminalPassthrough } from '../lib/terminalPassthrough';
 import { ChatSessionToolbar } from './ChatSessionToolbar';
+import {
+  AttachImageButton,
+  ComposerImageAttachments,
+  ImageAttachmentNoticeView,
+  useImageAttachments,
+} from './ComposerImageAttachments';
 import { ExecutionErrorBanner, ResumedBanner } from './SessionBanners';
 import { MentionMenu, useMentionMenu } from './MentionMenu';
 import { PlanPanel } from './PlanPanel';
@@ -219,6 +226,15 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
     }
   }, [terminalHasOutput, openCanvasTab]);
 
+  // Image attachments (paste/drop/attach) — gated on the agent's advertised
+  // `initialize` prompt capabilities: no image support means no attach button,
+  // and paste/drop of images is rejected with a notice (see useImageAttachments).
+  const imagesSupported = canAttachImages(workspace.promptCapabilities);
+  const imageAttachments = useImageAttachments(imagesSupported);
+  // Stable callback identities for handleSubmit's dependency list (the hook's
+  // result object is recreated per render; its callbacks are not).
+  const { takeImages, restoreImages } = imageAttachments;
+
   // @-mention state.
   const [mentions, setMentions] = useState<WorkspaceFileRef[]>([]);
   const [caret, setCaret] = useState(0);
@@ -311,6 +327,7 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
       }
 
       const turnMentions = activeMentions(draft, mentions);
+      const turnImages = takeImages();
       setDraft('');
       setMentions([]);
 
@@ -325,6 +342,7 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
           // newSession() already surfaced the failure; restore the draft.
           setDraft(text);
           setMentions(turnMentions);
+          restoreImages(turnImages);
           return;
         }
         // Flush the empty-chat's staged native config choices onto the just-minted
@@ -341,6 +359,7 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
             } catch {
               setDraft(text);
               setMentions(turnMentions);
+              restoreImages(turnImages);
               return;
             }
           }
@@ -351,7 +370,7 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
         // Promote the empty surface to a real tab (URL follows the active tab).
         onSessionCreated(sid);
       }
-      sendPrompt(text, turnMentions);
+      sendPrompt(text, turnMentions, turnImages);
     },
     [
       slashMenu.open,
@@ -359,6 +378,8 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
       session.isPrompting,
       draft,
       mentions,
+      takeImages,
+      restoreImages,
       stagedRoot,
       stagedExternalAgent,
       setStagedAgent,
@@ -494,7 +515,13 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
             </div>
           )}
 
-          <div className="relative flex min-h-0 flex-col px-3 pb-3 sm:px-4">
+          <div
+            className="relative flex min-h-0 flex-col px-3 pb-3 sm:px-4"
+            // Image drag-and-drop lands on the whole composer strip; the
+            // handlers accept the drag only when it actually carries images
+            // (and reject with a notice when the agent doesn't support them).
+            onDrop={imageAttachments.handleDrop}
+            onDragOver={imageAttachments.handleDragOver}>
             {slashMenu.open ? (
               <SlashCommandMenu
                 entries={slashMenu.entries}
@@ -514,6 +541,7 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
               />
             ) : null}
             <div className="shrink-0">
+              <ImageAttachmentNoticeView notice={imageAttachments.notice} />
               <ChatComposer
                 value={draft}
                 onChange={setDraft}
@@ -524,7 +552,24 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
                 allowEmptyMessage={session.isPrompting}
                 submitLabel={session.isPrompting ? t('acp_chat.composer_stop') : t('acp_chat.composer_send')}
                 placeholder={workspace.status === 'ready' ? t('acp_chat.composer_placeholder') : t('acp_chat.composer_placeholder_connecting')}
-                textareaProps={{ onKeyDown: composerKeyDown, onKeyUp: trackCaret, onClick: trackCaret, onSelect: trackCaret }}
+                attachments={
+                  <ComposerImageAttachments images={imageAttachments.images} onRemove={imageAttachments.removeImage} />
+                }
+                footerStart={
+                  imagesSupported ? (
+                    <AttachImageButton
+                      onFiles={files => void imageAttachments.addFiles(files)}
+                      disabled={composerDisabled}
+                    />
+                  ) : undefined
+                }
+                textareaProps={{
+                  onKeyDown: composerKeyDown,
+                  onKeyUp: trackCaret,
+                  onClick: trackCaret,
+                  onSelect: trackCaret,
+                  onPaste: imageAttachments.handlePaste,
+                }}
               />
             </div>
           </div>

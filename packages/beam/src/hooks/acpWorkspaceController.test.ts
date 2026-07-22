@@ -1644,3 +1644,85 @@ describe('acpWorkspaceController: inline permission card responses (explicit-onl
     expect(h.sliceOf('sess-a')?.pendingPermission).toBeNull();
   });
 });
+
+describe('acpWorkspaceController: image prompt capability + image blocks', () => {
+  it('exposes the initialize agentCapabilities.promptCapabilities on ready (image gating source)', async () => {
+    const h = setup();
+    const p = h.controller.connect();
+    await flushMicrotasks();
+    const initReq = h.transports[0].lastSent();
+    h.transports[0].feed({
+      jsonrpc: '2.0',
+      id: initReq.id,
+      result: {
+        protocolVersion: 1,
+        agentInfo: { name: 'contenox' },
+        agentCapabilities: { promptCapabilities: { image: true } },
+      },
+    });
+    await flushMicrotasks();
+    const listReq = h.transports[0].lastSent();
+    h.transports[0].feed({ jsonrpc: '2.0', id: listReq.id, result: { sessions: [] } });
+    await p;
+
+    expect(h.wsStore.state.promptCapabilities).toEqual({ image: true });
+  });
+
+  it('defaults promptCapabilities to {} for an agent that advertises none (no attach affordance)', async () => {
+    const h = setup();
+    await connectReady(h);
+    expect(h.wsStore.state.promptCapabilities).toEqual({});
+  });
+
+  it('sendPrompt with images appends image content blocks to session/prompt and echoes them on the local user message', async () => {
+    const h = setup();
+    await connectReady(h);
+    await createSession(h, 'sess-a');
+
+    h.controller.sendPrompt(
+      'what is on this screenshot?',
+      [],
+      [{ id: 'img-1', name: 'shot.png', data: 'aGVsbG8=', mimeType: 'image/png' }],
+    );
+
+    const req = h.transports[0].lastSent();
+    expect(req.method).toBe('session/prompt');
+    expect((req.params as Record<string, unknown>).prompt).toEqual([
+      { type: 'text', text: 'what is on this screenshot?' },
+      // libacp ContentBlock wire form: raw base64 data + mimeType, no id/name.
+      { type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' },
+    ]);
+
+    // Local echo: ONE user message carrying both the text and the image.
+    const user = Object.values(h.sessStore.state.messages).find(m => m.role === 'user');
+    expect(user).toMatchObject({
+      text: 'what is on this screenshot?',
+      images: [{ data: 'aGVsbG8=', mimeType: 'image/png' }],
+    });
+  });
+
+  it('routes an inbound user_message_chunk image (session/load replay of an image prompt) into the slice', async () => {
+    const h = setup();
+    await connectReady(h);
+    await openTab(h, 'sess-r');
+
+    h.transports[0].feed({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess-r',
+        update: {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'image', data: 'aW1n', mimeType: 'image/jpeg' },
+          messageId: 'replay-0',
+        },
+      },
+    });
+    await flushMicrotasks();
+
+    expect(h.sliceOf('sess-r')?.messages['replay-0']).toMatchObject({
+      role: 'user',
+      images: [{ data: 'aW1n', mimeType: 'image/jpeg' }],
+    });
+  });
+});

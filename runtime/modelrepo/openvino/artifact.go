@@ -19,3 +19,14 @@ func modelEntrypointPath(modelDir string) (string, bool) {
 	}
 	return "", false
 }
+
+// visionEncoderModelName is the vision encoder an OpenVINO VLM snapshot ships
+// beside the language model. Its presence is the offline best-effort vision
+// signal for the catalog while modeld cannot answer Describe; a live
+// Describe's ModelInfo.SupportsVision stays the authoritative truth.
+const visionEncoderModelName = "openvino_vision_embeddings_model.xml"
+
+func visionEncoderPresent(modelDir string) bool {
+	_, err := os.Stat(filepath.Join(modelDir, visionEncoderModelName))
+	return err == nil
+}

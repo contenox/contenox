@@ -444,6 +444,10 @@ static cx_ov_model_kv_profile load_model_kv_profile(const std::string &model_pat
     auto cfg = root;
     if (root.contains("text_config") && root["text_config"].is_object()) {
         cfg = root["text_config"];
+    } else if (root.contains("llm_config") && root["llm_config"].is_object()) {
+        // VLM exports of the InternVL family nest the language model's
+        // architecture under llm_config instead of text_config.
+        cfg = root["llm_config"];
     }
     out.max_position_embeddings = json_int_field(cfg, "max_position_embeddings").value_or(0);
     out.num_hidden_layers = json_int_field(cfg, "num_hidden_layers").value_or(0);

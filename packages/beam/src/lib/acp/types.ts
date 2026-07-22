@@ -216,6 +216,33 @@ export function textContent(text: string): ContentBlock {
   return { type: 'text', text };
 }
 
+/** Builds an image content block — mirrors libacp's `NewImageContent` (`data` = raw base64, NO `data:` prefix). */
+export function imageContent(data: string, mimeType: string): ContentBlock {
+  return { type: 'image', data, mimeType };
+}
+
+/**
+ * An image payload carried by a message-chunk content block: the ACP wire form
+ * (raw base64 `data` + `mimeType`), as extracted by {@link imagePartFromBlock}
+ * and threaded through the session reducer to the transcript renderer.
+ */
+export interface ImagePart {
+  data: string;
+  mimeType: string;
+}
+
+/**
+ * Extracts the image payload from a message-chunk `ContentBlock`, or `null`
+ * for any non-image (or malformed image) block — so the receive path can keep
+ * image chunks instead of flattening every chunk to `content.text ?? ''`.
+ */
+export function imagePartFromBlock(block: ContentBlock): ImagePart | null {
+  if (block.type !== 'image') return null;
+  if (typeof block.data !== 'string' || block.data === '') return null;
+  if (typeof block.mimeType !== 'string' || block.mimeType === '') return null;
+  return { data: block.data, mimeType: block.mimeType };
+}
+
 // ---------------------------------------------------------------------------
 // tool calls
 // ---------------------------------------------------------------------------

@@ -195,7 +195,7 @@ func (e *modelManager) PromptExecute(
 		req.ProviderTypes = []string{e.config.DefaultPromptModel.Provider}
 	}
 
-	resolverReq := e.convertToResolverRequest(req)
+	resolverReq := e.convertToResolverRequest(req, nil)
 	client, provider, backend, err := llmresolver.PromptExecute(ctx,
 		resolverReq,
 		runtimeStateResolution,
@@ -249,7 +249,7 @@ func (e *modelManager) Chat(
 		req.ProviderTypes = []string{e.config.DefaultChatModel.Provider}
 	}
 
-	resolverReq := e.convertToResolverRequest(req)
+	resolverReq := e.convertToResolverRequest(req, messages)
 	client, provider, backend, err := llmresolver.Chat(ctx,
 		resolverReq,
 		runtimeStateResolution,
@@ -354,7 +354,7 @@ func (e *modelManager) Stream(
 		req.ProviderTypes = []string{e.config.DefaultChatModel.Provider}
 	}
 
-	resolverReq := e.convertToResolverRequest(req)
+	resolverReq := e.convertToResolverRequest(req, messages)
 	client, provider, backend, err := llmresolver.Stream(ctx,
 		resolverReq,
 		runtimeStateResolution,
@@ -422,12 +422,16 @@ func (e *modelManager) GetTokenizer(ctx context.Context, modelName string) (Toke
 	}, nil
 }
 
-func (e *modelManager) convertToResolverRequest(req Request) llmresolver.Request {
+// convertToResolverRequest builds the resolver request, deriving the vision
+// requirement from the messages so callers cannot forget to set it: any image
+// attachment restricts resolution to vision-capable providers.
+func (e *modelManager) convertToResolverRequest(req Request, messages []libmodelprovider.Message) llmresolver.Request {
 	return llmresolver.Request{
-		ProviderTypes: req.ProviderTypes,
-		ModelNames:    req.ModelNames,
-		ContextLength: req.ContextLength,
-		Tracker:       req.Tracker,
+		ProviderTypes:  req.ProviderTypes,
+		ModelNames:     req.ModelNames,
+		ContextLength:  req.ContextLength,
+		RequiresVision: libmodelprovider.MessagesHaveImages(messages),
+		Tracker:        req.Tracker,
 	}
 }
 

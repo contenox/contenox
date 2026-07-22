@@ -44,6 +44,8 @@ type presenceHandler struct {
 	reader PresenceReader
 }
 
+// list returns the observed-presence entries: external agents (and serve
+// itself) that self-registered into the shared presence store.
 func (h *presenceHandler) list(w http.ResponseWriter, r *http.Request) {
 	entries, err := h.reader.List(r.Context())
 	if err != nil {

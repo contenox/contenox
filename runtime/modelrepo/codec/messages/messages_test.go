@@ -34,7 +34,7 @@ func TestUnit_Build_SystemExtractionAndDefaults(t *testing.T) {
 func TestUnit_Build_ToolUseAndToolResultRoundTrip(t *testing.T) {
 	cfg := &modelrepo.ChatConfig{
 		Tools: []modelrepo.Tool{{
-			Type: "function",
+			Type:     "function",
 			Function: &modelrepo.FunctionTool{Name: "fs.list", Description: "list files"},
 		}},
 	}

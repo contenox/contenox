@@ -241,6 +241,53 @@ func InspectModelKVProfile(path string) (ModelKVProfile, error) {
 	return p, nil
 }
 
+// MMProjProfile contains the multimodal projector metadata needed to estimate
+// per-image token cost. Zero means absent.
+type MMProjProfile struct {
+	ImageSize       int // clip.vision.image_size
+	PatchSize       int // clip.vision.patch_size
+	ProjScaleFactor int // clip.vision.projector.scale_factor (pixel-shuffle merge)
+}
+
+// InspectMMProjProfile reads projector GGUF metadata through the public gguf.h
+// API. It does not load tensor data.
+func InspectMMProjProfile(path string) (MMProjProfile, error) {
+	if path == "" {
+		return MMProjProfile{}, errors.New("llamacppshim: mmproj path is required")
+	}
+	cpath := C.CString(path)
+	defer C.free(unsafe.Pointer(cpath))
+
+	params := C.struct_gguf_init_params{no_alloc: C.bool(true)}
+	ctx := C.gguf_init_from_file(cpath, params)
+	if ctx == nil {
+		return MMProjProfile{}, fmt.Errorf("llamacppshim: inspect GGUF metadata %q", path)
+	}
+	defer C.gguf_free(ctx)
+
+	var p MMProjProfile
+	nKV := int(C.gguf_get_n_kv(ctx))
+	for i := 0; i < nKV; i++ {
+		key := C.GoString(C.gguf_get_key(ctx, C.int64_t(i)))
+		id := C.int64_t(i)
+		switch key {
+		case "clip.vision.image_size":
+			if v, ok := ggufScalarInt(ctx, id); ok {
+				p.ImageSize = int(v)
+			}
+		case "clip.vision.patch_size":
+			if v, ok := ggufScalarInt(ctx, id); ok {
+				p.PatchSize = int(v)
+			}
+		case "clip.vision.projector.scale_factor":
+			if v, ok := ggufScalarInt(ctx, id); ok {
+				p.ProjScaleFactor = int(v)
+			}
+		}
+	}
+	return p, nil
+}
+
 func ggufScalarInt(ctx *C.struct_gguf_context, id C.int64_t) (int64, bool) {
 	switch C.gguf_get_kv_type(ctx, id) {
 	case C.GGUF_TYPE_UINT8:

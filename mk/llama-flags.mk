@@ -23,13 +23,13 @@ LLAMA_COMMON_CPPFLAGS = -I$(abspath $(LLAMA_CPP_REF_DIR)/common) -I$(abspath $(L
 # For MinGW builds the DLLs live next to the exe or in lib/; use the names
 # the windows bundle script and package step look for. The -l:foo.dll form
 # tells the linker to use the exact DLL (MinGW supports it for import).
-LLAMA_DIRECT_LINK_LIBS = -lllama-common -lllama -lggml -lggml-base -lstdc++
+LLAMA_DIRECT_LINK_LIBS = -lllama-common -lllama -lmtmd -lggml -lggml-base -lstdc++
 LLAMA_DIRECT_LDFLAGS = -L$(LLAMA_RUNTIME_LIB_DIR) $(LLAMA_DIRECT_LINK_LIBS)
 else
 LLAMA_DIRECT_CPPFLAGS = -I$(LLAMA_RUNTIME_DIR)/include
 LLAMA_COMMON_CPPFLAGS = -I$(LLAMA_CPP_REF_DIR)/common -I$(LLAMA_CPP_REF_DIR)/vendor
 # Link modeld against the llama.cpp core libraries.
 # Runtime plugins are loaded from CONTENOX_LLAMA_BACKEND_DIR.
-LLAMA_DIRECT_LINK_LIBS = -l:libllama-common.so -l:libllama.so -l:libggml.so -l:libggml-base.so -lstdc++ -lm -ldl -lpthread
+LLAMA_DIRECT_LINK_LIBS = -l:libllama-common.so -l:libllama.so -l:libmtmd.so -l:libggml.so -l:libggml-base.so -lstdc++ -lm -ldl -lpthread
 LLAMA_DIRECT_LDFLAGS = -L$(LLAMA_RUNTIME_LIB_DIR) -Wl,--disable-new-dtags -Wl,-rpath,$(LLAMA_RUNTIME_LIB_DIR) -Wl,-rpath-link,$(LLAMA_RUNTIME_LIB_DIR) $(LLAMA_DIRECT_LINK_LIBS)
 endif

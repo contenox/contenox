@@ -4,14 +4,14 @@ import "github.com/contenox/runtime/libacp"
 
 // defaultJournalSize bounds how many recent session/update notifications a
 // single session's journal retains for replay to a newly-attached viewer. It is
-// the structured-event analogue of go-process-manager's
-// config.ProcessMsgCacheBufLimit (its byte scrollback). A viewer that attaches
+// the structured-event equivalent of a terminal's bounded
+// scrollback. A viewer that attaches
 // after this many updates have flowed sees the most recent defaultJournalSize
 // events replayed, not the whole history — the ring drops oldest-first.
 const defaultJournalSize = 512
 
 // journal is a bounded ring of libacp.SessionNotification for one downstream
-// session — the structured-event counterpart to ProcessPty.cacheBytesBuf. It is
+// session — the structured-event counterpart to a pty's byte scrollback ring. It is
 // NOT safe for concurrent use on its own; the viewerHub serializes every access
 // under the owning session's lock.
 //

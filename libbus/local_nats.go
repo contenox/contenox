@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"time"
 
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/nats"
@@ -57,8 +58,20 @@ func NewTestPubSub() (Messenger, func(), error) {
 	cfg := &Config{
 		NATSURL: cons,
 	}
-	ps, err := NewPubSub(ctx, cfg)
+	// The nats module's readiness wait can return before the server accepts
+	// connections (observed as a first-connect EOF under host load), so retry
+	// briefly rather than leaking that race into every suite using this helper.
+	var ps Messenger
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		ps, err = NewPubSub(ctx, cfg)
+		if err == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 	if err != nil {
+		cleanup()
 		return nil, func() {}, err
 	}
 	// Return a cleanup function that closes PubSub and terminates the container.

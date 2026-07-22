@@ -45,7 +45,7 @@ export function dirname(path: string): string {
  * A Monaco language id inferred from a path's extension, for syntax colouring in
  * the diff view. Deliberately a small, common map — an unknown extension yields
  * `plaintext`, which Monaco renders fine; this is cosmetic enhancement, never a
- * correctness dependency (the Sublime-nature law: the diff is legible plain).
+ * correctness dependency (the instant-feel law: the diff is legible plain).
  */
 const EXT_LANGUAGE: Record<string, string> = {
   ts: 'typescript',

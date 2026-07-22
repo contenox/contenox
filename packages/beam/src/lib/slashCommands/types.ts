@@ -35,7 +35,7 @@ export interface SlashCommandContext {
  *   '@' — context mentions (pull a thing INTO the agent's context). Examples:
  *         @file <path>, @plan, @terminal.
  *
- * The split mirrors industry convention (Cursor, Continue, Claude Code): the
+ * The split follows established coding-assistant convention: the
  * `@` namespace is reserved for "make the agent see X"; the `/` namespace is
  * reserved for actions. Mixing them ("/file" to attach a file) is a footgun
  * the user gave specific feedback about.

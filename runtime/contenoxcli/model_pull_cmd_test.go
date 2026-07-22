@@ -1,6 +1,9 @@
 package contenoxcli
 
 import (
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,6 +94,101 @@ func TestUnit_LocalModelPresentChecksBackendMarkers(t *testing.T) {
 	assert.True(t, localModelPresent("openvino", langDir))
 }
 
+// One pull action installs every artifact a llama vision model needs: the
+// model GGUF and its multimodal projector as mmproj.gguf.
+func TestUnit_PullLlamaArtifactsFetchesModelAndMMProj(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/model.gguf":
+			_, _ = io.WriteString(w, "gguf-model-bytes")
+		case "/mmproj.gguf":
+			_, _ = io.WriteString(w, "gguf-mmproj-bytes")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+
+	err := pullLlamaArtifacts("vlm", srv.URL+"/model.gguf", srv.URL+"/mmproj.gguf", dir, io.Discard)
+	require.NoError(t, err)
+
+	model, err := os.ReadFile(filepath.Join(dir, "model.gguf"))
+	require.NoError(t, err)
+	assert.Equal(t, "gguf-model-bytes", string(model))
+	mmproj, err := os.ReadFile(filepath.Join(dir, "mmproj.gguf"))
+	require.NoError(t, err)
+	assert.Equal(t, "gguf-mmproj-bytes", string(mmproj))
+}
+
+// A model pulled before it was curated for vision upgrades in place: the
+// existing model.gguf is kept and only the missing projector is fetched.
+func TestUnit_PullLlamaArtifactsFetchesMissingMMProjForExistingModel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/mmproj.gguf" {
+			_, _ = io.WriteString(w, "gguf-mmproj-bytes")
+			return
+		}
+		t.Errorf("unexpected download of %s for an already-installed model", r.URL.Path)
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "model.gguf"), []byte("existing"), 0o644))
+
+	err := pullLlamaArtifacts("vlm", srv.URL+"/model.gguf", srv.URL+"/mmproj.gguf", dir, io.Discard)
+	require.NoError(t, err)
+
+	model, err := os.ReadFile(filepath.Join(dir, "model.gguf"))
+	require.NoError(t, err)
+	assert.Equal(t, "existing", string(model))
+	mmproj, err := os.ReadFile(filepath.Join(dir, "mmproj.gguf"))
+	require.NoError(t, err)
+	assert.Equal(t, "gguf-mmproj-bytes", string(mmproj))
+}
+
+// Refuse-don't-spill at install time: a vision entry whose projector cannot be
+// fetched fails with an actionable error and leaves no partial mmproj behind —
+// never a silently text-only model.
+func TestUnit_PullLlamaArtifactsFailsLoudlyWhenMMProjMissing(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/model.gguf" {
+			_, _ = io.WriteString(w, "gguf-model-bytes")
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+
+	err := pullLlamaArtifacts("gemma4-e4b", srv.URL+"/model.gguf", srv.URL+"/mmproj.gguf", dir, io.Discard)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "vision projector")
+	assert.Contains(t, err.Error(), "mmproj.gguf")
+	assert.Contains(t, err.Error(), "contenox model pull gemma4-e4b")
+	_, statErr := os.Stat(filepath.Join(dir, "mmproj.gguf"))
+	assert.True(t, os.IsNotExist(statErr), "failed projector download must not leave a partial mmproj.gguf")
+}
+
+// Text entries keep the single-file pull: no projector URL means no second
+// download.
+func TestUnit_PullLlamaArtifactsTextModelSkipsMMProj(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/model.gguf" {
+			_, _ = io.WriteString(w, "gguf-model-bytes")
+			return
+		}
+		t.Errorf("unexpected request %s for a text model", r.URL.Path)
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+
+	require.NoError(t, pullLlamaArtifacts("text", srv.URL+"/model.gguf", "", dir, io.Discard))
+	_, statErr := os.Stat(filepath.Join(dir, "mmproj.gguf"))
+	assert.True(t, os.IsNotExist(statErr))
+}
+
 func TestUnit_ModelPullLongIncludesRegistryGeneratedCuratedModels(t *testing.T) {
 	got := modelPullLong()
 
@@ -109,6 +207,8 @@ func TestUnit_ModelPullLongIncludesRegistryGeneratedCuratedModels(t *testing.T) 
 		"gemma4-26b-a4b",
 		"gpt-oss-20b-ov",
 		"fastest smoke test",
+		"chat+vision",
+		"gemma4-e4b-ov",
 	} {
 		assert.Contains(t, got, want)
 	}

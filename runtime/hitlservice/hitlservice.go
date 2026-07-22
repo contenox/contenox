@@ -41,6 +41,45 @@ type ComputeBoundsReader interface {
 	ComputeBoundsFor(ctx context.Context, policyName string) (ComputeBounds, error)
 }
 
+// PolicyValidator reports whether a named HITL policy exists and loads. It is the
+// CREATION-time existence check for a mission envelope — the opposite stance from
+// ComputeBoundsFor's runtime fail-to-unbounded: validate strictly when a mission
+// is created (refuse a nonexistent envelope up front) so a typo cannot silently
+// substitute the default gate, but stay resilient once a mission is already
+// running. It needs only a PolicySource, so both serve and the in-process editor
+// can validate without constructing a full approval Service.
+type PolicyValidator interface {
+	ValidatePolicy(ctx context.Context, policyName string) error
+}
+
+// NewPolicyValidator returns a PolicyValidator over src. An empty policy name
+// resolves through the same fallback chain Evaluate uses (fallbackPolicy, then
+// the built-in default), so "which envelope" means the same thing to a
+// creation-time check as it does at evaluation time.
+func NewPolicyValidator(src PolicySource, tenantID, fallbackPolicy string) PolicyValidator {
+	return &policyValidator{src: src, tenantID: tenantID, fallback: fallbackPolicy}
+}
+
+type policyValidator struct {
+	src      PolicySource
+	tenantID string
+	fallback string
+}
+
+func (v *policyValidator) ValidatePolicy(ctx context.Context, policyName string) error {
+	name := strings.TrimSpace(policyName)
+	if name == "" {
+		name = v.fallback
+	}
+	if name == "" {
+		name = defaultPolicyName
+	}
+	if _, err := loadPolicy(ctx, v.src, v.tenantID, name); err != nil {
+		return err
+	}
+	return nil
+}
+
 // approvalStore is the durable persistence surface RequestApproval, Respond,
 // SweepExpired, and ListPending need: create a pending row, look it up,
 // compare-and-swap it into a terminal state, and list rows by state. It is a

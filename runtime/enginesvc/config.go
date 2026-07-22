@@ -56,11 +56,11 @@ type Config struct {
 
 	WorkspaceID string
 	// TenantID is the tenant the engine operates under. When empty, defaults
-	// to runtimetypes.LocalTenantID. Proprietary builds pass real tenant IDs.
+	// to runtimetypes.LocalTenantID. Multi-tenant embedders pass real tenant IDs.
 	TenantID string
 	// HITLPolicySource supplies HITL policy documents (used only when EnableHITL
-	// is set and HITLService is nil). OSS passes a filesystem-backed source;
-	// tenant-scoped builds inject their own.
+	// is set and HITLService is nil). The default is a filesystem-backed source;
+	// embedders can inject their own.
 	HITLPolicySource hitlservice.PolicySource
 }
 

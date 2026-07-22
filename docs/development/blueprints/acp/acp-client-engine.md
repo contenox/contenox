@@ -90,11 +90,11 @@ absorb every `tool_call`, every `plan` update, and every
 completion. Everything that happened in between — files edited, commands run,
 services restarted — is invisible to the chain that called `Chat`.
 
-That is semantically leaky by default, and it is leaky in exactly the way
-`acp-chat-workspace.md`'s downward-repair doctrine exists to prevent, aimed in
+That is semantically leaky by default, and it is leaky in exactly the way the
+beam chat doctrine (`../beam/beam-on-acp.md`) exists to prevent, aimed in
 the opposite direction: a chain step is supposed to be a reviewable unit whose
-guardrail evaluates its *complete* output before anything proceeds (see that
-document's §C.0 on why blocking whole-message output is the architecturally
+guardrail evaluates its *complete* output before anything proceeds (blocking
+whole-message output is the architecturally
 honest default). A provider call that silently performed side effects defeats
 that guarantee — the guardrail reviews text, not the actions that produced it.
 
@@ -124,7 +124,7 @@ client core.
 
 **Invariant: if permission routing degrades into auto-approve — "skip HITL,
 it's just a sub-agent" — the entire governance value of driving that agent is
-gone.** The same failure mode `acp-chat-workspace.md` polices for inbound
+gone.** The same failure mode the beam chat doctrine polices for inbound
 approvals (a permission request rendered honestly, with the rule that gated it
 nameable) applies outbound: an operator must always be able to name which
 policy gated the sub-agent's last action.
@@ -150,7 +150,7 @@ the peer's response arrives) that the client core provides for
 `session/request_permission`, `fs/read_text_file`, and `terminal/create`.
 Solving it again for real external ACP agents, bespoke and non-reusable,
 would repeat that mistake; a future `/acp` outbound WebSocket dial (mirroring
-the inbound transport `acp-chat-workspace.md` specifies) likewise reuses the
+the inbound `/acp` WebSocket transport beam uses) likewise reuses the
 core rather than adding a third implementation.
 
 Symmetry worth noting: `acpsvc`'s own `local_shell` handling already expects
@@ -195,8 +195,8 @@ itself: an engine on a laptop opening a session on a `contenox acp`/`acpx`
 process running on a different host, exactly as it would open a session on
 Zed's or Claude Code's agent. Nothing about the client core, the permission
 routing invariant, or the registry pattern is special-cased for "another
-contenox" — that uniformity is the point. This is the composition the
-operator console (`../opsclient/operator-console.md`) is built on: a
+contenox" — that uniformity is the point. This is also the composition a
+remote-operations surface would be built on: a
 device-owning host drives a remote, operated host's `contenox acp` over the
 same client core that drives any other registered agent, with the same
 permission-routing invariant applying to the remote host's own HITL policy.

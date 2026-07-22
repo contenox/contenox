@@ -3,6 +3,7 @@ package vllm
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -35,16 +36,19 @@ type vLLMClient struct {
 }
 
 type chatRequest struct {
-	Model              string              `json:"model"`
-	Messages           []modelrepo.Message `json:"messages"`
-	Temperature        *float64            `json:"temperature,omitempty"`
-	MaxTokens          *int                `json:"max_tokens,omitempty"`
-	TopP               *float64            `json:"top_p,omitempty"`
-	Seed               *int                `json:"seed,omitempty"`
-	Stream             bool                `json:"stream,omitempty"`
-	Tools              []modelrepo.Tool    `json:"tools,omitempty"`
-	ReasoningEffort    string              `json:"reasoning_effort,omitempty"`
-	ChatTemplateKwargs map[string]any      `json:"chat_template_kwargs,omitempty"`
+	Model string `json:"model"`
+	// Messages is []any so text/tool turns serialize as the neutral
+	// modelrepo.Message (unchanged wire shape) while image-bearing turns
+	// serialize as the OpenAI content-parts form (see toVLLMRequestMessages).
+	Messages           []any            `json:"messages"`
+	Temperature        *float64         `json:"temperature,omitempty"`
+	MaxTokens          *int             `json:"max_tokens,omitempty"`
+	TopP               *float64         `json:"top_p,omitempty"`
+	Seed               *int             `json:"seed,omitempty"`
+	Stream             bool             `json:"stream,omitempty"`
+	Tools              []modelrepo.Tool `json:"tools,omitempty"`
+	ReasoningEffort    string           `json:"reasoning_effort,omitempty"`
+	ChatTemplateKwargs map[string]any   `json:"chat_template_kwargs,omitempty"`
 }
 
 type chatResponse struct {
@@ -168,6 +172,56 @@ func (c *vLLMClient) sendRequest(ctx context.Context, endpoint string, request i
 	return nil
 }
 
+// vllmImageMessage is the OpenAI content-parts form of a message sent to
+// vLLM's chat/completions endpoint when it carries image attachments.
+type vllmImageMessage struct {
+	Role    string            `json:"role"`
+	Content []vllmContentPart `json:"content"`
+}
+
+type vllmContentPart struct {
+	Type     string        `json:"type"`
+	Text     string        `json:"text,omitempty"`
+	ImageURL *vllmImageURL `json:"image_url,omitempty"`
+}
+
+type vllmImageURL struct {
+	URL string `json:"url"`
+}
+
+// toVLLMRequestMessages maps neutral messages to the request wire form: an
+// image-bearing message becomes the OpenAI content-parts shape, while every
+// other message stays a raw modelrepo.Message so text and tool behavior keep
+// their existing wire shape byte-for-byte.
+func toVLLMRequestMessages(messages []modelrepo.Message) []any {
+	out := make([]any, 0, len(messages))
+	for _, m := range messages {
+		if len(m.Images) == 0 {
+			out = append(out, m)
+			continue
+		}
+		parts := make([]vllmContentPart, 0, len(m.Images)+1)
+		if m.Content != "" {
+			parts = append(parts, vllmContentPart{Type: "text", Text: m.Content})
+		}
+		for _, img := range m.Images {
+			parts = append(parts, vllmContentPart{
+				Type:     "image_url",
+				ImageURL: &vllmImageURL{URL: vllmImageDataURI(img.MimeType, img.Data)},
+			})
+		}
+		out = append(out, vllmImageMessage{Role: m.Role, Content: parts})
+	}
+	return out
+}
+
+func vllmImageDataURI(mimeType string, data []byte) string {
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
+	return "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)
+}
+
 func buildChatRequest(modelName string, messages []modelrepo.Message, args []modelrepo.ChatArgument, canThink ...bool) chatRequest {
 	config := &modelrepo.ChatConfig{}
 	for _, arg := range args {
@@ -180,7 +234,7 @@ func buildChatRequest(modelName string, messages []modelrepo.Message, args []mod
 func buildChatRequestFromConfig(modelName string, messages []modelrepo.Message, config *modelrepo.ChatConfig, canThink ...bool) chatRequest {
 	req := chatRequest{
 		Model:       modelName,
-		Messages:    messages,
+		Messages:    toVLLMRequestMessages(messages),
 		Temperature: config.Temperature,
 		MaxTokens:   config.MaxTokens,
 		TopP:        config.TopP,

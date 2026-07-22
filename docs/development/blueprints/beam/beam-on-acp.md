@@ -20,8 +20,7 @@ is not built as a new client app; it lives in the runtime
 (`../acp/acp-client-engine.md`). Where that capability needs a human screen
 (reviewing a driven agent's permission requests, e.g. for remote-host
 administration), Beam is that screen — the same ACP chat workspace this
-document specifies, not a separate ops client
-(`../opsclient/operator-console.md`).
+document specifies, not a separate ops client.
 
 ## The rule that forces this
 

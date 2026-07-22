@@ -93,6 +93,12 @@ func LocalProviderAdapter(ctx context.Context, tracker libtracker.ActivityTracke
 				CanPrompt:     true,
 				CanStream:     true,
 				CanEmbed:      true,
+				// Vision is NOT capable-by-construction: it needs the node to have
+				// resolved the model's projector/vision encoder, which reconcile
+				// reports per model. The resolver routes image-bearing requests on
+				// this flag, so dropping it here would make remote vision models
+				// unreachable for image input.
+				CanVision: m.CanVision,
 			}
 			var prov modelrepo.Provider
 			if engine == "openvino" {

@@ -14,13 +14,15 @@ import (
 const KeyPrefix = "model-capability:"
 
 type Override struct {
-	Provider string `json:"provider"`
-	Model    string `json:"model"`
-	CanThink *bool  `json:"canThink,omitempty"`
+	Provider  string `json:"provider"`
+	Model     string `json:"model"`
+	CanThink  *bool  `json:"canThink,omitempty"`
+	CanVision *bool  `json:"canVision,omitempty"`
 }
 
 type storedOverride struct {
-	CanThink *bool `json:"canThink"`
+	CanThink  *bool `json:"canThink"`
+	CanVision *bool `json:"canVision,omitempty"`
 }
 
 type Service struct {
@@ -44,6 +46,16 @@ func Key(provider, model string) (string, string, string, error) {
 }
 
 func (s Service) SetThink(ctx context.Context, provider, model string, canThink bool) (*Override, error) {
+	return s.set(ctx, provider, model, func(v *storedOverride) { v.CanThink = &canThink })
+}
+
+func (s Service) SetVision(ctx context.Context, provider, model string, canVision bool) (*Override, error) {
+	return s.set(ctx, provider, model, func(v *storedOverride) { v.CanVision = &canVision })
+}
+
+// set merges one capability change into the stored override so setting think
+// and vision independently never clobbers the other.
+func (s Service) set(ctx context.Context, provider, model string, apply func(*storedOverride)) (*Override, error) {
 	if s.store == nil {
 		return nil, fmt.Errorf("store is required")
 	}
@@ -51,7 +63,11 @@ func (s Service) SetThink(ctx context.Context, provider, model string, canThink 
 	if err != nil {
 		return nil, err
 	}
-	v := storedOverride{CanThink: &canThink}
+	var v storedOverride
+	if err := s.store.GetKV(ctx, key, &v); err != nil && !errors.Is(err, libdb.ErrNotFound) {
+		return nil, err
+	}
+	apply(&v)
 	data, err := json.Marshal(v)
 	if err != nil {
 		return nil, err
@@ -59,7 +75,7 @@ func (s Service) SetThink(ctx context.Context, provider, model string, canThink 
 	if err := s.store.SetKV(ctx, key, json.RawMessage(data)); err != nil {
 		return nil, err
 	}
-	return &Override{Provider: p, Model: m, CanThink: &canThink}, nil
+	return &Override{Provider: p, Model: m, CanThink: v.CanThink, CanVision: v.CanVision}, nil
 }
 
 func (s Service) Get(ctx context.Context, provider, model string) (*Override, bool, error) {
@@ -77,7 +93,7 @@ func (s Service) Get(ctx context.Context, provider, model string) (*Override, bo
 		}
 		return nil, false, err
 	}
-	return &Override{Provider: p, Model: m, CanThink: v.CanThink}, true, nil
+	return &Override{Provider: p, Model: m, CanThink: v.CanThink, CanVision: v.CanVision}, true, nil
 }
 
 func (s Service) Unset(ctx context.Context, provider, model string) (bool, error) {

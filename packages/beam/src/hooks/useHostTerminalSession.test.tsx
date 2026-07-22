@@ -29,9 +29,9 @@ describe('createHostTerminalSession', () => {
 
   it('includes a non-blank cwd', async () => {
     vi.mocked(api.createTerminalSession).mockResolvedValueOnce({ id: 'x', wsPath: '/ws' });
-    await createHostTerminalSession('/home/naro/project', 120, 40);
+    await createHostTerminalSession('/home/user/project', 120, 40);
     expect(api.createTerminalSession).toHaveBeenCalledWith({
-      cwd: '/home/naro/project',
+      cwd: '/home/user/project',
       cols: 120,
       rows: 40,
     });

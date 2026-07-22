@@ -2,7 +2,7 @@
 
 Read and write your HubSpot CRM with contenox using HubSpot's own MCP server — OAuth 2.1 + PKCE, your tokens stored locally, your data routed direct between CLI and HubSpot.
 
-This recipe is the counterpart to [Leads → HubSpot](/cookbook/leads-to-hubspot/). That one shows the OpenAPI route (narrow hand-curated tool surface, bearer token). This one shows the MCP route (HubSpot's full curated tool set, OAuth with pre-issued client credentials). Same outcome, different integration pattern — pick whichever fits your workflow.
+This recipe is the counterpart to [Leads → HubSpot](/docs/use-cases/leads-to-hubspot/). That one shows the OpenAPI route (narrow hand-curated tool surface, bearer token). This one shows the MCP route (HubSpot's full curated tool set, OAuth with pre-issued client credentials). Same outcome, different integration pattern — pick whichever fits your workflow.
 
 The wider point: the **OAuth-with-pre-issued-credentials** path also works for Salesforce, Microsoft Graph, and any other vendor MCP that requires a manually-registered OAuth app (no RFC 7591 dynamic client registration). HubSpot is just the example.
 
@@ -85,28 +85,28 @@ Anything contenox normally does with tools, now talking to HubSpot:
 contenox chat "use hubspot to read the companies we have there"
 ```
 
-Sample output from a live run against a CRM populated by the [other recipe](/cookbook/leads-to-hubspot/):
+Sample output from a live run against a CRM populated by the [other recipe](/docs/use-cases/leads-to-hubspot/):
 
 ```text
 Here are the companies currently in your HubSpot CRM (showing the first 5 out of 6):
 
-1. Clove (ID: 429875908839)
+1. Umbrella Labs (ID: 100000000005)
    - Description: A fintech SaaS platform that aims to democratize access to professional financial advice…
    - Associated Contacts: 2
 
-2. ThatRound (ID: 429786803417)
+2. Initech (ID: 100000000004)
    - Description: An AI-powered SaaS fundraising marketplace…
    - Associated Contacts: 1
 
-3. Round (Round Treasury) (ID: 429794020561)
+3. Globex (Globex Treasury) (ID: 100000000003)
    - Description: An AI-powered finance automation platform…
    - Associated Contacts: 2
 
-4. Paygentic (ID: 429822814428)
+4. Northwind Traders (ID: 100000000002)
    - Description: Provides an agent-first billing and payments infrastructure…
    - Associated Contacts: 2
 
-5. Cyb3r Operations (ID: 429788612851)
+5. Acme Robotics (ID: 100000000001)
    - Description: A cybersecurity SaaS platform…
    - Associated Contacts: 1
 ```
@@ -142,4 +142,4 @@ The supported objects: contacts, companies, deals, tickets, line items, products
 - **Sensitive Data setting blocks activities.** If your HubSpot account has Sensitive Data turned on, the MCP server blocks access to activity objects (calls, emails, meetings, notes, tasks) — even though they're listed as supported. This is HubSpot-specific behavior; standard CRM API calls are unaffected.
 - **Token refresh on stale sessions.** If the refresh token expires (long inactivity, or you revoked access in HubSpot), `contenox mcp auth hubspot` re-runs the browser flow cleanly.
 - **The MCP server uses HubSpot's CRM search API under the hood**, which doesn't include vector search. For semantic similarity over CRM records, you'd still need a separate embedding pipeline.
-- **OpenAPI route still has its place.** For workflows where you want a narrow, hand-curated tool surface (e.g. "the agent can only create companies and contacts, nothing else"), the [OpenAPI recipe](/cookbook/leads-to-hubspot/) is the better fit — `manage_crm_objects` in the MCP is broad enough that scoping it down requires HITL policy rules, not spec subsetting.
+- **OpenAPI route still has its place.** For workflows where you want a narrow, hand-curated tool surface (e.g. "the agent can only create companies and contacts, nothing else"), the [OpenAPI recipe](/docs/use-cases/leads-to-hubspot/) is the better fit — `manage_crm_objects` in the MCP is broad enough that scoping it down requires HITL policy rules, not spec subsetting.

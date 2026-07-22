@@ -172,7 +172,7 @@ This is the narrow "via ssh" flow for producing the Windows dep bundle when your
 2. On the Windows worker (Git Bash session):
 
    ```bash
-   cd /c/Users/builder/src/github.com/contenox/enterprise/runtime
+   cd /c/Users/builder/src/github.com/contenox/runtime
 
    # The llama runtime (DLLs + stamp) and optional OpenVINO layout must already exist
    # from prior native toolchain work on this machine. Example layout expectations

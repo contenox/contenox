@@ -32,3 +32,26 @@ func TestUnit_ModelCapabilitySetCmd_PersistsThinkOverride(t *testing.T) {
 	require.NotNil(t, override.CanThink)
 	require.True(t, *override.CanThink)
 }
+
+func TestUnit_ModelCapabilitySetCmd_PersistsVisionOverride(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "capability-vision-cli.db")
+	cmd := testCobraCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	require.NoError(t, cmd.Root().PersistentFlags().Set("db", dbPath))
+	cmd.Flags().String("think", "", "")
+	cmd.Flags().String("vision", "", "")
+	require.NoError(t, cmd.Flags().Set("vision", "true"))
+
+	require.NoError(t, modelCapabilitySetCmd.RunE(cmd, []string{"Ollama", "my-vlm"}))
+
+	db, err := libdb.NewSQLiteDBManager(context.Background(), dbPath, runtimetypes.SchemaSQLite)
+	require.NoError(t, err)
+	defer db.Close()
+
+	override, ok, err := modelcapability.New(runtimetypes.New(db.WithoutTransaction())).Get(context.Background(), "ollama", "my-vlm")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Nil(t, override.CanThink, "vision-only override must not fabricate a think override")
+	require.NotNil(t, override.CanVision)
+	require.True(t, *override.CanVision)
+}

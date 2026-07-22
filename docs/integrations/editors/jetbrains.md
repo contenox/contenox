@@ -94,7 +94,6 @@ Subsequent ACP sessions write structured operation traces to `~/.contenox/teleme
 
 ## Limitations
 
-- **Assistant text is not streamed incrementally** with tool-using chains — it appears at the end of each generation step. The synchronous chain shape works fine in the meantime.
 - **No interactive embedded terminal.** GoLand does not advertise the ACP terminal capability; `local_shell` commands run and report output rather than opening a live terminal in the IDE.
 
 ---

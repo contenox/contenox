@@ -12,8 +12,7 @@ import (
 // Client-side failure sentinels for a consumer that drives an agent through a
 // ClientSideConnection (and, typically, an acpexec subprocess). They exist so
 // a driver can classify failures — see IsStartupError / IsTimeoutError /
-// IsRetryableError — instead of string-matching, the lesson hash learned the
-// hard way (tmp/hash/internal/agent/errors.go). libacp itself never returns
+// IsRetryableError — instead of string-matching. libacp itself never returns
 // these from its wire methods; they are the vocabulary a driver wraps its own
 // transport/lifecycle failures in.
 var (
@@ -26,22 +25,20 @@ var (
 	// ErrIdleTimeout marks a turn that went silent — no session/update and no
 	// result — past a driver's idle deadline. Distinct from an overall
 	// context deadline so a driver can reset an idle watchdog on every received
-	// message (hash's pattern) rather than cap total turn time.
+	// message rather than cap total turn time.
 	ErrIdleTimeout = errors.New("libacp: agent idle timeout")
 
 	// ErrNoDisplayableOutput marks a prompt turn that ended with a normal stop
 	// reason but never produced a renderable agent message — the client-side
-	// mirror of the agent-side empty-response bug this repo just fixed. A driver
-	// gets an explicit, observable failure class instead of silently showing an
-	// empty answer (hash's noOutputPromptError, acp.go:979). Use TurnTracker to
-	// detect it over a turn's session/update stream.
+	// mirror of the agent-side empty-response case. A driver gets an explicit,
+	// observable failure class instead of silently showing an empty answer.
+	// Use TurnTracker to detect it over a turn's session/update stream.
 	ErrNoDisplayableOutput = errors.New("libacp: prompt turn produced no displayable output")
 )
 
 // IsStartupError reports whether err indicates the agent could not be started
-// or is unusable as configured — conditions a retry cannot cure. Adopts hash's
-// classification (errors.go:26): a missing binary or a marked start failure is
-// terminal, not transient.
+// or is unusable as configured — conditions a retry cannot cure. A missing
+// binary or a marked start failure is terminal, not transient.
 func IsStartupError(err error) bool {
 	if err == nil {
 		return false
@@ -51,8 +48,7 @@ func IsStartupError(err error) bool {
 
 // IsTimeoutError reports whether err indicates a turn ran out of time — either
 // a context deadline or an idle-watchdog trip. Split from IsRetryableError so a
-// driver can, like hash (errors.go:36), treat "slow/stuck" differently from a
-// hard protocol error.
+// driver can treat "slow/stuck" differently from a hard protocol error.
 //
 // Two recovery paths, because a deadline that crosses JSON-RPC loses its Go
 // identity: a local error (including one AsError wrapped but that never left
@@ -70,7 +66,7 @@ func IsTimeoutError(err error) bool {
 }
 
 // IsRetryableError reports whether retrying the turn (typically after respawning
-// the agent) might succeed. Mirrors hash's taxonomy (errors.go:44): an explicit
+// the agent) might succeed. An explicit
 // cancellation and startup failures are never retryable; timeouts, a dropped
 // transport (ErrConnectionClosed / EOF / closed pipe / EPIPE / ECONNRESET) and
 // an empty turn are. The trailing string match is a cross-platform safety net

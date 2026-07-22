@@ -2,7 +2,7 @@
 
 > **Status:** initial blueprint. Captures the shift from Linux/CLI-shaped distribution to Windows GUI/product experience.  
 > **Owner:** runtime  
-> **Companions:** `../windows-development.md` (contributor/build side), modeld release artifacts, `beam/http-ui-revival.md`, vscode/ docs.
+> **Companions:** `../windows-development.md` (contributor/build side), `../modeld/release-artifacts.md`, vscode/ docs.
 
 ## Problem
 

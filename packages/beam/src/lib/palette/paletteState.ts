@@ -5,7 +5,7 @@ import type { PaletteItem, PaletteItemType } from './types';
 /**
  * The palette's pure core: how items become a matched field set, how a query +
  * frecency become a ranked result list, and the keyboard state machine. All of
- * it is synchronous and side-effect-free so the Sublime-nature latency budget
+ * it is synchronous and side-effect-free so the instant-feel latency budget
  * (filter on every keystroke over the full in-memory set, no async, no spinner)
  * is met by construction and is unit-testable without a DOM.
  */

@@ -23,6 +23,11 @@ import (
 // verdicts are computed by the agent's real policy engine. When nil, requesting
 // filter=agent returns an unprocessable-entity error (the filter is not available
 // on that deployment) while the unfiltered tree is unchanged.
+//
+// This is the PRIMARY mount serve uses (serverapi registers it whenever a
+// workspace allowlist is configured) and the one the OpenAPI spec documents;
+// the single-root AddRoutes mount is the ProjectRoot fallback and is the one
+// carrying the exclude directive.
 func AddWorkspaceRoutes(mux *http.ServeMux, factory *vfs.Factory, hitlFor PolicyEvaluatorFactory) error {
 	if factory == nil {
 		return fmt.Errorf("localfileapi: workspace factory is nil")
@@ -41,13 +46,13 @@ func AddWorkspaceRoutes(mux *http.ServeMux, factory *vfs.Factory, hitlFor Policy
 	}
 
 	// Method expressions, not closures: `wrap`'s parameter type IS the method
-	// expression signature, so the closures were redundant — and they hid the
-	// handler's name from the OpenAPI generator, which derives each operation's
-	// id and description from the handler it can name. This mount registers the
-	// same method+path pairs as AddRoutes, so an unnameable handler here produced
-	// a path-slug operationId and a missing response schema depending on which
-	// registration the generator visited last. See
-	// docs/development/api_spec_generation.md.
+	// expression signature, so closures would be redundant. The OpenAPI
+	// generator resolves `wh.wrap((*handler).list)` to the named handler method
+	// (annotations, operationId, summary) and additionally derives the `root`
+	// query parameter from wrap's own body — so this mount documents the full
+	// per-root surface. AddRoutes registers the same method+path pairs for the
+	// ProjectRoot fallback and is openapi:exclude'd (a duplicate registration
+	// of the same METHOD+path is otherwise a generation error).
 	mux.HandleFunc("GET /files", wh.wrap((*handler).list))
 	mux.HandleFunc("GET /files/stat", wh.wrap((*handler).stat))
 	mux.HandleFunc("GET /files/content", wh.wrap((*handler).content))
@@ -94,7 +99,7 @@ func (wh *workspaceHandler) serviceFor(resolvedRoot string) (localfileservice.Se
 // dispatches to the per-root handler.
 func (wh *workspaceHandler) wrap(fn func(*handler, http.ResponseWriter, *http.Request)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		root := r.URL.Query().Get("root")
+		root := apiframework.GetQueryParam(r, "root", "", "Workspace root the request operates in: a granted root (or a directory under one); empty or \"/\" resolves to the default (first-configured) root.")
 		resolved, ok := wh.factory.Allows(root)
 		if !ok {
 			_ = apiframework.Error(w, r,

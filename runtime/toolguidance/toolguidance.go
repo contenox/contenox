@@ -1,18 +1,17 @@
 // Package toolguidance is the attention layer's Stage 0 — the inward face.
 //
-// The maintainer's 2021 thesis ("On the impact of automatic bookmarks for
-// predicting navigation cost through sourcecode") reached two conclusions this
-// package turns inward, from a human editing code to a MODEL navigating a repo
+// Two conclusions about code navigation drive this
+// package, turned inward from a human editing code to a MODEL navigating a repo
 // through tools:
 //
-//   - The blind-spot doctrine (Guzzi's paradox): developers call bookmarks
+//   - The blind-spot doctrine: developers call bookmarks
 //     useful and never set them. Models are the same, only worse — they cannot
 //     judge the navigation value of their own tool calls and will never curate a
 //     navigation memory. So orientation must be an automatic by-product of the
 //     work. Here it is derived, never asked for: a deterministic counter over
 //     (tool, path, args-fingerprint) that the harness maintains and the model
 //     merely reads.
-//   - The metric lesson (the thesis's own bolded null result): navigation COUNT
+//   - The metric lesson: navigation COUNT
 //     is not the signal; SCOPE is — how few paths a unit touched, how fast it
 //     abandoned a wrong one. Corollary: derailment is a scope anomaly before it
 //     is anything else (the first real derailed fleet unit, wandering $HOME
@@ -45,9 +44,9 @@
 // Options, so the day ModelProfile lands, this package changes at its edge, not
 // its core.
 //
-// # What the eval harness must falsify (lesson 3)
+// # What the eval harness must falsify
 //
-// The thesis reported its null honestly; so must this. Do NOT assume these
+// Do NOT assume these
 // counters help — measure it. The falsifiable claim is narrow and A/B-able on
 // beam-over-LAN's recorded sessions: with guidance on, a unit's repeat-call and
 // re-read rates fall and its landed-scope shrinks, WITHOUT a rise in

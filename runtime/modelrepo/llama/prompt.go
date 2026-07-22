@@ -7,6 +7,7 @@ import (
 
 	"github.com/contenox/runtime/runtime/contextasm"
 	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/transport"
 )
 
 const (
@@ -50,6 +51,7 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 
 	var stable, volatile strings.Builder
 	var segments []ManifestSegment
+	var volatileImages []transport.ImagePart
 	seenVolatile := false
 
 	for _, m := range messages {
@@ -74,6 +76,15 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 
 		var start, end int
 		text := m.Content
+		if len(m.Images) > 0 {
+			// Images ride on the volatile suffix only: the stable prefix is keyed
+			// on a token-only tape and modeld rejects image parts there.
+			if isStable {
+				return promptPlan{}, NewUnsupportedFeatureError("image attachments on the stable system prefix")
+			}
+			text = imageMarkerText(m.Images, text)
+			volatileImages = appendTransportImages(volatileImages, m.Images)
+		}
 		if isStable {
 			start = stable.Len()
 			stable.WriteString(text)
@@ -110,8 +121,32 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 	}
 	return promptPlan{
 		Stable:   PrefixInput{Text: stableText, Manifest: manifest, Tools: toolsJSON},
-		Volatile: SuffixInput{Text: volatileText, Manifest: manifest},
+		Volatile: SuffixInput{Text: volatileText, Manifest: manifest, Images: volatileImages},
 	}, nil
+}
+
+// imageMarkerText prefixes one media marker per attached image ahead of the
+// message text, in attachment order. modeld's mtmd path splits the templated
+// prompt at each marker and substitutes the model's native media tokens;
+// SuffixInput.Images carries the bytes in the same order the markers appear in
+// the volatile text.
+func imageMarkerText(images []modelrepo.ImagePart, content string) string {
+	var b strings.Builder
+	for range images {
+		b.WriteString(transport.MediaMarker)
+		b.WriteByte('\n')
+	}
+	b.WriteString(content)
+	return b.String()
+}
+
+// appendTransportImages converts message image parts to their transport wire
+// form, preserving order (order pairs each image with its marker).
+func appendTransportImages(dst []transport.ImagePart, images []modelrepo.ImagePart) []transport.ImagePart {
+	for _, img := range images {
+		dst = append(dst, transport.ImagePart{Data: img.Data, MimeType: img.MimeType})
+	}
+	return dst
 }
 
 func normalizeMessagesForTemplate(messages []modelrepo.Message, toolsJSON string) ([]modelrepo.Message, error) {
@@ -124,12 +159,18 @@ func normalizeMessagesForTemplate(messages []modelrepo.Message, toolsJSON string
 		}
 		switch m.Role {
 		case "system":
+			// System images would be dropped by the system-part merge and would
+			// land on the stable prefix anyway, which rejects images — refuse
+			// instead of silently discarding the attachment.
+			if len(m.Images) > 0 {
+				return nil, NewUnsupportedFeatureError("image attachments on system messages")
+			}
 			if content := strings.TrimSpace(m.Content); content != "" {
 				systemParts = append(systemParts, content)
 			}
 		case "tool":
 			if textOnly {
-				turns = append(turns, modelrepo.Message{Role: "user", Content: toolResultText(m)})
+				turns = append(turns, modelrepo.Message{Role: "user", Content: toolResultText(m), Images: m.Images})
 			} else {
 				turns = append(turns, m)
 			}
@@ -165,7 +206,8 @@ func coalesceAlternatingTextTurns(messages []modelrepo.Message) []modelrepo.Mess
 		}
 		m.ToolCalls = nil
 		m.ToolCallID = ""
-		if strings.TrimSpace(m.Content) == "" {
+		// An image-only turn carries meaning without text: keep it.
+		if strings.TrimSpace(m.Content) == "" && len(m.Images) == 0 {
 			continue
 		}
 		if len(out) == 0 && m.Role != "user" {
@@ -174,6 +216,9 @@ func coalesceAlternatingTextTurns(messages []modelrepo.Message) []modelrepo.Mess
 		}
 		if n := len(out); n > 0 && out[n-1].Role == m.Role {
 			out[n-1].Content = joinTurnText(out[n-1].Content, m.Content)
+			// Merged images keep list order so each image still pairs with its
+			// media marker when the plan is built.
+			out[n-1].Images = append(out[n-1].Images, m.Images...)
 			continue
 		}
 		out = append(out, m)

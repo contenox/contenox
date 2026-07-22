@@ -12,16 +12,30 @@
  *   workspace.access_unreachable   = "Outside the workspace boundary"
  *   workspace.access_read          = "Read"
  *   workspace.access_write         = "Write"
+ *   workspace.filter_label         = "Filter files"
+ *   workspace.filter_type          = "Filter type"
+ *   workspace.filter_type_ext      = "Extension"
+ *   workspace.filter_type_glob     = "Glob"
+ *   workspace.filter_type_name     = "Name / path"
+ *   workspace.filter_type_access   = "Access"
+ *   workspace.filter_placeholder_ext  = "md, ts, go"
+ *   workspace.filter_placeholder_glob = "*.md"
+ *   workspace.filter_placeholder_name = "name or path…"
+ *   workspace.filter_searching     = "Searching…"
+ *   workspace.filter_no_matches    = "No files match"
+ *   workspace.filter_truncated     = "Showing first {{count}} — narrow your filter"
  */
-import { Button, FileTree, type FileTreeNode } from '@contenox/ui';
+import { Button, FileTree, SearchBar, Select, type FileTreeNode } from '@contenox/ui';
 import { RefreshCw, ShieldCheck } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RootChip } from '../../../components/workspace/RootChip';
 import { WorkspaceBoundaryNotice } from '../../../components/workspace/WorkspaceBoundaryNotice';
 import { useWorkspaceRoots } from '../../../hooks/useWorkspaceRoots';
 import { type UseWorkspaceFilesResult } from '../../../hooks/useWorkspaceFiles';
+import { useWorkspaceFind } from '../../../hooks/useWorkspaceFind';
 import type { WorkspaceRoot } from '../../../lib/types';
+import { availableFilterTypes, buildTreeFromMatches, type WorkspaceFilterType } from '../lib/workspaceFilter';
 import { toFileTreeNodes, type AccessLabels } from '../lib/workspaceTree';
 
 export interface WorkspacePanelProps {
@@ -49,19 +63,22 @@ export interface WorkspacePanelProps {
  */
 export function WorkspacePanel({ root, files, onOpenFile, selectedFilePath }: WorkspacePanelProps) {
   const { t } = useTranslation();
+  // The filter registry carries i18n keys as plain strings (it must not depend
+  // on the generated key union); resolve those dynamic keys through a loosened t.
+  const tk = t as (key: string) => string;
   const { roots } = useWorkspaceRoots();
-  const { agentView, setAgentView } = files;
+  const { agentView, setAgentView, cache, ensureLoaded } = files;
 
   const handleNodeSelect = useCallback(
     (node: FileTreeNode) => {
       const path = node.path ?? node.id;
       if (node.isDirectory) {
-        files.ensureLoaded(path);
+        ensureLoaded(path);
         return;
       }
       onOpenFile(path);
     },
-    [files, onOpenFile],
+    [ensureLoaded, onOpenFile],
   );
 
   const accessLabels = useMemo<AccessLabels>(
@@ -73,14 +90,61 @@ export function WorkspacePanel({ root, files, onOpenFile, selectedFilePath }: Wo
     [t],
   );
 
-  const nodes = useMemo(
-    () => toFileTreeNodes(files.cache, undefined, agentView ? accessLabels : undefined),
-    [files.cache, agentView, accessLabels],
+  const baseNodes = useMemo(
+    () => toFileTreeNodes(cache, undefined, agentView ? accessLabels : undefined),
+    [cache, agentView, accessLabels],
   );
+
+  // --- Filter facility (extensible; types live in `workspaceFilter.ts`). ---
+  const filterTypes = useMemo(() => availableFilterTypes({ agentView }), [agentView]);
+  const [filterTypeId, setFilterTypeId] = useState(filterTypes[0]?.id ?? 'ext');
+  const [filterValue, setFilterValue] = useState('');
+  // Debounce the *applied* value so typing stays instant while the pruned tree
+  // (and the per-query FileTree remount) only churns after a short pause.
+  const [appliedValue, setAppliedValue] = useState('');
+  useEffect(() => {
+    const id = setTimeout(() => setAppliedValue(filterValue), 200);
+    return () => clearTimeout(id);
+  }, [filterValue]);
+
+  // The selected type, kept valid as the available set changes (agent view
+  // toggles `access` in/out). References are the stable module-level objects.
+  const activeType: WorkspaceFilterType | undefined =
+    filterTypes.find(ft => ft.id === filterTypeId) ?? filterTypes[0];
+  const inputSpec = activeType?.input;
+  const filterPlaceholder = inputSpec?.kind === 'text' ? tk(inputSpec.placeholderKey) : '';
+  const optionValues = inputSpec?.kind === 'options' ? inputSpec.options : [];
+  const query = useMemo(() => activeType?.toQuery(appliedValue) ?? null, [activeType, appliedValue]);
+  const filterActive = query !== null;
+
+  // A filter runs a SERVER-SIDE recursive find: one streamed request returns
+  // every matching file across the tree (the per-directory client walk is gone).
+  // An empty `globs` (the `access` type) means "walk everything" → `*`. Under
+  // agent view we request filter=agent so matches carry the same verdicts the
+  // lazy tree shows, and the `access` type can refine on them.
+  const findGlobs = useMemo(
+    () => (query ? (query.globs.length > 0 ? query.globs : ['*']) : []),
+    [query],
+  );
+  const find = useWorkspaceFind({
+    globs: findGlobs,
+    root: root ?? undefined,
+    filter: agentView ? 'agent' : undefined,
+  });
+
+  // The type's optional client-side refinement (e.g. the access verdict), then
+  // the flat matches assembled into a FileTree.
+  const filteredNodes = useMemo(() => {
+    if (!query) return [];
+    const refined = query.refine ? find.entries.filter(query.refine) : find.entries;
+    return buildTreeFromMatches(refined, agentView ? accessLabels : undefined);
+  }, [query, find.entries, agentView, accessLabels]);
+
+  const nodes = filterActive ? filteredNodes : baseNodes;
 
   if (!root) return null;
 
-  const isEmptyRoot = !files.rootLoading && !files.error && nodes.length === 0;
+  const isEmptyRoot = !files.rootLoading && !files.error && baseNodes.length === 0;
   // Prefer the allowlisted root (so the chip can flag the default); fall back to
   // a plain chip for the session's own root when the allowlist is absent.
   const activeRoot: WorkspaceRoot = roots.find(r => r.path === root) ?? { path: root, default: false };
@@ -117,6 +181,47 @@ export function WorkspacePanel({ root, files, onOpenFile, selectedFilePath }: Wo
         <RootChip root={activeRoot} />
       </div>
 
+      <div className="border-surface-200 dark:border-dark-surface-600 flex shrink-0 flex-col gap-1.5 border-b px-3 py-2">
+        <Select
+          aria-label={t('workspace.filter_type')}
+          value={activeType?.id ?? ''}
+          onChange={e => {
+            setFilterTypeId(e.target.value);
+            setFilterValue('');
+          }}
+          options={filterTypes.map(ft => ({ value: ft.id, label: tk(ft.labelKey) }))}
+          className="w-full"
+        />
+        {inputSpec?.kind === 'options' ? (
+          <Select
+            aria-label={t('workspace.filter_label')}
+            value={filterValue}
+            onChange={e => setFilterValue(e.target.value)}
+            placeholder={t('workspace.filter_label')}
+            options={optionValues.map(o => ({ value: o, label: o }))}
+            className="w-full"
+          />
+        ) : (
+          <SearchBar
+            aria-label={t('workspace.filter_label')}
+            value={filterValue}
+            onChange={e => setFilterValue(e.target.value)}
+            onClear={() => setFilterValue('')}
+            placeholder={filterPlaceholder}
+          />
+        )}
+        {filterActive && find.status === 'searching' && (
+          <span className="text-text-muted dark:text-dark-text-muted px-0.5 text-[11px]">
+            {t('workspace.filter_searching')}
+          </span>
+        )}
+        {filterActive && find.truncated && (
+          <span className="text-text-muted dark:text-dark-text-muted px-0.5 text-[11px]">
+            {t('workspace.filter_truncated', { count: find.count })}
+          </span>
+        )}
+      </div>
+
       {agentView && (
         <div className="border-surface-200 dark:border-dark-surface-600 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b px-3 py-1.5 text-[11px] text-text-muted dark:text-dark-text-muted">
           <LegendItem dotClass="ring-1 ring-inset ring-success-500/60" label={t('workspace.legend_allowed')} />
@@ -135,13 +240,33 @@ export function WorkspacePanel({ root, files, onOpenFile, selectedFilePath }: Wo
           />
         ) : null}
 
-        {files.rootLoading && nodes.length === 0 ? (
+        {files.rootLoading && baseNodes.length === 0 ? (
           <span className="text-text-muted dark:text-dark-text-muted block px-1 py-2 text-xs">{t('workspace.loading')}</span>
         ) : isEmptyRoot ? (
           <span className="text-text-muted dark:text-dark-text-muted block px-1 py-2 text-xs">{t('workspace.empty')}</span>
+        ) : filterActive ? (
+          find.status === 'refusal' || find.status === 'error' ? (
+            <span className="text-error-600 dark:text-dark-error-500 block px-1 py-2 text-xs">
+              {find.refusalMessage ?? find.errorMessage}
+            </span>
+          ) : nodes.length === 0 ? (
+            <span className="text-text-muted dark:text-dark-text-muted block px-1 py-2 text-xs">
+              {find.status === 'searching' ? t('workspace.filter_searching') : t('workspace.filter_no_matches')}
+            </span>
+          ) : (
+            <FileTree
+              key={`f:${activeType?.id}:${appliedValue}`}
+              nodes={nodes}
+              directoryClickMode="expand"
+              defaultExpanded={undefined}
+              selectedId={selectedFilePath ?? undefined}
+              onNodeSelect={handleNodeSelect}
+            />
+          )
         ) : (
           <FileTree
-            nodes={nodes}
+            key="all"
+            nodes={baseNodes}
             directoryClickMode="expand"
             defaultExpanded={new Set<string>()}
             selectedId={selectedFilePath ?? undefined}

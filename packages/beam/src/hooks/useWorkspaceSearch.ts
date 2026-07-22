@@ -15,7 +15,7 @@ import type { WorkspaceSearchMatch } from '../lib/types';
  * notice), `dependency` (501 ripgrep absent → the teaching state), `done` (with
  * `truncated` → the "refine your search" affordance), and `error`. The component
  * owns the input value; this hook owns the search — so the input stays instant
- * (the Sublime-nature law) while the stream is the async layer behind it.
+ * (the instant-feel law) while the stream is the async layer behind it.
  */
 
 export type SearchStatus = 'idle' | 'searching' | 'done' | 'refusal' | 'dependency' | 'error';

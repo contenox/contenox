@@ -62,8 +62,9 @@ type modelInfo struct {
 }
 
 type modelCapabilities struct {
-	Thinking thinkingCapability `json:"thinking"`
-	Effort   effortCapability   `json:"effort"`
+	Thinking   thinkingCapability `json:"thinking"`
+	Effort     effortCapability   `json:"effort"`
+	ImageInput capabilitySupport  `json:"image_input"`
 }
 
 type thinkingCapability struct {
@@ -139,6 +140,7 @@ func (p *catalogProvider) listModels(ctx context.Context, path string) ([]modelr
 					CanStream:       true,
 					CanPrompt:       true,
 					CanThink:        anthropicCapabilitiesCanThink(item.Capabilities),
+					CanVision:       anthropicCapabilitiesCanVision(item.Capabilities),
 				},
 			})
 		}
@@ -160,6 +162,17 @@ func anthropicCapabilitiesCanThink(caps *modelCapabilities) bool {
 	}
 	effort := caps.Effort
 	return effort.Supported || effort.Low.Supported || effort.Medium.Supported || effort.High.Supported || effort.XHigh.Supported || effort.Max.Supported
+}
+
+// anthropicCapabilitiesCanVision reports whether the model accepts image input,
+// read from the model resource's capabilities.image_input.supported field
+// returned by GET /v1/models (documented as "Whether the model accepts image
+// content blocks").
+func anthropicCapabilitiesCanVision(caps *modelCapabilities) bool {
+	if caps == nil {
+		return false
+	}
+	return caps.ImageInput.Supported
 }
 
 func (p *catalogProvider) ProviderFor(model modelrepo.ObservedModel) modelrepo.Provider {

@@ -113,6 +113,7 @@ type client struct {
 	maxOutputTokens   int
 	toolProtocol      string // profile-declared tool-call protocol ("" = tools unsupported)
 	reasoningProtocol string // profile-declared reasoning parser ("" = no reasoning parser)
+	supportsVision    bool   // catalog/modeld-declared image input support (ModelInfo.SupportsVision)
 	// deviceKind/freeBytes and the described* fields are the capacity facts
 	// modeld reported at construction (empty/zero when modeld did not answer
 	// Describe). They turn a context overflow into an actionable message — see
@@ -308,6 +309,9 @@ func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args 
 		}
 	}
 
+	if err := c.checkVisionInput(messages); err != nil {
+		return nil, err
+	}
 	cs, err := c.acquire()
 	if err != nil {
 		return nil, err
@@ -362,6 +366,9 @@ func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args 
 }
 
 func (c *client) generate(ctx context.Context, messages []modelrepo.Message, dc DecodeConfig, toolsJSON string, enableThinking *bool, reasoningEffort string, showThinking bool) (string, string, []modelrepo.ToolCall, error) {
+	if err := c.checkVisionInput(messages); err != nil {
+		return "", "", nil, err
+	}
 	cs, err := c.acquire()
 	if err != nil {
 		return "", "", nil, err
@@ -412,6 +419,18 @@ func appendToolCalls(dst []modelrepo.ToolCall, src []ToolCall) []modelrepo.ToolC
 
 // prime ensures the warm stable prefix and prefills the volatile suffix. Caller
 // holds cs.Turn.
+// checkVisionInput is the refuse-don't-spill gate for image input: the
+// resolver routes image-bearing requests only to vision-capable providers, but
+// a direct caller must get a typed refusal — before any session is even
+// opened — instead of a prompt that silently claims an image the model never
+// saw.
+func (c *client) checkVisionInput(messages []modelrepo.Message) error {
+	if modelrepo.MessagesHaveImages(messages) && !c.supportsVision {
+		return NewUnsupportedFeatureError("image input (model " + c.modelName + " resolved without a multimodal projector)")
+	}
+	return nil
+}
+
 func (c *client) prime(ctx context.Context, cs *modelrepo.WarmEntry[Session], messages []modelrepo.Message, toolsJSON string, enableThinking *bool, reasoningEffort string) error {
 	plan, err := buildPromptPlan(messages, c.cfg, promptIdentity{
 		ProfileID:      c.profileID,

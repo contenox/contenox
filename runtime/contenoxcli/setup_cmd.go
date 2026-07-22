@@ -94,6 +94,11 @@ var setupProviders = []setupProvider{
 	{key: "openvino", label: "OpenVINO IR (local modeld)", defaultModel: "", needsAPIKey: false},
 }
 
+// errSetupNoInput is returned when setup's interactive provider choice reaches
+// EOF without an answer, so the command exits non-zero (an accidental pipe / CI
+// step is told setup did nothing) rather than silently committing a default.
+var errSetupNoInput = errors.New("setup: no input received (interactive); nothing changed")
+
 func runSetup(cmd *cobra.Command, out io.Writer) error {
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "  Welcome to Contenox!")
@@ -150,6 +155,17 @@ func runSetup(cmd *cobra.Command, out io.Writer) error {
 
 	scanner := bufio.NewScanner(os.Stdin)
 	chosen := promptChoiceOrQuit(out, scanner, "  Provider", len(setupProviders), alreadyConfigured)
+	if chosen == promptEOF {
+		// No answer was given (piped /dev/null, closed stdin, non-interactive run).
+		// Refuse to commit a guessed default — an accidental pipe or a CI step must
+		// never silently reconfigure the runtime. Fail loudly instead of exit 0.
+		fmt.Fprintln(out, "")
+		fmt.Fprintln(out, "  No input received — `contenox setup` is interactive and made no changes.")
+		fmt.Fprintln(out, "  Run it in a terminal, or configure non-interactively with `contenox config set`")
+		fmt.Fprintln(out, "  (e.g. `contenox config set default-provider ollama`).")
+		fmt.Fprintln(out, "")
+		return errSetupNoInput
+	}
 	if chosen < 0 {
 		fmt.Fprintln(out, "  ✓ Keeping current configuration.")
 		fmt.Fprintln(out, "")
@@ -567,6 +583,14 @@ func promptOllamaModel(out io.Writer, scanner *bufio.Scanner, defaultModel strin
 	return promptLine(out, scanner, fmt.Sprintf("  Model [%s]", defaultModel), defaultModel)
 }
 
+// promptEOF is returned when the input stream ends before the user answers the
+// gating provider choice (e.g. `contenox setup </dev/null`, a closed or piped-dry
+// stdin). It is distinct from -1 (an intentional "q" quit): EOF means "no answer
+// given", so setup must abort WITHOUT committing a guessed default rather than
+// silently reconfigure the runtime. A genuine piped run supplies the answer lines
+// and never reaches this branch.
+const promptEOF = -2
+
 func promptChoiceOrQuit(out io.Writer, scanner *bufio.Scanner, label string, max int, allowQuit bool) int {
 	for {
 		if allowQuit {
@@ -575,7 +599,7 @@ func promptChoiceOrQuit(out io.Writer, scanner *bufio.Scanner, label string, max
 			fmt.Fprintf(out, "%s (1-%d): ", label, max)
 		}
 		if !scanner.Scan() {
-			return 0
+			return promptEOF
 		}
 		text := strings.TrimSpace(scanner.Text())
 		if allowQuit && strings.EqualFold(text, "q") {

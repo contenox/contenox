@@ -131,10 +131,10 @@ Starter llama models:
 | ~2 GB | `granite-3.2-2b` | ~1.5 GB | |
 | ~3 GB | `qwen3-4b` | ~3 GB | |
 | ~3 GB | `phi-4-mini` | ~2.5 GB | |
-| ~5 GB | `gemma4-e4b` | ~5 GB | native tool format |
+| ~5 GB | `gemma4-e4b` | ~5 GB | vision (pulls mmproj too); native tool format |
 | ~5 GB | `qwen3-8b` | ~5 GB | |
 | ~5 GB | `deepseek-r1-0528-qwen3-8b` | ~5 GB | |
-| ~8 GB | `gemma4-12b` | ~8 GB | |
+| ~8 GB | `gemma4-12b` | ~8 GB | vision (pulls mmproj too) |
 | ~12 GB | `gpt-oss-20b` | ~12 GB | |
 | ~19 GB | `qwen3-coder-30b-a3b` | ~19 GB | |
 

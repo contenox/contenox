@@ -47,6 +47,9 @@ func (c *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 			return nil, err
 		}
 		caps := profile.capabilityConfig()
+		if visionEncoderPresent(modelPath) {
+			caps.CanVision = true
+		}
 		modelDigest, _ := modelIdentity(modelPath)
 		adapters, err := resolveProfileAdapters(modelPath, profile.Adapters)
 		if err != nil {

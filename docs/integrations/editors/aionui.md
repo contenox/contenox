@@ -93,7 +93,6 @@ Models are global; chains are local. Switching the model for ACP also switches i
 
 ## Limitations
 
-- **Assistant text is not streamed incrementally** with tool-using chains — it appears at the end of each generation step.
 - **No interactive embedded terminal.** AionUi advertises filesystem but not the ACP terminal capability, so `local_shell` commands run and report their output rather than opening a live terminal.
 
 ---

@@ -1,11 +1,13 @@
 package openvino
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
+	"github.com/contenox/runtime/runtime/transport"
 )
 
 func TestUnit_LocalNodePromptPlan_RejectsUnsupportedPrompt(t *testing.T) {
@@ -61,6 +63,51 @@ func TestUnit_LocalNodePromptPlan_IncludesBackendVersion(t *testing.T) {
 	}
 	if plan.Stable.Manifest.Backend != "openvino" || plan.Stable.Manifest.RuntimeDigest == "" {
 		t.Fatalf("manifest identity incomplete: %+v", plan.Stable.Manifest)
+	}
+}
+
+// Golden test for the image wire encoding: every attached image contributes one
+// media marker in the volatile text (in reading order) and its bytes ride on
+// SuffixInput.Images in the same order. The stable prefix stays image-free.
+func TestUnit_OpenVINOPromptPlan_EncodesImagesOnVolatileSuffix(t *testing.T) {
+	img1 := modelrepo.ImagePart{Data: []byte("png-1"), MimeType: "image/png"}
+	img2 := modelrepo.ImagePart{Data: []byte("jpg-2"), MimeType: "image/jpeg"}
+	plan, err := buildPromptPlan([]modelrepo.Message{
+		{Role: "system", Content: "rules"},
+		{Role: "user", Content: "What is this?", Images: []modelrepo.ImagePart{img1}},
+		{Role: "assistant", Content: "A cat."},
+		{Role: "user", Content: "And this?", Images: []modelrepo.ImagePart{img2}},
+	}, Config{}, promptIdentity{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if plan.Stable.Text != "rules" || len(plan.Stable.Images) != 0 {
+		t.Fatalf("stable prefix must stay image-free: text=%q images=%d", plan.Stable.Text, len(plan.Stable.Images))
+	}
+	m := transport.MediaMarker
+	wantVolatile := m + "\nWhat is this?" + "A cat." + m + "\nAnd this?"
+	if plan.Volatile.Text != wantVolatile {
+		t.Fatalf("volatile text = %q\nwant %q", plan.Volatile.Text, wantVolatile)
+	}
+	if len(plan.Volatile.Images) != 2 {
+		t.Fatalf("volatile images = %d, want 2", len(plan.Volatile.Images))
+	}
+	if string(plan.Volatile.Images[0].Data) != "png-1" || string(plan.Volatile.Images[1].Data) != "jpg-2" {
+		t.Fatalf("image order lost: %+v", plan.Volatile.Images)
+	}
+	if plan.Volatile.Images[1].MimeType != "image/jpeg" {
+		t.Fatalf("mime type lost: %+v", plan.Volatile.Images[1])
+	}
+}
+
+func TestUnit_OpenVINOPromptPlan_RejectsSystemImages(t *testing.T) {
+	_, err := buildPromptPlan([]modelrepo.Message{
+		{Role: "system", Content: "look", Images: []modelrepo.ImagePart{{Data: []byte("x"), MimeType: "image/png"}}},
+		{Role: "user", Content: "hi"},
+	}, Config{}, promptIdentity{}, "")
+	if !errors.Is(err, ErrUnsupportedFeature) {
+		t.Fatalf("expected typed unsupported-feature refusal for system images, got: %v", err)
 	}
 }
 

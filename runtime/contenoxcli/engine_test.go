@@ -59,6 +59,32 @@ func TestReadinessDefaults(t *testing.T) {
 			wantModel:    "phi-4-mini",
 			wantProvider: "llama",
 		},
+		{
+			// The reported bug: a healthy explicit override must beat a broken
+			// persisted default, not be ignored because config is non-empty.
+			name: "explicit flags override a broken persisted config",
+			opts: chatOpts{
+				EffectiveDefaultModel:       "gemini-2.5-flash",
+				EffectiveConfiguredModel:    "unservable-model",
+				EffectiveDefaultProvider:    "vertex-google",
+				EffectiveConfiguredProvider: "llama",
+			},
+			wantModel:    "gemini-2.5-flash",
+			wantProvider: "vertex-google",
+		},
+		{
+			// Override only the provider; the model stays on persisted config and
+			// needs no readiness credit (effective == configured).
+			name: "provider override alone, model unchanged from config",
+			opts: chatOpts{
+				EffectiveDefaultModel:       "persisted",
+				EffectiveConfiguredModel:    "persisted",
+				EffectiveDefaultProvider:    "vertex-google",
+				EffectiveConfiguredProvider: "llama",
+			},
+			wantModel:    "",
+			wantProvider: "vertex-google",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -2,6 +2,7 @@ package openai
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -40,6 +41,41 @@ func newGPT5ChatClient(t *testing.T, serverURL string) *OpenAIChatClient {
 }
 
 const responsesOKBody = `{"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]}],"reasoning":{}}`
+
+// TestUnit_GPT5Chat_SerializesImageInput asserts an image attachment reaches
+// the Responses API as an input_image content part carrying the inline base64
+// data URI, alongside the input_text part — the format the vision docs specify.
+func TestUnit_GPT5Chat_SerializesImageInput(t *testing.T) {
+	t.Parallel()
+	var got map[string]any
+	srv := captureRequestBody(t, &got, responsesOKBody)
+	defer srv.Close()
+
+	client := newGPT5ChatClient(t, srv.URL)
+	pngBytes := []byte{0x89, 0x50, 0x4e, 0x47}
+	_, err := client.Chat(context.Background(), []modelrepo.Message{
+		{Role: "user", Content: "describe this", Images: []modelrepo.ImagePart{
+			{Data: pngBytes, MimeType: "image/png"},
+		}},
+	})
+	require.NoError(t, err)
+
+	// gpt-5 uses the Responses API: input[0].content is [input_text, input_image].
+	input, ok := got["input"].([]any)
+	require.True(t, ok, "input array: %#v", got)
+	require.NotEmpty(t, input)
+	msg := input[0].(map[string]any)
+	require.Equal(t, "message", msg["type"])
+	require.Equal(t, "user", msg["role"])
+	parts, ok := msg["content"].([]any)
+	require.True(t, ok, "content parts: %#v", msg)
+	require.Len(t, parts, 2)
+	require.Equal(t, "input_text", parts[0].(map[string]any)["type"])
+	img := parts[1].(map[string]any)
+	require.Equal(t, "input_image", img["type"])
+	wantURI := "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngBytes)
+	require.Equal(t, wantURI, img["image_url"])
+}
 
 func TestUnit_GPT5Chat_SystemHoistedToInstructions(t *testing.T) {
 	t.Parallel()

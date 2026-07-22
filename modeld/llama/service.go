@@ -327,7 +327,14 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 	weights := fileSize(req.Path)
 	layerKV := llamaLayerKVProfile(params, cfg.KVCacheType)
 	kvBytes := layerKV.DenseKVBytesPerToken()
+	// A vision model's projector loads whole (mtmd has no per-layer offload),
+	// so its weights plus the encoder compute buffer enter the budget as fixed
+	// overhead — never scaled by the GPU-layer walk-down like LLM weights.
+	mmprojPath := MMProjPathFor(req.Path)
 	overhead := int64(0)
+	if mmprojPath != "" {
+		overhead += fileSize(mmprojPath) + visionEncoderReserveBytes()
+	}
 	// modeld derives GPU offload from what it detected at runtime, not from a
 	// per-model knob: with an accelerator present it offloads as many layers as
 	// fit the VRAM budget; with none it runs on CPU (the CUDA plugin was silently
@@ -337,7 +344,7 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 	resolvedGpuLayers := 0
 	if isAcceleratorSnapshot(st) {
 		cfg.NumGpuLayers = autoGpuLayerCeiling(explicitGpuLayers)
-		overhead = llamaGPUComputeReserveBytes(cfg)
+		overhead += llamaGPUComputeReserveBytes(cfg)
 		resolvedGpuLayers = resolveGPULayersForBudget(explicitGpuLayers, cfg, params, layerKV, weights, kvBytes, overhead, st, policy)
 		cfg.NumGpuLayers = resolvedGpuLayers
 		weights = estimateLlamaGPUWeights(weights, params.BlockCount, cfg.NumGpuLayers)
@@ -367,6 +374,18 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 	}
 	info.RequestedGpuLayers = explicitGpuLayers
 	info.ResolvedGpuLayers = resolvedGpuLayers
+	// Vision capability is certified from the projector's own metadata, never
+	// inferred: no resolvable mmproj, or one that does not declare image
+	// input, keeps SupportsVision false.
+	if mmprojPath != "" {
+		vision, _ := mmprojCaps(mmprojPath)
+		info.SupportsVision = vision
+		if vision {
+			if profile, profileErr := inspectMMProjProfile(mmprojPath); profileErr == nil {
+				info.VisionTokensPerImage = visionTokensPerImageEstimate(profile)
+			}
+		}
+	}
 	applyChatTemplateProbe(&info, req.Path)
 	if explicitGpuLayers > 0 && resolvedGpuLayers < explicitGpuLayers {
 		info.Clamped = true

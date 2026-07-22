@@ -3,8 +3,8 @@
 // questions an operator's oversight cockpit asks — "what did this unit change?"
 // and "where did its attention go, and did it wander?" It is a pure CONSUMER of
 // recordings the runtime already keeps (the kernel's per-session replay
-// journal), never a new recording duty; that is the blind-spot doctrine of the
-// 2021 Autobookmarks thesis this layer generalizes (see
+// journal), never a new recording duty; that is the layer's blind-spot
+// doctrine (see
 // docs/development/blueprints/beam/attention-layer.md): every artifact of
 // orientation must be an automatic by-product of work, computed, never asked
 // for.
@@ -17,7 +17,8 @@
 //
 //   - Changes: the changed-files list — per path, the FIRST OldText and LAST
 //     NewText seen across the mission's diff events, with a git-shaped status
-//     derived from them. This mirrors OpenHands' two-endpoint diff contract
+//     derived from them. The list and the per-path diff form a deliberate
+//     two-endpoint contract
 //     (ide-workflows.md Arc 1); the raw material is acpsvc's
 //     diffContentFromResult, which already turns every file-write tool result
 //     into a libacp.ToolCallContent{Type: Diff, Path, OldText, NewText} flowing
@@ -32,7 +33,7 @@
 //   - Scope (Stage 2 — scope-anomaly detection): the touched-path set summarized
 //     as distinct files and distinct top-level directories, plus a scopeAnomaly
 //     flag raised when any touched path falls OUTSIDE the mission's workspace
-//     root (its cwd). This converts the thesis's deepest finding — that SCOPE,
+//     root (its cwd). This converts a core design premise — that SCOPE,
 //     not step count, is the real efficiency signal, and that derailment is a
 //     scope anomaly before it is anything else (the $HOME-wanderer detectable
 //     from its first two tool calls) — into the fleet's cheapest alarm: set
@@ -60,15 +61,14 @@ import (
 	"github.com/contenox/runtime/runtime/missionservice"
 )
 
-// The DOI weight table (Stage 1). These are the thesis mechanics named
-// explicitly, and — per the thesis's own falsifiability lesson (it reported its
-// null result honestly) — they are TUNABLE HYPOTHESES, not constants of nature.
+// The DOI weight table (Stage 1). These weights
+// are TUNABLE HYPOTHESES, not constants of nature.
 // The ordering edit > read > other is the load-bearing claim ("a mutation is a
 // stronger attention signal than an inspection"); the exact integers are a first
 // guess meant to be measured against rank-vs-flat review, never trusted as
 // truth.
 //
-// The wire granularity is coarser than the thesis's (edit > read > stat/list):
+// The wire granularity is coarser than the ideal (edit > read > stat/list):
 // acpsvc's toolKindFor folds read_file, stat_file, list_dir and grep all into
 // libacp.ToolKindRead before the event is journaled, so this layer cannot
 // separate a read from a stat at the point it consumes them. That collapse is a
@@ -76,7 +76,7 @@ import (
 // over; if it ever matters, the finer signal is added upstream at the recording,
 // not guessed at here.
 //
-// Two further thesis mechanics — DECAY per round (recent attention outweighs
+// Two further mechanics — DECAY per round (recent attention outweighs
 // stale) and MASKING (one anchor per neighborhood) — are deliberately NOT yet
 // applied: additive accumulation is the honest Stage-1 stub the blueprint calls
 // for ("order-by-interest is one fold away from order-by-path"), and layering
@@ -93,7 +93,7 @@ const (
 	weightOther   = 1
 )
 
-// maxChangedFiles caps the changed-files list the way gitea caps a diff view: a
+// maxChangedFiles caps the changed-files list the way review UIs cap a diff view: a
 // review surface must stay legible, and a mission that touched thousands of
 // files is exactly when the cap matters most. The cap is applied AFTER scoring
 // and sorting, so the files that survive it are the highest-attention ones — the
@@ -102,7 +102,7 @@ const (
 const maxChangedFiles = 100
 
 // diffDisplayCap bounds the bytes of original/modified text the diff endpoint
-// returns for one file (gitea's per-file suppression). A single pathological
+// returns for one file. A single pathological
 // generated file must not turn a diff fetch into a multi-megabyte response; past
 // this size the text is truncated and Diff.Truncated is set so the frontend
 // renders a "diff too large" affordance instead of choking Monaco. The kernel
@@ -135,8 +135,8 @@ const (
 )
 
 // ScopeStats is the Stage-2 scope summary: how broadly the unit ranged and
-// whether it left its lane. Files and Dirs are the breadth signal the thesis
-// found to be the REAL efficiency metric (a landed unit works in few files);
+// whether it left its lane. Files and Dirs are the breadth signal — the
+// REAL efficiency metric (a landed unit works in few files);
 // Anomaly plus OutsidePaths are the derailment early-warning. All advisory.
 type ScopeStats struct {
 	Files        int      `json:"files"`
@@ -156,8 +156,8 @@ type Changes struct {
 	Scope      ScopeStats    `json:"scope"`
 }
 
-// Diff is the GET /missions/{id}/changes/diff?path= response: the {original,
-// modified} pair OpenHands' diff endpoint serves, fed straight to Monaco's
+// Diff is the GET /missions/{id}/changes/diff?path= response: an {original,
+// modified} pair fed straight to Monaco's
 // DiffEditor. Truncated is set when either side was clipped to diffDisplayCap —
 // the frontend then shows a "diff too large" state instead of a partial diff
 // pretending to be whole.
@@ -370,8 +370,8 @@ func fold(updates []libacp.SessionNotification) *folded {
 			}
 		}
 	}
-	// Flush each invocation's per-path weight into the additive DOI score. This is
-	// the additive accumulation of the thesis mechanics, one invocation at a time.
+	// Flush each invocation's per-path weight into the additive DOI score, one
+	// invocation at a time.
 	for _, cw := range callWeights {
 		for p, w := range cw {
 			f.scores[p] += w

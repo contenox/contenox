@@ -14,7 +14,7 @@ Set TypingSpeed 45ms
 Set WaitTimeout 4m
 
 Hide
-Type "mkdir -p /tmp/contenox-demo/.contenox && cd /tmp/contenox-demo && touch build-cache.tmp && export DEMO_CHAIN=/home/naro/src/github.com/contenox/runtime/scripts/demos/demo-chain.json && clear"
+Type "mkdir -p /tmp/contenox-demo/.contenox && cd /tmp/contenox-demo && touch build-cache.tmp && export DEMO_CHAIN=~/src/github.com/contenox/runtime/scripts/demos/demo-chain.json && clear"
 Enter
 Wait
 Show

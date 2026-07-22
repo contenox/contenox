@@ -148,6 +148,35 @@ func TestUnit_NewServeClient_InvalidServerURLErrors(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestUnit_NewServeClient_DefaultedTargetIsSurfaced pins the cross-instance
+// safety hint: when the URL is silently defaulted, the resolved target is
+// announced on STDERR (never stdout, to keep the `-q` id contract clean); when
+// the operator set --server/CONTENOX_SERVER_URL, no hint is printed.
+func TestUnit_NewServeClient_DefaultedTargetIsSurfaced(t *testing.T) {
+	var stderr bytes.Buffer
+	c := newApprovalsListTestCmd()
+	c.SetOut(new(bytes.Buffer))
+	c.SetErr(&stderr)
+	require.NoError(t, c.ParseFlags(nil))
+
+	_, err := newServeClient(c)
+	require.NoError(t, err)
+	require.Contains(t, stderr.String(), "http://127.0.0.1:32123")
+	require.Contains(t, stderr.String(), "default")
+}
+
+func TestUnit_NewServeClient_ExplicitTargetIsNotAnnounced(t *testing.T) {
+	var stderr bytes.Buffer
+	c := newApprovalsListTestCmd()
+	c.SetOut(new(bytes.Buffer))
+	c.SetErr(&stderr)
+	require.NoError(t, c.ParseFlags([]string{"--server", "http://explicit:9000"}))
+
+	_, err := newServeClient(c)
+	require.NoError(t, err)
+	require.Empty(t, stderr.String(), "an explicitly chosen target needs no reminder")
+}
+
 func TestUnit_ServeClient_DoDecodesJSONAndSendsBearerToken(t *testing.T) {
 	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

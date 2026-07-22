@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	bedrocktypes "github.com/aws/aws-sdk-go-v2/service/bedrock/types"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/document"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
@@ -58,6 +59,79 @@ func TestUnit_BuildConverseInput_RolesSystemToolsAndInference(t *testing.T) {
 	require.Equal(t, "t1", aws.ToString(tr.Value.ToolUseId))
 }
 
+func TestUnit_BuildConverseInput_ImageInputMapsToImageBlock(t *testing.T) {
+	raw := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a} // PNG magic
+	msgs := []modelrepo.Message{
+		{Role: "user", Content: "describe this", Images: []modelrepo.ImagePart{{Data: raw, MimeType: "image/png"}}},
+	}
+
+	in, _ := buildConverseInput("anthropic.claude-3-5-sonnet-20241022-v2:0", msgs, &modelrepo.ChatConfig{}, 0)
+
+	require.Len(t, in.Messages, 1)
+	require.Equal(t, types.ConversationRoleUser, in.Messages[0].Role)
+	// Text block first, then the image block.
+	require.Len(t, in.Messages[0].Content, 2)
+
+	txt, ok := in.Messages[0].Content[0].(*types.ContentBlockMemberText)
+	require.True(t, ok, "first block must be text")
+	require.Equal(t, "describe this", txt.Value)
+
+	img, ok := in.Messages[0].Content[1].(*types.ContentBlockMemberImage)
+	require.True(t, ok, "second block must be an image content block")
+	require.Equal(t, types.ImageFormatPng, img.Value.Format)
+
+	src, ok := img.Value.Source.(*types.ImageSourceMemberBytes)
+	require.True(t, ok, "image source must be raw bytes")
+	require.Equal(t, raw, src.Value)
+
+	// A text-only user message still maps to a single text block.
+	textOnly, _ := buildConverseInput("m", []modelrepo.Message{{Role: "user", Content: "just text"}}, &modelrepo.ChatConfig{}, 0)
+	require.Len(t, textOnly.Messages, 1)
+	require.Len(t, textOnly.Messages[0].Content, 1)
+	tob, ok := textOnly.Messages[0].Content[0].(*types.ContentBlockMemberText)
+	require.True(t, ok, "text-only message must produce a text block")
+	require.Equal(t, "just text", tob.Value)
+}
+
+func TestUnit_BuildConverseInput_ImageFormatsAndUnknownSkipped(t *testing.T) {
+	cases := []struct {
+		mime string
+		want types.ImageFormat
+	}{
+		{"image/png", types.ImageFormatPng},
+		{"image/jpeg", types.ImageFormatJpeg},
+		{"image/gif", types.ImageFormatGif},
+		{"image/webp", types.ImageFormatWebp},
+	}
+	for _, c := range cases {
+		t.Run(c.mime, func(t *testing.T) {
+			in, _ := buildConverseInput("m", []modelrepo.Message{
+				{Role: "user", Images: []modelrepo.ImagePart{{Data: []byte{1}, MimeType: c.mime}}},
+			}, &modelrepo.ChatConfig{}, 0)
+			require.Len(t, in.Messages, 1)
+			require.Len(t, in.Messages[0].Content, 1)
+			img, ok := in.Messages[0].Content[0].(*types.ContentBlockMemberImage)
+			require.True(t, ok)
+			require.Equal(t, c.want, img.Value.Format)
+		})
+	}
+
+	// An unrecognised MIME type is skipped: a text-only-plus-bad-image message
+	// yields only the text block, and an image-only message yields no message.
+	in, _ := buildConverseInput("m", []modelrepo.Message{
+		{Role: "user", Content: "hi", Images: []modelrepo.ImagePart{{Data: []byte{1}, MimeType: "image/tiff"}}},
+	}, &modelrepo.ChatConfig{}, 0)
+	require.Len(t, in.Messages, 1)
+	require.Len(t, in.Messages[0].Content, 1)
+	_, ok := in.Messages[0].Content[0].(*types.ContentBlockMemberText)
+	require.True(t, ok, "unknown image type must be skipped, leaving only the text block")
+
+	in, _ = buildConverseInput("m", []modelrepo.Message{
+		{Role: "user", Images: []modelrepo.ImagePart{{Data: []byte{1}, MimeType: "application/pdf"}}},
+	}, &modelrepo.ChatConfig{}, 0)
+	require.Empty(t, in.Messages, "an image-only message with an unknown type produces no content")
+}
+
 func TestUnit_BuildConverseInput_ClampsMaxTokens(t *testing.T) {
 	maxTok := 9000
 	cfg := &modelrepo.ChatConfig{MaxTokens: &maxTok}
@@ -95,11 +169,70 @@ func TestUnit_DecodeConverse_TextAndToolUse(t *testing.T) {
 	require.Equal(t, "/x", got["path"])
 }
 
+// CanVision must be detected from the model's advertised input modalities
+// (ListFoundationModels -> FoundationModelSummary.InputModalities), not a
+// hardcoded model-name list. A summary listing the IMAGE modality is vision
+// capable; a TEXT-only summary is not.
+func TestUnit_ObservedFromSummary_CanVisionFromInputModalities(t *testing.T) {
+	visionModel := observedFromSummary(bedrocktypes.FoundationModelSummary{
+		ModelId:         aws.String("anthropic.claude-3-5-sonnet-20241022-v2:0"),
+		InputModalities: []bedrocktypes.ModelModality{bedrocktypes.ModelModalityText, bedrocktypes.ModelModalityImage},
+	})
+	require.Equal(t, "anthropic.claude-3-5-sonnet-20241022-v2:0", visionModel.Name)
+	require.True(t, visionModel.CanVision, "IMAGE input modality must set CanVision")
+	require.True(t, visionModel.CanChat)
+	require.False(t, visionModel.CanEmbed)
+
+	textModel := observedFromSummary(bedrocktypes.FoundationModelSummary{
+		ModelId:         aws.String("meta.llama3-70b-instruct-v1:0"),
+		InputModalities: []bedrocktypes.ModelModality{bedrocktypes.ModelModalityText},
+	})
+	require.False(t, textModel.CanVision, "TEXT-only input modality must not set CanVision")
+	require.True(t, textModel.CanChat)
+
+	// Detection is case-insensitive against the API's string value.
+	lowerModel := observedFromSummary(bedrocktypes.FoundationModelSummary{
+		ModelId:         aws.String("some.multimodal-v1:0"),
+		InputModalities: []bedrocktypes.ModelModality{"image"},
+	})
+	require.True(t, lowerModel.CanVision, "modality comparison must be case-insensitive")
+
+	// An embedding model keeps its embed classification.
+	embedModel := observedFromSummary(bedrocktypes.FoundationModelSummary{
+		ModelId:         aws.String("amazon.titan-embed-text-v2:0"),
+		InputModalities: []bedrocktypes.ModelModality{bedrocktypes.ModelModalityText},
+	})
+	require.True(t, embedModel.CanEmbed)
+	require.False(t, embedModel.CanChat)
+	require.False(t, embedModel.CanVision)
+}
+
 func TestUnit_RegionFromURL(t *testing.T) {
 	require.Equal(t, "us-east-1", regionFromURL("https://bedrock-runtime.us-east-1.amazonaws.com"))
 	require.Equal(t, "eu-west-3", regionFromURL("https://bedrock-runtime.eu-west-3.amazonaws.com/"))
 	require.Equal(t, "us-east-1", regionFromURL("us-east-1")) // bare region
 	require.Equal(t, "", regionFromURL(""))
+}
+
+// isAWSCredentialError reports whether err is an environment problem (missing,
+// expired, or rejected AWS credentials) rather than a product defect. The
+// system test skips on these so the gate stays green on machines without a
+// live AWS login, per the TestSystem_ probe-and-skip convention.
+func isAWSCredentialError(err error) bool {
+	msg := err.Error()
+	for _, s := range []string{
+		"get credentials",
+		"no EC2 IMDS role found",
+		"expired",
+		"InvalidClientTokenId",
+		"UnrecognizedClientException",
+		"AccessDeniedException",
+	} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestSystem_BedrockCatalog_RegisteredAndChatCapable(t *testing.T) {
@@ -111,6 +244,9 @@ func TestSystem_BedrockCatalog_RegisteredAndChatCapable(t *testing.T) {
 	require.Equal(t, "bedrock", cp.Type())
 
 	models, err := cp.ListModels(context.TODO())
+	if err != nil && isAWSCredentialError(err) {
+		t.Skipf("skipping: no usable AWS credentials for Bedrock (%v)", err)
+	}
 	require.NoError(t, err)
 	require.NotEmpty(t, models)
 	require.True(t, models[0].CanChat)

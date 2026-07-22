@@ -10,11 +10,10 @@ import (
 )
 
 // Viewer is a consumer attached to one downstream session of a running
-// instance. It is the ATTACHED-VIEWER analogue of go-process-manager's
-// io.WriteCloser writers, but ACP-shaped: a viewer both RECEIVES the session's
+// instance: a viewer both RECEIVES the session's
 // streamed updates (Deliver, the fan-out) and — when it is the session's
 // controller — ANSWERS the downstream agent's permission requests
-// (RequestPermission, the callback the byte-terminal reference has no equivalent
+// (RequestPermission, a callback a byte-terminal viewer has no equivalent
 // of). It is defined HERE and typed only on libacp so an implementer (a future
 // acpsvc bridge, beam's live view) needs no import from this package beyond the
 // interface, and no import cycle can form.

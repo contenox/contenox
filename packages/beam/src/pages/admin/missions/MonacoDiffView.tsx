@@ -10,12 +10,12 @@ import type { MissionChangeStatus, MissionFileDiff } from '../../../lib/types';
 
 /**
  * The per-file diff, rendered with Monaco (`@monaco-editor/react`) — the proven
- * choice for exactly this (OpenHands), never a hand-rolled differ. This is the
+ * choice for exactly this, never a hand-rolled differ. This is the
  * ONLY module that imports Monaco in the mission inspector, and it is lazily
  * loaded from MissionChangesTab (itself lazily loaded from the page), so Monaco
  * never enters the mission-detail bundle and does not even load until a file row
  * is expanded — the diff is asynchronous enhancement over the instant list (the
- * Sublime-nature law). It is read-only: Beam reviews, it never edits (the
+ * instant-feel law). It is read-only: Beam reviews, it never edits (the
  * meaningful-filter).
  */
 

@@ -306,6 +306,18 @@ func convertToGeminiMessages(messages []modelrepo.Message) []geminiContent {
 			parts = append(parts, geminiPart{Text: m.Content})
 		}
 
+		// Image attachments: append one inlineData part per image, after the
+		// text part, mirroring the OpenAI content-parts ordering. The resolver
+		// only routes image-bearing requests to vision-capable providers.
+		for _, img := range m.Images {
+			parts = append(parts, geminiPart{
+				InlineData: &geminiInlineData{
+					MimeType: img.MimeType,
+					Data:     img.Data,
+				},
+			})
+		}
+
 		// Assistant tool calls: encode as functionCall parts
 		if len(m.ToolCalls) > 0 {
 			for _, tc := range m.ToolCalls {

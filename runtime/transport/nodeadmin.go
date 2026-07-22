@@ -31,8 +31,9 @@ type PushFormat string
 const (
 	// PushFormatFile is a single-file model (llama GGUF).
 	PushFormatFile PushFormat = "file"
-	// PushFormatTar is a directory model (OpenVINO IR) sent as an
-	// uncompressed tar stream.
+	// PushFormatTar is a directory model sent as an uncompressed tar stream:
+	// an OpenVINO IR bundle, or a llama vision model shipping model.gguf plus
+	// its mmproj.gguf projector as one atomic install.
 	PushFormatTar PushFormat = "tar"
 )
 

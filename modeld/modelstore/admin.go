@@ -45,8 +45,10 @@ const (
 	// PushFormatFile is a single-file model (llama GGUF), written as
 	// <dir>/<name>/model.gguf.
 	PushFormatFile PushFormat = "file"
-	// PushFormatTar is a directory model (OpenVINO IR) sent as an uncompressed
-	// tar stream and unpacked into <dir>/<name>/.
+	// PushFormatTar is a directory model sent as an uncompressed tar stream and
+	// unpacked into <dir>/<name>/: an OpenVINO IR bundle, or a llama vision
+	// model shipping model.gguf plus its mmproj.gguf projector (see
+	// ResolveMMProj) — the tar keeps the two files one atomic install.
 	PushFormatTar PushFormat = "tar"
 )
 
@@ -124,6 +126,14 @@ func (a *Admin) ListModels(_ context.Context) ([]NodeModel, error) {
 			m := NodeModel{Name: name, Type: "llama"}
 			if info, statErr := os.Stat(path); statErr == nil {
 				m.SizeBytes = info.Size()
+			}
+			// SizeBytes is the install footprint, so a vision model's projector
+			// counts too; Digest stays the model.gguf content digest (the cache
+			// identity — see ResolveMMProj).
+			if mmproj := ResolveMMProj(path); mmproj != "" {
+				if info, statErr := os.Stat(mmproj); statErr == nil {
+					m.SizeBytes += info.Size()
+				}
 			}
 			if digest, digestErr := FileDigest(path); digestErr == nil {
 				m.Digest = digest

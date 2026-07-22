@@ -92,6 +92,10 @@ func applyShowMetadata(model *modelrepo.ObservedModel, resp *api.ShowResponse) {
 			model.CanEmbed = true
 		case ollamamodel.CapabilityTools:
 			model.CanChat = true
+		case ollamamodel.CapabilityVision:
+			model.CanVision = true
+		case ollamamodel.CapabilityThinking:
+			model.CanThink = true
 		}
 	}
 

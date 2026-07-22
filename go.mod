@@ -9,7 +9,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.19
 	github.com/aws/aws-sdk-go-v2/service/bedrock v1.65.0
 	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.53.1
-	github.com/contenox/authz v0.0.1
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/modelcontextprotocol/go-sdk v1.4.0
 	github.com/nats-io/nats.go v1.47.0

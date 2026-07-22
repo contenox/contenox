@@ -85,7 +85,7 @@ contenox mcp add hubspot \
 contenox mcp auth hubspot
 ```
 
-contenox stores only the env var name in its local SQLite, not the secret value. The secret is resolved from your environment at every connection. See the [HubSpot MCP cookbook recipe](/cookbook/hubspot-mcp/) for the full walkthrough.
+contenox stores only the env var name in its local SQLite, not the secret value. The secret is resolved from your environment at every connection. See the [HubSpot MCP recipe](/docs/use-cases/hubspot-mcp/) for the full walkthrough.
 
 
 

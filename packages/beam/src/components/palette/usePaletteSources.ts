@@ -18,7 +18,7 @@ import type { Agent, FleetEntry, HITLApproval, Mission, WorkspaceRoot } from '..
 /**
  * Assembles the palette's item set from data the app ALREADY has — react-query
  * cache snapshots plus the ACP session roster — with no fetching of its own.
- * This is a deliberate latency choice (the Sublime-nature law): reads are
+ * This is a deliberate latency choice (the instant-feel law): reads are
  * `getQueryData`, never `useQuery`, so the palette mounts no background pollers
  * and adds no observers to the short-poll fleet/mission/approval feeds. The
  * consequence is intentional and cheap: a source whose cache is still cold

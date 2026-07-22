@@ -7,9 +7,6 @@ review. It compares `modeld` with public local-model runners, desktop AI
 products, and production inference stacks that a user or maintainer might
 naturally compare it against.
 
-Related technical blueprint:
-- [modeld Local Inference Cross-Compare](blueprints/modeld/effective-context/modeld-local-inference-cross-compare-blueprint.md)
-
 ## Short Position
 
 See the user-facing pages for everyday use:

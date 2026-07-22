@@ -34,7 +34,7 @@ choice for exactly this use (OpenHands). Collapsed rows by default, lazy
 per-file diff fetch on expand, old/diff/new toggle. Do NOT hand-roll diffing
 (bolt.diy's regret) and do NOT add editing or a VS Code iframe.
 
-**The differentiator (thesis lineage):** rank the changed-files list by
+**The differentiator:** rank the changed-files list by
 Degree-of-Interest — weight and decay the unit's interactions per path (reads,
 edits, tool dwell) from the already-journaled events, so review starts where
 the agent's attention concentrated, not alphabetically. Landed-vs-planned

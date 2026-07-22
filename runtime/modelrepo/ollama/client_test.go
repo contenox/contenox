@@ -2,6 +2,7 @@ package ollama
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +12,50 @@ import (
 	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/ollama/ollama/api"
 )
+
+// TestUnit_OllamaChat_SerializesImageInput asserts an image attachment reaches
+// Ollama's /api/chat as a base64 entry in the message's native images array.
+func TestUnit_OllamaChat_SerializesImageInput(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/chat" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		fmt.Fprintln(w, `{"model":"llava","message":{"role":"assistant","content":"a cat"},"done":true,"done_reason":"stop"}`)
+	}))
+	defer srv.Close()
+
+	provider := NewOllamaProvider("llava", []string{srv.URL}, srv.Client(), modelrepo.CapabilityConfig{CanChat: true}, "", nil)
+	chat, err := provider.GetChatConnection(context.Background(), srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pngBytes := []byte{0x89, 0x50, 0x4e, 0x47}
+	_, err = chat.Chat(context.Background(), []modelrepo.Message{
+		{Role: "user", Content: "describe this", Images: []modelrepo.ImagePart{{Data: pngBytes, MimeType: "image/png"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	msgs, ok := gotBody["messages"].([]any)
+	if !ok || len(msgs) != 1 {
+		t.Fatalf("messages: %#v", gotBody["messages"])
+	}
+	imgs, ok := msgs[0].(map[string]any)["images"].([]any)
+	if !ok || len(imgs) != 1 {
+		t.Fatalf("expected 1 image on the ollama message, got %#v", msgs[0])
+	}
+	if want := base64.StdEncoding.EncodeToString(pngBytes); imgs[0] != want {
+		t.Errorf("image base64 mismatch:\n want %s\n  got %v", want, imgs[0])
+	}
+}
 
 func TestUnit_OllamaHTTPClient_ListUsesBearerAuthAndNormalizesAPIPath(t *testing.T) {
 	t.Parallel()

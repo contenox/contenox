@@ -94,6 +94,28 @@ describe('promptBlocksFromDraft', () => {
     const blocks = promptBlocksFromDraft('   ', [{ path: 'a.txt', name: 'a.txt' }]);
     expect(blocks).toEqual([{ type: 'resource_link', name: 'a.txt', uri: 'a.txt' }]);
   });
+  it('appends one image block per attachment after text + mentions — libacp wire form (raw base64 data + mimeType, no data: prefix)', () => {
+    const blocks = promptBlocksFromDraft(
+      'what is on this screenshot? see @main.go',
+      [{ path: 'main.go', name: 'main.go' }],
+      [
+        { id: 'img-1', name: 'shot.png', data: 'aGVsbG8=', mimeType: 'image/png' },
+        { id: 'img-2', name: 'photo.jpg', data: 'd29ybGQ=', mimeType: 'image/jpeg' },
+      ],
+    );
+    expect(blocks).toEqual([
+      { type: 'text', text: 'what is on this screenshot? see @main.go' },
+      { type: 'resource_link', name: 'main.go', uri: 'main.go' },
+      { type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' },
+      { type: 'image', data: 'd29ybGQ=', mimeType: 'image/jpeg' },
+    ]);
+    // Client-local presentation fields (id/name) never reach the wire.
+    expect(blocks.some(b => 'id' in b || ('name' in b && b.type === 'image'))).toBe(false);
+  });
+  it('emits no image blocks when there are no attachments (default arg — existing callers unchanged)', () => {
+    const blocks = promptBlocksFromDraft('hi', []);
+    expect(blocks).toEqual([{ type: 'text', text: 'hi' }]);
+  });
 });
 
 describe('mentionToken', () => {

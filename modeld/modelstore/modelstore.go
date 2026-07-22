@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/contenox/runtime/modeld/llama"
 	"github.com/contenox/runtime/runtime/transport"
 )
 
@@ -100,6 +101,15 @@ func Resolve(dir, name, backendType, wantDigest string) (path string, err error)
 	default:
 		return "", fmt.Errorf("%w: %q", ErrUnsupportedType, backendType)
 	}
+}
+
+// ResolveMMProj returns the optional multimodal projector installed next to a
+// resolved llama model path (see llama.MMProjFilename), or "" when the model
+// has none. The projector is deliberately not part of Resolve's digest check:
+// the model's cache identity stays the model.gguf content digest, and vision
+// capability is certified separately by the backend's Describe.
+func ResolveMMProj(modelPath string) string {
+	return llama.MMProjPathFor(modelPath)
 }
 
 // FileDigest returns the hex-encoded sha256 digest of a file's content.

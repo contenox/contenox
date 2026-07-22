@@ -88,8 +88,7 @@ type SessionSpec struct {
 // state for its downstream connection, plus the per-session captured surface (config
 // options / modes / models / slash-command menu). It is transport-agnostic and holds no
 // connection — the instance supplies the live connection to each driving call; the driver
-// only issues the state mapping and the capture. It mirrors, for structured ACP driving,
-// what go-process-manager's logic layer does around its pty.
+// only issues the state mapping and the capture.
 type sessionDriver struct {
 	// initMu serializes the initialize handshake so an instance's downstream connection is
 	// initialize'd exactly once per connection. It is held across the network Initialize call

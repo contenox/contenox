@@ -5,6 +5,7 @@ import {
   createAcpClient,
   JSON_RPC_ERROR_CODES,
   workspaceConfigOptionsFromInit,
+  type PromptCapabilities,
   type SessionConfigOption,
   type SessionConfigOptionValue,
   type SessionEventHandlers,
@@ -13,6 +14,7 @@ import {
   type Transport,
 } from '../lib/acp';
 import { adoptMeta, type AdoptRef } from '../lib/adoptMeta';
+import type { PendingImageAttachment } from '../pages/chat/lib/imageAttachments';
 import { promptBlocksFromDraft, type WorkspaceFileRef } from '../pages/chat/lib/mentions';
 import type { AcpSessionAction } from './acpSessionState';
 import { EMPTY_SESSION_KEY, type AcpSessionsAction, type AcpWorkspaceAction } from './acpWorkspaceState';
@@ -139,8 +141,11 @@ export interface AcpWorkspaceController {
    * `mentions` are workspace files referenced with `@` in the composer; each is
    * sent as a `resource_link` content block alongside the text — reference only,
    * the agent reads the file through its tools (never an embedded/attached copy).
+   * `images` are composer attachments; each becomes an `image` content block
+   * (base64 + mime type) after the text/mention blocks, and is echoed into the
+   * transcript on the local user message immediately.
    */
-  sendPrompt(text: string, mentions?: WorkspaceFileRef[]): void;
+  sendPrompt(text: string, mentions?: WorkspaceFileRef[], images?: PendingImageAttachment[]): void;
   /**
    * `!` passthrough: runs one user line in the open session's persistent shell
    * without an LLM turn (no prompt, no tokens). Output streams to the terminal
@@ -433,8 +438,10 @@ export function createAcpWorkspaceController(
       fn();
     };
     return {
-      onUserMessageChunk: (text, id) => active(() => sessionDispatch(sid, { type: 'user_message_chunk', id: id ?? nextId('user'), text })),
-      onMessageChunk: (text, id) => active(() => sessionDispatch(sid, { type: 'message_chunk', id: id ?? turnId(), text })),
+      onUserMessageChunk: (text, id, image) =>
+        active(() => sessionDispatch(sid, { type: 'user_message_chunk', id: id ?? nextId('user'), text, image })),
+      onMessageChunk: (text, id, image) =>
+        active(() => sessionDispatch(sid, { type: 'message_chunk', id: id ?? turnId(), text, image })),
       onThoughtChunk: (text, id) => active(() => sessionDispatch(sid, { type: 'thought_chunk', id: id ?? turnId(), text })),
       onToolCall: event => active(() => sessionDispatch(sid, { type: 'tool_call', event })),
       onPlan: entries => active(() => sessionDispatch(sid, { type: 'plan', entries })),
@@ -472,6 +479,7 @@ export function createAcpWorkspaceController(
     transport: Transport;
     agentName: string | null;
     workspaceConfigOptions: SessionConfigOption[];
+    promptCapabilities: PromptCapabilities;
   }> {
     const transport = deps.createTransport();
     const c = buildClient(transport);
@@ -487,6 +495,9 @@ export function createAcpWorkspaceController(
         // AcpChatPage). Refreshed on every reconnect too, since runtime state
         // (available models) may have changed while disconnected.
         workspaceConfigOptions: workspaceConfigOptionsFromInit(init),
+        // What a session/prompt may carry (image/audio/…) — gates the
+        // composer's attach affordances. `{}` when the agent advertises none.
+        promptCapabilities: init.agentCapabilities?.promptCapabilities ?? {},
       };
     } catch (err) {
       transport.close();
@@ -537,6 +548,7 @@ export function createAcpWorkspaceController(
         type: 'ready',
         agentName: established.agentName,
         workspaceConfigOptions: established.workspaceConfigOptions,
+        promptCapabilities: established.promptCapabilities,
       });
       await refreshSessionsInternal(established.client);
     } catch (err) {
@@ -607,6 +619,7 @@ export function createAcpWorkspaceController(
         type: 'ready',
         agentName: established.agentName,
         workspaceConfigOptions: established.workspaceConfigOptions,
+        promptCapabilities: established.promptCapabilities,
       });
       await restoreOpenSessions(established.client);
       if (disposed) return;
@@ -889,7 +902,7 @@ export function createAcpWorkspaceController(
   // Turn + permission + config actions on the open session
   // ---------------------------------------------------------------------
 
-  function sendPrompt(text: string, mentions: WorkspaceFileRef[] = []): void {
+  function sendPrompt(text: string, mentions: WorkspaceFileRef[] = [], images: PendingImageAttachment[] = []): void {
     if (disposed || !client || !focusedSessionId || !text.trim()) return;
     const sid = focusedSessionId;
     const entry = openSessions.get(sid);
@@ -903,12 +916,26 @@ export function createAcpWorkspaceController(
     entry.currentTurnId = nextId('assistant');
 
     // text block + one resource_link per @-mention (reference only — the agent
-    // reads via its tools; see promptBlocksFromDraft). No embedded resources.
-    const blocks = promptBlocksFromDraft(text, mentions);
+    // reads via its tools; see promptBlocksFromDraft) + one image block per
+    // composer attachment (the ONE embedded content kind — a pasted screenshot
+    // has no workspace path to reference).
+    const blocks = promptBlocksFromDraft(text, mentions, images);
 
     // Slash-command text passes through verbatim — acpsvc/commandrunner.go
     // parses `/name args` itself; this layer never inspects it.
-    sessionDispatch(sid, { type: 'user_message_chunk', id: nextId('user'), text });
+    // Local echo: the text chunk plus one image chunk per attachment, all under
+    // ONE message id — the sent user message shows its images immediately, in
+    // the same shape a session/load replay would rebuild.
+    const echoId = nextId('user');
+    sessionDispatch(sid, { type: 'user_message_chunk', id: echoId, text });
+    for (const image of images) {
+      sessionDispatch(sid, {
+        type: 'user_message_chunk',
+        id: echoId,
+        text: '',
+        image: { data: image.data, mimeType: image.mimeType },
+      });
+    }
     sessionDispatch(sid, { type: 'prompt_start' });
     entry.promptInFlight = true;
     entry.turnSettled = false;

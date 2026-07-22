@@ -24,7 +24,12 @@ describe('acpWorkspaceReducer: connection status', () => {
     let state = run({ type: 'connecting' });
     expect(state.status).toBe('connecting');
 
-    state = acpWorkspaceReducer(state, { type: 'ready', agentName: 'contenox', workspaceConfigOptions: [] });
+    state = acpWorkspaceReducer(state, {
+      type: 'ready',
+      agentName: 'contenox',
+      workspaceConfigOptions: [],
+      promptCapabilities: {},
+    });
     expect(state.status).toBe('ready');
     expect(state.agentName).toBe('contenox');
     expect(state.error).toBeNull();
@@ -58,13 +63,38 @@ describe('acpWorkspaceReducer: connection status', () => {
       type: 'ready',
       agentName: 'contenox',
       workspaceConfigOptions: first,
+      promptCapabilities: {},
     });
     expect(state.workspaceConfigOptions).toEqual(first);
 
     // A reconnect re-reads them (runtime model list may have changed).
     const second = [{ id: 'model', name: 'Model', type: 'select', currentValue: 'anthropic/claude', options: [] }];
-    state = acpWorkspaceReducer(state, { type: 'ready', agentName: 'contenox', workspaceConfigOptions: second });
+    state = acpWorkspaceReducer(state, {
+      type: 'ready',
+      agentName: 'contenox',
+      workspaceConfigOptions: second,
+      promptCapabilities: {},
+    });
     expect(state.workspaceConfigOptions).toEqual(second);
+  });
+
+  it('ready carries the agent\'s prompt capabilities (image gating) and a later ready replaces them', () => {
+    let state = acpWorkspaceReducer(initialAcpWorkspaceState, {
+      type: 'ready',
+      agentName: 'contenox',
+      workspaceConfigOptions: [],
+      promptCapabilities: { image: true },
+    });
+    expect(state.promptCapabilities).toEqual({ image: true });
+
+    // A reconnect re-reads them — a differently-capable agent replaces the set.
+    state = acpWorkspaceReducer(state, {
+      type: 'ready',
+      agentName: 'other-agent',
+      workspaceConfigOptions: [],
+      promptCapabilities: {},
+    });
+    expect(state.promptCapabilities).toEqual({});
   });
 });
 

@@ -315,6 +315,8 @@ func (s *Server) describe(ctx context.Context, in *openSessionReq) (*describeRes
 		ResolvedGpuLayers:                   info.ResolvedGpuLayers,
 		SparseAttention:                     info.SparseAttention,
 		SlidingWindowAttentionTokens:        info.SlidingWindowAttentionTokens,
+		SupportsVision:                      info.SupportsVision,
+		VisionTokensPerImage:                info.VisionTokensPerImage,
 		ChatTemplateFormat:                  info.ChatTemplateFormat,
 		ChatTemplateThinkingStartTag:        info.ChatTemplateThinkingStartTag,
 		ChatTemplateReasoningFormat:         info.ChatTemplateReasoningFormat,

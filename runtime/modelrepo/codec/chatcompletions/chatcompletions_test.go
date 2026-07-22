@@ -1,11 +1,72 @@
 package chatcompletions
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"testing"
 
 	"github.com/contenox/runtime/runtime/modelrepo"
 )
+
+// TestUnit_Build_SerializesImageAsContentParts asserts an image attachment
+// becomes the OpenAI content-parts array (text part + image_url part with the
+// inline base64 data URI), while a text-only message keeps a plain-string
+// content — the shape Mistral and OpenRouter both consume.
+func TestUnit_Build_SerializesImageAsContentParts(t *testing.T) {
+	pngBytes := []byte{0x89, 0x50, 0x4e, 0x47}
+	msgs := []modelrepo.Message{
+		{Role: "user", Content: "just text"},
+		{Role: "user", Content: "describe this", Images: []modelrepo.ImagePart{
+			{Data: pngBytes, MimeType: "image/png"},
+		}},
+	}
+
+	req, _ := Build("mistral-small-latest", msgs, nil)
+	raw, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var got struct {
+		Messages []struct {
+			Content json.RawMessage `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, raw)
+	}
+	if len(got.Messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(got.Messages))
+	}
+	// Text-only message: content is a bare JSON string (unchanged wire shape).
+	if b := got.Messages[0].Content; len(b) == 0 || b[0] != '"' {
+		t.Errorf("text-only content should be a JSON string, got %s", b)
+	}
+
+	var parts []struct {
+		Type     string `json:"type"`
+		Text     string `json:"text"`
+		ImageURL *struct {
+			URL string `json:"url"`
+		} `json:"image_url"`
+	}
+	if err := json.Unmarshal(got.Messages[1].Content, &parts); err != nil {
+		t.Fatalf("image message content is not a parts array: %v\n%s", err, got.Messages[1].Content)
+	}
+	if len(parts) != 2 {
+		t.Fatalf("expected [text, image_url] parts, got %d: %s", len(parts), got.Messages[1].Content)
+	}
+	if parts[0].Type != "text" || parts[0].Text != "describe this" {
+		t.Errorf("text part wrong: %+v", parts[0])
+	}
+	if parts[1].Type != "image_url" || parts[1].ImageURL == nil {
+		t.Fatalf("image part wrong: %+v", parts[1])
+	}
+	want := "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngBytes)
+	if parts[1].ImageURL.URL != want {
+		t.Errorf("data URI mismatch:\n want %s\n  got %s", want, parts[1].ImageURL.URL)
+	}
+}
 
 func TestUnit_Build_PlacesModelAndSanitizesToolNames(t *testing.T) {
 	maxTok := 256

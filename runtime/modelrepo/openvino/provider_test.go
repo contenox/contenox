@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -240,6 +241,176 @@ func TestUnit_OpenVINOCatalog_UsesModeldDetectedTemplateThinkingControls(t *test
 	}
 	if models[0].ContextLength != 16384 {
 		t.Fatalf("ContextLength = %d, want planner context from Describe", models[0].ContextLength)
+	}
+}
+
+// ModelInfo.SupportsVision from modeld's Describe must reach both the client
+// (image acceptance gate) and the catalog's CapabilityConfig.CanVision (what
+// the resolver routes image requests on).
+func TestUnit_OpenVINOProvider_VisionFromModeldDescribe(t *testing.T) {
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "vlm")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "openvino_language_model.xml"), []byte("<xml/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "tokenizer_config.json"), []byte(`{"chat_template":"{{ messages }}"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := &recordingService{
+		base: transport.NewMemoryService(),
+		info: transport.ModelInfo{
+			ModelMaxContext:  32768,
+			EffectiveContext: 8192,
+			SupportsVision:   true,
+		},
+	}
+	serveModeldForProviderTest(t, svc)
+
+	profile, err := loadModelProfile(modelDir)
+	if err != nil {
+		t.Fatalf("load profile: %v", err)
+	}
+	got, err := (&openvinoProvider{name: "vlm", modelDir: root, caps: profile.capabilityConfig()}).GetChatConnection(context.Background(), "")
+	if err != nil {
+		t.Fatalf("GetChatConnection: %v", err)
+	}
+	if !got.(*client).supportsVision {
+		t.Fatal("client supportsVision = false, want ModelInfo.SupportsVision threaded through")
+	}
+
+	models, err := (&catalogProvider{dir: root}).ListModels(context.Background())
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) != 1 || !models[0].CapabilityConfig.CanVision {
+		t.Fatalf("catalog CanVision = false, want ModelInfo.SupportsVision threaded through: %+v", models)
+	}
+}
+
+// Refuse-don't-spill: image-bearing messages toward a session without vision
+// support fail with a typed error before any prompt reaches the model.
+func TestUnit_OpenVINOClient_RefusesImagesWithoutVisionSupport(t *testing.T) {
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "text")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "openvino_language_model.xml"), []byte("<xml/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "tokenizer_config.json"), []byte(`{"chat_template":"{{ messages }}"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := &recordingService{base: transport.NewMemoryService(), info: transport.ModelInfo{ModelMaxContext: 32768, EffectiveContext: 8192}}
+	serveModeldForProviderTest(t, svc)
+
+	profile, err := loadModelProfile(modelDir)
+	if err != nil {
+		t.Fatalf("load profile: %v", err)
+	}
+	got, err := (&openvinoProvider{name: "text", modelDir: root, caps: profile.capabilityConfig()}).GetChatConnection(context.Background(), "")
+	if err != nil {
+		t.Fatalf("GetChatConnection: %v", err)
+	}
+	c := got.(*client)
+	if c.supportsVision {
+		t.Fatal("text model must not claim vision support")
+	}
+	_, err = c.Chat(context.Background(), []modelrepo.Message{
+		{Role: "user", Content: "what is this?", Images: []modelrepo.ImagePart{{Data: []byte("png"), MimeType: "image/png"}}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "image input") {
+		t.Fatalf("expected typed image-input refusal, got: %v", err)
+	}
+}
+
+// Without a Describe answer, the vision encoder shipped inside a VLM snapshot
+// (openvino_vision_embeddings_model.xml) is the offline best-effort vision
+// signal — and its absence keeps text models honest. (A non-nil session
+// factory skips Describe, exactly the offline path.)
+func TestUnit_OpenVINOCatalog_VisionEncoderFileIsOfflineSignal(t *testing.T) {
+	oldFactory := sessionFactory
+	sessionFactory = func(modeldconn.ModelRef, Config) (Session, error) { return nil, nil }
+	t.Cleanup(func() { sessionFactory = oldFactory })
+
+	root := t.TempDir()
+	for name, vision := range map[string]bool{"vlm": true, "text": false} {
+		modelDir := filepath.Join(root, name)
+		if err := os.MkdirAll(modelDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(modelDir, "openvino_language_model.xml"), []byte("<xml/>"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(modelDir, "tokenizer_config.json"), []byte(`{"chat_template":"{{ messages }}"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if vision {
+			if err := os.WriteFile(filepath.Join(modelDir, visionEncoderModelName), []byte("<xml/>"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	models, err := (&catalogProvider{dir: root}).ListModels(context.Background())
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) != 2 {
+		t.Fatalf("models = %d, want 2", len(models))
+	}
+	byName := map[string]bool{}
+	for _, m := range models {
+		byName[m.Name] = m.CapabilityConfig.CanVision
+	}
+	if !byName["vlm"] {
+		t.Fatal("vlm CanVision = false, want vision encoder file as offline signal")
+	}
+	if byName["text"] {
+		t.Fatal("text CanVision = true, want no vision claim without encoder or Describe answer")
+	}
+}
+
+// A live daemon's Describe answer is authoritative and downgrades the
+// file-presence signal: an older daemon that reports no vision support would
+// silently drop image parts, so the catalog must not keep claiming vision for
+// it just because the snapshot ships an encoder.
+func TestUnit_OpenVINOCatalog_DescribeAnswerDowngradesFileSignal(t *testing.T) {
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "vlm")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"openvino_language_model.xml": "<xml/>",
+		visionEncoderModelName:        "<xml/>",
+		"tokenizer_config.json":       `{"chat_template":"{{ messages }}"}`,
+	} {
+		if err := os.WriteFile(filepath.Join(modelDir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	svc := &recordingService{base: transport.NewMemoryService(), info: transport.ModelInfo{
+		ModelMaxContext:  32768,
+		EffectiveContext: 8192,
+		SupportsVision:   false, // e.g. an older daemon without the VLM cell
+	}}
+	serveModeldForProviderTest(t, svc)
+
+	models, err := (&catalogProvider{dir: root}).ListModels(context.Background())
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) != 1 {
+		t.Fatalf("models = %d, want 1", len(models))
+	}
+	if models[0].CapabilityConfig.CanVision {
+		t.Fatal("CanVision = true, want the daemon's negative Describe answer to win over the encoder file")
 	}
 }
 

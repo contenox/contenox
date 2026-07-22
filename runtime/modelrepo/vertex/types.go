@@ -51,8 +51,20 @@ type vertexPart struct {
 	Text             string                  `json:"text,omitempty"`
 	Thought          bool                    `json:"thought,omitempty"`
 	ThoughtSignature string                  `json:"thoughtSignature,omitempty"`
+	InlineData       *vertexInlineData       `json:"inlineData,omitempty"`
 	FunctionCall     *vertexFunctionCall     `json:"functionCall,omitempty"`
 	FunctionResponse *vertexFunctionResponse `json:"functionResponse,omitempty"`
+}
+
+// vertexInlineData is an inline binary blob part (e.g. an image) sent in a
+// content part. The Vertex generateContent wire format is identical to Gemini's
+// proto3-JSON and accepts the lowerCamelCase field names, matching the casing
+// this package already uses for functionCall / functionResponse /
+// thoughtSignature. encoding/json base64 (StdEncoding) encodes the Data []byte
+// on the wire.
+type vertexInlineData struct {
+	MimeType string `json:"mimeType"`
+	Data     []byte `json:"data"`
 }
 
 type vertexFunctionCall struct {

@@ -109,7 +109,7 @@ func TestUnit_Factory_EmptyIsError(t *testing.T) {
 }
 
 // TestUnit_Factory_Containment pins the containment semantics that replaced
-// exact-match (maintainer ruling, 2026-07-21): a granted root permits itself and
+// exact-match: a granted root permits itself and
 // everything under it, while a sibling, a prefix-trick neighbour, and a symlink
 // whose real target escapes every root are all refused. Exact-match used to
 // refuse the ok cases too — false protection, since the escape guard is what
@@ -151,7 +151,7 @@ func TestUnit_Factory_Containment(t *testing.T) {
 	})
 
 	t.Run("a prefix-trick neighbour is refused (segments, not string prefix)", func(t *testing.T) {
-		// /home/naroX must not be read as "under" /home/naro. Build the exact
+		// /home/userX must not be read as "under" /home/user. Build the exact
 		// shape: a sibling whose name has the root's basename as a string prefix.
 		neighbour := resolvedRoot + "X"
 		require.NoError(t, os.MkdirAll(neighbour, 0o755))
@@ -341,7 +341,7 @@ func setControlPlane(t *testing.T, denied ...string) {
 // ErrControlPlane teaching error, while a sibling lookalike (.contenox2) and the
 // granted root itself stay permitted.
 func TestUnit_ControlPlane_ResolveRefusesRootAndSubpaths(t *testing.T) {
-	root := t.TempDir() // the granted workspace root (stands in for /home/naro)
+	root := t.TempDir() // the granted workspace root (stands in for /home/user)
 	controlPlane := filepath.Join(root, ".contenox")
 	require.NoError(t, os.MkdirAll(controlPlane, 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(controlPlane, "local.db"), []byte("db"), 0o600))

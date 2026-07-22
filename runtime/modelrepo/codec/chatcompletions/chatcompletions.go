@@ -11,6 +11,7 @@
 package chatcompletions
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -34,11 +35,27 @@ type Request struct {
 	Stream      bool          `json:"stream,omitempty"`
 }
 
+// wireMessage.Content is `any` so it can carry either a plain string (the
+// common case, and null for tool-only assistant messages) or the OpenAI
+// content-parts array when the message has image attachments.
 type wireMessage struct {
 	Role       string         `json:"role"`
-	Content    *string        `json:"content"`
+	Content    any            `json:"content"`
 	ToolCallID string         `json:"tool_call_id,omitempty"`
 	ToolCalls  []wireToolCall `json:"tool_calls,omitempty"`
+}
+
+// wireContentPart is one element of the chat/completions content-parts array,
+// used only when a message carries image attachments (a text part plus one
+// image_url part per image).
+type wireContentPart struct {
+	Type     string        `json:"type"`
+	Text     string        `json:"text,omitempty"`
+	ImageURL *wireImageURL `json:"image_url,omitempty"`
+}
+
+type wireImageURL struct {
+	URL string `json:"url"`
 }
 
 type wireToolCall struct {
@@ -111,16 +128,19 @@ func Build(model string, messages []modelrepo.Message, cfg *modelrepo.ChatConfig
 
 	req.Messages = make([]wireMessage, 0, len(messages))
 	for _, msg := range messages {
-		content := msg.Content
-		var contentPtr *string
-		// Assistant messages that carry only tool calls send null content.
-		if content != "" || len(msg.ToolCalls) == 0 {
-			contentPtr = &content
-		}
 		wm := wireMessage{
 			Role:       msg.Role,
-			Content:    contentPtr,
 			ToolCallID: msg.ToolCallID,
+		}
+		switch {
+		case len(msg.Images) > 0:
+			// Image attachments force the content-parts array form.
+			wm.Content = wireImageContent(msg)
+		case msg.Content == "" && len(msg.ToolCalls) > 0:
+			// Assistant messages that carry only tool calls send null content.
+			wm.Content = nil
+		default:
+			wm.Content = msg.Content
 		}
 		for _, tc := range msg.ToolCalls {
 			name := tc.Function.Name
@@ -139,6 +159,32 @@ func Build(model string, messages []modelrepo.Message, cfg *modelrepo.ChatConfig
 	}
 
 	return req, nameMap
+}
+
+// wireImageContent renders a message's text plus its image attachments as the
+// content-parts array: a leading text part (when there is text), then one
+// image_url part per image, each an inline base64 data URI in attachment order.
+func wireImageContent(msg modelrepo.Message) []wireContentPart {
+	parts := make([]wireContentPart, 0, len(msg.Images)+1)
+	if msg.Content != "" {
+		parts = append(parts, wireContentPart{Type: "text", Text: msg.Content})
+	}
+	for _, img := range msg.Images {
+		parts = append(parts, wireContentPart{
+			Type:     "image_url",
+			ImageURL: &wireImageURL{URL: imageDataURI(img.MimeType, img.Data)},
+		})
+	}
+	return parts
+}
+
+// imageDataURI builds the data:<mime>;base64,<payload> URI that every
+// OpenAI-compatible vision endpoint accepts for inline image bytes.
+func imageDataURI(mimeType string, data []byte) string {
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
+	return "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)
 }
 
 // Response is the non-streaming chat/completions response body.

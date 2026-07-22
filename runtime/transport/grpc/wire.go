@@ -110,6 +110,8 @@ type describeResp struct {
 	ResolvedGpuLayers                   int                    `json:"resolved_gpu_layers,omitempty"`
 	SparseAttention                     bool                   `json:"sparse_attention,omitempty"`
 	SlidingWindowAttentionTokens        int                    `json:"sliding_window_attention_tokens,omitempty"`
+	SupportsVision                      bool                   `json:"supports_vision,omitempty"`
+	VisionTokensPerImage                int                    `json:"vision_tokens_per_image,omitempty"`
 	ChatTemplateFormat                  string                 `json:"chat_template_format,omitempty"`
 	ChatTemplateThinkingStartTag        string                 `json:"chat_template_thinking_start_tag,omitempty"`
 	ChatTemplateReasoningFormat         string                 `json:"chat_template_reasoning_format,omitempty"`

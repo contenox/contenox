@@ -17,8 +17,8 @@
 //
 // # Two layers
 //
-// The package is split into two layers, mirroring go-process-manager's
-// process/logic split (the reference this kernel was ported from):
+// The package is split into two layers — an instance primitive and the
+// orchestration logic around it:
 //
 //   - Layer A — the instance primitive (instance.go, viewer.go, journal.go,
 //     drive.go). An ACP-generic primitive depending only on libacp +
@@ -52,24 +52,7 @@
 //     beam's fleet view both hang off), and joins declared-agent config with
 //     live instance status in List.
 //
-// # How the pieces from go-process-manager map here
-//
-//	go-process-manager (reference)        agentinstance (this kernel)
-//	------------------------------        ---------------------------
-//	ProcessBase.writers map[string]WC     sessionState.viewers map[string]Viewer
-//	AddWriter / DeleteWriter / GetUser    viewerHub.attach / detach / counts
-//	ProcessPty.cacheBytesBuf (byte ring)  journal (structured SessionNotification ring)
-//	ProcessPty.readInit (write-to-all)    viewerHub.deliver (fan-out to all viewers)
-//	ProcessPty.ReadCache (replay ring)    viewerHub.attach replays the journal
-//	ProcessControl / VerifyControl        per-session controller (attach-bound, see viewer.go)
-//	SetState(state, predicateFns...)      instance.setState(state, predicateFns...)
-//	SetStateHook / SetAddWriterHook/...   instance hooks: onState / onAttach / onDetach
-//	watchDog (Wait->cleanup->restart)     instance.watchDog (Closed()->cleanup->restart)
-//	manualStopFlag                        instance.manualStop
-//	ProcessCtlLogic.getProcessInfoList    Manager.List (config+runtime join)
-//	createProcess wiring hooks->eventBus  Manager wiring instance hooks->EventSink
-//
-// # Where ACP forced a divergence from the byte-terminal reference
+// # Where ACP forced a divergence from a byte-terminal process manager
 //
 //   - Structured events, not bytes. The journal holds libacp.SessionNotification
 //     values, not a byte scrollback, so replay reconstructs a viewer's exact
@@ -86,13 +69,13 @@
 //     design — denies by default, or hands the request to an INJECTED answerer when
 //     one is wired (Manager.WithPermissionFallback). That seam keeps the kernel
 //     policy-free: it neither knows nor constrains how the answer is reached.
-//   - Restart loses conversation context. The reference restarts a crashed
-//     process and the process resumes from its own on-disk state. An ACP restart
+//   - Restart loses conversation context. A byte-terminal manager restarts a
+//     crashed process and the process resumes from its own on-disk state. An ACP restart
 //     re-spawns a fresh subprocess that must be re-Initialized; the downstream
 //     agent's in-memory conversation/session context is LOST. Restart keeps the
 //     fleet alive, not the conversation — see instance.watchDog.
-//   - Control is attach-bound, not time-leased. The reference expires a control
-//     lease (VerifyControl) to reclaim control from a WebSocket client that
+//   - Control is attach-bound, not time-leased. A wall-clock control lease
+//     exists to reclaim control from a client that
 //     vanished without releasing. Viewers here attach/detach explicitly and
 //     reliably through the Manager, so control is bound to attachment (auto-
 //     promoted on controller detach), not a wall-clock lease — a time lease would

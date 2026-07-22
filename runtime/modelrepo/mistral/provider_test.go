@@ -72,6 +72,60 @@ func TestUnit_MistralProvider_CanThinkFromCapabilityConfigOnly(t *testing.T) {
 	require.True(t, provider.CanThink(), "explicit capability config must set CanThink")
 }
 
+func TestUnit_MistralCatalog_VisionCapabilityFromAPI(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodGet, r.Method)
+		require.Equal(t, "/models", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[
+			{"id":"pixtral-large-latest","capabilities":{"completion_chat":true,"vision":true}},
+			{"id":"mistral-large-latest","capabilities":{"completion_chat":true,"vision":false}}
+		]}`))
+	}))
+	defer srv.Close()
+
+	catalog, err := modelrepo.NewCatalogProvider(modelrepo.BackendSpec{Type: "mistral", BaseURL: srv.URL})
+	require.NoError(t, err)
+
+	models, err := catalog.ListModels(context.Background())
+	require.NoError(t, err)
+	require.Len(t, models, 2)
+
+	byName := map[string]modelrepo.ObservedModel{}
+	for _, m := range models {
+		byName[m.Name] = m
+	}
+
+	vision, ok := byName["pixtral-large-latest"]
+	require.True(t, ok)
+	require.True(t, vision.CanVision, "capabilities.vision=true must set CanVision")
+
+	nonVision, ok := byName["mistral-large-latest"]
+	require.True(t, ok)
+	require.False(t, nonVision.CanVision, "capabilities.vision=false must leave CanVision unset")
+
+	// CanVision must propagate through to the provider constructed from the model.
+	provider := catalog.ProviderFor(vision)
+	require.True(t, provider.CanVision())
+	require.False(t, catalog.ProviderFor(nonVision).CanVision())
+}
+
+func TestUnit_MistralCatalog_VisionUnsetWhenCapabilitiesAbsent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"mistral-large-latest","max_output_tokens":32768}]}`))
+	}))
+	defer srv.Close()
+
+	catalog, err := modelrepo.NewCatalogProvider(modelrepo.BackendSpec{Type: "mistral", BaseURL: srv.URL})
+	require.NoError(t, err)
+
+	models, err := catalog.ListModels(context.Background())
+	require.NoError(t, err)
+	require.Len(t, models, 1)
+	require.False(t, models[0].CanVision, "absent capabilities object must not advertise vision")
+}
+
 func TestUnit_MistralCatalog_Registered(t *testing.T) {
 	cp, err := modelrepo.NewCatalogProvider(modelrepo.BackendSpec{Type: "mistral", APIKey: "k"})
 	require.NoError(t, err, "mistral must be registered in the catalog registry")

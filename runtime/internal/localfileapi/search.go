@@ -126,8 +126,8 @@ type searchHandler struct {
 }
 
 // search streams matches for `q` under `root` as Server-Sent Events.
-// @sse-response localfileapi.searchMatch
 func (h *searchHandler) search(w http.ResponseWriter, r *http.Request) {
+	// @response sse Named SSE events over text/event-stream: `match` frames (one searchMatch JSON object each), then a terminal `done` frame carrying totals and the truncation flag.
 	// All refusals happen BEFORE any SSE header is written, so they are ordinary
 	// JSON API errors a client can read a status from — once the stream starts,
 	// the only signal left is a terminal `done` frame.

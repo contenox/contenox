@@ -278,7 +278,7 @@ suite("Contenox VS Code extension", () => {
           toolsName: "local_fs",
           toolName: "sed",
           policyName: "hitl-policy-strict.json",
-          policyPath: "/home/naro/.contenox/hitl-policy-strict.json",
+          policyPath: "/home/user/.contenox/hitl-policy-strict.json",
           diff: "--- README.md\n+++ README.md\n@@\n-Questions: hello@contenox.com\n+Questions: **hello@contenox.com**\n",
         },
       },
@@ -298,7 +298,7 @@ suite("Contenox VS Code extension", () => {
     assert.equal(event.toolsName, "local_fs");
     assert.equal(event.toolName, "sed");
     assert.equal(event.policyName, "hitl-policy-strict.json");
-    assert.equal(event.policyPath, "/home/naro/.contenox/hitl-policy-strict.json");
+    assert.equal(event.policyPath, "/home/user/.contenox/hitl-policy-strict.json");
     assert.equal(event.diffOld, "Questions: hello@contenox.com\n");
     assert.equal(event.diffNew, "Questions: **hello@contenox.com**\n");
     assert.ok(event.diff?.includes("+Questions: **hello@contenox.com**"));

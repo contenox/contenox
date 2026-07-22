@@ -2,8 +2,8 @@
 
 > Status: packaging blueprint. Scope is only how official `modeld` binaries are
 > built, packaged, checksummed, and uploaded. The `contenox setup` artifact
-> detection path is defined separately in
-> [modeld setup artifact detection](setup-artifact-detection.md). Service
+> detection and version-selection path is defined in
+> [version decoupling](version-decoupling.md). Service
 > management and daemon lifecycle remain follow-up work.
 
 ## Problem
@@ -387,10 +387,9 @@ modeld has two S3-backed phases:
 
 No GitHub Actions workflow orchestrates these phases yet.
 
-The maintainer command sequence lives in
-[the modeld release runbook](../../modeld-release-runbook.md). This blueprint defines
-the artifact shape and invariants; the runbook is the operational source for
-bucket setup, repo-local `.env`, cross-device dependency handoff, release
+The command sequence lives in [the modeld release runbook](../../modeld-release-runbook.md). 
+This blueprint defines the artifact shape and invariants; the runbook is the operational source 
+for bucket setup, repo-local `.env`, cross-device dependency handoff, release
 assembly, upload, and verification.
 
 The CGo link cannot meaningfully cross-compile, so the final package for a platform is
@@ -421,7 +420,7 @@ Every step except the literal S3 transfer runs locally with no AWS: the store ba
 chosen by URI scheme (`scripts/modeld-store.sh`), so pointing `MODELD_DEPS_S3_URI` and
 `MODELD_RELEASE_S3_URI` at local directories exercises the dependency upload, dedup,
 pull, package, and final-package upload paths without credentials. Only `s3://` URIs need
-a real bucket. For maintainer machines, the root Makefile auto-loads a repo-local `.env`
+a real bucket. For developers machines, the root Makefile auto-loads a repo-local `.env`
 when present, so these store URIs do not have to be passed to every command.
 
 ### Smoke test must prove the backend set
@@ -457,8 +456,8 @@ never rebuilds llama.cpp or OpenVINO from source.
 
 ### Relationship to the contenox release
 
-This is separate from the `contenox` / VS Code release (`.github/workflows/release.yml`
-and `docs/blueprints/ci-release-hardening.md`, which cover the GitHub-Actions tag-gated
+This is separate from the `contenox` / VS Code release (`.github/workflows/release.yml`,
+the GitHub-Actions tag-gated
 publish of the pure-Go CLI and the extension). modeld binaries are not GitHub-Release
 assets; they live in the S3 store. modeld now has its own release version in
 `cmd/modeld/version.txt`, while `runtime/version/version.txt` continues to drive the

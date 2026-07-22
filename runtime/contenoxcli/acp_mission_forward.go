@@ -10,7 +10,7 @@
 // (runtime/agentinstance), which the acp process now embeds so `/mission` runs
 // IN-PROCESS and its reports come back live into the firing editor session (the
 // ontology: a mission is a subagent of the process that fired it — see
-// docs/development/blueprints/open-work-2026-07-21 §2, and acp_cmd.go's embedding).
+// acp_cmd.go's embedding).
 //
 // Forwarding survives ONLY as the explicit opt-in an operator reaches for to fire
 // a mission onto a bigger box: presence-based auto-discovery is gone, and the

@@ -450,8 +450,8 @@ func (b EvictionBudget) Valid() bool {
 }
 
 // DeriveEvictionBudget splits a served window into attention sinks, a recent
-// window, and the total hot budget. It is eviction-algorithm policy (à la
-// StreamingLLM/H2O), not hardware sizing: ~1/16 of the effective eviction window
+// window, and the total hot budget. It is eviction-algorithm policy
+// (attention sinks plus a recent window), not hardware sizing: ~1/16 of the effective eviction window
 // as sinks, ~1/4 as the recent window, Max = that window. Sliding-window models
 // cap the eviction window at their model-native attention span because older
 // windowed-layer KV cannot be useful hot context. blockSize aligns sizes for

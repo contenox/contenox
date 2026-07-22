@@ -26,6 +26,8 @@ type remoteToolsService struct {
 	service toolsproviderservice.Service
 }
 
+// listLocal returns every locally available tool group (builtin, MCP-backed,
+// and remote) with the tools each currently exposes.
 func (s *remoteToolsService) listLocal(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -35,9 +37,11 @@ func (s *remoteToolsService) listLocal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = apiframework.Encode(w, r, http.StatusOK, localTools)
+	_ = apiframework.Encode(w, r, http.StatusOK, localTools) // @response []toolsproviderservice.LocalTools
 }
 
+// getSchemas returns the OpenAPI schema document for every supported tool,
+// keyed by tool name.
 func (s *remoteToolsService) getSchemas(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -47,13 +51,15 @@ func (s *remoteToolsService) getSchemas(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	_ = apiframework.Encode(w, r, http.StatusOK, schemas)
+	_ = apiframework.Encode(w, r, http.StatusOK, schemas) // @response any
 }
 
+// create registers a new remote tools provider and returns it with its
+// assigned ID.
 func (s *remoteToolsService) create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	tool, err := apiframework.Decode[runtimetypes.RemoteTools](r)
+	tool, err := apiframework.Decode[runtimetypes.RemoteTools](r) // @request runtimetypes.RemoteTools
 	if err != nil {
 		_ = apiframework.Error(w, r, err, apiframework.CreateOperation)
 		return
@@ -63,9 +69,10 @@ func (s *remoteToolsService) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = apiframework.Encode(w, r, http.StatusCreated, tool)
+	_ = apiframework.Encode(w, r, http.StatusCreated, tool) // @response runtimetypes.RemoteTools
 }
 
+// list returns the registered remote tools providers, paginated by cursor.
 func (s *remoteToolsService) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -81,9 +88,10 @@ func (s *remoteToolsService) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = apiframework.Encode(w, r, http.StatusOK, tools)
+	_ = apiframework.Encode(w, r, http.StatusOK, tools) // @response []*runtimetypes.RemoteTools
 }
 
+// get returns one remote tools provider by ID.
 func (s *remoteToolsService) get(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := apiframework.GetPathParam(r, "id", "The unique identifier for the remote tool.")
@@ -94,14 +102,16 @@ func (s *remoteToolsService) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = apiframework.Encode(w, r, http.StatusOK, tool)
+	_ = apiframework.Encode(w, r, http.StatusOK, tool) // @response runtimetypes.RemoteTools
 }
 
+// update replaces a remote tools provider's configuration by ID and returns
+// the stored result.
 func (s *remoteToolsService) update(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := apiframework.GetPathParam(r, "id", "The unique identifier for the remote tool.")
 
-	tool, err := apiframework.Decode[runtimetypes.RemoteTools](r)
+	tool, err := apiframework.Decode[runtimetypes.RemoteTools](r) // @request runtimetypes.RemoteTools
 	if err != nil {
 		_ = apiframework.Error(w, r, err, apiframework.UpdateOperation)
 		return
@@ -113,9 +123,10 @@ func (s *remoteToolsService) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = apiframework.Encode(w, r, http.StatusOK, tool)
+	_ = apiframework.Encode(w, r, http.StatusOK, tool) // @response runtimetypes.RemoteTools
 }
 
+// delete removes a remote tools provider by ID.
 func (s *remoteToolsService) delete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := apiframework.GetPathParam(r, "id", "The unique identifier for the remote tool.")
@@ -125,9 +136,10 @@ func (s *remoteToolsService) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = apiframework.Encode(w, r, http.StatusOK, "deleted")
+	_ = apiframework.Encode(w, r, http.StatusOK, "deleted") // @response string
 }
 
+// getByName returns one remote tools provider by its unique name.
 func (s *remoteToolsService) getByName(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	name := apiframework.GetPathParam(r, "name", "The unique name for the remote tool.")
@@ -136,5 +148,5 @@ func (s *remoteToolsService) getByName(w http.ResponseWriter, r *http.Request) {
 		_ = apiframework.Error(w, r, err, apiframework.GetOperation)
 		return
 	}
-	_ = apiframework.Encode(w, r, http.StatusOK, tool)
+	_ = apiframework.Encode(w, r, http.StatusOK, tool) // @response runtimetypes.RemoteTools
 }

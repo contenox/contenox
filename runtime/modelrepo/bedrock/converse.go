@@ -91,9 +91,26 @@ func buildConverseInput(modelName string, messages []modelrepo.Message, cfg *mod
 			}
 			appendBlocks(types.ConversationRoleAssistant, blocks)
 		default: // "user"
+			var blocks []types.ContentBlock
 			if m.Content != "" {
-				appendBlocks(types.ConversationRoleUser, []types.ContentBlock{&types.ContentBlockMemberText{Value: m.Content}})
+				blocks = append(blocks, &types.ContentBlockMemberText{Value: m.Content})
 			}
+			// Vision: append an image content block per attachment, after any
+			// text block. Bedrock takes the raw image bytes in the Bytes source
+			// (the SDK base64-encodes them on the wire). Images with an
+			// unrecognised MIME type are skipped rather than sent with an
+			// invalid Format that Bedrock would reject.
+			for _, img := range m.Images {
+				format, ok := imageFormatFromMime(img.MimeType)
+				if !ok {
+					continue
+				}
+				blocks = append(blocks, &types.ContentBlockMemberImage{Value: types.ImageBlock{
+					Format: format,
+					Source: &types.ImageSourceMemberBytes{Value: img.Data},
+				}})
+			}
+			appendBlocks(types.ConversationRoleUser, blocks)
 		}
 	}
 
@@ -195,6 +212,25 @@ func newToolCall(id, name, args string) modelrepo.ToolCall {
 	tc.Function.Name = name
 	tc.Function.Arguments = args
 	return tc
+}
+
+// imageFormatFromMime maps an image MIME type to the Bedrock Converse
+// ImageFormat enum. Only the formats Bedrock accepts (png, jpeg, gif, webp)
+// are recognised; any other type returns ok=false so the caller can skip the
+// attachment instead of sending a Format value Bedrock would reject.
+func imageFormatFromMime(mime string) (types.ImageFormat, bool) {
+	switch strings.ToLower(strings.TrimSpace(mime)) {
+	case "image/png":
+		return types.ImageFormatPng, true
+	case "image/jpeg", "image/jpg":
+		return types.ImageFormatJpeg, true
+	case "image/gif":
+		return types.ImageFormatGif, true
+	case "image/webp":
+		return types.ImageFormatWebp, true
+	default:
+		return "", false
+	}
 }
 
 // sanitizeToolName replaces invalid characters with '_' and trims leading/trailing separators.

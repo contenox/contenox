@@ -4,22 +4,18 @@ Contenox is an ACP hub: `contenox acp` serves the Agent Client Protocol over
 stdio upward, for editor and desktop clients (Zed, JetBrains, AionUi, beam);
 `contenox acpx` runs the headless / untrusted-driver profile. The same Go
 runtime is also an ACP client downward, driving other ACP agents (including
-other contenox instances) as a taskengine step or a modelprovider
-implementation. These docs cover both directions: getting contenox listed and
-installable in ACP clients, and the client-side engine capability that lets
-contenox drive agents of its own.
+other contenox instances) as declared external agents and fleet units. These
+docs cover both directions, plus the fleet/mission machinery built on them.
 
 | Doc | Status | What it covers |
 | --- | --- | --- |
 | [acp-client-engine.md](acp-client-engine.md) | direction | Contenox as an ACP client: the models/tools/agents ladder, ACP-as-taskengine-step and ACP-as-modelprovider, the provider honesty rule, the permission-routing invariant, the shared `libacp` client-core prerequisite, and the agent registry pattern |
-| [declared-agents-and-harnesses.md](declared-agents-and-harnesses.md) | direction | Agents and harnesses as declared resources: the trust stance (equip, don't govern), the harness-is-the-client-role contract, server-resident sessions with journal-backed virtual screens beam attaches to, headless agents, and the walking-skeleton build order (registry/journal/harness → driver → fleet MVP → rules and triggers) |
-| [zed-registry.md](zed-registry.md) | plan | Listing contenox on the Zed/ACP registry so an install yields a working, model-wired agent |
+| [agent-servers-and-client-e2e.md](agent-servers-and-client-e2e.md) | landed | How the client-host role is verified end-to-end: the self-hosting loopback, the conformance harnesses, `contenox agent check` |
+| [fleet-consolidation.md](fleet-consolidation.md) | executed record | Fleet and mission mode: dispatch, the supervision edge, reports, the attention inbox, session adoption — the slices behind `fleetservice`/`missionservice` |
+| [mission-plans.md](mission-plans.md) | building | The plan engine as a resident planner: plan revisions, step progress, prompt surface |
+| [envelope-compute-bounds.md](envelope-compute-bounds.md) | building | The mission envelope as a unit's TOTAL boundary: compute bounds (turns, tool calls, tokens) alongside HITL action bounds |
 | [registry-submission/](registry-submission/README.md) | artifacts | The `agent.json` + icon to copy into an `agentclientprotocol/registry` fork, with validation steps |
-| [openide-integration.md](openide-integration.md) | research | OpenIDE (IntelliJ Platform) integration via a native plugin over the existing runtime and stdio bridge |
 
 Related: [`../vscode/acp-permission-bridge.md`](../vscode/acp-permission-bridge.md)
-(ACP-shaped permissions inside the VS Code bridge), the ACP slash-command
-surface documented in `docs/contenox-cli.md`, and
-[`../opsclient/operator-console.md`](../opsclient/operator-console.md) (the
-operator-console consumer of the client engine, driving remote hosts instead
-of editors).
+(ACP-shaped permissions inside the VS Code bridge) and the ACP slash-command
+surface documented in `docs/reference/contenox-cli.md`.

@@ -39,6 +39,123 @@ type Service interface {
 	Mkdir(ctx context.Context, relPath string) (*Entry, error)
 	Delete(ctx context.Context, relPath string) error
 	Move(ctx context.Context, fromPath, toPath string) (*Entry, error)
+	Find(ctx context.Context, opts FindOptions, emit func(Entry) error) (FindResult, error)
+}
+
+// FindOptions configures a recursive filename walk under the workspace root.
+type FindOptions struct {
+	// Path is the subtree to search, relative to the root; "" or "." is the whole
+	// workspace. It is normalized and contained exactly like every other rel path.
+	Path string
+	// Globs are filepath.Match patterns; a FILE matches if ANY of them matches. A
+	// pattern containing '/' is matched against the root-relative path, otherwise
+	// against the basename (mirrors local_fs.find_files). No pattern (or an empty
+	// slice) matches nothing.
+	Globs []string
+	// Limit caps emitted matches; on reaching it the walk stops and FindResult.Truncated
+	// is set. Limit <= 0 means unbounded (the caller is expected to clamp).
+	Limit int
+	// SkipDirs prunes directories by basename (noise dirs: .git, node_modules, …);
+	// nil prunes nothing.
+	SkipDirs map[string]bool
+}
+
+// FindResult reports the outcome of a Find walk.
+type FindResult struct {
+	Count     int
+	Truncated bool
+}
+
+// Find recursively walks opts.Path and streams, via emit, every FILE whose name
+// (or root-relative path, for a pattern containing '/') matches any of opts.Globs.
+//
+// Safety: the walk root is contained once up front, but filepath.WalkDir descends
+// into children the single-path guard has never seen — an interior symlink could
+// point out of the root or straight into the control plane (~/.contenox). So EVERY
+// visited node is re-resolved through the same non-privileged vfs view the flat
+// methods use (s.view.Resolve): a node that escapes or is denied is skipped (a
+// directory via SkipDir, pruning its whole subtree), never emitted or descended.
+// This is the recursive analogue of the per-path boundary List/Stat/… enforce.
+func (s *localService) Find(ctx context.Context, opts FindOptions, emit func(Entry) error) (FindResult, error) {
+	var res FindResult
+	startAbs, _, err := s.resolveExisting(opts.Path, true)
+	if err != nil {
+		return res, err
+	}
+	for _, g := range opts.Globs {
+		if _, err := filepath.Match(g, ""); err != nil {
+			return res, fmt.Errorf("%w: bad glob %q: %v", ErrInvalidPath, g, err)
+		}
+	}
+	var emitErr error
+	walkErr := filepath.WalkDir(startAbs, func(walkPath string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil // skip unreadable entries/dirs rather than aborting the whole walk
+		}
+		if ctx.Err() != nil {
+			return filepath.SkipAll
+		}
+		rel, relErr := filepath.Rel(s.root, walkPath)
+		if relErr != nil {
+			return nil
+		}
+		rel = filepath.ToSlash(rel)
+		if rel == "." {
+			return nil // the walk root itself
+		}
+		// Per-node boundary re-check — the load-bearing safety line.
+		if _, rerr := s.view.Resolve(rel); rerr != nil {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			if opts.SkipDirs[d.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !matchesAnyGlob(opts.Globs, rel, d.Name()) {
+			return nil
+		}
+		info, ierr := d.Info()
+		if ierr != nil {
+			return nil
+		}
+		if err := emit(entryFromInfo(rel, info)); err != nil {
+			emitErr = err
+			return filepath.SkipAll
+		}
+		res.Count++
+		if opts.Limit > 0 && res.Count >= opts.Limit {
+			res.Truncated = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	if emitErr != nil {
+		return res, emitErr
+	}
+	if walkErr != nil {
+		return res, mapOSError(walkErr)
+	}
+	return res, nil
+}
+
+// matchesAnyGlob reports whether rel/name matches any pattern: a pattern with a
+// '/' is matched against the root-relative path, otherwise against the basename.
+func matchesAnyGlob(globs []string, rel, name string) bool {
+	for _, g := range globs {
+		target := name
+		if strings.ContainsRune(g, '/') {
+			target = rel
+		}
+		if ok, _ := filepath.Match(g, target); ok {
+			return true
+		}
+	}
+	return false
 }
 
 type localService struct {

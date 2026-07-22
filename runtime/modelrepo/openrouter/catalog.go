@@ -44,7 +44,8 @@ type orModel struct {
 	ID            string `json:"id"`
 	ContextLength int    `json:"context_length"`
 	Architecture  struct {
-		Modality string `json:"modality"`
+		Modality        string   `json:"modality"`
+		InputModalities []string `json:"input_modalities"`
 	} `json:"architecture"`
 	TopProvider struct {
 		ContextLength       int `json:"context_length"`
@@ -117,9 +118,25 @@ func toObservedModel(m orModel) (modelrepo.ObservedModel, bool) {
 		om.CanChat = true
 		om.CanPrompt = true
 		om.CanStream = true
+		om.CanVision = orAcceptsImageInput(m)
 	default:
 		// Non-text-generation models (image, audio, video) — skip.
 		return modelrepo.ObservedModel{}, false
 	}
 	return om, true
+}
+
+// orAcceptsImageInput reports whether the model takes image input, read from
+// the provider's own metadata: the architecture.input_modalities list when
+// present, else the legacy "input->output" modality string's input side.
+func orAcceptsImageInput(m orModel) bool {
+	for _, mod := range m.Architecture.InputModalities {
+		if strings.EqualFold(strings.TrimSpace(mod), "image") {
+			return true
+		}
+	}
+	if in, _, ok := strings.Cut(strings.ToLower(m.Architecture.Modality), "->"); ok {
+		return strings.Contains(in, "image")
+	}
+	return false
 }

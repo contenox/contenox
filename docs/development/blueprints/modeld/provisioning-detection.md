@@ -2,7 +2,7 @@
 
 > **Status:** decision blueprint.
 > **Sibling docs:** `interface-boundary.md` (the compute boundary),
-> `owner-coordination.md` (the owner lease), `llama/coding-node-plan.md`.
+> `owner-coordination.md` (the owner lease).
 > **Purpose:** decide how `runtime` discovers the second binary (`modeld`),
 > guides the user to install it, and fails honestly when it is missing or dead —
 > so that local inference availability is a *detected* condition, not a hardcoded

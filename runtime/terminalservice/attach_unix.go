@@ -90,6 +90,10 @@ func (s *service) Attach(ctx context.Context, principal, id string, conn io.Read
 	}
 
 	<-ctx.Done()
+	// This attachment is over (client gone, preempted, or shutdown). Close the
+	// transport first: a pty->ws writer stalled on a dead or slow client never
+	// sees the tty read deadline, so only closing conn can unblock it.
+	_ = conn.Close()
 	_ = tty.SetReadDeadline(time.Unix(1, 0))
 	<-ptyDone
 	_ = tty.SetReadDeadline(time.Time{})

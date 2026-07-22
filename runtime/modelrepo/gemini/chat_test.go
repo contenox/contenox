@@ -2,6 +2,7 @@ package gemini
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -180,6 +181,53 @@ func TestUnit_BuildGeminiRequest_WrapsSchemaLikeToolResultAsText(t *testing.T) {
 	resp := req.Contents[1].Parts[0].FunctionResponse.Response
 	require.Equal(t, schemaResult, resp["content"])
 	require.NotContains(t, resp, "$defs")
+}
+
+func TestUnit_BuildGeminiRequest_ImageInputAddsInlineDataPart(t *testing.T) {
+	t.Parallel()
+
+	imgBytes := []byte("fake-png-bytes")
+	wantB64 := base64.StdEncoding.EncodeToString(imgBytes)
+
+	msgs := []modelrepo.Message{
+		{
+			Role:    "user",
+			Content: "what is in this image?",
+			Images:  []modelrepo.ImagePart{{Data: imgBytes, MimeType: "image/png"}},
+		},
+	}
+
+	req, err := buildGeminiRequest("gemini-2.5-pro", msgs, nil, nil)
+	require.NoError(t, err)
+
+	// White-box: the user content carries a text part then an inlineData part.
+	require.Len(t, req.Contents, 1)
+	parts := req.Contents[0].Parts
+	require.Len(t, parts, 2)
+	assert.Equal(t, "what is in this image?", parts[0].Text)
+	require.NotNil(t, parts[1].InlineData)
+	assert.Equal(t, "image/png", parts[1].InlineData.MimeType)
+	assert.Equal(t, imgBytes, parts[1].InlineData.Data)
+
+	// Wire shape: the marshaled JSON carries the inlineData part with the
+	// base64 payload and correct mime type.
+	raw, err := json.Marshal(req)
+	require.NoError(t, err)
+	js := string(raw)
+	assert.Contains(t, js, `"inlineData":{`)
+	assert.Contains(t, js, `"mimeType":"image/png"`)
+	assert.Contains(t, js, `"data":"`+wantB64+`"`)
+
+	// A text-only message keeps its prior single text-part shape (no inlineData).
+	textReq, err := buildGeminiRequest("gemini-2.5-pro", []modelrepo.Message{{Role: "user", Content: "hi"}}, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, textReq.Contents, 1)
+	require.Len(t, textReq.Contents[0].Parts, 1)
+	assert.Equal(t, "hi", textReq.Contents[0].Parts[0].Text)
+	assert.Nil(t, textReq.Contents[0].Parts[0].InlineData)
+	textRaw, err := json.Marshal(textReq)
+	require.NoError(t, err)
+	assert.NotContains(t, string(textRaw), "inlineData")
 }
 
 func TestUnit_BuildGeminiRequest_KeepsNormalObjectToolResultStructured(t *testing.T) {

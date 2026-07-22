@@ -51,6 +51,8 @@ func (h *handler) authorize(ctx context.Context) error {
 	return err
 }
 
+// execute runs the submitted task chain through the configured agent and
+// returns the output together with the captured per-step state and stop reason.
 func (h *handler) execute(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if err := h.authorize(ctx); err != nil {

@@ -33,7 +33,8 @@ var modelPullCmd = &cobra.Command{
 		// Registry is the single source of truth for curated model URLs.
 		reg := modelregistry.New(nil)
 
-		var name, downloadURL, repo, toolProtocol, reasoningProtocol, reasoningFormat string
+		var name, downloadURL, repo, toolProtocol, reasoningProtocol, reasoningFormat, mmprojURL string
+		var vision bool
 		modelBackend := "llama" // GGUF single-file by default; --url pulls are GGUF
 		switch {
 		case rawURL != "" && len(args) == 1:
@@ -59,6 +60,8 @@ var modelPullCmd = &cobra.Command{
 			toolProtocol = d.ToolProtocol
 			reasoningProtocol = d.ReasoningProtocol
 			reasoningFormat = d.ReasoningFormat
+			mmprojURL = d.MMProjURL
+			vision = d.Vision
 		default:
 			return cmd.Help()
 		}
@@ -85,17 +88,15 @@ var modelPullCmd = &cobra.Command{
 				}
 				fmt.Fprintln(cmd.OutOrStdout(), "Done.")
 			}
+			if vision {
+				fmt.Fprintf(cmd.OutOrStdout(), "✓  vision: the snapshot includes the vision encoder — %q accepts image input\n", name)
+			}
 		} else {
-			destPath := filepath.Join(modelDir, "model.gguf")
-			if _, err := os.Stat(destPath); err == nil {
-				fmt.Fprintf(cmd.OutOrStdout(), "Model %q already downloaded at %s\n", name, destPath)
-			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "Downloading %s...\n  → %s\n", name, destPath)
-				if err := downloadGGUF(downloadURL, destPath, cmd.OutOrStdout()); err != nil {
-					_ = os.Remove(destPath)
-					return fmt.Errorf("download failed: %w", err)
-				}
-				fmt.Fprintln(cmd.OutOrStdout(), "\nDone.")
+			if err := pullLlamaArtifacts(name, downloadURL, mmprojURL, modelDir, cmd.OutOrStdout()); err != nil {
+				return err
+			}
+			if vision {
+				fmt.Fprintf(cmd.OutOrStdout(), "✓  vision: multimodal projector installed — %q accepts image input\n", name)
 			}
 		}
 		// Certified curated models declare their local parsing protocols; write
@@ -135,6 +136,12 @@ func modelPullLong() string {
 under ~/.contenox/models/llama/<name>/model.gguf; OpenVINO IR models (curated
 names ending in -ov) are fetched as a multi-file repo into
 ~/.contenox/models/openvino/<name>/.
+
+Curated vision models (use "chat+vision") install everything image input needs
+in the same pull: llama entries fetch the multimodal projector beside the model
+as mmproj.gguf, and OpenVINO vision snapshots already include their vision
+encoder. Example:
+  contenox model pull gemma4-e4b
 
 Curated models - run 'contenox model registry-list' to see full list with
 sizes, advisory VRAM tiers, use cases, notes, and best-effort local fit:
@@ -188,14 +195,14 @@ func modelPullCuratedHelp() string {
 				b.WriteByte('\n')
 			}
 			fmt.Fprintf(&b, "  %s:\n", backend)
-			fmt.Fprintf(&b, "    %-38s %-10s %-5s %-9s %s\n", "name", "size", "vram", "use", "label")
+			fmt.Fprintf(&b, "    %-38s %-10s %-5s %-12s %s\n", "name", "size", "vram", "use", "label")
 			currentBackend = backend
 		}
 		note := entry.Notes
 		if note != "" {
 			note = " - " + note
 		}
-		fmt.Fprintf(&b, "    %-38s %-10s %-5s %-9s %s%s\n",
+		fmt.Fprintf(&b, "    %-38s %-10s %-5s %-12s %s%s\n",
 			entry.Name,
 			humanModelBytes(entry.SizeBytes),
 			entry.RecommendedVRAMLabel(),
@@ -205,6 +212,41 @@ func modelPullCuratedHelp() string {
 		)
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// pullLlamaArtifacts fetches every artifact a llama model needs to serve its
+// declared capabilities: the model GGUF and, for curated vision entries, the
+// multimodal projector beside it as mmproj.gguf (the filename modeld resolves
+// the projector from). One pull action installs both; an already-present
+// model.gguf still gets its missing projector, so a model pulled before it was
+// curated for vision upgrades in place. A projector that cannot be fetched is
+// a hard error, never a silently text-only model.
+func pullLlamaArtifacts(name, modelURL, mmprojURL, modelDir string, out io.Writer) error {
+	destPath := filepath.Join(modelDir, "model.gguf")
+	if _, err := os.Stat(destPath); err == nil {
+		fmt.Fprintf(out, "Model %q already downloaded at %s\n", name, destPath)
+	} else {
+		fmt.Fprintf(out, "Downloading %s...\n  → %s\n", name, destPath)
+		if err := downloadGGUF(modelURL, destPath, out); err != nil {
+			_ = os.Remove(destPath)
+			return fmt.Errorf("download failed: %w", err)
+		}
+		fmt.Fprintln(out, "\nDone.")
+	}
+	if mmprojURL == "" {
+		return nil
+	}
+	mmprojPath := filepath.Join(modelDir, llamaMMProjFileName)
+	if _, err := os.Stat(mmprojPath); err == nil {
+		return nil
+	}
+	fmt.Fprintf(out, "Downloading vision projector for %s...\n  → %s\n", name, mmprojPath)
+	if err := downloadGGUF(mmprojURL, mmprojPath, out); err != nil {
+		_ = os.Remove(mmprojPath)
+		return fmt.Errorf("vision projector download failed: %w\n%q needs %s next to model.gguf to accept image input — re-run 'contenox model pull %s' to fetch it", err, name, llamaMMProjFileName, name)
+	}
+	fmt.Fprintln(out, "\nDone.")
+	return nil
 }
 
 func downloadGGUF(url, destPath string, out io.Writer) error {

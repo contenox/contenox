@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/bedrock"
+	"github.com/aws/aws-sdk-go-v2/service/bedrock/types"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/modelrepo"
 )
@@ -41,21 +43,42 @@ func (p *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 
 	var models []modelrepo.ObservedModel
 	for _, summary := range output.ModelSummaries {
-		modelID := *summary.ModelId
-		isEmbed := strings.Contains(strings.ToLower(modelID), "embed")
-
-		models = append(models, modelrepo.ObservedModel{
-			Name: modelID,
-			CapabilityConfig: modelrepo.CapabilityConfig{
-				CanChat:   !isEmbed,
-				CanStream: !isEmbed,
-				CanPrompt: !isEmbed,
-				CanEmbed:  isEmbed,
-			},
-		})
+		models = append(models, observedFromSummary(summary))
 	}
 
 	return models, nil
+}
+
+// observedFromSummary maps a Bedrock ListFoundationModels result entry into an
+// ObservedModel. It is a pure function (no AWS calls) so the capability mapping
+// can be unit-tested without live credentials.
+//
+// CanVision is detected from the API rather than a hardcoded model list: the
+// FoundationModelSummary.InputModalities field reports which input modalities
+// the model accepts, and a model that lists ModelModalityImage ("IMAGE") among
+// them accepts image input.
+func observedFromSummary(summary types.FoundationModelSummary) modelrepo.ObservedModel {
+	modelID := aws.ToString(summary.ModelId)
+	isEmbed := strings.Contains(strings.ToLower(modelID), "embed")
+
+	canVision := false
+	for _, m := range summary.InputModalities {
+		if strings.EqualFold(string(m), string(types.ModelModalityImage)) {
+			canVision = true
+			break
+		}
+	}
+
+	return modelrepo.ObservedModel{
+		Name: modelID,
+		CapabilityConfig: modelrepo.CapabilityConfig{
+			CanChat:   !isEmbed,
+			CanStream: !isEmbed,
+			CanPrompt: !isEmbed,
+			CanEmbed:  isEmbed,
+			CanVision: canVision,
+		},
+	}
 }
 
 func (p *catalogProvider) ProviderFor(model modelrepo.ObservedModel) modelrepo.Provider {

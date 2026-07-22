@@ -25,7 +25,7 @@ import (
 )
 
 // TestSystem_ACPMissionInProcess is the house-idiom ACCEPTANCE for the ontology-
-// correcting refit (docs/development/blueprints/open-work-2026-07-21 §2): a
+// correcting refit: a
 // standalone `contenox acp` editor — what a Zed/ACP-registry user launches, with
 // NO serve anywhere — embeds the fleet IN-PROCESS and fires `/mission` as a
 // SUBAGENT of ITSELF. It runs END TO END against the real binary, driven over

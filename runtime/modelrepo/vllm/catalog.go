@@ -75,6 +75,8 @@ func (p *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 				CanChat:       true,
 				CanPrompt:     true,
 				CanStream:     true,
+				// vLLM's /v1/models reports no modality — vision cannot be
+				// detected here. It is user-declared via the capability override.
 			},
 		})
 	}

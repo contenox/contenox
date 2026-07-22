@@ -14,7 +14,12 @@ type chatHandler struct {
 	deps CompatDeps
 }
 
+// handle serves an OpenAI-compatible chat completion, answering with a single
+// JSON completion object or, when the request sets stream, the same content
+// as SSE chat.completion.chunk frames over text/event-stream.
 func (h *chatHandler) handle(w http.ResponseWriter, r *http.Request) {
+	// @request compatapi.ChatCompletionRequest
+	// @response compatapi.chatCompletionResponse
 	ctx := r.Context()
 	if err := authorizeCompatRequest(r, h.deps, true); err != nil {
 		http.Error(w, `{"error":{"message":"Unauthorized","type":"auth_error"}}`, http.StatusUnauthorized)
@@ -70,6 +75,7 @@ func (h *chatHandler) handle(w http.ResponseWriter, r *http.Request) {
 		messages = append(messages, taskengine.Message{
 			Role:    m.Role,
 			Content: m.Content,
+			Images:  m.Images,
 		})
 	}
 	chatHistory := taskengine.ChatHistory{Messages: messages}

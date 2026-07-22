@@ -72,4 +72,62 @@ func TestUnit_CatalogProvider_ListModels(t *testing.T) {
 	require.Equal(t, "qwen3:8b", provider.ModelName())
 	require.True(t, provider.CanEmbed())
 	require.False(t, provider.CanThink())
+	require.False(t, model.CanVision, "non-vision model must not claim vision")
+}
+
+// TestUnit_CatalogProvider_DetectsVisionFromShowCapabilities asserts CanVision
+// is read from the provider's own /api/show capabilities list, not inferred.
+func TestUnit_CatalogProvider_DetectsVisionFromShowCapabilities(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tags":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"models": []map[string]any{{"name": "llava:7b", "model": "llava:7b", "details": map[string]any{}}},
+			})
+		case "/api/show":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"capabilities":["completion","vision"]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	catalog, err := modelrepo.NewCatalogProvider(modelrepo.BackendSpec{Type: "ollama", BaseURL: server.URL})
+	require.NoError(t, err)
+	models, err := catalog.ListModels(context.Background())
+	require.NoError(t, err)
+	require.Len(t, models, 1)
+	require.True(t, models[0].CanVision, "vision capability from /api/show must set CanVision")
+	require.True(t, catalog.ProviderFor(models[0]).CanVision())
+}
+
+// TestUnit_CatalogProvider_DetectsThinkingFromShowCapabilities asserts CanThink
+// is read from the /api/show capabilities list — API detection, not the
+// model-name inference the provider deliberately avoids.
+func TestUnit_CatalogProvider_DetectsThinkingFromShowCapabilities(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tags":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"models": []map[string]any{{"name": "qwen3:8b", "model": "qwen3:8b", "details": map[string]any{}}},
+			})
+		case "/api/show":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"capabilities":["completion","thinking"]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	catalog, err := modelrepo.NewCatalogProvider(modelrepo.BackendSpec{Type: "ollama", BaseURL: server.URL})
+	require.NoError(t, err)
+	models, err := catalog.ListModels(context.Background())
+	require.NoError(t, err)
+	require.Len(t, models, 1)
+	require.True(t, models[0].CanThink, "thinking capability from /api/show must set CanThink")
+	require.True(t, catalog.ProviderFor(models[0]).CanThink())
 }

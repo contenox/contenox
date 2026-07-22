@@ -17,9 +17,8 @@ import (
 //
 // OSS serve has no user database: there is exactly one credential, the
 // configured shared TOKEN. Rather than store that raw secret in the browser
-// session cookie, /ui/login mints a short-lived signed JWT (via libauth, the
-// same lib enterprise/bob2 builds on) that emulates a fixed admin principal
-// ("local-operator"). Browser requests then authenticate by presenting that
+// session cookie, /ui/login mints a short-lived signed JWT (via libauth) that
+// emulates a fixed admin principal ("local-operator"). Browser requests then authenticate by presenting that
 // cookie JWT; programmatic clients keep presenting the raw TOKEN as a Bearer /
 // X-API-Key header (or the /acp ?token= query param). AuthenticateCredential
 // accepts EITHER form, so both paths share one gate.

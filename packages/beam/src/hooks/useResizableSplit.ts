@@ -9,8 +9,8 @@ import {
 } from 'react';
 
 /**
- * A dependency-free two-pane resizable split — the OpenHands `useResizablePanels`
- * borrow named in the IDE-workflows blueprint (Arc 4). A draggable handle sets
+ * A dependency-free two-pane resizable split (IDE-workflows blueprint, Arc 4).
+ * A draggable handle sets
  * the first pane's size as a fraction of the container, clamped to sane bounds
  * and persisted to localStorage. `react-resizable-panels` is deliberately NOT a
  * dependency: a single split needs ~80 lines, not a docking subsystem.

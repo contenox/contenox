@@ -2,8 +2,8 @@
 
 > Status: architecture blueprint. Scope is how the `contenox` CLI/runtime selects,
 > installs, validates, and discovers a prebuilt `modeld` daemon. It **supersedes**
-> the version-selection model in
-> [modeld setup artifact detection](setup-artifact-detection.md) — specifically
+> the version-selection model of the earlier setup-artifact-detection draft
+> (since retired) — specifically
 > its "exact-version only" matching, its "No latest channel" non-goal, and its
 > open question on patch-release compatibility. Release production mechanics from
 > [modeld release artifacts](release-artifacts.md) still apply; only the

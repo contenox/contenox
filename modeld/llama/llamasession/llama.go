@@ -33,7 +33,8 @@ type session struct {
 	model                        *llamacppshim.Model
 	lctx                         *llamacppshim.Context
 	batch                        *llamacppshim.Batch
-	adapters                     []*llamacppshim.Adapter // applied LoRA adapters, freed before the model on close
+	mtmd                         *llamacppshim.MTMDContext // multimodal projector; nil for text-only models
+	adapters                     []*llamacppshim.Adapter   // applied LoRA adapters, freed before the model on close
 	numCtx                       int
 	plannerCtx                   int
 	coldMaxTokens                int
@@ -216,10 +217,29 @@ func NewWithAdapters(modelPath string, cfg llama.Config, adapters []llama.Adapte
 		return nil, err
 	}
 
+	// A projector resolved next to the model loads eagerly: Describe already
+	// budgeted its weights, and failing at open is the refuse-don't-spill
+	// moment — not the first image request deep into a conversation.
+	var mtmdCtx *llamacppshim.MTMDContext
+	if mmprojPath := llama.MMProjPathFor(modelPath); mmprojPath != "" {
+		mtmdCtx, err = llamacppshim.NewMTMDContext(model, mmprojPath, llamacppshim.MTMDConfig{
+			UseGPU:     cfg.NumGpuLayers != 0,
+			NumThreads: nThreads,
+		})
+		if err != nil {
+			freeAdapters(loaded)
+			batch.Free()
+			lctx.Close()
+			model.Close()
+			return nil, fmt.Errorf("llamasession: load mmproj %q: %w", mmprojPath, err)
+		}
+	}
+
 	return &session{
 		model:                        model,
 		lctx:                         lctx,
 		batch:                        batch,
+		mtmd:                         mtmdCtx,
 		adapters:                     loaded,
 		numCtx:                       numCtx,
 		plannerCtx:                   plannerCtx,
@@ -286,6 +306,12 @@ func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (l
 	}
 	if err := ctx.Err(); err != nil {
 		return llama.PrefixStatus{}, err
+	}
+	// Prefix reuse is keyed on a token-only tape (CommonPrefixLen over token
+	// IDs, cold-store recompute, tail-logit replay); image cells would poison
+	// every one of those paths, so the stable prefix stays text-only.
+	if len(prefix.Images) > 0 {
+		return llama.PrefixStatus{}, llama.NewUnsupportedFeatureError("images in the stable prefix are not supported; attach images to the volatile suffix")
 	}
 
 	stableMsgs := stableMessages(prefix.Text, prefix.Manifest)
@@ -408,6 +434,9 @@ func (s *session) PrefillSuffix(ctx context.Context, suffix llama.SuffixInput) (
 		return llama.SuffixStatus{}, llama.NewManifestMismatchError("stable prefix changed between EnsurePrefix and PrefillSuffix")
 	}
 	volatileMsgs := volatileMessages(suffix.Text, suffix.Manifest)
+	if len(suffix.Images) > 0 {
+		return s.prefillSuffixImagesLocked(ctx, suffix, volatileMsgs)
+	}
 
 	// Reconcile against the resident tape at the token level instead of byte-
 	// matching a separately rendered stable prefix. Some model templates are not
@@ -425,6 +454,9 @@ func (s *session) PrefillSuffix(ctx context.Context, suffix llama.SuffixInput) (
 		rendered, err := s.renderTemplateForDecode(all, s.tools, suffix.EnableThinking, suffix.ReasoningEffort)
 		if err != nil {
 			return llama.SuffixStatus{}, fmt.Errorf("llamasession: apply chat template: %w", err)
+		}
+		if err := s.guardTextSuffixMarkers(rendered.Prompt); err != nil {
+			return llama.SuffixStatus{}, err
 		}
 		fullToks, err := s.tokenize(rendered.Prompt, s.addBOS)
 		if err != nil {
@@ -456,6 +488,9 @@ func (s *session) PrefillSuffix(ctx context.Context, suffix llama.SuffixInput) (
 		}
 		stoks = fullToks[stableShared:]
 	} else {
+		if err := s.guardTextSuffixMarkers(suffix.Text); err != nil {
+			return llama.SuffixStatus{}, err
+		}
 		addSpecial := s.prefixLen == 0 && s.addBOS
 		toks, err := s.tokenize(suffix.Text, addSpecial)
 		if err != nil {
@@ -868,6 +903,10 @@ func (s *session) closeLocked() {
 	if s.batch != nil {
 		s.batch.Free()
 		s.batch = nil
+	}
+	if s.mtmd != nil {
+		s.mtmd.Close()
+		s.mtmd = nil
 	}
 	freeAdapters(s.adapters)
 	s.adapters = nil
@@ -1300,6 +1339,12 @@ func (s *session) refreshTailLogitsLocked(ctx context.Context) error {
 	}
 	lastPos := len(s.resident) - 1
 	lastToken := s.resident[lastPos]
+	// An image cell (negative sentinel, see vision.go) has no token to replay.
+	// Chat templates always append a text generation prompt after media, so a
+	// trailing image cell is a caller-contract breach, not a reachable state.
+	if lastToken < 0 {
+		return llama.NewUnsupportedFeatureError("decode requires the resident tape to end in a text token, not an image")
+	}
 	if err := s.removeKV(lastPos, -1); err != nil {
 		return s.fatalizeLocked(err)
 	}

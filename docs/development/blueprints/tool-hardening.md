@@ -47,7 +47,7 @@ serves everyone else.
 1. **Per-model capability table** (`ModelProfile{tool_verbosity,
    schema_strictness, needs_examples_in_system_msg, …}`) — the precondition.
 2. **Description verbosity as a per-model dial, defaulting to verbose** —
-   gemini-cli's own maintainers made verbose the non-flagship default.
+   gemini-cli's own the non-flagship default.
 3. **Complete the `list_dir` family against the OpenHands reference**: size
    checked and reported *before* content sniffing; content-sniff (not
    extension) binary detection with image carve-outs; size + executable bit on

@@ -26,12 +26,24 @@ type ToolCall struct {
 	ProviderMeta map[string]string `json:"provider_meta,omitempty"`
 }
 
+// ImagePart is a binary image attachment carried beside a message's text
+// content. Data holds the raw image bytes (encoding/json base64-encodes
+// []byte on the wire); MimeType is the image media type, e.g. "image/png".
+type ImagePart struct {
+	Data     []byte `json:"data"`
+	MimeType string `json:"mime_type"`
+}
+
 // Message now supports OpenAI-style tool calling:
 // - assistant messages can carry tool_calls
 // - tool messages can carry tool_call_id
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+	// Images carries image attachments beside Content. The resolver routes
+	// image-bearing requests only to providers reporting CanVision; providers
+	// without vision support never receive messages with images.
+	Images []ImagePart `json:"images,omitempty"`
 	// Thinking contains the model's internal reasoning trace (thinking tokens).
 	// Only populated when thinking is enabled. Never sent back to the model.
 	Thinking string `json:"thinking,omitempty"`
@@ -39,6 +51,18 @@ type Message struct {
 	// For tool calling (OpenAI / vLLM compatible).
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
+}
+
+// MessagesHaveImages reports whether any message carries an image attachment.
+// Callers use it to derive the vision requirement for resolution instead of
+// setting a flag by hand.
+func MessagesHaveImages(messages []Message) bool {
+	for _, m := range messages {
+		if len(m.Images) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 type ChatArgument interface {

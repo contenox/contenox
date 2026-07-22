@@ -1,5 +1,5 @@
 import { acpSessionReducer, initialAcpSessionState, type AcpSessionAction, type AcpSessionState } from './acpSessionState';
-import type { SessionConfigOption, SessionInfo } from '../lib/acp';
+import type { PromptCapabilities, SessionConfigOption, SessionInfo } from '../lib/acp';
 
 /**
  * Pure, framework-free workspace-level state: reducer + types only, no React,
@@ -55,6 +55,14 @@ export interface AcpWorkspaceState {
    * controls from this, before any session exists — see `AcpChatPage`.
    */
   workspaceConfigOptions: SessionConfigOption[];
+  /**
+   * The agent's advertised `initialize` prompt capabilities
+   * (`agentCapabilities.promptCapabilities`) — what content kinds a
+   * `session/prompt` may carry. Re-read on every (re)connect, `{}` for agents
+   * that advertise none. Gates the composer's image-attach affordance:
+   * `image !== true` means no attach UI and paste/drop of images is rejected.
+   */
+  promptCapabilities: PromptCapabilities;
 }
 
 export const initialAcpWorkspaceState: AcpWorkspaceState = {
@@ -66,11 +74,17 @@ export const initialAcpWorkspaceState: AcpWorkspaceState = {
   sessionLoadState: 'ready',
   sessionLoadError: null,
   workspaceConfigOptions: [],
+  promptCapabilities: {},
 };
 
 export type AcpWorkspaceAction =
   | { type: 'connecting' }
-  | { type: 'ready'; agentName: string | null; workspaceConfigOptions: SessionConfigOption[] }
+  | {
+      type: 'ready';
+      agentName: string | null;
+      workspaceConfigOptions: SessionConfigOption[];
+      promptCapabilities: PromptCapabilities;
+    }
   | { type: 'reconnecting' }
   | { type: 'disconnected' }
   /** JSON-RPC `-32000 auth_required` — terminal, the controller never auto-retries past this (see acpWorkspaceController.ts). */
@@ -158,6 +172,7 @@ export function acpWorkspaceReducer(state: AcpWorkspaceState, action: AcpWorkspa
         error: null,
         agentName: action.agentName,
         workspaceConfigOptions: action.workspaceConfigOptions,
+        promptCapabilities: action.promptCapabilities,
       };
 
     case 'reconnecting':

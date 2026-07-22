@@ -41,6 +41,19 @@ export const chatTranscriptMarkdownComponents: Components = {
     );
   },
 
+  // Markdown-embedded images must degrade nicely inside a chat column: never
+  // overflow the bubble, keep the transcript's rounded/bordered look.
+  img: ({ className, ...props }: React.ComponentPropsWithoutRef<"img">) => (
+    <img
+      loading="lazy"
+      className={cn(
+        "border-surface-200 dark:border-dark-surface-700 my-2 h-auto max-w-full rounded-lg border",
+        className,
+      )}
+      {...props}
+    />
+  ),
+
   blockquote: ({ children, ...props }: React.ComponentPropsWithoutRef<"blockquote">) => (
     <blockquote
       className="border-primary-400 dark:border-dark-primary-500 bg-surface-50/50 text-text dark:bg-dark-surface-300/20 dark:text-dark-text rounded-r-lg border-l-4 py-2 pl-4"

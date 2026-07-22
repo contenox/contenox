@@ -159,6 +159,12 @@ type service struct {
 	// bounds existed. maxToolCalls is enforced by the unattended answerer instead,
 	// which reads its own bounds from the HITL service it already holds.
 	computeBounds hitlservice.ComputeBoundsReader
+	// policyValidator refuses a dispatch that names a nonexistent HITL envelope at
+	// CREATION time (see Dispatch). Nil skips the check — a fleetservice built
+	// without WithPolicyValidator behaves as before — but serve and the in-process
+	// editor both wire it, so a mission cannot be created against an envelope that
+	// will never load and silently fall back to the default gate.
+	policyValidator hitlservice.PolicyValidator
 }
 
 // Option configures a fleet Service at construction. It exists so the optional
@@ -166,6 +172,15 @@ type service struct {
 // for the callers that pass only the base dependencies (the missionservice.Option
 // idiom).
 type Option func(*service)
+
+// WithPolicyValidator wires the creation-time envelope existence check Dispatch
+// enforces (see service.policyValidator). Serve and the in-process editor pass a
+// hitlservice.NewPolicyValidator over the same policy source their approval gate
+// reads, so "a mission must name a real envelope" is enforced where missions are
+// born, not discovered later as a silent fallback to the default policy.
+func WithPolicyValidator(v hitlservice.PolicyValidator) Option {
+	return func(s *service) { s.policyValidator = v }
+}
 
 // WithComputeBounds wires the reader the drive loop consults for a mission's
 // envelope compute ceiling — the maxTurns and maxTokens bounds the HOST enforces
@@ -237,6 +252,19 @@ func (s *service) Dispatch(ctx context.Context, req DispatchRequest) (DispatchRe
 	}
 	if strings.TrimSpace(req.HITLPolicyName) == "" {
 		return DispatchResult{}, apiframework.MissingParameter("hitlPolicyName", "hitlPolicyName is required: a mission must name its envelope")
+	}
+	// The envelope is the load-bearing invariant of mission mode, so validate that
+	// the named policy actually loads BEFORE anything is brought up. Without this a
+	// typo (no-such-policy.json) is accepted and the mission runs to completion
+	// under the silently-substituted default gate — the exact opposite of "you
+	// author the approval gates". Validation is strict here at creation; the drive
+	// loop's own bounds read stays fail-to-unbounded so a policy hiccup never kills
+	// a mission that is already running.
+	if s.policyValidator != nil {
+		if err := s.policyValidator.ValidatePolicy(ctx, req.HITLPolicyName); err != nil {
+			return DispatchResult{}, apiframework.InvalidParameterValue("hitlPolicyName",
+				fmt.Sprintf("hitl policy %q could not be loaded: it must name an existing policy (see `contenox config` / the .contenox policy files)", strings.TrimSpace(req.HITLPolicyName)))
+		}
 	}
 	// cwd envelope discipline: a requested cwd must be absolute and must resolve
 	// within an allowlisted workspace root; an absent one defaults to the same

@@ -465,3 +465,64 @@ describe('acpSessionReducer: purity underpins per-session multiplexing', () => {
     expect(b0.sessionId).toBe('sess-b');
   });
 });
+
+describe('acpSessionReducer: image parts on messages', () => {
+  it('a user_message_chunk carrying an image appends it to the message alongside the text, in arrival order', () => {
+    const state = run(
+      { type: 'session_reset', sessionId: 'sess-1' },
+      { type: 'user_message_chunk', id: 'u1', text: 'what is this? ' },
+      { type: 'user_message_chunk', id: 'u1', text: '', image: { data: 'aGVsbG8=', mimeType: 'image/png' } },
+      { type: 'user_message_chunk', id: 'u1', text: '', image: { data: 'd29ybGQ=', mimeType: 'image/jpeg' } },
+    );
+    // One timeline item, one message — the image chunks merged in, not split out.
+    expect(state.items).toEqual([{ kind: 'message', id: 'u1' }]);
+    expect(state.messages['u1']).toMatchObject({
+      role: 'user',
+      text: 'what is this? ',
+      images: [
+        { data: 'aGVsbG8=', mimeType: 'image/png' },
+        { data: 'd29ybGQ=', mimeType: 'image/jpeg' },
+      ],
+    });
+  });
+
+  it('an image-only user_message_chunk (replayed/adopted session) creates a renderable message on its own', () => {
+    const state = run(
+      { type: 'session_reset', sessionId: 'sess-replay' },
+      { type: 'user_message_chunk', id: 'replay-0', text: '', image: { data: 'aGVsbG8=', mimeType: 'image/png' } },
+    );
+    expect(state.items).toEqual([{ kind: 'message', id: 'replay-0' }]);
+    // Replay arrives with no turn in flight — completed, not stuck streaming.
+    expect(state.messages['replay-0']).toMatchObject({
+      text: '',
+      streaming: false,
+      images: [{ data: 'aGVsbG8=', mimeType: 'image/png' }],
+    });
+  });
+
+  it('an assistant message_chunk carrying an image lands on the turn-canonical message like its text chunks', () => {
+    const state = run(
+      { type: 'session_reset', sessionId: 'sess-1' },
+      { type: 'prompt_start' },
+      { type: 'message_chunk', id: 'a1', text: 'here you go' },
+      // Mid-turn image chunk under a DIFFERENT id still resolves onto the
+      // canonical turn message (one assistant message per turn).
+      { type: 'message_chunk', id: 'other', text: '', image: { data: 'aW1n', mimeType: 'image/png' } },
+    );
+    expect(state.items).toEqual([{ kind: 'message', id: 'a1' }]);
+    expect(state.messages['a1']).toMatchObject({
+      role: 'assistant',
+      text: 'here you go',
+      images: [{ data: 'aW1n', mimeType: 'image/png' }],
+      streaming: true,
+    });
+  });
+
+  it('a plain text chunk leaves `images` untouched (no empty-array churn)', () => {
+    const state = run(
+      { type: 'session_reset', sessionId: 'sess-1' },
+      { type: 'user_message_chunk', id: 'u1', text: 'no pictures here' },
+    );
+    expect(state.messages['u1'].images).toBeUndefined();
+  });
+});

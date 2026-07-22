@@ -247,4 +247,4 @@ This file works against Ollama, OpenAI, Gemini, vLLM, or local GGUF/OpenVINO mod
 - [Annotated examples](/docs/specification/examples/) — four longer chains, fully commented
 - [Handlers reference](/docs/specification/handlers/) — every available task type
 - [Transitions & branching](/docs/specification/transitions/) — operators, edges, and `on_failure`
-- [Cookbook](/cookbook/) — end-to-end recipes for real workflows
+- [Use cases](/docs/use-cases/) — end-to-end recipes for real workflows

@@ -318,6 +318,13 @@ func (s *genaiSession) EnsurePrefix(ctx context.Context, prefix transport.Prefix
 	if err := ctx.Err(); err != nil {
 		return transport.PrefixStatus{}, err
 	}
+	// This session keys reuse on a token-only tape; it has no projector and no
+	// way to evaluate image parts. Refuse instead of silently dropping them —
+	// vision requests belong to a VLM model dir, which OpenSession routes to
+	// the vision session.
+	if len(prefix.Images) > 0 {
+		return transport.PrefixStatus{}, fmt.Errorf("%w: text-only openvino session cannot accept image input; open a vision-capable (VLM) model", transport.ErrUnsupportedFeature)
+	}
 
 	digest := prefix.Manifest.Digest()
 	stableHash := prefix.Manifest.StableByteHash
@@ -396,6 +403,11 @@ func (s *genaiSession) PrefillSuffix(ctx context.Context, suffix transport.Suffi
 	}
 	if err := ctx.Err(); err != nil {
 		return transport.SuffixStatus{}, err
+	}
+	// Token-only tape: image parts cannot be evaluated here; refuse rather
+	// than generate over a silently image-less prompt (see EnsurePrefix).
+	if len(suffix.Images) > 0 {
+		return transport.SuffixStatus{}, fmt.Errorf("%w: text-only openvino session cannot accept image input; open a vision-capable (VLM) model", transport.ErrUnsupportedFeature)
 	}
 	if ok, reason := s.manifest.CompatibleRuntime(suffix.Manifest); !ok {
 		return transport.SuffixStatus{}, contextasm.NewManifestMismatchError(reason)

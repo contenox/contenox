@@ -20,6 +20,7 @@ type vLLMProvider struct {
 	SupportsStream  bool
 	SupportsPrompt  bool
 	SupportsThink   bool
+	SupportsVision  bool
 	Backends        []string
 	authToken       string
 	client          *http.Client
@@ -40,6 +41,7 @@ func NewVLLMProvider(modelName string, backends []string, client *http.Client, c
 		SupportsStream:  caps.CanStream,
 		SupportsPrompt:  caps.CanPrompt,
 		SupportsThink:   caps.CanThink,
+		SupportsVision:  caps.CanVision,
 		Backends:        backends,
 		authToken:       authToken,
 		client:          client,
@@ -98,6 +100,10 @@ func (p *vLLMProvider) CanPrompt() bool {
 
 func (p *vLLMProvider) CanThink() bool {
 	return p.SupportsThink
+}
+
+func (p *vLLMProvider) CanVision() bool {
+	return p.SupportsVision
 }
 
 func (p *vLLMProvider) GetChatConnection(ctx context.Context, backendID string) (modelrepo.LLMChatClient, error) {

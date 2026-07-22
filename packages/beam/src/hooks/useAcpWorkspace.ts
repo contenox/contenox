@@ -1,6 +1,7 @@
 import { useCallback, useEffect } from 'react';
 import type { SessionConfigOptionValue } from '../lib/acp';
 import type { AdoptRef } from '../lib/adoptMeta';
+import type { PendingImageAttachment } from '../pages/chat/lib/imageAttachments';
 import type { WorkspaceFileRef } from '../pages/chat/lib/mentions';
 import { useAcpWorkspaceContext } from '../lib/acp/AcpWorkspaceProvider';
 import type { AcpSessionState } from './acpSessionState';
@@ -34,8 +35,8 @@ export interface UseAcpWorkspaceResult {
   deleteSession: (id: string) => void;
   /** Client-side reset of "which session is open" — no server-side deletion. Call before navigating to bare `/chat` from any "new session" affordance so the next lazy `newSession()` call mints a genuinely new session. See acpWorkspaceController.ts's doc comment. */
   clearActiveSession: () => void;
-  /** No-ops with no active session — call `newSession()` first if `workspace.activeSessionId` is null. `mentions` become `resource_link` blocks (reference only). */
-  sendPrompt: (text: string, mentions?: WorkspaceFileRef[]) => void;
+  /** No-ops with no active session — call `newSession()` first if `workspace.activeSessionId` is null. `mentions` become `resource_link` blocks (reference only); `images` become embedded `image` blocks and echo into the transcript immediately. */
+  sendPrompt: (text: string, mentions?: WorkspaceFileRef[], images?: PendingImageAttachment[]) => void;
   /** `!` passthrough: runs one user line in the session's shell without an LLM turn. No-op with no active session. See `acpWorkspaceController.ts`'s `runTerminal()`. */
   runTerminal: (command: string) => Promise<void>;
   respondPermission: (optionId: string) => void;
@@ -122,8 +123,8 @@ export function useAcpWorkspace(): UseAcpWorkspaceResult {
   }, [controller]);
 
   const sendPrompt = useCallback(
-    (text: string, mentions?: WorkspaceFileRef[]) => {
-      controller.sendPrompt(text, mentions);
+    (text: string, mentions?: WorkspaceFileRef[], images?: PendingImageAttachment[]) => {
+      controller.sendPrompt(text, mentions, images);
     },
     [controller],
   );

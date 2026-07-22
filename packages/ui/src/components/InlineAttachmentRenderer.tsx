@@ -1,13 +1,16 @@
+import { useState } from "react";
 import { stripAnsi } from "../ansi";
 import { CodeBlock } from "./CodeBlock";
 import { Collapsible } from "./Collapsible";
+import { Dialog } from "./Dialog";
 import { Span } from "./Typography";
 import { FileText, TerminalSquare, ListChecks, Workflow, Database } from "lucide-react";
 
 /**
  * Discriminated union representing every typed attachment kind that can be
  * rendered inline adjacent to a chat message. Mirrors the Go-side
- * `taskengine.WidgetHint` / artifact shapes.
+ * `taskengine.WidgetHint` / artifact shapes; `image` mirrors the ACP
+ * `ContentBlock` image shape (base64 `data` + `mimeType`, no `data:` prefix).
  */
 export type InlineAttachment =
   | { kind: "file_view"; path: string; text: string; truncated?: boolean }
@@ -28,7 +31,15 @@ export type InlineAttachment =
       failureClass?: string;
     }
   | { kind: "dag"; chainJSON: string; description?: string }
-  | { kind: "state_unit"; name: string; data?: unknown };
+  | { kind: "state_unit"; name: string; data?: unknown }
+  | {
+      kind: "image";
+      /** Raw base64 payload WITHOUT a `data:` prefix (the ACP wire form). */
+      data: string;
+      mimeType: string;
+      /** Accessible description; falls back to `labels.imageAttachment`. */
+      alt?: string;
+    };
 
 /**
  * Overridable UI strings for attachment titles and captions. Every entry is
@@ -55,6 +66,12 @@ export type InlineAttachmentLabels = {
   capturedState?: string;
   /** Placeholder when a state unit has no data (default: "(no data)"). */
   noData?: string;
+  /** Fallback alt text/title for image attachments (default: "Attached image"). */
+  imageAttachment?: string;
+  /** Accessible name of the click-to-expand affordance (default: "Show image full size"). */
+  expandImage?: string;
+  /** Accessible name of the expanded image dialog's close button (default: "Close"). */
+  closeImage?: string;
 };
 
 export type InlineAttachmentRendererProps = {
@@ -237,6 +254,52 @@ function StateUnitAttachment({
 }
 
 /**
+ * An inline image part: a size-constrained thumbnail rendered directly (NOT
+ * collapsed behind a disclosure like the text-shaped kinds — a picture's
+ * content IS its preview), expanding to full size in a `Dialog` on click.
+ * The payload is the ACP wire form (raw base64 + mime type), assembled into a
+ * `data:` URI here so callers never concatenate URI prefixes themselves.
+ */
+function ImageAttachmentView({
+  attachment,
+  labels,
+}: {
+  attachment: Extract<InlineAttachment, { kind: "image" }>;
+  labels?: InlineAttachmentLabels;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const src = `data:${attachment.mimeType};base64,${attachment.data}`;
+  const alt = attachment.alt ?? labels?.imageAttachment ?? "Attached image";
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setExpanded(true)}
+        aria-label={labels?.expandImage ?? "Show image full size"}
+        title={labels?.expandImage ?? "Show image full size"}
+        className="border-surface-300 dark:border-dark-surface-400 bg-surface-100 dark:bg-dark-surface-200 mt-2 block cursor-zoom-in overflow-hidden rounded border p-0"
+      >
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          className="block max-h-64 max-w-full object-contain"
+        />
+      </button>
+      <Dialog
+        open={expanded}
+        onClose={() => setExpanded(false)}
+        title={alt}
+        closeLabel={labels?.closeImage ?? "Close"}
+        className="w-auto max-w-[90vw]"
+      >
+        <img src={src} alt={alt} className="max-h-[80vh] max-w-full rounded" />
+      </Dialog>
+    </>
+  );
+}
+
+/**
  * Dispatch to the renderer for `attachment.kind`. Unknown kinds return null
  * so an experimental shape never breaks the thread.
  */
@@ -257,6 +320,8 @@ export function InlineAttachmentRenderer({
       return <DAGAttachment attachment={attachment} labels={labels} />;
     case "state_unit":
       return <StateUnitAttachment attachment={attachment} labels={labels} />;
+    case "image":
+      return <ImageAttachmentView attachment={attachment} labels={labels} />;
     default: {
       const exhaustive: never = attachment;
       void exhaustive;

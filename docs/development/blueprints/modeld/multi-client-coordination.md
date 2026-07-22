@@ -1,8 +1,7 @@
 # Plan: Local Runtime Multi-Client Coordination
 
 > **Status:** decision blueprint, researched 2026-06-16.  
-> **Sibling docs:** `../local-coding-node-goals.md`, `llama/coding-node-plan.md`,
-> `openvino/coding-node-plan.md`, `ortgenai-windows-ai.md`,
+> **Sibling docs:** `../local-coding-node-goals.md`,
 > `../vscode/acp-permission-bridge.md`.  
 > **Purpose:** decide how Contenox should behave when one user has multiple
 > editors, ACP clients, CLI sessions, and local runtime processes pointed at the
@@ -474,7 +473,7 @@ Windows:
   "pid": 12345,
   "epoch": "2026-06-16T14:30:00Z-6f4f...",
   "socket": "/run/user/1000/contenox/node.sock",
-  "data_root": "/home/naro/.contenox",
+  "data_root": "~/.contenox",
   "started_at": "2026-06-16T14:30:00Z",
   "last_heartbeat": "2026-06-16T14:31:05Z"
 }

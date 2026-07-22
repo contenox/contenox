@@ -92,7 +92,7 @@ function TranscriptMessage({
       avatar={avatar}
       isLatest={isLatest}
       latestLabel={t('acp_chat.latest_label')}
-      // Zed-style transcripts don't collapse plain messages — only thought
+      // This transcript surface doesn't collapse plain messages — only thought
       // blocks and tool detail collapse (see the Collapsible below and
       // ToolCallCard's own detail toggle).
       collapsible={false}
@@ -115,6 +115,19 @@ function TranscriptMessage({
       ) : shouldShowStreamingPlaceholder(message) ? (
         <ChatTranscriptStreamingPlaceholder>{t('acp_chat.typing_label')}</ChatTranscriptStreamingPlaceholder>
       ) : null}
+      {message.images && message.images.length > 0 && (
+        // Image parts render after the flattened text (see AcpChatMessage.images),
+        // via the shared inline-attachment image kind: constrained thumbnail,
+        // click-to-expand dialog.
+        <InlineAttachments
+          attachments={message.images.map(img => ({ kind: 'image' as const, data: img.data, mimeType: img.mimeType }))}
+          labels={{
+            imageAttachment: t('acp_chat.image_attachment_alt'),
+            expandImage: t('acp_chat.image_expand'),
+            closeImage: t('acp_chat.image_dialog_close'),
+          }}
+        />
+      )}
     </ChatMessage>
   );
 }

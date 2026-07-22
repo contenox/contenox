@@ -35,6 +35,8 @@ func AddOpenAIRoutes(mux *http.ServeMux, deps CompatDeps) {
 
 // AddRootRoutes registers root-level /v1/* aliases on rootMux for clients that set
 // api_url: http://host (e.g. tools pointed at port 11434 expecting OpenAI-compat routes).
+//
+// openapi:exclude mounted on the serve ROOT mux (contenoxcli/serve_cmd.go), not under the /api prefix the spec's servers entry documents
 func AddRootRoutes(mux *http.ServeMux, deps CompatDeps) {
 	chat := &chatHandler{deps: deps}
 	fim := &fimHandler{deps: deps}

@@ -12,8 +12,7 @@ import (
 // Supervisor keeps an agent subprocess alive across transient crashes by
 // respawning it with backoff and re-running a caller-supplied session. It is
 // the opt-in restart policy acpexec deliberately leaves out of Spawn (which is
-// pure transport): hash wraps exactly this loop around its agent subprocess
-// (reset-and-retry with a resume candidate, tmp/hash acp.go:1206,1288). A
+// pure transport). A
 // driver that wants that resilience constructs a Supervisor; one that wants a
 // single process keeps calling Spawn directly.
 //
@@ -49,8 +48,8 @@ type Supervisor struct {
 // session succeeds (returns nil), ctx is cancelled, or a failure that is not
 // worth retrying occurs. session receives a zero-based attempt counter (0 on
 // the first spawn), so a restart (attempt > 0) can try session/resume before
-// falling back to session/new — the resume-candidate memory hash keeps across
-// reconnects (acp.go:1212), kept here as the caller's own closure state rather
+// falling back to session/new — any resume-candidate memory a driver keeps
+// across reconnects lives in the caller's own closure state rather
 // than baked into transport-only acpexec.
 //
 // A spawn/start failure is wrapped as libacp.ErrAgentStartFailed and returned

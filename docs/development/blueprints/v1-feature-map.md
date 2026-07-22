@@ -10,13 +10,16 @@ deferred.
 
 ## V1 Product Boundary
 
-Contenox V1 is a local-first AI workflow runtime with three primary entry
+Contenox V1 is a local-first AI workflow runtime with four primary entry
 points:
 
 - `contenox` CLI for setup, chain execution, chat, sessions, model/provider
   configuration, tools, MCP servers, and local inspection.
 - ACP stdio server for editor and desktop clients that speak Agent Client
   Protocol.
+- `contenox serve`, which hosts Beam (the bundled web UI), the HTTP API under
+  `/api` (including the OpenAI-compatible and Ollama-compatible inbound
+  endpoints), the `/acp` WebSocket, and the generated OpenAPI docs.
 - VS Code extension that bundles or launches the local runtime and exposes
   native editor surfaces.
 
@@ -32,14 +35,14 @@ release cannot be validated only on the maintainer's development OS.
 
 The current V1 direction explicitly does not include:
 
-- `contenox serve` as a local HTTP server.
-- Beam or a bundled web UI.
-- OpenAI/Ollama compatibility proxy endpoints.
-- Generated local OpenAPI docs for the removed HTTP server.
-- A TypeScript rewrite of the Contenox engine.
+- A TypeScript rewrite of the Contenox engine, or chain semantics implemented
+  outside the Go runtime.
+- A separate UI server: Beam is embedded in the `contenox` binary and served
+  by `contenox serve`, never deployed on its own.
 
-Manual testing should therefore focus on local runtime behavior, stdio bridge
-behavior, editor integration, and packaged native binary distribution.
+Manual testing should therefore cover local runtime behavior, stdio bridge
+behavior, editor integration, the served web surface (Beam, `/api`, the
+compatibility endpoints), and packaged native binary distribution.
 
 ## Critical User Journeys
 
@@ -928,7 +931,8 @@ Features:
 - Confirm local_shell cannot run denied commands.
 - Confirm webtools reject disallowed schemes and hosts.
 - Confirm VS Code untrusted workspace blocks runtime actions.
-- Confirm Marketplace package contains no deleted Beam/UI packages.
+- Confirm Marketplace package contains only the intended runtime artifacts and
+  no stray UI build outputs.
 
 ## Feature Area 14: CI And Release Automation
 
@@ -939,7 +943,7 @@ Features:
 - Go package tests.
 - VS Code extension type-check.
 - VS Code extension package check.
-- Site type-check/build/lint in the enterprise site repo.
+- Site type-check/build/lint for the in-repo `website/` package.
 - GitHub Release workflow that builds standalone CLI artifacts.
 - GitHub Release workflow should upload platform-specific VSIX artifacts for
   manual VS Code/VSCodium installation from a release.
@@ -1057,9 +1061,10 @@ Additional target checks:
   surfaces or preview surfaces.
 - Document auth renewal UX for MCP OAuth and provider API-key expiry.
 - Document remote VS Code workspace behavior clearly.
-- Public site/docs were scanned and cleaned for `contenox serve`, Beam UI,
-  stale MCP test server, stale repo links, and proxy-current-feature language.
-  Re-run the stale-string scan before release.
+- Public site/docs were scanned and cleaned for stale surface claims (pages
+  written before `contenox serve`, Beam, and the compatibility endpoints
+  landed), stale MCP test server references, stale repo links, and
+  proxy-current-feature language. Re-run the stale-string scan before release.
 - Create a short Marketplace release checklist from this feature map.
 
 ## Manual Test Plan Skeleton

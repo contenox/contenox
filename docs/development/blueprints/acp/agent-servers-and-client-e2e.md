@@ -85,26 +85,3 @@ existing conformance/client-e2e convention. Home is most naturally a new
 `runtime/agenthost` e2e (it is the integration point that composes
 registry + host), with a `make` target beside `acp-client-e2e`.
 
-## Non-goals / deliberately unplanned
-
-- **No beam.** Driving a registered agent from the UI is a later slice.
-- **No premature fix plan.** Standing the host up against a real reference agent
-  and against the self-loopback will surface many small conformance gaps
-  (capability negotiation edges, notification ordering, session lifecycle). Those
-  are fixed *as they surface* against these harnesses — this blueprint defines the
-  harness and the servers, not a speculative list of fixes.
-- **No `chain` agent kind and no first-class `contenox agent serve` command** are
-  specified here; the loopback (`-- contenox acp`) foreshadows them and is enough
-  to verify the host. They become their own slice if/when wanted.
-
-## Open decisions (small, not a step list)
-
-- **Loopback determinism:** does the self-loopback drive the default chain, or a
-  tiny fixed-response chain fixture so the asserted reply is stable? (Lean: a
-  minimal echo/fixed chain for the assertion, default chain for a smoke variant.)
-- **Harness in the test:** `UnimplementedClient` (rejects fs/terminal/permission)
-  vs a small scripted `libacp.Client` that answers a permission request — needed
-  only once we drive a turn that requests permission. Start with
-  `UnimplementedClient`; add a scripted harness when a test needs it.
-- **CI gating:** which of the three servers run in CI by default (stub always;
-  `testy` + loopback gated on their binaries, like the existing suites).

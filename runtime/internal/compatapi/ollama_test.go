@@ -3,6 +3,7 @@ package compatapi_test
 import (
 	"bufio"
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -349,6 +350,76 @@ func TestOllamaChatFallsBackWhenModelBelongsToDifferentProvider(t *testing.T) {
 	}
 	if got := agent.lastReq.TemplateVars["model"]; got != "gemini-3.1-pro-preview" {
 		t.Fatalf("expected cross-provider model to fall back to default, got %q", got)
+	}
+}
+
+// TestOllamaChat_ImageIngress drives /api/chat with Ollama's native base64
+// images field and asserts the decoded attachment — with a media type sniffed
+// from the bytes, since Ollama declares none — reaches the agent's chat history.
+func TestOllamaChat_ImageIngress(t *testing.T) {
+	agent := &stubAgent{reply: "a cat"}
+	deps := compatapi.CompatDeps{
+		Agent:        agent,
+		Chains:       &stubChains{chain: modelAndMaxTokensTemplateChain("chat-chain")},
+		StateService: &stubStateService{states: observedState("known-model")},
+		Defaults: stateservice.RuntimeDefaults{
+			ChainRef: "chat-chain",
+			Model:    "contenox-default",
+		},
+	}
+
+	mux := http.NewServeMux()
+	compatapi.AddOllamaRoutes(mux, deps)
+
+	// Full 8-byte PNG signature so http.DetectContentType sniffs image/png.
+	pngBytes := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
+	pngB64 := base64.StdEncoding.EncodeToString(pngBytes)
+	body := `{"model":"known-model","stream":false,"messages":[{"role":"user","content":"describe this","images":["` + pngB64 + `"]}]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	hist, ok := agent.lastReq.InputValue.(taskengine.ChatHistory)
+	if !ok || len(hist.Messages) != 1 {
+		t.Fatalf("expected 1-message chat history, got %#v", agent.lastReq.InputValue)
+	}
+	msg := hist.Messages[0]
+	if len(msg.Images) != 1 {
+		t.Fatalf("expected 1 image on the engine message, got %d", len(msg.Images))
+	}
+	if msg.Images[0].MimeType != "image/png" || string(msg.Images[0].Data) != string(pngBytes) {
+		t.Errorf("image attachment did not survive the handler: %+v", msg.Images[0])
+	}
+}
+
+// TestOllamaChat_RejectsNonImage refuses a base64 payload that does not sniff
+// as an image rather than forwarding a phantom attachment the model would drop.
+func TestOllamaChat_RejectsNonImage(t *testing.T) {
+	agent := &stubAgent{reply: "x"}
+	deps := compatapi.CompatDeps{
+		Agent:        agent,
+		Chains:       &stubChains{chain: modelAndMaxTokensTemplateChain("chat-chain")},
+		StateService: &stubStateService{states: observedState("known-model")},
+		Defaults: stateservice.RuntimeDefaults{
+			ChainRef: "chat-chain",
+			Model:    "contenox-default",
+		},
+	}
+
+	mux := http.NewServeMux()
+	compatapi.AddOllamaRoutes(mux, deps)
+
+	notImage := base64.StdEncoding.EncodeToString([]byte("plain text, not an image"))
+	body := `{"model":"known-model","stream":false,"messages":[{"role":"user","content":"hi","images":["` + notImage + `"]}]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for a non-image payload, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 

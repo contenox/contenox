@@ -32,7 +32,7 @@ import (
 // granting a root now grants everything under it. Before, only an exact
 // allowlisted directory resolved, so ~/.contenox was reachable only if it was
 // granted verbatim (nobody does that). With containment, a single broad grant
-// like /home/naro makes its child ~/.contenox reachable through every fs surface
+// like /home/user makes its child ~/.contenox reachable through every fs surface
 // — the /files explorer, the local_fs agent tool, a session cwd, workspace
 // search. And serve's own default root is the PARENT of its .contenox dir
 // (workspaceRoot = filepath.Dir(contenoxDir)), so the control plane is a direct

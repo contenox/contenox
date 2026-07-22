@@ -107,6 +107,10 @@ func (s *service) Attach(ctx context.Context, principal, id string, conn io.Read
 	}
 
 	<-ctx.Done()
+	// This attachment is over (client gone, preempted, or shutdown). Close the
+	// transport first: a conpty->ws writer stalled on a dead or slow client can
+	// only be unblocked by closing conn.
+	_ = conn.Close()
 	<-outputDone
 	return nil
 }

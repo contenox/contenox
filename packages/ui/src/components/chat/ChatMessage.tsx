@@ -100,7 +100,7 @@ export function ChatMessage({
   const [open, setOpen] = useState(defaultOpen);
   const [copied, setCopied] = useState(false);
   const isUser = role === "user";
-  // Zed-style transcripts opt out of the per-message Hide/Show toggle
+  // Non-collapsible transcripts opt out of the per-message Hide/Show toggle
   // entirely (only thought blocks / tool detail collapse there) — force the
   // body open and skip rendering the trigger below.
   const effectiveOpen = collapsible ? open : true;

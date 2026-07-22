@@ -3,6 +3,7 @@ package llama
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/contenox/runtime/runtime/modelregistry"
@@ -10,6 +11,19 @@ import (
 	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
 	"github.com/contenox/runtime/runtime/transport"
 )
+
+// mmprojFileName is the multimodal projector expected beside model.gguf
+// (<modelDir>/<name>/mmproj.gguf). The name is fixed by modeld's llama backend
+// (llama.MMProjFilename), which resolves the projector from the model path; its
+// presence is the offline best-effort vision signal while modeld cannot answer
+// Describe. A live Describe's ModelInfo.SupportsVision stays the authoritative
+// truth.
+const mmprojFileName = "mmproj.gguf"
+
+func mmprojPresent(modelDir string) bool {
+	_, err := os.Stat(filepath.Join(modelDir, mmprojFileName))
+	return err == nil
+}
 
 // provider implements modelrepo.Provider for the llama.cpp GGUF compatibility node.
 // A model lives at <modelDir>/<name>/model.gguf with an optional
@@ -88,6 +102,8 @@ func (p *provider) CanPrompt() bool {
 }
 
 func (p *provider) CanThink() bool { return p.caps.CanThink }
+
+func (p *provider) CanVision() bool { return p.caps.CanVision }
 
 func (p *provider) GetChatConnection(ctx context.Context, _ string) (modelrepo.LLMChatClient, error) {
 	if !p.isTargeted() && !SessionAvailable() {
@@ -195,6 +211,14 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 	if profileID == "" {
 		profileID = p.name
 	}
+	// Pre-Describe best effort: catalog caps or an mmproj beside the model. A
+	// successful Describe below overrides it — the live daemon's answer is
+	// authoritative, and an older daemon without vision support reports false
+	// (it would silently drop image parts if images were still routed to it).
+	supportsVision := p.caps.CanVision
+	if dir != "" && mmprojPresent(dir) {
+		supportsVision = true
+	}
 	baseCfg := profile.config()
 	// Only a genuine, user-set context pin (profile runtime.num_ctx or
 	// CONTENOX_LLAMA_CTX) fixes the window from the runtime side. A per-request
@@ -247,6 +271,7 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 			describedPlannerContext = info.PlannerEffectiveContext
 			describedModelMaxContext = info.ModelMaxContext
 			applyModeldTemplateCapabilities(&profile, info)
+			supportsVision = info.SupportsVision
 			if cfg.ReasoningFormat == "" && profile.Reasoning.Format != "" {
 				cfg.ReasoningFormat = profile.Reasoning.Format
 				baseCfg.ReasoningFormat = profile.Reasoning.Format
@@ -274,6 +299,7 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 		maxOutputTokens:           p.caps.MaxOutputTokens,
 		toolProtocol:              profile.ToolCalls.Protocol,
 		reasoningProtocol:         profile.Reasoning.Protocol,
+		supportsVision:            supportsVision,
 		deviceKind:                deviceKind,
 		freeBytes:                 freeBytes,
 		describedEffectiveContext: describedEffectiveContext,

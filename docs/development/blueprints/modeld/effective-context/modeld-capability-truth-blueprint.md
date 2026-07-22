@@ -54,17 +54,59 @@ Required behavior:
 - Treat runtime pin bumps as integration changes: smoke-test build, package,
   and model load before certifying against the new pin.
 
-### OpenVINO text versus VLM
+### llama vision (mtmd) support
 
-`gemma4-e4b-ov` is a multimodal/VLM OpenVINO repository. The text effective-context
-adapter uses `ContinuousBatchingPipeline`, not `VLMPipeline`.
+The llama backend serves the VLM pipeline family natively via llama.cpp's
+multimodal stack (libmtmd): a `model.gguf` with an `mmproj.gguf` projector in
+the same model directory is a servable vision model.
 
 Required behavior:
 
-- Classify OpenVINO repositories by pipeline type before cataloging or describing them
-  as text models.
-- Keep VLM repos out of the text effective-context catalog unless a VLM cell exists.
-- Report `unsupported_pipeline` for text requests against VLM-only repos.
+- `SupportsVision` is certified from the resolved projector's own metadata
+  (image-input capability read from the mmproj GGUF), never inferred from a
+  model or repository name.
+- A model without a resolvable projector is a text model; image input against
+  it fails with `ErrUnsupportedFeature`, not a silent text-only degradation.
+- Projector weights and the vision-encoder compute reserve enter the capacity
+  budget as fixed device overhead; `Describe` additionally reports a
+  conservative per-image sequence-token estimate (`VisionTokensPerImage`)
+  derived from projector metadata.
+- Image-bearing requests that do not fit the hot context window are refused
+  with the typed context-overflow error (refuse-don't-spill).
+
+### OpenVINO text versus VLM
+
+The OpenVINO backend serves exported VLM directories through a dedicated VLM
+cell wrapping `ov::genai::VLMPipeline` (pinned to the stateful SDPA
+implementation), separate from the text effective-context adapter's
+`ContinuousBatchingPipeline`. VLM-ness is certified from the export's own IR
+layout — `openvino_language_model.xml` plus
+`openvino_vision_embeddings_model.xml` in the model directory — never from a
+repository name; session open routes on the same layout rule.
+
+The VLM cell is public-surface only: `VLMPipeline` hides its implementation
+behind a private pimpl with no prefix-cache or KV hook, unlike the text
+pipeline whose internals the effective-context adapter reaches. Vision
+sessions therefore have NO prefix-cache reuse, NO cold-KV/effective-context
+offload, and no snapshot/restore in v1 — every decode re-prefills the full
+multimodal prompt, and that limitation is the advertised truth, not an
+implementation secret.
+
+Required behavior:
+
+- Classify OpenVINO repositories by pipeline type (IR layout) before
+  cataloging or describing them; a VLM directory reports `SupportsVision` plus
+  a per-image sequence-token estimate (`VisionTokensPerImage`) read from the
+  export's own `config.json` (declared per-image count, else patch-grid
+  geometry; 0 = unknown).
+- Vision weights already enter the capacity budget: the whole IR directory —
+  vision and text-embedding IRs included — is summed as model weights.
+- Image input against a text-only OpenVINO model fails with
+  `ErrUnsupportedFeature`, not a silent text-only degradation; markers and
+  images must pair 1:1 or the request is refused.
+- VLM sessions must not advertise prefix-cache, cold-KV, or snapshot/restore
+  capability; requests for structured output or parser protocols on the VLM
+  path fail typed until the cell grows those bridges.
 
 ### Device feature support
 
@@ -157,8 +199,13 @@ Required unit or system coverage:
 - GGUF with known architecture reports servable capability.
 - GGUF with unknown/new architecture reports `unsupported_architecture` and no false
   effective-context claim.
-- OpenVINO VLM repo is rejected by text CB adapter with `unsupported_pipeline`.
-- Explicit OpenVINO NPU pin returns unsupported-feature with PagedAttention reason.
+- GGUF model with a resolvable image-capable mmproj reports `SupportsVision`;
+  without one, image input fails typed and `SupportsVision` stays false.
+- OpenVINO VLM repo routes to the vision session, answers an image question,
+  and reports `SupportsVision` with a per-image token estimate; image input to
+  a text-only OpenVINO model fails typed.
+- Explicit OpenVINO NPU pin returns unsupported-feature with PagedAttention reason;
+  the VLM (vision) pipeline also rejects an explicit NPU pin.
 - AUTO OpenVINO selection excludes NPU for CB.
 - Raw context above model ceiling does not change runtime-advertised context.
 - Native loader error text is preserved through transport.

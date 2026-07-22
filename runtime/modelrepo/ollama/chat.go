@@ -20,6 +20,20 @@ type OllamaChatClient struct {
 	tracker         libtracker.ActivityTracker
 }
 
+// toOllamaImages maps image attachments to the Ollama SDK's image list. Ollama
+// carries raw image bytes (base64-encoded on the wire) and sniffs the format
+// itself, so MimeType is not sent.
+func toOllamaImages(images []modelrepo.ImagePart) []api.ImageData {
+	if len(images) == 0 {
+		return nil
+	}
+	out := make([]api.ImageData, 0, len(images))
+	for _, img := range images {
+		out = append(out, api.ImageData(img.Data))
+	}
+	return out
+}
+
 func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (modelrepo.ChatResult, error) {
 	// Start tracking the operation
 	reportErr, reportChange, end := c.tracker.Start(ctx, "chat", "ollama", "model", c.modelName)
@@ -50,6 +64,7 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 		apiMessages = append(apiMessages, api.Message{
 			Role:      msg.Role,
 			Content:   msg.Content,
+			Images:    toOllamaImages(msg.Images),
 			ToolCalls: apiToolCalls,
 		})
 	}

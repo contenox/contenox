@@ -24,6 +24,7 @@ providers are constructed.
 Examples:
   contenox model capability set openai gpt-5-mini --think true
   contenox model capability set vllm Qwen/Qwen3-32B --think false
+  contenox model capability set ollama my-vlm --vision true
   contenox model capability show openai gpt-5-mini
   contenox model capability unset openai gpt-5-mini`,
 	Args: cobra.NoArgs,
@@ -39,7 +40,10 @@ var modelCapabilitySetCmd = &cobra.Command{
 
 The --think flag records whether this provider/model supports reasoning request
 controls. This is different from --think on chat/run, which selects a reasoning
-level for one invocation.`,
+level for one invocation.
+
+The --vision flag records whether this provider/model accepts image input. The
+resolver routes image-bearing requests only to vision-capable models.`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := libtracker.WithNewRequestID(context.Background())
@@ -50,15 +54,40 @@ level for one invocation.`,
 		defer db.Close()
 
 		thinkRaw, _ := cmd.Flags().GetString("think")
-		canThink, err := parseModelCapabilityBool(thinkRaw)
-		if err != nil {
-			return err
+		visionRaw, _ := cmd.Flags().GetString("vision")
+		if strings.TrimSpace(thinkRaw) == "" && strings.TrimSpace(visionRaw) == "" {
+			return fmt.Errorf("provide at least one capability flag: --think or --vision")
 		}
-		override, err := svc.SetThink(ctx, args[0], args[1], canThink)
-		if err != nil {
-			return fmt.Errorf("failed to set capability override: %w", err)
+		var reported []string
+		if strings.TrimSpace(thinkRaw) != "" {
+			canThink, err := parseModelCapabilityBool("--think", thinkRaw)
+			if err != nil {
+				return err
+			}
+			if _, err := svc.SetThink(ctx, args[0], args[1], canThink); err != nil {
+				return fmt.Errorf("failed to set capability override: %w", err)
+			}
+			reported = append(reported, fmt.Sprintf("think=%t", canThink))
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Capability override set for %s/%s: think=%t.\n", override.Provider, override.Model, canThink)
+		var override *modelcapability.Override
+		if strings.TrimSpace(visionRaw) != "" {
+			canVision, err := parseModelCapabilityBool("--vision", visionRaw)
+			if err != nil {
+				return err
+			}
+			if override, err = svc.SetVision(ctx, args[0], args[1], canVision); err != nil {
+				return fmt.Errorf("failed to set capability override: %w", err)
+			}
+			reported = append(reported, fmt.Sprintf("vision=%t", canVision))
+		}
+		_, provider, model, keyErr := modelcapability.Key(args[0], args[1])
+		if keyErr != nil {
+			return keyErr
+		}
+		if override != nil {
+			provider, model = override.Provider, override.Model
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Capability override set for %s/%s: %s.\n", provider, model, strings.Join(reported, ", "))
 		return nil
 	},
 }
@@ -67,8 +96,8 @@ var modelCapabilityShowCmd = &cobra.Command{
 	Use:   "show <provider> <model>",
 	Short: "Show a manual capability override.",
 	Long: `Print the manual capability override recorded for a provider/model pair.
-Currently reports the think (reasoning controls) setting. If no override is
-recorded for the pair, prints that none exists.`,
+Reports the think (reasoning controls) and vision (image input) settings. If no
+override is recorded for the pair, prints that none exists.`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := libtracker.WithNewRequestID(context.Background())
@@ -82,7 +111,7 @@ recorded for the pair, prints that none exists.`,
 		if err != nil {
 			return fmt.Errorf("failed to read capability override: %w", err)
 		}
-		if !ok || override.CanThink == nil {
+		if !ok || (override.CanThink == nil && override.CanVision == nil) {
 			_, provider, model, keyErr := modelcapability.Key(args[0], args[1])
 			if keyErr != nil {
 				return keyErr
@@ -90,7 +119,14 @@ recorded for the pair, prints that none exists.`,
 			fmt.Fprintf(cmd.OutOrStdout(), "No capability override for %s/%s.\n", provider, model)
 			return nil
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Capability override for %s/%s: think=%t.\n", override.Provider, override.Model, *override.CanThink)
+		var parts []string
+		if override.CanThink != nil {
+			parts = append(parts, fmt.Sprintf("think=%t", *override.CanThink))
+		}
+		if override.CanVision != nil {
+			parts = append(parts, fmt.Sprintf("vision=%t", *override.CanVision))
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Capability override for %s/%s: %s.\n", override.Provider, override.Model, strings.Join(parts, ", "))
 		return nil
 	},
 }
@@ -127,14 +163,14 @@ actually present to remove.`,
 	},
 }
 
-func parseModelCapabilityBool(value string) (bool, error) {
+func parseModelCapabilityBool(flag, value string) (bool, error) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "true":
 		return true, nil
 	case "false":
 		return false, nil
 	default:
-		return false, fmt.Errorf("--think must be true or false")
+		return false, fmt.Errorf("%s must be true or false", flag)
 	}
 }
 
@@ -148,7 +184,7 @@ func openModelCapabilityService(cmd *cobra.Command) (libdb.DBManager, modelcapab
 
 func init() {
 	modelCapabilitySetCmd.Flags().String("think", "", "Whether this provider/model supports thinking/reasoning controls (true or false).")
-	_ = modelCapabilitySetCmd.MarkFlagRequired("think")
+	modelCapabilitySetCmd.Flags().String("vision", "", "Whether this provider/model accepts image input (true or false).")
 
 	modelCapabilityCmd.AddCommand(modelCapabilitySetCmd)
 	modelCapabilityCmd.AddCommand(modelCapabilityShowCmd)

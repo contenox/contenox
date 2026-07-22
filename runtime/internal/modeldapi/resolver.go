@@ -48,6 +48,7 @@ type LocalModel struct {
 	CanPrompt       bool   `json:"canPrompt"`
 	CanStream       bool   `json:"canStream"`
 	CanThink        bool   `json:"canThink,omitempty"`
+	CanVision       bool   `json:"canVision,omitempty"`
 }
 
 type CapacityResponse struct {
@@ -87,6 +88,7 @@ type CapacityInfo struct {
 	ChatTemplateSupportsToolCalls       bool             `json:"chatTemplateSupportsToolCalls,omitempty"`
 	ChatTemplateSupportsThinking        bool             `json:"chatTemplateSupportsThinking,omitempty"`
 	ChatTemplateSupportsReasoningEffort bool             `json:"chatTemplateSupportsReasoningEffort,omitempty"`
+	SupportsVision                      bool             `json:"supportsVision,omitempty"`
 	RuntimeName                         string           `json:"runtimeName,omitempty"`
 	RuntimeDigest                       string           `json:"runtimeDigest,omitempty"`
 	RuntimeSystemInfo                   string           `json:"runtimeSystemInfo,omitempty"`
@@ -203,6 +205,7 @@ func (h *handler) localCandidates(ctx context.Context) ([]localCandidate, error)
 				CanPrompt:       pulled.CanPrompt,
 				CanStream:       pulled.CanStream,
 				CanThink:        pulled.CanThink,
+				CanVision:       pulled.CanVision,
 			}
 			candidates = append(candidates, localCandidate{
 				model:   model,
@@ -524,6 +527,7 @@ func capacityInfoFromTransport(info transport.ModelInfo) CapacityInfo {
 		ChatTemplateSupportsToolCalls:       info.ChatTemplateSupportsToolCalls,
 		ChatTemplateSupportsThinking:        info.ChatTemplateSupportsThinking,
 		ChatTemplateSupportsReasoningEffort: info.ChatTemplateSupportsReasoningEffort,
+		SupportsVision:                      info.SupportsVision,
 		RuntimeName:                         info.RuntimeName,
 		RuntimeDigest:                       info.RuntimeDigest,
 		RuntimeSystemInfo:                   info.RuntimeSystemInfo,

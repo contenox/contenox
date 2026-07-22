@@ -76,6 +76,20 @@
         },
         "type": "object"
       },
+      "apiframework_AboutServer": {
+        "properties": {
+          "nodeInstanceID": {
+            "type": "string"
+          },
+          "tenancy": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "apiframework_MessageResponse": {
         "properties": {
           "message": {
@@ -174,7 +188,10 @@
             "type": "string"
           },
           "pulledModels": {
-            "$ref": "#/components/schemas/statetype_ModelPullStatus"
+            "items": {
+              "$ref": "#/components/schemas/statetype_ModelPullStatus"
+            },
+            "type": "array"
           },
           "type": {
             "type": "string"
@@ -211,7 +228,10 @@
             "type": "string"
           },
           "pulledModels": {
-            "$ref": "#/components/schemas/statetype_ModelPullStatus"
+            "items": {
+              "$ref": "#/components/schemas/statetype_ModelPullStatus"
+            },
+            "type": "array"
           },
           "type": {
             "type": "string"
@@ -233,6 +253,169 @@
           },
           "name": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "compatapi_ChatCompletionRequest": {
+        "properties": {
+          "max_completion_tokens": {
+            "type": "integer"
+          },
+          "max_tokens": {
+            "type": "integer"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/compatapi_ChatMessage"
+            },
+            "type": "array"
+          },
+          "model": {
+            "type": "string"
+          },
+          "stop": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "stream": {
+            "type": "boolean"
+          },
+          "temperature": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "compatapi_ChatMessage": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "compatapi_FIMCompletionRequest": {
+        "properties": {
+          "max_tokens": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "stop": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "stream": {
+            "type": "boolean"
+          },
+          "suffix": {
+            "type": "string"
+          },
+          "temperature": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "compatapi_chatChoiceResponse": {
+        "properties": {
+          "finish_reason": {
+            "type": "string"
+          },
+          "index": {
+            "type": "integer"
+          },
+          "message": {
+            "$ref": "#/components/schemas/compatapi_ChatMessage"
+          }
+        },
+        "type": "object"
+      },
+      "compatapi_chatCompletionResponse": {
+        "properties": {
+          "choices": {
+            "items": {
+              "$ref": "#/components/schemas/compatapi_chatChoiceResponse"
+            },
+            "type": "array"
+          },
+          "created": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/compatapi_chatCompletionUsage"
+          }
+        },
+        "type": "object"
+      },
+      "compatapi_chatCompletionUsage": {
+        "properties": {
+          "completion_tokens": {
+            "type": "integer"
+          },
+          "prompt_tokens": {
+            "type": "integer"
+          },
+          "total_tokens": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "compatapi_fimChoiceResponse": {
+        "properties": {
+          "finish_reason": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "compatapi_fimCompletionResponse": {
+        "properties": {
+          "choices": {
+            "items": {
+              "$ref": "#/components/schemas/compatapi_fimChoiceResponse"
+            },
+            "type": "array"
+          },
+          "created": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/compatapi_chatCompletionUsage"
           }
         },
         "type": "object"
@@ -279,6 +462,35 @@
         },
         "type": "object"
       },
+      "hitlservice_ComputeBounds": {
+        "properties": {
+          "backendAllowlist": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "maxTokens": {
+            "type": "integer"
+          },
+          "maxToolCalls": {
+            "type": "integer"
+          },
+          "maxTurns": {
+            "type": "integer"
+          },
+          "modelAllowlist": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "onExhausted": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "hitlservice_Condition": {
         "properties": {
           "key": {
@@ -295,6 +507,9 @@
       },
       "hitlservice_Policy": {
         "properties": {
+          "compute": {
+            "$ref": "#/components/schemas/hitlservice_ComputeBounds"
+          },
           "default_action": {
             "type": "string"
           },
@@ -362,6 +577,14 @@
         },
         "type": "object"
       },
+      "localfileapi_addWorkspaceRootRequest": {
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "localfileapi_createFolderRequest": {
         "properties": {
           "path": {
@@ -397,6 +620,28 @@
           },
           "path": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "localfileapi_workspaceRoot": {
+        "properties": {
+          "default": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "localfileapi_workspaceRootsResponse": {
+        "properties": {
+          "roots": {
+            "items": {
+              "$ref": "#/components/schemas/localfileapi_workspaceRoot"
+            },
+            "type": "array"
           }
         },
         "type": "object"
@@ -476,6 +721,91 @@
         },
         "type": "object"
       },
+      "missionchanges_ChangedFile": {
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "score": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "missionchanges_Changes": {
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/missionchanges_ChangedFile"
+            },
+            "type": "array"
+          },
+          "incomplete": {
+            "type": "boolean"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/missionchanges_ScopeStats"
+          }
+        },
+        "type": "object"
+      },
+      "missionchanges_Diff": {
+        "properties": {
+          "modified": {
+            "type": "string"
+          },
+          "original": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "missionchanges_ScopeStats": {
+        "properties": {
+          "anomaly": {
+            "type": "boolean"
+          },
+          "dirs": {
+            "type": "integer"
+          },
+          "files": {
+            "type": "integer"
+          },
+          "outsidePaths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "missionservice_Handover": {
+        "properties": {
+          "artifacts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "caveats": {
+            "type": "string"
+          },
+          "handoverForNext": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "missionservice_Mission": {
         "properties": {
           "agentName": {
@@ -507,15 +837,91 @@
           "parentSessionId": {
             "type": "string"
           },
+          "plan": {
+            "$ref": "#/components/schemas/missionservice_Plan"
+          },
+          "planRevisions": {
+            "items": {
+              "$ref": "#/components/schemas/missionservice_PlanRevisionSummary"
+            },
+            "type": "array"
+          },
           "sessionId": {
             "type": "string"
           },
           "status": {
             "type": "string"
           },
+          "statusReason": {
+            "type": "string"
+          },
           "updatedAt": {
             "format": "date-time",
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "missionservice_Plan": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/missionservice_PlanEntry"
+            },
+            "type": "array"
+          },
+          "explanation": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "missionservice_PlanEntry": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "missionservice_PlanRevisionSummary": {
+        "properties": {
+          "added": {
+            "type": "integer"
+          },
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "completed": {
+            "type": "integer"
+          },
+          "explanation": {
+            "type": "string"
+          },
+          "inProgress": {
+            "type": "integer"
+          },
+          "pending": {
+            "type": "integer"
+          },
+          "removed": {
+            "type": "integer"
+          },
+          "revision": {
+            "type": "integer"
           }
         },
         "type": "object"
@@ -528,6 +934,9 @@
           },
           "detail": {
             "type": "string"
+          },
+          "handover": {
+            "$ref": "#/components/schemas/missionservice_Handover"
           },
           "id": {
             "type": "string"
@@ -553,7 +962,10 @@
       "modeldapi_ActiveModel": {
         "properties": {
           "adapters": {
-            "$ref": "#/components/schemas/modeldapi_AdapterInfo"
+            "items": {
+              "$ref": "#/components/schemas/modeldapi_AdapterInfo"
+            },
+            "type": "array"
           },
           "config": {
             "$ref": "#/components/schemas/modeldapi_RuntimeConfig"
@@ -649,7 +1061,10 @@
             "type": "integer"
           },
           "devices": {
-            "$ref": "#/components/schemas/modeldapi_CapacityDevice"
+            "items": {
+              "$ref": "#/components/schemas/modeldapi_CapacityDevice"
+            },
+            "type": "array"
           },
           "effectiveContext": {
             "type": "integer"
@@ -715,6 +1130,9 @@
             "type": "boolean"
           },
           "supportsGpuOffload": {
+            "type": "boolean"
+          },
+          "supportsVision": {
             "type": "boolean"
           },
           "usableBytes": {
@@ -789,6 +1207,9 @@
             "type": "boolean"
           },
           "canThink": {
+            "type": "boolean"
+          },
+          "canVision": {
             "type": "boolean"
           },
           "contextLength": {
@@ -953,6 +1374,12 @@
           "id": {
             "type": "string"
           },
+          "mmprojSizeBytes": {
+            "type": "integer"
+          },
+          "mmprojUrl": {
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },
@@ -982,6 +1409,9 @@
           },
           "useCase": {
             "type": "string"
+          },
+          "vision": {
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -989,6 +1419,79 @@
       "modelregistryapi_downloadRequest": {
         "properties": {
           "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "operatorinbox_Item": {
+        "properties": {
+          "agentName": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "intent": {
+            "type": "string"
+          },
+          "missionId": {
+            "type": "string"
+          },
+          "parentSessionId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "report": {
+            "$ref": "#/components/schemas/missionservice_Report"
+          }
+        },
+        "type": "object"
+      },
+      "presence_Entry": {
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "clientName": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "external": {
+            "type": "boolean"
+          },
+          "host": {
+            "type": "string"
+          },
+          "instanceId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "lastSeen": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "pid": {
+            "type": "integer"
+          },
+          "sessionCount": {
+            "type": "integer"
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "startedAt": {
+            "format": "date-time",
             "type": "string"
           }
         },
@@ -1123,6 +1626,35 @@
         },
         "type": "object"
       },
+      "runtimetypes_AuthFlow": {
+        "properties": {
+          "extractCookie": {
+            "type": "string"
+          },
+          "extractJsonPath": {
+            "type": "string"
+          },
+          "injectFormat": {
+            "type": "string"
+          },
+          "injectHeader": {
+            "type": "string"
+          },
+          "loginBody": {
+            "type": "string"
+          },
+          "loginMethod": {
+            "type": "string"
+          },
+          "loginUrl": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "runtimetypes_Backend": {
         "properties": {
           "baseUrl": {
@@ -1205,10 +1737,25 @@
         },
         "type": "object"
       },
+      "runtimetypes_InjectionArg": {
+        "properties": {
+          "in": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "value": {}
+        },
+        "type": "object"
+      },
       "runtimetypes_MCPServer": {
         "properties": {
           "args": {
-            "type": "object"
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "authEnvKey": {
             "type": "string"
@@ -1286,6 +1833,63 @@
           },
           "updatedAt": {
             "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "runtimetypes_RemoteTools": {
+        "properties": {
+          "authFlow": {
+            "$ref": "#/components/schemas/runtimetypes_AuthFlow"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "endpointUrl": {
+            "type": "string"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "injectParams": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "insecureSkipVerify": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "properties": {
+            "$ref": "#/components/schemas/runtimetypes_InjectionArg"
+          },
+          "specUrl": {
+            "type": "string"
+          },
+          "timeoutMs": {
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "serverapi_HealthResponse": {
+        "properties": {
+          "status": {
             "type": "string"
           }
         },
@@ -1514,7 +2118,10 @@
             "type": "string"
           },
           "pulledModels": {
-            "$ref": "#/components/schemas/statetype_ModelPullStatus"
+            "items": {
+              "$ref": "#/components/schemas/statetype_ModelPullStatus"
+            },
+            "type": "array"
           },
           "resolvedEndpoint": {
             "type": "string"
@@ -1568,6 +2175,9 @@
           "canThink": {
             "type": "boolean"
           },
+          "canVision": {
+            "type": "boolean"
+          },
           "contextLength": {
             "type": "integer"
           },
@@ -1610,7 +2220,7 @@
           },
           "input": {},
           "inputType": {
-            "type": "object"
+            "type": "string"
           },
           "inputVar": {
             "type": "string"
@@ -1620,7 +2230,7 @@
           },
           "output": {},
           "outputType": {
-            "type": "object"
+            "type": "string"
           },
           "providerType": {
             "type": "string"
@@ -1657,6 +2267,18 @@
           "error": {
             "type": "string"
           }
+        },
+        "type": "object"
+      },
+      "taskengine_FunctionTool": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parameters": {}
         },
         "type": "object"
       },
@@ -1734,7 +2356,10 @@
             "type": "string"
           },
           "tasks": {
-            "$ref": "#/components/schemas/taskengine_TaskDefinition"
+            "items": {
+              "$ref": "#/components/schemas/taskengine_TaskDefinition"
+            },
+            "type": "array"
           },
           "token_limit": {
             "type": "integer"
@@ -1751,7 +2376,7 @@
             "$ref": "#/components/schemas/taskengine_LLMExecutionConfig"
           },
           "handler": {
-            "type": "object"
+            "type": "string"
           },
           "id": {
             "type": "string"
@@ -1792,7 +2417,10 @@
       "taskengine_TaskTransition": {
         "properties": {
           "branches": {
-            "$ref": "#/components/schemas/taskengine_TransitionBranch"
+            "items": {
+              "$ref": "#/components/schemas/taskengine_TransitionBranch"
+            },
+            "type": "array"
           },
           "on_failure": {
             "type": "string"
@@ -1810,6 +2438,17 @@
           },
           "total": {
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "taskengine_Tool": {
+        "properties": {
+          "function": {
+            "$ref": "#/components/schemas/taskengine_FunctionTool"
+          },
+          "type": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -1840,7 +2479,7 @@
             "type": "string"
           },
           "operator": {
-            "type": "object"
+            "type": "string"
           },
           "when": {
             "type": "string"
@@ -1876,7 +2515,10 @@
             "type": "string"
           },
           "state": {
-            "$ref": "#/components/schemas/taskengine_CapturedStateUnit"
+            "items": {
+              "$ref": "#/components/schemas/taskengine_CapturedStateUnit"
+            },
+            "type": "array"
           },
           "stopReason": {
             "type": "string"
@@ -1951,6 +2593,32 @@
           }
         },
         "type": "object"
+      },
+      "toolsproviderservice_LocalTools": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/taskengine_Tool"
+            },
+            "type": "array"
+          },
+          "type": {
+            "type": "string"
+          },
+          "unavailableReason": {
+            "type": "string"
+          }
+        },
+        "type": "object"
       }
     }
   },
@@ -1961,38 +2629,29 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/": {
-      "get": {
-        "operationId": "get_",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIError"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "GET /",
-        "tags": [
-          "server"
-        ]
-      }
-    },
     "/agents": {
       "get": {
         "operationId": "agentregistry_list",
+        "parameters": [
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -2018,7 +2677,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /agents",
+        "summary": "list returns the declared agents in the registry, paginated by cursor.",
         "tags": [
           "agentregistry"
         ]
@@ -2029,6 +2688,7 @@
         "operationId": "agentregistry_getByName",
         "parameters": [
           {
+            "description": "The unique name of the agent.",
             "in": "path",
             "name": "name",
             "required": true,
@@ -2059,7 +2719,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /agents/by-name/{name}",
+        "summary": "getByName returns one declared agent by its unique name.",
         "tags": [
           "agentregistry"
         ]
@@ -2070,6 +2730,7 @@
         "operationId": "agentregistry_get",
         "parameters": [
           {
+            "description": "The unique ID of the agent.",
             "in": "path",
             "name": "id",
             "required": true,
@@ -2100,160 +2761,26 @@
             "description": "Error"
           }
         },
-        "summary": "GET /agents/{id}",
+        "summary": "get returns one declared agent by ID.",
         "tags": [
           "agentregistry"
-        ]
-      }
-    },
-    "/api/chat": {
-      "post": {
-        "operationId": "compat_chat",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIError"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "POST /api/chat",
-        "tags": [
-          "compat"
-        ]
-      }
-    },
-    "/api/generate": {
-      "post": {
-        "operationId": "compat_generate",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIError"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "POST /api/generate",
-        "tags": [
-          "compat"
-        ]
-      }
-    },
-    "/api/ps": {
-      "get": {
-        "operationId": "compat_ps",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIError"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "GET /api/ps",
-        "tags": [
-          "compat"
-        ]
-      }
-    },
-    "/api/show": {
-      "post": {
-        "operationId": "compat_show",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIError"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "POST /api/show",
-        "tags": [
-          "compat"
-        ]
-      }
-    },
-    "/api/tags": {
-      "get": {
-        "operationId": "compat_tags",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIError"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "GET /api/tags",
-        "tags": [
-          "compat"
         ]
       }
     },
     "/approvals": {
       "get": {
         "operationId": "approval_list",
+        "parameters": [
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -2279,7 +2806,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /approvals",
+        "summary": "list returns pending approvals, newest first — the inbox itself.",
         "tags": [
           "approval"
         ]
@@ -2290,6 +2817,7 @@
         "operationId": "approval_answer",
         "parameters": [
           {
+            "description": "The unique ID of the approval.",
             "in": "path",
             "name": "id",
             "required": true,
@@ -2312,7 +2840,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "string"
                 }
               }
             },
@@ -2329,7 +2857,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /approvals/{id}",
+        "summary": "answer resolves a pending approval.",
         "tags": [
           "approval"
         ]
@@ -2338,6 +2866,26 @@
     "/backends": {
       "get": {
         "operationId": "backend_listBackends",
+        "parameters": [
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -2363,7 +2911,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /backends",
+        "summary": "listBackends returns the registered backends, each merged with its observed runtime state (downloaded models, pull progress, last error).",
         "tags": [
           "backend"
         ]
@@ -2401,7 +2949,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /backends",
+        "summary": "createBackend registers a new inference backend and returns it with its assigned ID.",
         "tags": [
           "backend"
         ]
@@ -2412,6 +2960,7 @@
         "operationId": "backend_deleteBackend",
         "parameters": [
           {
+            "description": "The unique identifier for the backend.",
             "in": "path",
             "name": "id",
             "required": true,
@@ -2425,7 +2974,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "string"
                 }
               }
             },
@@ -2442,7 +2991,7 @@
             "description": "Error"
           }
         },
-        "summary": "DELETE /backends/{id}",
+        "summary": "deleteBackend removes a backend registration by ID.",
         "tags": [
           "backend"
         ]
@@ -2451,6 +3000,7 @@
         "operationId": "backend_getBackend",
         "parameters": [
           {
+            "description": "The unique identifier for the backend.",
             "in": "path",
             "name": "id",
             "required": true,
@@ -2481,7 +3031,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /backends/{id}",
+        "summary": "getBackend returns one backend by ID, merged with its observed runtime state (downloaded models, pull progress, last error).",
         "tags": [
           "backend"
         ]
@@ -2490,6 +3040,7 @@
         "operationId": "backend_updateBackend",
         "parameters": [
           {
+            "description": "The unique identifier for the backend.",
             "in": "path",
             "name": "id",
             "required": true,
@@ -2529,7 +3080,7 @@
             "description": "Error"
           }
         },
-        "summary": "PUT /backends/{id}",
+        "summary": "updateBackend replaces a backend's stored configuration by ID and returns the updated record.",
         "tags": [
           "backend"
         ]
@@ -2540,14 +3091,35 @@
         "operationId": "backend_pushModel",
         "parameters": [
           {
+            "description": "The unique identifier for the backend.",
             "in": "path",
             "name": "id",
             "required": true,
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "The model name to store the pushed artifact under.",
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "description": "Raw model file bytes (GGUF or OpenVINO artifact), streamed as the request body."
+        },
         "responses": {
           "200": {
             "content": {
@@ -2570,7 +3142,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /backends/{id}/models/push",
+        "summary": "pushModel streams a GGUF file straight from the request body to the models store of a specific modeld backend (local or remote) — the HTTP twin of `contenox model push`.",
         "tags": [
           "backend"
         ]
@@ -2601,7 +3173,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /cli-config",
+        "summary": "getCLIConfig returns the resolved CLI configuration snapshot (default model, provider, chain, and related settings).",
         "tags": [
           "setup"
         ]
@@ -2639,7 +3211,7 @@
             "description": "Error"
           }
         },
-        "summary": "PUT /cli-config",
+        "summary": "putCLIConfig updates the provided CLI configuration keys and returns the resolved snapshot after the change.",
         "tags": [
           "setup"
         ]
@@ -2647,12 +3219,34 @@
     },
     "/files": {
       "delete": {
-        "operationId": "delete_files",
+        "operationId": "localfile_deleteFile",
+        "parameters": [
+          {
+            "description": "File path relative to the project root.",
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Workspace root the request operates in: a granted root (or a directory under one); empty or \"/\" resolves to the default (first-configured) root.",
+            "in": "query",
+            "name": "root",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/apiframework_MessageResponse"
+                }
               }
             },
             "description": "OK"
@@ -2668,18 +3262,62 @@
             "description": "Error"
           }
         },
-        "summary": "DELETE /files",
+        "summary": "Delete a file.",
         "tags": [
           "localfile"
         ]
       },
       "get": {
-        "operationId": "get_files",
+        "operationId": "localfile_list",
+        "parameters": [
+          {
+            "description": "Tree view to apply: 'full' (default, raw tree) or 'agent' (the tree as the agent sees it, with per-path access verdicts).",
+            "in": "query",
+            "name": "filter",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Directory path relative to the project root.",
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "default": ".",
+              "type": "string"
+            }
+          },
+          {
+            "description": "HITL policy name to evaluate the agent view against; omitted uses the configured default.",
+            "in": "query",
+            "name": "policy",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Workspace root the request operates in: a granted root (or a directory under one); empty or \"/\" resolves to the default (first-configured) root.",
+            "in": "query",
+            "name": "root",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/localfileservice_Entry"
+                  },
+                  "type": "array"
+                }
               }
             },
             "description": "OK"
@@ -2695,40 +3333,24 @@
             "description": "Error"
           }
         },
-        "summary": "GET /files",
+        "summary": "list returns the directory entries under path, optionally filtered to a server-side tree view (e.g.",
         "tags": [
           "localfile"
         ]
       },
       "post": {
-        "operationId": "post_files",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIError"
-                }
-              }
-            },
-            "description": "Error"
+        "operationId": "localfile_createFile",
+        "parameters": [
+          {
+            "description": "Workspace root the request operates in: a granted root (or a directory under one); empty or \"/\" resolves to the default (first-configured) root.",
+            "in": "query",
+            "name": "root",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
-        },
-        "summary": "POST /files",
-        "tags": [
-          "localfile"
-        ]
-      },
-      "put": {
-        "operationId": "localfile_updateFile",
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -2760,104 +3382,33 @@
             "description": "Error"
           }
         },
-        "summary": "PUT /files",
+        "summary": "createFile writes a new file from the request payload and returns its entry.",
         "tags": [
           "localfile"
         ]
-      }
-    },
-    "/files/content": {
-      "get": {
-        "operationId": "localfile_content",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/localfileapi_fileContentResponse"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIError"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "GET /files/content",
-        "tags": [
-          "localfile"
-        ]
-      }
-    },
-    "/files/download": {
-      "get": {
-        "operationId": "get_files_download",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIError"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "GET /files/download",
-        "tags": [
-          "localfile"
-        ]
-      }
-    },
-    "/files/move": {
+      },
       "put": {
-        "operationId": "put_files_move",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
+        "operationId": "localfile_updateFile",
+        "parameters": [
+          {
+            "description": "Workspace root the request operates in: a granted root (or a directory under one); empty or \"/\" resolves to the default (first-configured) root.",
+            "in": "query",
+            "name": "root",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/localfileapi_writeFileRequest"
               }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIError"
-                }
-              }
-            },
-            "description": "Error"
+            }
           }
         },
-        "summary": "PUT /files/move",
-        "tags": [
-          "localfile"
-        ]
-      }
-    },
-    "/files/stat": {
-      "get": {
-        "operationId": "localfile_stat",
         "responses": {
           "200": {
             "content": {
@@ -2880,7 +3431,212 @@
             "description": "Error"
           }
         },
-        "summary": "GET /files/stat",
+        "summary": "updateFile overwrites an existing file from the request payload and returns its entry.",
+        "tags": [
+          "localfile"
+        ]
+      }
+    },
+    "/files/content": {
+      "get": {
+        "operationId": "localfile_content",
+        "parameters": [
+          {
+            "description": "File path relative to the project root.",
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Workspace root the request operates in: a granted root (or a directory under one); empty or \"/\" resolves to the default (first-configured) root.",
+            "in": "query",
+            "name": "root",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/localfileapi_fileContentResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "content returns a file's contents with metadata, UTF-8 inline or base64 for binary data.",
+        "tags": [
+          "localfile"
+        ]
+      }
+    },
+    "/files/download": {
+      "get": {
+        "operationId": "localfile_download",
+        "parameters": [
+          {
+            "description": "File path relative to the project root.",
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Workspace root the request operates in: a granted root (or a directory under one); empty or \"/\" resolves to the default (first-configured) root.",
+            "in": "query",
+            "name": "root",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The file's raw bytes, served with its stored content type (application/octet-stream fallback)."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "download serves a file's raw bytes with its stored content type.",
+        "tags": [
+          "localfile"
+        ]
+      }
+    },
+    "/files/move": {
+      "put": {
+        "operationId": "localfile_movePath",
+        "parameters": [
+          {
+            "description": "Workspace root the request operates in: a granted root (or a directory under one); empty or \"/\" resolves to the default (first-configured) root.",
+            "in": "query",
+            "name": "root",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/localfileapi_moveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/localfileservice_Entry"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "movePath renames or moves a file or folder and returns the entry at its new path.",
+        "tags": [
+          "localfile"
+        ]
+      }
+    },
+    "/files/stat": {
+      "get": {
+        "operationId": "localfile_stat",
+        "parameters": [
+          {
+            "description": "Path relative to the project root.",
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Workspace root the request operates in: a granted root (or a directory under one); empty or \"/\" resolves to the default (first-configured) root.",
+            "in": "query",
+            "name": "root",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/localfileservice_Entry"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "stat returns the metadata entry for one path.",
         "tags": [
           "localfile"
         ]
@@ -2888,7 +3644,7 @@
     },
     "/fleet": {
       "get": {
-        "operationId": "fleet_list",
+        "operationId": "get_fleet",
         "responses": {
           "200": {
             "content": {
@@ -2914,7 +3670,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /fleet",
+        "summary": "list returns every fleet instance the kernel currently tracks.",
         "tags": [
           "fleet"
         ]
@@ -2954,31 +3710,24 @@
             "description": "Error"
           }
         },
-        "summary": "POST /fleet/dispatch",
+        "summary": "dispatch allocates a unit via fleetservice.Dispatch and returns 202 with the ids as soon as the session is open; the orchestration (Enabled check, teardown-on-failure, the mission record, the detached first turn) lives entirely in the service now.",
         "tags": [
           "fleet"
         ]
       }
     },
-    "/fleet/{instanceID}": {
-      "delete": {
-        "operationId": "fleet_stop",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "instanceID",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+    "/fleet/presence": {
+      "get": {
+        "operationId": "get_fleet_presence",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "items": {
+                    "$ref": "#/components/schemas/presence_Entry"
+                  },
+                  "type": "array"
                 }
               }
             },
@@ -2995,7 +3744,49 @@
             "description": "Error"
           }
         },
-        "summary": "DELETE /fleet/{instanceID}",
+        "summary": "list returns the observed-presence entries: external agents (and serve itself) that self-registered into the shared presence store.",
+        "tags": [
+          "fleet"
+        ]
+      }
+    },
+    "/fleet/{instanceID}": {
+      "delete": {
+        "operationId": "fleet_stop",
+        "parameters": [
+          {
+            "description": "The unique ID of the instance.",
+            "in": "path",
+            "name": "instanceID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "stop tears an instance down via fleetservice.Stop, which is idempotent by kernel contract: stopping an unknown or already-stopped instance is a no-op 200, not a 404 — mirrors the delete-response idiom missionapi/mcpserverapi use (a plain \"deleted\" string body).",
         "tags": [
           "fleet"
         ]
@@ -3004,6 +3795,7 @@
         "operationId": "fleet_get",
         "parameters": [
           {
+            "description": "The unique ID of the instance.",
             "in": "path",
             "name": "instanceID",
             "required": true,
@@ -3034,7 +3826,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /fleet/{instanceID}",
+        "summary": "get returns the live status of one fleet instance.",
         "tags": [
           "fleet"
         ]
@@ -3045,6 +3837,7 @@
         "operationId": "fleet_cancel",
         "parameters": [
           {
+            "description": "The unique ID of the instance.",
             "in": "path",
             "name": "instanceID",
             "required": true,
@@ -3067,7 +3860,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "string"
                 }
               }
             },
@@ -3084,7 +3877,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /fleet/{instanceID}/cancel",
+        "summary": "cancel cancels an in-flight prompt turn via fleetservice.Cancel.",
         "tags": [
           "fleet"
         ]
@@ -3093,6 +3886,26 @@
     "/folders": {
       "delete": {
         "operationId": "localfile_deleteFolder",
+        "parameters": [
+          {
+            "description": "Folder path relative to the project root.",
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Workspace root the request operates in: a granted root (or a directory under one); empty or \"/\" resolves to the default (first-configured) root.",
+            "in": "query",
+            "name": "root",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -3115,13 +3928,24 @@
             "description": "Error"
           }
         },
-        "summary": "DELETE /folders",
+        "summary": "Delete a folder.",
         "tags": [
           "localfile"
         ]
       },
       "post": {
         "operationId": "localfile_createFolder",
+        "parameters": [
+          {
+            "description": "Workspace root the request operates in: a granted root (or a directory under one); empty or \"/\" resolves to the default (first-configured) root.",
+            "in": "query",
+            "name": "root",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -3153,7 +3977,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /folders",
+        "summary": "createFolder creates a directory and returns its entry.",
         "tags": [
           "localfile"
         ]
@@ -3166,7 +3990,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/serverapi_HealthResponse"
+                }
               }
             },
             "description": "OK"
@@ -3191,12 +4017,23 @@
     "/hitl-policies": {
       "delete": {
         "operationId": "hitlpolicy_deletePolicy",
+        "parameters": [
+          {
+            "description": "Policy filename, e.g. hitl-policy-custom.json.",
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "string"
                 }
               }
             },
@@ -3213,13 +4050,24 @@
             "description": "Error"
           }
         },
-        "summary": "DELETE /hitl-policies",
+        "summary": "deletePolicy removes a HITL policy file by name.",
         "tags": [
           "hitlpolicy"
         ]
       },
       "get": {
         "operationId": "hitlpolicy_getPolicy",
+        "parameters": [
+          {
+            "description": "Policy filename, e.g. hitl-policy-strict.json.",
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -3242,13 +4090,33 @@
             "description": "Error"
           }
         },
-        "summary": "GET /hitl-policies",
+        "summary": "getPolicy reads one HITL policy file by name.",
         "tags": [
           "hitlpolicy"
         ]
       },
       "post": {
         "operationId": "hitlpolicy_createPolicy",
+        "parameters": [
+          {
+            "description": "Policy filename, e.g. hitl-policy-custom.json.",
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/hitlservice_Policy"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -3271,13 +4139,33 @@
             "description": "Error"
           }
         },
-        "summary": "POST /hitl-policies",
+        "summary": "createPolicy writes a new HITL policy file and returns the stored policy.",
         "tags": [
           "hitlpolicy"
         ]
       },
       "put": {
         "operationId": "hitlpolicy_updatePolicy",
+        "parameters": [
+          {
+            "description": "Policy filename, e.g. hitl-policy-strict.json.",
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/hitlservice_Policy"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -3300,7 +4188,7 @@
             "description": "Error"
           }
         },
-        "summary": "PUT /hitl-policies",
+        "summary": "updatePolicy overwrites an existing HITL policy file and returns the stored policy.",
         "tags": [
           "hitlpolicy"
         ]
@@ -3315,7 +4203,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "type": "object"
+                    "type": "string"
                   },
                   "type": "array"
                 }
@@ -3334,7 +4222,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /hitl-policies/list",
+        "summary": "listPolicies returns the file names of every stored HITL policy (hitl-policy*.json).",
         "tags": [
           "hitlpolicy"
         ]
@@ -3343,6 +4231,26 @@
     "/mcp-servers": {
       "get": {
         "operationId": "mcpserver_list",
+        "parameters": [
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -3368,7 +4276,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /mcp-servers",
+        "summary": "list returns the registered MCP servers, paginated by cursor.",
         "tags": [
           "mcpserver"
         ]
@@ -3406,7 +4314,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /mcp-servers",
+        "summary": "create registers an MCP server and returns it with its assigned ID.",
         "tags": [
           "mcpserver"
         ]
@@ -3417,6 +4325,7 @@
         "operationId": "mcpserver_getByName",
         "parameters": [
           {
+            "description": "The unique name of the MCP server.",
             "in": "path",
             "name": "name",
             "required": true,
@@ -3447,7 +4356,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /mcp-servers/by-name/{name}",
+        "summary": "getByName returns one MCP server by its unique name.",
         "tags": [
           "mcpserver"
         ]
@@ -3458,6 +4367,7 @@
         "operationId": "mcpserver_delete",
         "parameters": [
           {
+            "description": "The unique ID of the MCP server.",
             "in": "path",
             "name": "id",
             "required": true,
@@ -3471,7 +4381,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "string"
                 }
               }
             },
@@ -3488,7 +4398,7 @@
             "description": "Error"
           }
         },
-        "summary": "DELETE /mcp-servers/{id}",
+        "summary": "delete removes an MCP server registration by ID.",
         "tags": [
           "mcpserver"
         ]
@@ -3497,6 +4407,7 @@
         "operationId": "mcpserver_get",
         "parameters": [
           {
+            "description": "The unique ID of the MCP server.",
             "in": "path",
             "name": "id",
             "required": true,
@@ -3527,7 +4438,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /mcp-servers/{id}",
+        "summary": "get returns one MCP server by ID.",
         "tags": [
           "mcpserver"
         ]
@@ -3536,6 +4447,7 @@
         "operationId": "mcpserver_update",
         "parameters": [
           {
+            "description": "The unique ID of the MCP server.",
             "in": "path",
             "name": "id",
             "required": true,
@@ -3575,7 +4487,7 @@
             "description": "Error"
           }
         },
-        "summary": "PUT /mcp-servers/{id}",
+        "summary": "update replaces an MCP server's configuration by ID and returns the stored result.",
         "tags": [
           "mcpserver"
         ]
@@ -3586,6 +4498,7 @@
         "operationId": "mcpserver_oauthStart",
         "parameters": [
           {
+            "description": "The unique ID of the MCP server.",
             "in": "path",
             "name": "id",
             "required": true,
@@ -3625,7 +4538,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /mcp-servers/{id}/oauth/start",
+        "summary": "oauthStart begins the OAuth authorization flow for an MCP server and returns the provider authorization URL to visit.",
         "tags": [
           "mcpserver"
         ]
@@ -3634,14 +4547,47 @@
     "/mcp/oauth/callback": {
       "get": {
         "operationId": "mcpserver_oauthCallback",
+        "parameters": [
+          {
+            "description": "The OAuth authorization code returned by the provider.",
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The provider error code, when authorization fails.",
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The provider error description, when authorization fails.",
+            "in": "query",
+            "name": "error_description",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The OAuth state value returned by the provider.",
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "OK"
+          "302": {
+            "description": "302 redirect back to the client UI with success or error query parameters appended; no response body."
           },
           "default": {
             "content": {
@@ -3654,7 +4600,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /mcp/oauth/callback",
+        "summary": "oauthCallback completes an MCP server OAuth flow from the provider's redirect and 302-redirects back to the client UI.",
         "tags": [
           "mcpserver"
         ]
@@ -3663,6 +4609,26 @@
     "/missions": {
       "get": {
         "operationId": "mission_list",
+        "parameters": [
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -3688,7 +4654,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /missions",
+        "summary": "list returns mission records newest-first, keyset-paginated by creation time.",
         "tags": [
           "mission"
         ]
@@ -3726,7 +4692,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /missions",
+        "summary": "create stores a new mission record and returns the created mission.",
         "tags": [
           "mission"
         ]
@@ -3737,6 +4703,7 @@
         "operationId": "mission_delete",
         "parameters": [
           {
+            "description": "The unique ID of the mission.",
             "in": "path",
             "name": "id",
             "required": true,
@@ -3750,7 +4717,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "string"
                 }
               }
             },
@@ -3767,7 +4734,7 @@
             "description": "Error"
           }
         },
-        "summary": "DELETE /missions/{id}",
+        "summary": "delete removes the mission record.",
         "tags": [
           "mission"
         ]
@@ -3776,6 +4743,7 @@
         "operationId": "mission_get",
         "parameters": [
           {
+            "description": "The unique ID of the mission.",
             "in": "path",
             "name": "id",
             "required": true,
@@ -3806,7 +4774,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /missions/{id}",
+        "summary": "get returns one mission record whole.",
         "tags": [
           "mission"
         ]
@@ -3815,6 +4783,7 @@
         "operationId": "mission_patch",
         "parameters": [
           {
+            "description": "The unique ID of the mission.",
             "in": "path",
             "name": "id",
             "required": true,
@@ -3854,9 +4823,102 @@
             "description": "Error"
           }
         },
-        "summary": "PATCH /missions/{id}",
+        "summary": "patch updates a mission's intent and/or status, and can bind it to a session and instance in the same call.",
         "tags": [
           "mission"
+        ]
+      }
+    },
+    "/missions/{id}/changes": {
+      "get": {
+        "operationId": "missionchanges_changes",
+        "parameters": [
+          {
+            "description": "The unique ID of the mission.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/missionchanges_Changes"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "changes returns mission id's changed-files list (ordered by Degree-of-Interest) and scope summary.",
+        "tags": [
+          "missionchanges"
+        ]
+      }
+    },
+    "/missions/{id}/changes/diff": {
+      "get": {
+        "operationId": "missionchanges_diff",
+        "parameters": [
+          {
+            "description": "The unique ID of the mission.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The changed file path to diff.",
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/missionchanges_Diff"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "diff returns the {original, modified} pair for one changed path in mission id, selected by the required `path` query parameter.",
+        "tags": [
+          "missionchanges"
         ]
       }
     },
@@ -3865,11 +4927,21 @@
         "operationId": "mission_listReports",
         "parameters": [
           {
+            "description": "The unique ID of the mission.",
             "in": "path",
             "name": "id",
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
             }
           }
         ],
@@ -3898,7 +4970,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /missions/{id}/reports",
+        "summary": "listReports returns mission id's reports newest-first.",
         "tags": [
           "mission"
         ]
@@ -3907,6 +4979,7 @@
         "operationId": "mission_addReport",
         "parameters": [
           {
+            "description": "The unique ID of the mission.",
             "in": "path",
             "name": "id",
             "required": true,
@@ -3946,7 +5019,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /missions/{id}/reports",
+        "summary": "addReport files a report against mission id.",
         "tags": [
           "mission"
         ]
@@ -3980,7 +5053,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /model-registry",
+        "summary": "list returns the registered models as descriptors, paginated by cursor.",
         "tags": [
           "modelregistry"
         ]
@@ -4018,7 +5091,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /model-registry",
+        "summary": "create adds a model registry entry and returns it with its assigned ID.",
         "tags": [
           "modelregistry"
         ]
@@ -4041,7 +5114,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "string"
                 }
               }
             },
@@ -4058,7 +5131,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /model-registry/download",
+        "summary": "download fetches a registered model's artifact to the local model store, reporting whether it was already present.",
         "tags": [
           "modelregistry"
         ]
@@ -4069,6 +5142,7 @@
         "operationId": "modelregistry_delete",
         "parameters": [
           {
+            "description": "The unique identifier for the model registry entry.",
             "in": "path",
             "name": "id",
             "required": true,
@@ -4082,7 +5156,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "string"
                 }
               }
             },
@@ -4099,7 +5173,7 @@
             "description": "Error"
           }
         },
-        "summary": "DELETE /model-registry/{id}",
+        "summary": "delete removes a model registry entry by ID.",
         "tags": [
           "modelregistry"
         ]
@@ -4108,6 +5182,7 @@
         "operationId": "modelregistry_get",
         "parameters": [
           {
+            "description": "The unique identifier for the model registry entry.",
             "in": "path",
             "name": "id",
             "required": true,
@@ -4138,7 +5213,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /model-registry/{id}",
+        "summary": "get returns one model registry entry by ID.",
         "tags": [
           "modelregistry"
         ]
@@ -4147,6 +5222,7 @@
         "operationId": "modelregistry_update",
         "parameters": [
           {
+            "description": "The unique identifier for the model registry entry.",
             "in": "path",
             "name": "id",
             "required": true,
@@ -4186,7 +5262,7 @@
             "description": "Error"
           }
         },
-        "summary": "PUT /model-registry/{id}",
+        "summary": "update replaces a model registry entry by ID and returns the stored result.",
         "tags": [
           "modelregistry"
         ]
@@ -4195,6 +5271,17 @@
     "/modeld/capacity": {
       "get": {
         "operationId": "modeld_capacity",
+        "parameters": [
+          {
+            "description": "Registered local model name or id to describe.",
+            "in": "query",
+            "name": "model",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -4217,7 +5304,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /modeld/capacity",
+        "summary": "capacity describes how a registered local model would run on this host (planned context length, memory fit) without loading it.",
         "tags": [
           "modeld"
         ]
@@ -4257,7 +5344,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /modeld/load",
+        "summary": "load loads a registered local model into the modeld slot and returns the resulting active-model state.",
         "tags": [
           "modeld"
         ]
@@ -4291,7 +5378,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /modeld/models",
+        "summary": "models lists the local models known to the registry state.",
         "tags": [
           "modeld"
         ]
@@ -4322,7 +5409,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /modeld/status",
+        "summary": "status reports the modeld daemon's detected state (binary, endpoint, protocol) and, when reachable, its current slot occupancy.",
         "tags": [
           "modeld"
         ]
@@ -4362,7 +5449,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /modeld/unload",
+        "summary": "unload evicts the currently loaded model from the modeld slot.",
         "tags": [
           "modeld"
         ]
@@ -4371,6 +5458,18 @@
     "/models": {
       "get": {
         "operationId": "backend_listInternal",
+        "parameters": [
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": "100",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -4396,7 +5495,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /models",
+        "summary": "listInternal returns the models currently observed on the runtime's backends, with per-model capability flags.",
         "tags": [
           "backend"
         ]
@@ -4404,12 +5503,23 @@
     },
     "/openai/v1/chat/completions": {
       "post": {
-        "operationId": "compat_handle",
+        "operationId": "post_openai_v1_chat_completions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/compatapi_ChatCompletionRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/compatapi_chatCompletionResponse"
+                }
               }
             },
             "description": "OK"
@@ -4425,7 +5535,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /openai/v1/chat/completions",
+        "summary": "handle serves an OpenAI-compatible chat completion, answering with a single JSON completion object or, when the request sets stream, the same content as SSE chat.completion.chunk frames over text/event-stream.",
         "tags": [
           "compat"
         ]
@@ -4433,12 +5543,23 @@
     },
     "/openai/v1/completions": {
       "post": {
-        "operationId": "compat_handle",
+        "operationId": "post_openai_v1_completions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/compatapi_FIMCompletionRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/compatapi_fimCompletionResponse"
+                }
               }
             },
             "description": "OK"
@@ -4454,7 +5575,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /openai/v1/completions",
+        "summary": "handle serves an OpenAI-compatible (FIM) text completion, answering with a single JSON text_completion object or, when the request sets stream, the same content as SSE chunk frames over text/event-stream.",
         "tags": [
           "compat"
         ]
@@ -4462,12 +5583,23 @@
     },
     "/openai/v1/fim/completions": {
       "post": {
-        "operationId": "compat_handle",
+        "operationId": "post_openai_v1_fim_completions",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/compatapi_FIMCompletionRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/compatapi_fimCompletionResponse"
+                }
               }
             },
             "description": "OK"
@@ -4483,7 +5615,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /openai/v1/fim/completions",
+        "summary": "handle serves an OpenAI-compatible (FIM) text completion, answering with a single JSON text_completion object or, when the request sets stream, the same content as SSE chunk frames over text/event-stream.",
         "tags": [
           "compat"
         ]
@@ -4491,7 +5623,19 @@
     },
     "/openai/v1/models": {
       "get": {
-        "operationId": "backend_listModels",
+        "operationId": "get_openai_v1_models",
+        "parameters": [
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": "100",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -4514,7 +5658,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /openai/v1/models",
+        "summary": "listModels returns the models observed across the runtime's backends in the OpenAI-compatible model-list shape.",
         "tags": [
           "backend"
         ]
@@ -4522,7 +5666,7 @@
     },
     "/openai/{chainID}/v1/chat/completions": {
       "post": {
-        "operationId": "compat_handle",
+        "operationId": "post_openai_chainID_v1_chat_completions",
         "parameters": [
           {
             "in": "path",
@@ -4533,11 +5677,22 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/compatapi_ChatCompletionRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/compatapi_chatCompletionResponse"
+                }
               }
             },
             "description": "OK"
@@ -4553,7 +5708,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /openai/{chainID}/v1/chat/completions",
+        "summary": "handle serves an OpenAI-compatible chat completion, answering with a single JSON completion object or, when the request sets stream, the same content as SSE chat.completion.chunk frames over text/event-stream.",
         "tags": [
           "compat"
         ]
@@ -4561,7 +5716,7 @@
     },
     "/openai/{chainID}/v1/fim/completions": {
       "post": {
-        "operationId": "compat_handle",
+        "operationId": "post_openai_chainID_v1_fim_completions",
         "parameters": [
           {
             "in": "path",
@@ -4572,11 +5727,22 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/compatapi_FIMCompletionRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/compatapi_fimCompletionResponse"
+                }
               }
             },
             "description": "OK"
@@ -4592,7 +5758,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /openai/{chainID}/v1/fim/completions",
+        "summary": "handle serves an OpenAI-compatible (FIM) text completion, answering with a single JSON text_completion object or, when the request sets stream, the same content as SSE chunk frames over text/event-stream.",
         "tags": [
           "compat"
         ]
@@ -4600,13 +5766,24 @@
     },
     "/openai/{chainID}/v1/models": {
       "get": {
-        "operationId": "backend_listModels",
+        "operationId": "get_openai_chainID_v1_models",
         "parameters": [
           {
+            "description": "The ID of the chain that links to the openAI completion API. Currently unused.",
             "in": "path",
             "name": "chainID",
             "required": true,
             "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": "100",
               "type": "string"
             }
           }
@@ -4633,15 +5810,80 @@
             "description": "Error"
           }
         },
-        "summary": "GET /openai/{chainID}/v1/models",
+        "summary": "listModels returns the models observed across the runtime's backends in the OpenAI-compatible model-list shape.",
         "tags": [
           "backend"
+        ]
+      }
+    },
+    "/operator-inbox": {
+      "get": {
+        "operationId": "operatorinbox_list",
+        "parameters": [
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/operatorinbox_Item"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "list returns the operator inbox newest-first: reports that reached no live supervisor.",
+        "tags": [
+          "operatorinbox"
         ]
       }
     },
     "/providers/configs": {
       "get": {
         "operationId": "provider_listConfigs",
+        "parameters": [
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -4667,7 +5909,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /providers/configs",
+        "summary": "listConfigs returns the status of every configured provider.",
         "tags": [
           "provider"
         ]
@@ -4701,7 +5943,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /providers/supported",
+        "summary": "supported lists the provider types this runtime can be configured with and their capabilities.",
         "tags": [
           "provider"
         ]
@@ -4712,6 +5954,7 @@
         "operationId": "provider_deleteConfig",
         "parameters": [
           {
+            "description": "Provider type to delete.",
             "in": "path",
             "name": "providerType",
             "required": true,
@@ -4725,7 +5968,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "string"
                 }
               }
             },
@@ -4742,7 +5985,7 @@
             "description": "Error"
           }
         },
-        "summary": "DELETE /providers/{providerType}/config",
+        "summary": "deleteConfig removes a provider type's stored configuration.",
         "tags": [
           "provider"
         ]
@@ -4751,6 +5994,7 @@
         "operationId": "provider_get",
         "parameters": [
           {
+            "description": "Provider type to retrieve.",
             "in": "path",
             "name": "providerType",
             "required": true,
@@ -4781,7 +6025,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /providers/{providerType}/config",
+        "summary": "get returns the stored configuration status for one provider type.",
         "tags": [
           "provider"
         ]
@@ -4792,6 +6036,7 @@
         "operationId": "provider_configure",
         "parameters": [
           {
+            "description": "Provider type to configure.",
             "in": "path",
             "name": "providerType",
             "required": true,
@@ -4831,7 +6076,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /providers/{providerType}/configure",
+        "summary": "configure stores (or updates) a cloud provider's API key configuration and returns the resulting provider status.",
         "tags": [
           "provider"
         ]
@@ -4842,6 +6087,7 @@
         "operationId": "provider_status",
         "parameters": [
           {
+            "description": "Provider type to inspect.",
             "in": "path",
             "name": "providerType",
             "required": true,
@@ -4872,7 +6118,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /providers/{providerType}/status",
+        "summary": "status reports whether a provider type is configured and ready.",
         "tags": [
           "provider"
         ]
@@ -4903,7 +6149,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /setup-status",
+        "summary": "getStatus reports the cached setup-check result: which pieces of the local runtime are configured and working.",
         "tags": [
           "setup"
         ]
@@ -4934,7 +6180,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /setup/refresh",
+        "summary": "refreshStatus re-runs the setup checks and returns the fresh result.",
         "tags": [
           "setup"
         ]
@@ -4968,7 +6214,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /state",
+        "summary": "list returns the observed runtime state of every registered backend, with each backend's model list normalized to observed model names.",
         "tags": [
           "backend"
         ]
@@ -4977,14 +6223,27 @@
     "/task-events": {
       "get": {
         "operationId": "taskevents_stream",
+        "parameters": [
+          {
+            "description": "Task request ID to subscribe to.",
+            "in": "query",
+            "name": "requestId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {}
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
               }
             },
-            "description": "OK"
+            "description": "SSE stream over text/event-stream: each data frame is one taskengine.TaskEvent JSON object for the subscribed requestId."
           },
           "default": {
             "content": {
@@ -4997,7 +6256,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /task-events",
+        "summary": "stream subscribes the caller to a Server-Sent Events stream of TaskEvent objects.",
         "tags": [
           "taskevents"
         ]
@@ -5006,12 +6265,23 @@
     "/taskchains": {
       "delete": {
         "operationId": "taskchain_deleteTaskChain",
+        "parameters": [
+          {
+            "description": "Relative chain JSON path inside .contenox.",
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "string"
                 }
               }
             },
@@ -5028,13 +6298,24 @@
             "description": "Error"
           }
         },
-        "summary": "DELETE /taskchains",
+        "summary": "deleteTaskChain removes a task-chain definition file by path.",
         "tags": [
           "taskchain"
         ]
       },
       "get": {
         "operationId": "taskchain_getTaskChain",
+        "parameters": [
+          {
+            "description": "Relative chain JSON path inside .contenox.",
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -5057,13 +6338,24 @@
             "description": "Error"
           }
         },
-        "summary": "GET /taskchains",
+        "summary": "getTaskChain reads one task-chain definition from its file path (query parameter `path`).",
         "tags": [
           "taskchain"
         ]
       },
       "post": {
         "operationId": "taskchain_createTaskChain",
+        "parameters": [
+          {
+            "description": "Relative chain JSON path inside .contenox.",
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -5095,13 +6387,24 @@
             "description": "Error"
           }
         },
-        "summary": "POST /taskchains",
+        "summary": "createTaskChain writes a new task-chain definition file and returns the stored definition.",
         "tags": [
           "taskchain"
         ]
       },
       "put": {
         "operationId": "taskchain_updateTaskChain",
+        "parameters": [
+          {
+            "description": "Relative chain JSON path inside .contenox.",
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -5133,7 +6436,7 @@
             "description": "Error"
           }
         },
-        "summary": "PUT /taskchains",
+        "summary": "updateTaskChain overwrites an existing task-chain definition file and returns the stored definition.",
         "tags": [
           "taskchain"
         ]
@@ -5148,7 +6451,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "type": "object"
+                    "type": "string"
                   },
                   "type": "array"
                 }
@@ -5167,7 +6470,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /taskchains/list",
+        "summary": "listTaskChains returns the relative file paths of every stored task-chain definition.",
         "tags": [
           "taskchain"
         ]
@@ -5207,7 +6510,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /tasks",
+        "summary": "execute runs the submitted task chain through the configured agent and returns the output together with the captured per-step state and stop reason.",
         "tags": [
           "taskexec"
         ]
@@ -5216,6 +6519,35 @@
     "/terminal/sessions": {
       "get": {
         "operationId": "terminal_listSessions",
+        "parameters": [
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Serve credential accepted as a query-parameter auth fallback (read via principalFromRequest); auth headers take precedence when present.",
+            "in": "query",
+            "name": "token",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -5241,13 +6573,24 @@
             "description": "Error"
           }
         },
-        "summary": "GET /terminal/sessions",
+        "summary": "listSessions returns the authenticated principal's terminal sessions.",
         "tags": [
           "terminal"
         ]
       },
       "post": {
         "operationId": "terminal_createSession",
+        "parameters": [
+          {
+            "description": "Serve credential accepted as a query-parameter auth fallback (read via principalFromRequest); auth headers take precedence when present.",
+            "in": "query",
+            "name": "token",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -5279,7 +6622,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /terminal/sessions",
+        "summary": "createSession opens a new host terminal session for the authenticated principal and returns its ID plus the websocket attach URL.",
         "tags": [
           "terminal"
         ]
@@ -5290,22 +6633,27 @@
         "operationId": "terminal_deleteSession",
         "parameters": [
           {
+            "description": "The unique identifier of the terminal session.",
             "in": "path",
             "name": "id",
             "required": true,
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "Serve credential accepted as a query-parameter auth fallback (read via principalFromRequest); auth headers take precedence when present.",
+            "in": "query",
+            "name": "token",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "OK"
+          "204": {
+            "description": "session closed; the handler writes 204 with no body"
           },
           "default": {
             "content": {
@@ -5318,7 +6666,7 @@
             "description": "Error"
           }
         },
-        "summary": "DELETE /terminal/sessions/{id}",
+        "summary": "deleteSession closes a terminal session by ID and responds 204.",
         "tags": [
           "terminal"
         ]
@@ -5327,9 +6675,19 @@
         "operationId": "terminal_getSession",
         "parameters": [
           {
+            "description": "The unique identifier of the terminal session.",
             "in": "path",
             "name": "id",
             "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Serve credential accepted as a query-parameter auth fallback (read via principalFromRequest); auth headers take precedence when present.",
+            "in": "query",
+            "name": "token",
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -5357,7 +6715,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /terminal/sessions/{id}",
+        "summary": "getSession returns one of the principal's terminal sessions by ID.",
         "tags": [
           "terminal"
         ]
@@ -5370,7 +6728,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/toolsproviderservice_LocalTools"
+                  },
+                  "type": "array"
+                }
               }
             },
             "description": "OK"
@@ -5386,7 +6749,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /tools/local",
+        "summary": "listLocal returns every locally available tool group (builtin, MCP-backed, and remote) with the tools each currently exposes.",
         "tags": [
           "tools"
         ]
@@ -5395,11 +6758,36 @@
     "/tools/remote": {
       "get": {
         "operationId": "tools_list",
+        "parameters": [
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/runtimetypes_RemoteTools"
+                  },
+                  "type": "array"
+                }
               }
             },
             "description": "OK"
@@ -5415,18 +6803,29 @@
             "description": "Error"
           }
         },
-        "summary": "GET /tools/remote",
+        "summary": "list returns the registered remote tools providers, paginated by cursor.",
         "tags": [
           "tools"
         ]
       },
       "post": {
         "operationId": "tools_create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/runtimetypes_RemoteTools"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/runtimetypes_RemoteTools"
+                }
               }
             },
             "description": "OK"
@@ -5442,7 +6841,7 @@
             "description": "Error"
           }
         },
-        "summary": "POST /tools/remote",
+        "summary": "create registers a new remote tools provider and returns it with its assigned ID.",
         "tags": [
           "tools"
         ]
@@ -5453,6 +6852,7 @@
         "operationId": "tools_getByName",
         "parameters": [
           {
+            "description": "The unique name for the remote tool.",
             "in": "path",
             "name": "name",
             "required": true,
@@ -5465,7 +6865,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/runtimetypes_RemoteTools"
+                }
               }
             },
             "description": "OK"
@@ -5481,7 +6883,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /tools/remote/by-name/{name}",
+        "summary": "getByName returns one remote tools provider by its unique name.",
         "tags": [
           "tools"
         ]
@@ -5492,6 +6894,7 @@
         "operationId": "tools_delete",
         "parameters": [
           {
+            "description": "The unique identifier for the remote tool.",
             "in": "path",
             "name": "id",
             "required": true,
@@ -5504,7 +6907,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "type": "string"
+                }
               }
             },
             "description": "OK"
@@ -5520,7 +6925,7 @@
             "description": "Error"
           }
         },
-        "summary": "DELETE /tools/remote/{id}",
+        "summary": "delete removes a remote tools provider by ID.",
         "tags": [
           "tools"
         ]
@@ -5529,6 +6934,7 @@
         "operationId": "tools_get",
         "parameters": [
           {
+            "description": "The unique identifier for the remote tool.",
             "in": "path",
             "name": "id",
             "required": true,
@@ -5541,7 +6947,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/runtimetypes_RemoteTools"
+                }
               }
             },
             "description": "OK"
@@ -5557,7 +6965,7 @@
             "description": "Error"
           }
         },
-        "summary": "GET /tools/remote/{id}",
+        "summary": "get returns one remote tools provider by ID.",
         "tags": [
           "tools"
         ]
@@ -5566,6 +6974,7 @@
         "operationId": "tools_update",
         "parameters": [
           {
+            "description": "The unique identifier for the remote tool.",
             "in": "path",
             "name": "id",
             "required": true,
@@ -5574,11 +6983,22 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/runtimetypes_RemoteTools"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/runtimetypes_RemoteTools"
+                }
               }
             },
             "description": "OK"
@@ -5594,7 +7014,7 @@
             "description": "Error"
           }
         },
-        "summary": "PUT /tools/remote/{id}",
+        "summary": "update replaces a remote tools provider's configuration by ID and returns the stored result.",
         "tags": [
           "tools"
         ]
@@ -5623,125 +7043,9 @@
             "description": "Error"
           }
         },
-        "summary": "GET /tools/schemas",
+        "summary": "getSchemas returns the OpenAPI schema document for every supported tool, keyed by tool name.",
         "tags": [
           "tools"
-        ]
-      }
-    },
-    "/v1/chat/completions": {
-      "post": {
-        "operationId": "compat_handle",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIError"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "POST /v1/chat/completions",
-        "tags": [
-          "compat"
-        ]
-      }
-    },
-    "/v1/completions": {
-      "post": {
-        "operationId": "compat_handle",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIError"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "POST /v1/completions",
-        "tags": [
-          "compat"
-        ]
-      }
-    },
-    "/v1/fim/completions": {
-      "post": {
-        "operationId": "compat_handle",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIError"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "POST /v1/fim/completions",
-        "tags": [
-          "compat"
-        ]
-      }
-    },
-    "/v1/models": {
-      "get": {
-        "operationId": "get_v1_models",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/APIError"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "GET /v1/models",
-        "tags": [
-          "compat"
         ]
       }
     },
@@ -5752,7 +7056,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/apiframework_AboutServer"
+                }
               }
             },
             "description": "OK"
@@ -5771,6 +7077,263 @@
         "summary": "GET /version",
         "tags": [
           "server"
+        ]
+      }
+    },
+    "/workspace/find": {
+      "get": {
+        "operationId": "localfile_find",
+        "parameters": [
+          {
+            "description": "Set to \"agent\" to annotate each match with the agent's per-path access verdict; empty or \"full\" streams raw entries.",
+            "in": "query",
+            "name": "filter",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filename match pattern(s), comma-separated; filepath.Match semantics against the basename, or the root-relative path when a pattern contains '/'. A file matches if ANY pattern matches (e.g. \"*.md\" or \"*.go,*.md\").",
+            "in": "query",
+            "name": "glob",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum matches to stream before truncating; capped at the server maximum.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Directory to search under, relative to the workspace root; defaults to the whole workspace.",
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "default": ".",
+              "type": "string"
+            }
+          },
+          {
+            "description": "HITL policy the agent view is evaluated against; empty uses the configured default. Ignored unless filter=agent.",
+            "in": "query",
+            "name": "policy",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Workspace root to search; empty or \"/\" uses the configured default. Must be an allowlisted root or a directory under one.",
+            "in": "query",
+            "name": "root",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Named SSE events over text/event-stream: `match` frames (one localfileapi.Entry JSON object each), then a terminal `done` frame carrying totals and the truncation flag."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "find streams the file entries under `root` whose names match `glob` as SSE.",
+        "tags": [
+          "localfile"
+        ]
+      }
+    },
+    "/workspace/roots": {
+      "delete": {
+        "operationId": "delete_workspace_roots",
+        "parameters": [
+          {
+            "description": "Workspace root directory to revoke.",
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/localfileapi_workspaceRootsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "DELETE /workspace/roots",
+        "tags": [
+          "localfile"
+        ]
+      },
+      "get": {
+        "operationId": "get_workspace_roots",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/localfileapi_workspaceRootsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /workspace/roots",
+        "tags": [
+          "localfile"
+        ]
+      },
+      "post": {
+        "operationId": "post_workspace_roots",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/localfileapi_addWorkspaceRootRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/localfileapi_workspaceRootsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /workspace/roots",
+        "tags": [
+          "localfile"
+        ]
+      }
+    },
+    "/workspace/search": {
+      "get": {
+        "operationId": "localfile_search",
+        "parameters": [
+          {
+            "description": "Maximum matches to stream before truncating; capped at the server maximum.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Search query, matched as a literal substring (smart-case).",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Workspace root to search; empty or \"/\" uses the configured default. Must be an allowlisted root or a directory under one.",
+            "in": "query",
+            "name": "root",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Named SSE events over text/event-stream: `match` frames (one searchMatch JSON object each), then a terminal `done` frame carrying totals and the truncation flag."
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "search streams matches for `q` under `root` as Server-Sent Events.",
+        "tags": [
+          "localfile"
         ]
       }
     }

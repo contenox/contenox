@@ -104,6 +104,14 @@ type ModelInfo struct {
 	SparseAttention              bool `json:"sparse_attention,omitempty"`
 	SlidingWindowAttentionTokens int  `json:"sliding_window_attention_tokens,omitempty"`
 
+	// SupportsVision reports that the model resolved with a multimodal projector
+	// (mmproj) whose metadata declares image input, certified by the backend —
+	// never inferred from the model name. VisionTokensPerImage is a conservative
+	// planning estimate of the sequence tokens one image consumes after encoding
+	// (from projector metadata; 0 = unknown).
+	SupportsVision       bool `json:"supports_vision,omitempty"`
+	VisionTokensPerImage int  `json:"vision_tokens_per_image,omitempty"`
+
 	// Chat-template capabilities are detected by the backend from the model's own
 	// template and parser implementation. The runtime uses these as the default
 	// capability truth; registry/profile strings are explicit overrides.
@@ -369,6 +377,22 @@ type ColdKVBlock struct {
 	LastUsed     int64  `json:"last_used,omitempty"`
 }
 
+// MediaMarker is the model-agnostic placeholder a caller embeds in input text
+// where an attached image belongs — one marker per ImagePart, in reading order.
+// The backend replaces each marker with the model's native media tokens; the
+// marker string itself never reaches the model. The value is fixed by the
+// multimodal engine (llama.cpp mtmd's default marker) and identical for every
+// model, which is what lets the runtime place it without backend knowledge.
+const MediaMarker = "<__media__>"
+
+// ImagePart is one encoded image attached to a session input: the raw bytes of
+// an image file (PNG/JPEG/BMP/...), decoded natively by the backend. MimeType
+// is advisory; backends sniff the actual format from the bytes.
+type ImagePart struct {
+	Data     []byte `json:"data,omitempty"`
+	MimeType string `json:"mime_type,omitempty"`
+}
+
 // PrefixInput is the stable prefix text plus the manifest that makes reuse
 // valid: tokenizer, template, runtime config, BOS policy, and model identity are
 // part of the cache key, not just the text.
@@ -379,6 +403,11 @@ type PrefixInput struct {
 	// model's own GGUF chat template (model-native tool calls). "" means no tools.
 	// The daemon renders it; the runtime never sees the model's tool format.
 	Tools string `json:",omitempty"`
+	// Images are the image parts referenced by MediaMarker occurrences in Text,
+	// in order. Backends without projector support — and the current llama
+	// session, which keys prefix reuse on a token-only tape — reject a stable
+	// prefix carrying images; attach images to the volatile suffix instead.
+	Images []ImagePart `json:"images,omitempty"`
 }
 
 // SuffixInput is the volatile text appended after the stable prefix. It carries
@@ -394,6 +423,11 @@ type SuffixInput struct {
 	// ReasoningEffort is passed to templates that consume a reasoning_effort
 	// kwarg (for example harmony/gpt-oss). Empty means backend default.
 	ReasoningEffort string `json:",omitempty"`
+	// Images are the image parts referenced by MediaMarker occurrences in Text,
+	// in order (all markers across the volatile conversation, so a multi-turn
+	// resend keeps earlier images evaluable). Requires a model resolved with
+	// vision support (ModelInfo.SupportsVision).
+	Images []ImagePart `json:"images,omitempty"`
 }
 
 // PrefixStatus reports what EnsurePrefix reused versus had to (re)compute.

@@ -20,8 +20,7 @@ import (
 //   - StateError: the downstream died UNEXPECTEDLY. Terminal when restart is
 //     disabled; transient (a way-station to StateStarting) when it is enabled.
 //   - StateWarning: restart was enabled but exhausted its limit (or a restart
-//     re-spawn itself failed) — the "needs attention, gave up restarting" state,
-//     the analogue of go-process-manager's ProcessStateWarnning.
+//     re-spawn itself failed) — the "needs attention, gave up restarting" state.
 const (
 	StateStarting = "starting"
 	StateRunning  = "running"
@@ -244,8 +243,7 @@ func (i *instance) start() error {
 // setState atomically checks the predicates (each evaluated with mu held, so it
 // may read i.state directly) and, if all pass, sets the state and fires the
 // onState hook OUTSIDE the lock — a sink that calls back into the Manager cannot
-// deadlock. Returns whether the transition happened. Mirrors
-// go-process-manager's ProcessBase.SetState.
+// deadlock. Returns whether the transition happened.
 func (i *instance) setState(s string, preds ...func() bool) bool {
 	i.mu.Lock()
 	for _, p := range preds {
@@ -264,8 +262,8 @@ func (i *instance) setState(s string, preds ...func() bool) bool {
 }
 
 // watchDog watches one downstream connection and applies the restart policy when
-// it closes — the ACP analogue of go-process-manager's watchDog (which waits on
-// os.Process.Wait). It runs once per live handle and re-arms itself on the fresh
+// it closes — the ACP equivalent of a supervisor waiting on
+// os.Process.Wait. It runs once per live handle and re-arms itself on the fresh
 // handle after a restart, so it never leaks past teardown.
 //
 // ACP caveat: a restart re-spawns a FRESH subprocess that must be re-Initialized

@@ -93,10 +93,10 @@ func TestUnit_resolveContenoxDir(t *testing.T) {
 	}
 
 	// 1. Test from sub2Dir. It should walk up and find it in projectDir.
-	err = os.Chdir(sub2Dir)
-	if err != nil {
-		t.Fatalf("Failed to chdir: %v", err)
-	}
+	// t.Chdir restores the original cwd on cleanup — a plain os.Chdir would
+	// leave the whole test process inside a deleted temp dir, breaking any
+	// later test in the package that spawns a subprocess (getwd fails).
+	t.Chdir(sub2Dir)
 
 	resolvedDir, err := ResolveContenoxDir(nil)
 	if err != nil {
@@ -112,10 +112,7 @@ func TestUnit_resolveContenoxDir(t *testing.T) {
 		t.Fatalf("Failed to create no-contenox subdirectories: %v", err)
 	}
 
-	err = os.Chdir(noContenoxDir)
-	if err != nil {
-		t.Fatalf("Failed to chdir: %v", err)
-	}
+	t.Chdir(noContenoxDir)
 
 	resolvedDir2, err := ResolveContenoxDir(nil)
 	if err != nil {

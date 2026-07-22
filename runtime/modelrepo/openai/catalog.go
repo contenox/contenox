@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelregistry"
 	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
@@ -148,6 +149,10 @@ func inferObservedModel(id string) modelrepo.ObservedModel {
 		observed.CanPrompt = true
 		observed.CanStream = true
 	}
+
+	// OpenAI's model API reports no modality, so vision is a maintained list;
+	// gated on CanChat so audio/embedding/image-gen models never claim it.
+	observed.CanVision = observed.CanChat && modelregistry.OpenAIModelSupportsVision(id)
 
 	return observed
 }

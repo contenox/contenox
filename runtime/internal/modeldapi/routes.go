@@ -174,6 +174,8 @@ type UnloadResponse struct {
 	ExpectedGeneration uint64 `json:"expectedGeneration" example:"3"`
 }
 
+// status reports the modeld daemon's detected state (binary, endpoint,
+// protocol) and, when reachable, its current slot occupancy.
 func (h *handler) status(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), statusTimeout)
 	defer cancel()
@@ -210,6 +212,8 @@ func (h *handler) status(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, resp) // @response modeldapi.StatusResponse
 }
 
+// load loads a registered local model into the modeld slot and returns the
+// resulting active-model state.
 func (h *handler) load(w http.ResponseWriter, r *http.Request) {
 	req, err := apiframework.Decode[LoadRequest](r) // @request modeldapi.LoadRequest
 	if err != nil {
@@ -248,6 +252,7 @@ func (h *handler) load(w http.ResponseWriter, r *http.Request) {
 	}) // @response modeldapi.LoadResponse
 }
 
+// unload evicts the currently loaded model from the modeld slot.
 func (h *handler) unload(w http.ResponseWriter, r *http.Request) {
 	req, err := apiframework.Decode[UnloadRequest](r) // @request modeldapi.UnloadRequest
 	if err != nil {
@@ -271,6 +276,7 @@ func (h *handler) unload(w http.ResponseWriter, r *http.Request) {
 	}) // @response modeldapi.UnloadResponse
 }
 
+// models lists the local models known to the registry state.
 func (h *handler) models(w http.ResponseWriter, r *http.Request) {
 	if h.state == nil {
 		_ = apiframework.Encode(w, r, http.StatusOK, []LocalModel{}) // @response []modeldapi.LocalModel
@@ -284,6 +290,8 @@ func (h *handler) models(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, models) // @response []modeldapi.LocalModel
 }
 
+// capacity describes how a registered local model would run on this host
+// (planned context length, memory fit) without loading it.
 func (h *handler) capacity(w http.ResponseWriter, r *http.Request) {
 	name := apiframework.GetQueryParam(r, "model", "", "Registered local model name or id to describe.")
 	if name == "" {

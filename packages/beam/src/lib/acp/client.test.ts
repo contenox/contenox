@@ -586,7 +586,8 @@ describe('AcpClient: subscribe() out-of-turn routing', () => {
     await promptPromise;
 
     expect(subCall).toHaveBeenCalledTimes(1);
-    expect(subCall).toHaveBeenCalledWith('only once', undefined);
+    // (text, messageId, image) — a plain text chunk carries no image payload.
+    expect(subCall).toHaveBeenCalledWith('only once', undefined, undefined);
     expect(promptCall).not.toHaveBeenCalled();
   });
 
@@ -971,5 +972,75 @@ describe('AcpClient: capability provider (clientFactory.ts)', () => {
 
     const resp = transport.lastSent();
     expect((resp.error as Record<string, unknown>).code).toBe(-32601);
+  });
+});
+
+describe('AcpClient: image content blocks in message chunks', () => {
+  it('delivers a user_message_chunk image block as the handler image payload instead of flattening it to ""', () => {
+    const transport = new MockTransport();
+    const client = new AcpClient(transport);
+    const events: Array<{ text: string; messageId?: string; image?: { data: string; mimeType: string } }> = [];
+    client.subscribe('sess-img', {
+      onUserMessageChunk: (text, messageId, image) => events.push({ text, messageId, image }),
+    });
+
+    // Wire-fact shape: libacp's NewImageContent — type image, base64 data (no
+    // data: prefix), mimeType. Seen in session/load replay of image prompts.
+    transport.feed({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess-img',
+        update: {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' },
+          messageId: 'u1',
+        },
+      },
+    });
+
+    expect(events).toEqual([{ text: '', messageId: 'u1', image: { data: 'aGVsbG8=', mimeType: 'image/png' } }]);
+  });
+
+  it('delivers an agent_message_chunk image block the same way', () => {
+    const transport = new MockTransport();
+    const client = new AcpClient(transport);
+    const events: Array<{ text: string; image?: { data: string; mimeType: string } }> = [];
+    client.subscribe('sess-img', {
+      onMessageChunk: (text, _messageId, image) => events.push({ text, image }),
+    });
+
+    transport.feed({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess-img',
+        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'image', data: 'aW1n', mimeType: 'image/jpeg' } },
+      },
+    });
+
+    expect(events).toEqual([{ text: '', image: { data: 'aW1n', mimeType: 'image/jpeg' } }]);
+  });
+
+  it('passes NO image payload for text chunks and for malformed image blocks (missing data/mimeType)', () => {
+    const transport = new MockTransport();
+    const client = new AcpClient(transport);
+    const images: Array<unknown> = [];
+    client.subscribe('sess-img', {
+      onUserMessageChunk: (_text, _messageId, image) => images.push(image),
+    });
+
+    const feed = (content: Record<string, unknown>) =>
+      transport.feed({
+        jsonrpc: '2.0',
+        method: 'session/update',
+        params: { sessionId: 'sess-img', update: { sessionUpdate: 'user_message_chunk', content } },
+      });
+
+    feed({ type: 'text', text: 'plain' });
+    feed({ type: 'image', mimeType: 'image/png' }); // no data
+    feed({ type: 'image', data: 'aGVsbG8=' }); // no mimeType
+
+    expect(images).toEqual([undefined, undefined, undefined]);
   });
 });

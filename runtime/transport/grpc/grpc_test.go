@@ -519,6 +519,8 @@ func TestDescribeContextBudgetRoundTripOverWire(t *testing.T) {
 		DeviceID:                            "GPU.0",
 		SparseAttention:                     true,
 		SlidingWindowAttentionTokens:        4096,
+		SupportsVision:                      true,
+		VisionTokensPerImage:                256,
 		ChatTemplateFormat:                  "peg-native",
 		ChatTemplateThinkingStartTag:        "<think>",
 		ChatTemplateReasoningFormat:         "auto",
@@ -551,6 +553,8 @@ func TestDescribeContextBudgetRoundTripOverWire(t *testing.T) {
 		got.DeviceID != want.DeviceID ||
 		got.SparseAttention != want.SparseAttention ||
 		got.SlidingWindowAttentionTokens != want.SlidingWindowAttentionTokens ||
+		got.SupportsVision != want.SupportsVision ||
+		got.VisionTokensPerImage != want.VisionTokensPerImage ||
 		got.ChatTemplateFormat != want.ChatTemplateFormat ||
 		got.ChatTemplateThinkingStartTag != want.ChatTemplateThinkingStartTag ||
 		got.ChatTemplateReasoningFormat != want.ChatTemplateReasoningFormat ||
@@ -697,6 +701,93 @@ func TestLoRAAdapterIdentityRoundTripOverWire(t *testing.T) {
 	}
 	if st.Active == nil || len(st.Active.Adapters) != 1 || st.Active.Adapters[0].Digest != "adapter-1" {
 		t.Fatalf("adapters missing from Status.Active: %+v", st.Active)
+	}
+}
+
+// imageRecordingSession records the prefix/suffix inputs it receives so a test
+// can assert image parts survived the wire byte-exact.
+type imageRecordingSession struct {
+	decodeRecordingSession
+
+	mu     sync.Mutex
+	prefix transport.PrefixInput
+	suffix transport.SuffixInput
+}
+
+func (s *imageRecordingSession) EnsurePrefix(_ context.Context, prefix transport.PrefixInput) (transport.PrefixStatus, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.prefix = prefix
+	return transport.PrefixStatus{}, nil
+}
+
+func (s *imageRecordingSession) PrefillSuffix(_ context.Context, suffix transport.SuffixInput) (transport.SuffixStatus, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.suffix = suffix
+	return transport.SuffixStatus{}, nil
+}
+
+func (s *imageRecordingSession) lastInputs() (transport.PrefixInput, transport.SuffixInput) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.prefix, s.suffix
+}
+
+// Image parts must survive the gRPC wire byte-exact: a corrupted or dropped
+// image silently degrades a vision request into a text-only one. Binary-heavy
+// payloads (including zero bytes) exercise the JSON codec's base64 path, and an
+// image-less suffix must keep decoding to no images (backward compatibility).
+func TestImagePartsRoundTripOverWire(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	rec := &imageRecordingSession{}
+	svc := &decodeRecordingService{
+		MemoryService: transport.NewMemoryService(transport.WithOwnerFence("owner-1")),
+		sess:          rec,
+	}
+	client := startServerWithService(t, svc, lis, "owner-1", "owner-1")
+	sess, err := client.OpenSession(context.Background(), transport.OpenSessionRequest{
+		Fence: transport.Fence{OwnerInstanceID: "owner-1"},
+	})
+	if err != nil {
+		t.Fatalf("OpenSession: %v", err)
+	}
+
+	png := []byte{0x89, 'P', 'N', 'G', 0x00, 0x01, 0xFF, 0x00}
+	jpg := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00}
+	if _, err := sess.EnsurePrefix(context.Background(), transport.PrefixInput{
+		Text:   "stable",
+		Images: []transport.ImagePart{{Data: png, MimeType: "image/png"}},
+	}); err != nil {
+		t.Fatalf("EnsurePrefix: %v", err)
+	}
+	if _, err := sess.PrefillSuffix(context.Background(), transport.SuffixInput{
+		Text: "look: " + transport.MediaMarker + " and " + transport.MediaMarker,
+		Images: []transport.ImagePart{
+			{Data: png, MimeType: "image/png"},
+			{Data: jpg, MimeType: "image/jpeg"},
+		},
+	}); err != nil {
+		t.Fatalf("PrefillSuffix: %v", err)
+	}
+	prefix, suffix := rec.lastInputs()
+	if len(prefix.Images) != 1 || !bytes.Equal(prefix.Images[0].Data, png) || prefix.Images[0].MimeType != "image/png" {
+		t.Fatalf("prefix images over wire = %+v", prefix.Images)
+	}
+	if len(suffix.Images) != 2 ||
+		!bytes.Equal(suffix.Images[0].Data, png) || suffix.Images[0].MimeType != "image/png" ||
+		!bytes.Equal(suffix.Images[1].Data, jpg) || suffix.Images[1].MimeType != "image/jpeg" {
+		t.Fatalf("suffix images over wire = %+v", suffix.Images)
+	}
+
+	if _, err := sess.PrefillSuffix(context.Background(), transport.SuffixInput{Text: "text only"}); err != nil {
+		t.Fatalf("PrefillSuffix image-less: %v", err)
+	}
+	if _, suffix = rec.lastInputs(); len(suffix.Images) != 0 {
+		t.Fatalf("image-less suffix decoded %d images, want none", len(suffix.Images))
 	}
 }
 

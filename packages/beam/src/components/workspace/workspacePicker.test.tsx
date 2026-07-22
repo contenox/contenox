@@ -12,7 +12,7 @@ beforeAll(async () => {
 });
 
 const roots: WorkspaceRoot[] = [
-  { path: '/home/naro/project', default: true },
+  { path: '/home/user/project', default: true },
   { path: '/tmp/scratch', default: false },
 ];
 

@@ -190,6 +190,49 @@ func TestUnit_Admin_ReceiveModel_Tar(t *testing.T) {
 	}
 }
 
+// A llama vision model ships as a tar of model.gguf + mmproj.gguf so both
+// files install atomically; the store must keep the pair together, report the
+// combined install footprint, and resolve the projector next to the model.
+func TestUnit_Admin_ReceiveModel_TarLlamaVisionKeepsBothFiles(t *testing.T) {
+	dir := t.TempDir()
+	admin := NewAdmin(dir)
+
+	weights := []byte("gguf-weights")
+	projector := []byte("gguf-projector")
+	tarBytes := buildTestTar(t, map[string][]byte{
+		"model.gguf":  weights,
+		"mmproj.gguf": projector,
+	})
+	if _, err := admin.ReceiveModel(context.Background(), PushManifest{
+		Name: "vlm", Type: "llama", Digest: digestOf(tarBytes), Format: PushFormatTar,
+	}, bytes.NewReader(tarBytes)); err != nil {
+		t.Fatalf("ReceiveModel: %v", err)
+	}
+
+	modelPath, err := Resolve(dir, "vlm", "llama", digestOf(weights))
+	if err != nil {
+		t.Fatalf("Resolve after tar install: %v", err)
+	}
+	mmproj := ResolveMMProj(modelPath)
+	if want := filepath.Join(dir, "vlm", "mmproj.gguf"); mmproj != want {
+		t.Fatalf("ResolveMMProj = %q, want %q", mmproj, want)
+	}
+
+	models, err := admin.ListModels(context.Background())
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) != 1 || models[0].Name != "vlm" || models[0].Type != "llama" {
+		t.Fatalf("ListModels = %+v", models)
+	}
+	if want := int64(len(weights) + len(projector)); models[0].SizeBytes != want {
+		t.Fatalf("SizeBytes = %d, want combined footprint %d", models[0].SizeBytes, want)
+	}
+	if models[0].Digest != digestOf(weights) {
+		t.Fatalf("Digest = %q, want model.gguf digest %q (projector must not change cache identity)", models[0].Digest, digestOf(weights))
+	}
+}
+
 func TestUnit_Admin_ReceiveModel_DigestMismatchRejected(t *testing.T) {
 	dir := t.TempDir()
 	admin := NewAdmin(dir)

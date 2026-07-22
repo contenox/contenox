@@ -90,14 +90,14 @@ func AddWorkspaceRootsRoutes(mux *http.ServeMux, factory *vfs.Factory, mutators 
 		return
 	}
 	mux.HandleFunc("GET /workspace/roots", func(w http.ResponseWriter, r *http.Request) {
-		writeRootsResponse(w, r, factory)
+		writeRootsResponse(w, r, factory) // @response localfileapi.workspaceRootsResponse
 	})
 	if mutators == nil {
 		return
 	}
 	if mutators.Add != nil {
 		mux.HandleFunc("POST /workspace/roots", func(w http.ResponseWriter, r *http.Request) {
-			req, err := apiframework.Decode[addWorkspaceRootRequest](r)
+			req, err := apiframework.Decode[addWorkspaceRootRequest](r) // @request localfileapi.addWorkspaceRootRequest
 			if err != nil {
 				_ = apiframework.Error(w, r, err, apiframework.CreateOperation)
 				return
@@ -112,7 +112,7 @@ func AddWorkspaceRootsRoutes(mux *http.ServeMux, factory *vfs.Factory, mutators 
 				_ = apiframework.Error(w, r, grantError(err), apiframework.CreateOperation)
 				return
 			}
-			writeRootsResponse(w, r, factory)
+			writeRootsResponse(w, r, factory) // @response localfileapi.workspaceRootsResponse
 		})
 	}
 	if mutators.Remove != nil {
@@ -128,7 +128,7 @@ func AddWorkspaceRootsRoutes(mux *http.ServeMux, factory *vfs.Factory, mutators 
 				_ = apiframework.Error(w, r, grantError(err), apiframework.DeleteOperation)
 				return
 			}
-			writeRootsResponse(w, r, factory)
+			writeRootsResponse(w, r, factory) // @response localfileapi.workspaceRootsResponse
 		})
 	}
 }

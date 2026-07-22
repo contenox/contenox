@@ -84,6 +84,7 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 
 	var stable, volatile strings.Builder
 	var segments []ManifestSegment
+	var volatileImages []transport.ImagePart
 	seenVolatile := false
 
 	for _, m := range messages {
@@ -106,6 +107,15 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 
 		var start, end int
 		text := m.Content
+		if len(m.Images) > 0 {
+			// Images ride on the volatile suffix only: the stable prefix is
+			// keyed for warm reuse and the backends reject image parts there.
+			if isStable {
+				return promptPlan{}, NewUnsupportedFeatureError("image attachments on the stable system prefix")
+			}
+			text = imageMarkerText(m.Images, text)
+			volatileImages = appendTransportImages(volatileImages, m.Images)
+		}
 		if isStable {
 			start = stable.Len()
 			stable.WriteString(text)
@@ -142,8 +152,31 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 	}
 	return promptPlan{
 		Stable:   PrefixInput{Text: stableText, Manifest: manifest, Tools: toolsJSON},
-		Volatile: SuffixInput{Text: volatileText, Manifest: manifest},
+		Volatile: SuffixInput{Text: volatileText, Manifest: manifest, Images: volatileImages},
 	}, nil
+}
+
+// imageMarkerText prefixes one media marker per attached image ahead of the
+// message text, in attachment order. The backend replaces each marker with the
+// model's native media tokens; SuffixInput.Images carries the bytes in the same
+// order the markers appear in the volatile text.
+func imageMarkerText(images []modelrepo.ImagePart, content string) string {
+	var b strings.Builder
+	for range images {
+		b.WriteString(transport.MediaMarker)
+		b.WriteByte('\n')
+	}
+	b.WriteString(content)
+	return b.String()
+}
+
+// appendTransportImages converts message image parts to their transport wire
+// form, preserving order (order pairs each image with its marker).
+func appendTransportImages(dst []transport.ImagePart, images []modelrepo.ImagePart) []transport.ImagePart {
+	for _, img := range images {
+		dst = append(dst, transport.ImagePart{Data: img.Data, MimeType: img.MimeType})
+	}
+	return dst
 }
 
 func validateMessage(m modelrepo.Message) error {

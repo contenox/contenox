@@ -9,7 +9,7 @@ This guide covers one specific integration: driving Contenox from OpenClaw throu
 
 [OpenClaw](https://docs.openclaw.ai/) is a personal/team assistant reached from chat channels (Telegram, Slack, Discord, …). It can route a conversation to an external agent over the [Agent Client Protocol](https://github.com/zed-industries/agent-client-protocol) through its `@openclaw/acpx` backend. Contenox speaks ACP over stdio, so `contenox acpx` plugs in directly — as a *contained* agent governed by an authored policy, not a coding tool. This integration exists to demonstrate exactly that containment: an untrusted chat channel driving a Contenox agent that can only do what its policy permits.
 
-Why `acpx` and not `acp`: prompts arrive from a chat inbox with no human at an editor to approve actions. So `contenox acpx` ships a **static containment policy** instead of interactive approval — the boundary the [nested-permission-bomb](/stories/nested-permission-bomb/) argues for. You don't hand an untrusted channel your keyring; you give it an authored, version-controlled allow/deny boundary.
+Why `acpx` and not `acp`: prompts arrive from a chat inbox with no human at an editor to approve actions. So `contenox acpx` ships a **static containment policy** instead of interactive approval — the boundary the [nested-permission-bomb](/docs/use-cases/nested-permission-bomb/) argues for. You don't hand an untrusted channel your keyring; you give it an authored, version-controlled allow/deny boundary.
 
 Assumes `contenox` is installed and configured with a default model (`contenox init` plus `contenox model pull ...`, or a configured cloud backend). Verified against **OpenClaw 2026.5.12**.
 
@@ -140,7 +140,7 @@ Reads working while every write, shell, and network action is refused is the pro
 
 ## Where to next
 
-- [The nested permission bomb](/stories/nested-permission-bomb/) — why an untrusted driver gets an authored policy, not your keyring.
+- [The nested permission bomb](/docs/use-cases/nested-permission-bomb/) — why an untrusted driver gets an authored policy, not your keyring.
 - [HITL policies](/docs/guide/hitl/) — the acpx policy is an authored file you can tighten.
 - [Use from Zed](/docs/integrations/editors/zed/) · [JetBrains](/docs/integrations/editors/jetbrains/) · [AionUi](/docs/integrations/editors/aionui/) — device-owner clients, with interactive approval.
 

@@ -66,6 +66,16 @@ func (p *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 			ID              string `json:"id"`
 			MaxOutputTokens int    `json:"max_output_tokens"`
 			MaxTokens       int    `json:"max_tokens"`
+			// Capabilities mirrors Mistral's per-model capability object from
+			// GET /v1/models. Only the fields we consume are decoded; Mistral
+			// reports the rest (completion_fim, function_calling, fine_tuning,
+			// ocr, classification, ...) which we ignore here.
+			Capabilities struct {
+				// Vision reports whether the model accepts image input. This is
+				// the authoritative source for CanVision; never infer it from the
+				// model name.
+				Vision bool `json:"vision"`
+			} `json:"capabilities"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
@@ -78,6 +88,8 @@ func (p *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 		if model.MaxOutputTokens <= 0 {
 			model.MaxOutputTokens = item.MaxTokens
 		}
+		// CanVision comes straight from Mistral's API capability object.
+		model.CanVision = item.Capabilities.Vision
 		models = append(models, model)
 	}
 	return models, nil

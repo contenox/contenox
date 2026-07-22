@@ -95,18 +95,24 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 }
 
 // readinessDefaults derives the effective default model/provider to credit during
-// setup preflight when they were supplied via --model/--provider but never written
-// to KV config. Only values that came from an explicit flag are credited: a model
-// equal to the hardcoded fallback (with no persisted config) is treated as unset,
-// matching the flag-vs-config precedence in cli.go/run_cmd.go. When persisted config
-// already provides a value, the setup check sees it directly and no override is needed.
+// setup preflight. It credits the effective value whenever a flag override made it
+// DIFFER from persisted config — not only when config is empty. The setup-readiness
+// check must validate the model/provider the engine will ACTUALLY use for the turn
+// (opts.EffectiveDefault*, which honor --model/--provider), so an explicit override
+// to a healthy backend is not blocked by a broken persisted default: `--provider
+// vertex-google` must run even when default-provider=llama is configured but unservable.
+// A model equal to the hardcoded fallback with no persisted config is still treated
+// as unset (matching the flag-vs-config precedence in cli.go/run_cmd.go); when the
+// effective value equals persisted config, the check sees that value directly and no
+// override is needed.
 func readinessDefaults(opts chatOpts) (model, provider string) {
-	if opts.EffectiveConfiguredModel == "" &&
+	if opts.EffectiveDefaultModel != opts.EffectiveConfiguredModel &&
 		opts.EffectiveDefaultModel != "" &&
 		opts.EffectiveDefaultModel != defaultModel {
 		model = opts.EffectiveDefaultModel
 	}
-	if opts.EffectiveConfiguredProvider == "" && opts.EffectiveDefaultProvider != "" {
+	if opts.EffectiveDefaultProvider != opts.EffectiveConfiguredProvider &&
+		opts.EffectiveDefaultProvider != "" {
 		provider = opts.EffectiveDefaultProvider
 	}
 	return model, provider

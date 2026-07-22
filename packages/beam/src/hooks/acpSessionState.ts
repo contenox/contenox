@@ -1,5 +1,6 @@
 import type {
   AvailableCommand,
+  ImagePart,
   PlanEntry,
   RequestPermissionRequest,
   SessionConfigOption,
@@ -40,6 +41,14 @@ export interface AcpChatMessage {
   id: string;
   role: 'user' | 'assistant';
   text: string;
+  /**
+   * Image parts carried by this message's chunks, in arrival order (ACP wire
+   * form: raw base64 + mime type). Kept as a flat array ALONGSIDE the
+   * accumulated `text` — mirroring how `text` itself flattens all text chunks
+   * into one string — rather than as a fully interleaved parts list; the
+   * transcript renders them after the text, like attachments.
+   */
+  images?: ImagePart[];
   /** True while more `agent_message_chunk`/`user_message_chunk`s are still expected for this message. */
   streaming?: boolean;
   /** Collapsible "thinking" block (`agent_thought_chunk`s sharing this message's id). Assistant-only. */
@@ -178,8 +187,8 @@ export const initialAcpSessionState: AcpSessionState = {
 export type AcpSessionAction =
   /** Clears all timeline/turn state and points it at a (possibly null) session — dispatched whenever the workspace opens/creates/deletes-the-active session. */
   | { type: 'session_reset'; sessionId: string | null }
-  | { type: 'user_message_chunk'; id: string; text: string }
-  | { type: 'message_chunk'; id: string; text: string }
+  | { type: 'user_message_chunk'; id: string; text: string; image?: ImagePart }
+  | { type: 'message_chunk'; id: string; text: string; image?: ImagePart }
   | { type: 'thought_chunk'; id: string; text: string }
   | { type: 'tool_call'; event: ToolCallEvent }
   /** Live shell output batch (append, or replace when `payload.reset`). */
@@ -221,13 +230,20 @@ function upsertMessage(
   messages: Record<string, AcpChatMessage>,
   id: string,
   role: 'user' | 'assistant',
-  patch: { text?: string; thinking?: string },
+  patch: { text?: string; thinking?: string; image?: ImagePart },
   activeTurn: boolean,
 ): Record<string, AcpChatMessage> {
   const existing = messages[id];
   const next: AcpChatMessage = existing ? { ...existing } : { id, role, text: '' };
   if (patch.text !== undefined) {
     next.text = next.text + patch.text;
+    next.streaming = activeTurn;
+  }
+  if (patch.image !== undefined) {
+    // Image chunks append in arrival order alongside the flattened text — see
+    // `AcpChatMessage.images`. An image chunk keeps the message streaming for
+    // exactly the same reason a text chunk does.
+    next.images = [...(next.images ?? []), patch.image];
     next.streaming = activeTurn;
   }
   if (patch.thinking !== undefined) {
@@ -261,7 +277,13 @@ export function acpSessionReducer(state: AcpSessionState, action: AcpSessionActi
       return {
         ...state,
         items: ensureItem(state.items, 'message', action.id),
-        messages: upsertMessage(state.messages, action.id, 'user', { text: action.text }, state.isPrompting),
+        messages: upsertMessage(
+          state.messages,
+          action.id,
+          'user',
+          { text: action.text, image: action.image },
+          state.isPrompting,
+        ),
       };
 
     case 'message_chunk': {
@@ -273,7 +295,13 @@ export function acpSessionReducer(state: AcpSessionState, action: AcpSessionActi
       return {
         ...state,
         items: ensureItem(state.items, 'message', id),
-        messages: upsertMessage(state.messages, id, 'assistant', { text: action.text }, state.isPrompting),
+        messages: upsertMessage(
+          state.messages,
+          id,
+          'assistant',
+          { text: action.text, image: action.image },
+          state.isPrompting,
+        ),
         activeTurnMessageId: state.isPrompting ? id : state.activeTurnMessageId,
       };
     }

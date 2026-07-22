@@ -615,8 +615,9 @@ func (t *Transport) ResumeSession(ctx context.Context, req libacp.ResumeSessionR
 	return libacp.ResumeSessionResponse{ConfigOptions: t.reloadedConfigOptions(ctx, store, req.SessionID, entry)}, nil
 }
 
-// SetSessionMode is not supported: contenox does not model a Zed-style
-// Ask/Code session mode toggle as a first-class session/set_mode capability —
+// SetSessionMode is not supported: contenox does not model the Ask/Code
+// session mode toggle some ACP editors send as a first-class session/set_mode
+// capability —
 // the equivalent controls (model, HITL policy, think level) are exposed as
 // session config options instead. Initialize never returns a Modes state in
 // session/new or session/load, so a conformant client will never call this.

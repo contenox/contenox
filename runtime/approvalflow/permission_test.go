@@ -29,7 +29,7 @@ func TestUnit_BuildRequest_CarriesSedInputAndDiffForApprovalCard(t *testing.T) {
 	}, BuildOptions{
 		SessionID:  "session-1",
 		PolicyName: "hitl-policy-strict.json",
-		PolicyPath: "/home/naro/.contenox/hitl-policy-strict.json",
+		PolicyPath: "/home/user/.contenox/hitl-policy-strict.json",
 	})
 
 	require.Equal(t, libacp.SessionID("session-1"), req.SessionID)
@@ -49,7 +49,7 @@ func TestUnit_BuildRequest_CarriesSedInputAndDiffForApprovalCard(t *testing.T) {
 	require.Equal(t, "local_fs", meta.ToolsName)
 	require.Equal(t, "sed", meta.ToolName)
 	require.Equal(t, "hitl-policy-strict.json", meta.PolicyName)
-	require.Equal(t, "/home/naro/.contenox/hitl-policy-strict.json", meta.PolicyPath)
+	require.Equal(t, "/home/user/.contenox/hitl-policy-strict.json", meta.PolicyPath)
 	require.Equal(t, unified, meta.Diff)
 	require.Equal(t, oldText, meta.DiffOld)
 	require.Equal(t, newText, meta.DiffNew)

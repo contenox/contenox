@@ -144,44 +144,61 @@ var curatedModels = map[string]ModelDescriptor{
 		Notes:             "large dense coding",
 	},
 	// ── Google Gemma 4 ───────────────────────────────────────────────────────
+	// Multimodal (text+image). The llama entries pair the model GGUF with its
+	// multimodal projector (mmproj); llama.cpp serves Gemma 4 vision through the
+	// standard model.gguf + mmproj.gguf mtmd path. File names, sizes, and
+	// availability verified against the ggml-org HF repos on 2026-07-22 (repos
+	// ship BF16/Q4_0/Q8_0 quants — no Q4_K_M — plus mmproj-*-{BF16,Q8_0}.gguf).
 	"gemma4-e2b": {
 		Name:              "gemma4-e2b",
 		SourceURL:         "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q8_0.gguf",
-		SizeBytes:         4_967_494_592,
+		SizeBytes:         4_967_497_152,
 		Curated:           true,
 		ToolProtocol:      toolProtocolLlamaCommonChat,
 		Family:            "gemma4",
 		DisplayLabel:      "Gemma 4 E2B",
 		UseCase:           useCaseChat,
 		RecommendedVRAMGB: 8,
+		Vision:            true,
+		MMProjURL:         "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/main/mmproj-gemma-4-E2B-it-Q8_0.gguf",
+		MMProjSizeBytes:   557_368_064,
 	},
 	"gemma4-e4b": {
 		Name:              "gemma4-e4b",
-		SourceURL:         "https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf",
-		SizeBytes:         5_335_289_824,
+		SourceURL:         "https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_0.gguf",
+		SizeBytes:         4_590_807_392,
 		Curated:           true,
 		ToolProtocol:      toolProtocolLlamaCommonChat,
 		Family:            "gemma4",
 		DisplayLabel:      "Gemma 4 E4B",
 		UseCase:           useCaseChat,
-		RecommendedVRAMGB: 8,
+		RecommendedVRAMGB: 6,
+		Vision:            true,
+		MMProjURL:         "https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/main/mmproj-gemma-4-E4B-it-Q8_0.gguf",
+		MMProjSizeBytes:   559_874_816,
 		Notes:             "native tool format",
 	},
 	"gemma4-12b": {
 		Name:              "gemma4-12b",
-		SourceURL:         "https://huggingface.co/ggml-org/gemma-4-12B-it-GGUF/resolve/main/gemma-4-12B-it-Q4_K_M.gguf",
-		SizeBytes:         7_381_382_048,
+		SourceURL:         "https://huggingface.co/ggml-org/gemma-4-12B-it-GGUF/resolve/main/gemma-4-12B-it-Q4_0.gguf",
+		SizeBytes:         7_219_673_216,
 		Curated:           true,
 		ToolProtocol:      toolProtocolLlamaCommonChat,
 		Family:            "gemma4",
 		DisplayLabel:      "Gemma 4 12B",
 		UseCase:           useCaseChat,
-		RecommendedVRAMGB: 16,
+		RecommendedVRAMGB: 12,
+		Vision:            true,
+		MMProjURL:         "https://huggingface.co/ggml-org/gemma-4-12B-it-GGUF/resolve/main/mmproj-gemma-4-12B-it-Q8_0.gguf",
+		MMProjSizeBytes:   158_987_616,
 	},
+	// Deliberately text-only: the 26B-A4B/31B mmproj aborts on CUDA upstream
+	// (llama.cpp issue #21402) — no projector until that is fixed and verified
+	// at our pin.
 	"gemma4-26b-a4b": {
 		Name:              "gemma4-26b-a4b",
-		SourceURL:         "https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-Q4_K_M.gguf",
-		SizeBytes:         16_796_015_136,
+		SourceURL:         "https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-Q4_0.gguf",
+		SizeBytes:         14_618_145_824,
 		Curated:           true,
 		ToolProtocol:      toolProtocolLlamaCommonChat,
 		Family:            "gemma4",
@@ -497,6 +514,42 @@ var curatedModels = map[string]ModelDescriptor{
 		UseCase:           useCaseChat,
 		RecommendedVRAMGB: 24,
 	},
+	// Multimodal (text+image): served by modeld's OpenVINO GenAI VLM pipeline.
+	// The snapshot pull fetches every repo file, including the vision encoder
+	// (openvino_vision_embeddings_model.*). Repo existence, file list, and total
+	// size verified against the HF API on 2026-07-22. No ToolProtocol: the VLM
+	// pipeline is not certified for tool calls yet.
+	"gemma4-e4b-ov": {
+		Name:              "gemma4-e4b-ov",
+		Backend:           "openvino",
+		Repo:              "OpenVINO/gemma-4-E4B-it-int4-ov",
+		SourceURL:         "https://huggingface.co/OpenVINO/gemma-4-E4B-it-int4-ov",
+		SizeBytes:         6_459_790_168,
+		Curated:           true,
+		Family:            "gemma4-ov",
+		DisplayLabel:      "Gemma 4 E4B (OpenVINO)",
+		UseCase:           useCaseChat,
+		RecommendedVRAMGB: 8,
+		Vision:            true,
+		Notes:             "needs ~7GB+ free memory",
+	},
+	// Smallest curated vision model: verified end-to-end in the OpenVINO VLM
+	// cell. The tier for trying image input on small CPU/iGPU machines where
+	// the Gemma 4 snapshot does not fit.
+	"internvl2-1b-ov": {
+		Name:              "internvl2-1b-ov",
+		Backend:           "openvino",
+		Repo:              "OpenVINO/InternVL2-1B-int4-ov",
+		SourceURL:         "https://huggingface.co/OpenVINO/InternVL2-1B-int4-ov",
+		SizeBytes:         798_470_894,
+		Curated:           true,
+		Family:            "internvl2-ov",
+		DisplayLabel:      "InternVL2 1B (OpenVINO)",
+		UseCase:           useCaseSmoke,
+		RecommendedVRAMGB: 6,
+		Vision:            true,
+		Notes:             "smallest vision model",
+	},
 }
 
 type familyMapping struct {
@@ -518,6 +571,11 @@ var defaultFamilies = []familyMapping{
 	{CanonicalName: "qwen3-8b-ov", Substrings: []string{"openvino/qwen3-8", "qwen3-8b-int4-ov", "qwen3-8b-ov"}},
 	{CanonicalName: "qwen3-4b-ov", Substrings: []string{"openvino/qwen3-4", "qwen3-4b-int4-ov", "qwen3-4b-ov"}},
 	{CanonicalName: "phi-4-mini-ov", Substrings: []string{"openvino/phi-4-mini", "phi-4-mini-instruct-int4-ov", "phi-4-mini-ov"}},
+	// Gemma 4 OpenVINO alias before the llama gemma mappings: the "gemma-4"/
+	// "gemma" catch-alls below would otherwise route the multimodal OV repo id
+	// to the llama text entry.
+	{CanonicalName: "gemma4-e4b-ov", Substrings: []string{"openvino/gemma-4-e4b", "gemma-4-e4b-it-int4-ov", "gemma4-e4b-ov"}},
+	{CanonicalName: "internvl2-1b-ov", Substrings: []string{"openvino/internvl2-1b", "internvl2-1b-int4-ov", "internvl2-1b-ov", "internvl2", "internvl"}},
 	{CanonicalName: "deepseek-r1-distill-qwen-7b-ov", Substrings: []string{"openvino/deepseek-r1-distill-qwen-7", "deepseek-r1-distill-qwen-7b-int4-ov", "deepseek-r1-distill-qwen-7b-ov"}},
 	{CanonicalName: "gpt-oss-20b-ov", Substrings: []string{"openvino/gpt-oss-20b", "gpt-oss-20b-int4-ov", "gpt-oss-20b-ov"}},
 	// Qwen 3 (checked before 2.5 to avoid substring collision).

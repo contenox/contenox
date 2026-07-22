@@ -314,6 +314,18 @@ func convertToVertexContents(messages []modelrepo.Message) []vertexContent {
 			parts = append(parts, vertexPart{Text: m.Content})
 		}
 
+		// Image attachments: append one inlineData part per image, after the
+		// text part, mirroring the OpenAI content-parts ordering. The resolver
+		// only routes image-bearing requests to vision-capable providers.
+		for _, img := range m.Images {
+			parts = append(parts, vertexPart{
+				InlineData: &vertexInlineData{
+					MimeType: img.MimeType,
+					Data:     img.Data,
+				},
+			})
+		}
+
 		if len(m.ToolCalls) > 0 {
 			for _, tc := range m.ToolCalls {
 				if tc.ID != "" && tc.Function.Name != "" {

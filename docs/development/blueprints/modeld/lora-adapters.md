@@ -1,10 +1,20 @@
 # Blueprint: modeld LoRA adapters and local model variants
 
-> Status: product and architecture blueprint. Scope is local inference through
-> `modeld`: how LoRA-style adapters should appear in the product, how they affect
-> model identity and cache safety, and what the first backend milestone should be.
-> Out of scope: training adapters, hosted fine-tuning, policy enforcement, and
-> making every backend support dynamic adapters on day one.
+> Status: product and architecture blueprint; the serving plumbing is LANDED
+> (2026-07-22). Scope is local inference through `modeld`: how LoRA-style adapters
+> should appear in the product, how they affect model identity and cache safety,
+> and what the first backend milestone should be. Out of scope: training adapters,
+> hosted fine-tuning, policy enforcement, and making every backend support dynamic
+> adapters on day one.
+>
+> Implementation state: Phases 1–2 are implemented and smoke-tested on both
+> backends — transport identity, gRPC wire, provider cache keys, slot identity,
+> and native attach (see Code Map). Adapters currently enter the system only via
+> model-profile JSON (`adapters[]` in `contenox-llama.json` /
+> `contenox-openvino.json`, or snapshot profiles); there is no CLI, API, or
+> registry surface yet (Phases 0/3–5 open), no real adapter artifacts ship (test
+> fixtures are synthetic), and the LoRA system tests are env-gated. Vision (VLM)
+> sessions refuse adapters in v1 — see Backend Support Position.
 
 ## The Product Bet
 
@@ -114,33 +124,32 @@ recipes. It should not live in the first `modeld` serving milestone.
 
 ### llama.cpp
 
-The pinned llama.cpp reference already exposes the full adapter C API. Verified
-present in `.llamacpp-runtime/cuda/include/llama.h` (the header the CGo shim builds
-against, `modeld/llama/llamacppshim/direct.go` line 11 `#include "llama.h"`):
+The pinned llama.cpp reference exposes the full adapter C API. Verified present in
+`.llamacpp-runtime/local/include/llama.h` (the header the CGo shim builds against;
+line numbers drift with the pin):
 
 - `llama_adapter_lora_init(model, path_lora)` — load a GGUF adapter, bound to the
-  base `llama_model` (header line 568);
+  base `llama_model` (~line 650);
 - `llama_adapter_meta_val_str` / `llama_adapter_meta_count` /
   `llama_adapter_meta_key_by_index` — read adapter GGUF metadata for validation and
-  provenance (lines 579–588);
-- `llama_adapter_lora_free(adapter)` (line 592);
-- `llama_set_adapter_lora(ctx, adapter, scale)` — apply an adapter to a
-  `llama_context` with a float scale (line 602);
-- `llama_rm_adapter_lora(ctx, adapter)` / `llama_clear_adapter_lora(ctx)` — remove
-  one or all adapters from a context (lines 609–614);
+  provenance (~lines 661–667);
+- `llama_adapter_lora_free(adapter)` (~line 674);
+- `llama_set_adapters_lora(ctx, adapters, n, scales)` — the pin's **plural**
+  set-all-at-once form (~line 683); the older singular
+  `llama_set_adapter_lora`/`llama_rm_adapter_lora` calls no longer exist upstream;
 - `llama_adapter_get_alora_*` — invocation-token API for activated LoRA (aLoRA); out
-  of scope for the first milestone but available.
+  of scope for the first milestone but available (~lines 677–678).
 
-The load-bearing property: `llama_set_adapter_lora` mutates the **context**, not the
+The load-bearing property: `llama_set_adapters_lora` mutates the **context**, not the
 base `llama_model` weights. The adapter is owned by the model and freed with it. That
 maps cleanly onto `modeld`'s single resident model + per-session context: load base
 model once, attach adapter(s) to the session context at open, serve.
 
 **Implemented and smoke-tested.** `direct.go` now wraps the adapter API as
 `Model.LoadAdapter` (`llama_adapter_lora_init`), `Adapter.MetaValue`
-(`llama_adapter_meta_val_str`), `Adapter.Free` (`llama_adapter_lora_free`),
-`Context.SetAdapter` (`llama_set_adapter_lora`), and `Context.ClearAdapters`
-(`llama_clear_adapter_lora`). `llamasession.NewWithAdapters` loads each
+(`llama_adapter_meta_val_str`), `Adapter.Free` (`llama_adapter_lora_free`), and
+`Context.SetAdapter` / `Context.ClearAdapters` (both via the pin's plural
+`llama_set_adapters_lora`). `llamasession.NewWithAdapters` loads each
 `llama.AdapterSpec` against the base model and attaches it to the session context
 after `NewContext`, frees adapters before the model on close (the model frees still-
 attached adapters, so freeing after `model.Close` would double-free), and `New`
@@ -206,9 +215,36 @@ while proving it:
 
 The low-level plumbing (C ABI `cx_genai_lora_adapter` + `cx_genai_session_config`
 fields, `AdapterConfig`/`adapters` injection in `genai.cpp`, `GenAIConfig.LoRAAdapters`
-in `genai.go`) is implemented and smoke-tested. What remains for OpenVINO is the layer
-**above** ovsession: threading `AdapterSpec` from the transport request through the
-`openvino` service into `GenAIConfig.LoRAAdapters` (Phase 1 identity work).
+in `genai.go`) is implemented and smoke-tested. The layer **above** ovsession is also
+done: `modeld/openvino/service.go` maps `req.Adapters` through `toGenAILoRA` (transport
+`Scale` → OpenVINO's folded alpha, unit-proven in `lora_test.go`) into
+`GenAIConfig.LoRAAdapters`, and `service_lora_system_test.go` smoke-tests the full
+Service path via `req.Adapters`.
+
+### Vision (VLM) Sessions
+
+Vision sessions refuse adapters today, and the refusal is deliberate v1 scoping, not
+an upstream limit:
+
+- `modeld/openvino/service.go` returns a typed `ErrUnsupportedFeature` ("openvino VLM
+  session does not support LoRA adapters in v1") when `req.Adapters` is non-empty on a
+  VLM open; `visionsession.go` and `ovsession/vlm.cpp` carry no adapter plumbing.
+- Upstream is ready at the pin: `ov::genai::adapters(...)` is a generic
+  `ov::Property<AdapterConfig>` accepted through any construction `AnyMap`, and the
+  `VLMPipeline` ctors take one. `vlm.cpp` already passes a construction `AnyMap` (the
+  SDPA attention-backend setting) — that map is the ready-made injection point.
+- Enabling it is contained: add adapter fields to the VLM C-ABI session config, build
+  the `MODE_DYNAMIC` `AdapterConfig` into that map (mirroring `genai.cpp`), thread
+  `req.Adapters` through the vision session, and fold adapters into VLM slot identity.
+  This is lighter than the text path was: the VLM session has no
+  prefix-cache/cold-KV/snapshot surface to keep identity-safe.
+- llama vision (mtmd) + adapters is untested as a combination. Adapters attach to the
+  context and the projector is a separate artifact, so no conflict is known — but the
+  combo must not be certified until a system test proves it.
+
+Enable VLM adapters only with the same proof standard as text: a real adapter
+measurably changes generation on a VLM base under a vision prompt, with identity
+isolation asserted.
 
 ### Hosted Providers
 
@@ -319,8 +355,8 @@ Identity must include:
 
 This affects (real symbols — see the Code Map for the full chain):
 
-- `runtime/transport/session.go` — `OpenSessionRequest` / `EmbedRequest` /
-  `LoadModelRequest` / `ActiveModel` (add `Adapters []AdapterSpec`);
+- `runtime/transport/session.go` — `OpenSessionRequest` / `LoadModelRequest` /
+  `ActiveModel` (`Adapters []AdapterSpec` — landed; embeddings stay adapter-free);
 - `runtime/transport/grpc/wire.go` + `client.go`/`server.go` — the JSON wire structs
   (`openSessionReq`, `loadModelReq`, `describeReq`) mirror those fields and must carry
   adapters too, or they are dropped on the wire;
@@ -364,7 +400,8 @@ There are two placement options:
 
 `OpenSessionRequest` is semantically cleaner: adapters are part of the model handle,
 not a hardware/runtime knob. `transport.Config` is mechanically convenient because it
-already participates in some identity comparisons. The blueprint preference is:
+already participates in some identity comparisons. The blueprint preference (landed
+exactly as specified) is:
 
 ```text
 OpenSessionRequest.Adapters []AdapterSpec
@@ -516,84 +553,77 @@ Note: dynamic OpenVINO adapters were previously a non-goal; they are now in the 
 milestone (see Backend Support Position). What remains out of scope is the per-batch
 multi-adapter case above, not single-variant OpenVINO LoRA.
 
-## Code Map
+## Code Map (implemented)
 
-This maps every abstract reference in the blueprint to the symbol that exists in the
-tree today, so the phased plan is concrete. Paths are relative to repo root. Nothing
-below has adapter support yet — these are the exact sites that change.
+Everything below is landed and wired. Line numbers are approximate and drift with the
+tree; the map documents where each piece lives and what proves it.
 
-### The identity seam (transport)
+### Origin — where adapters enter the system today
 
-| Concept | Symbol | Today | Change |
-| --- | --- | --- | --- |
-| Session open handle | `runtime/transport/session.go` → `OpenSessionRequest` (line ~145) | `Fence, ModelName, Type, Digest, Path, Config` | add `Adapters []AdapterSpec` |
-| Embedding handle | same file → `EmbedRequest` | mirrors open req | add `Adapters` (or leave embeddings adapter-free per blueprint) |
-| Explicit slot load | same file → `LoadModelRequest` | mirrors open req | add `Adapters` |
-| Active slot report | same file → `ActiveModel` (line ~192) | `ModelName, Type, Digest, Path, Config, Generation` | add `Adapters` for diagnostics |
-| New type | — | — | define `AdapterSpec{ Name, Path, Digest string; Scale float32 }` |
-| Manifest cache key | `runtime/contextasm/manifest.go` → `ContextManifest` (aliased in `transport`) | profile/model/template/BOS hashes | adapter digests fold into the runtime-identity hash (see llama `runtimeDigest`) |
+| Piece | Symbol |
+| --- | --- |
+| llama profile parse | `runtime/modelrepo/llama/adapters.go` → `resolveProfileAdapters` (reads `contenox-llama.json` `adapters[]`) |
+| OpenVINO profile parse | `runtime/modelrepo/openvino/adapters.go` → `resolveProfileAdapters` (`contenox-openvino.json`; profile struct in `profile.go`) |
+| modeld HTTP API resolver | `runtime/internal/modeldapi/resolver.go` → `resolveAdapterProfiles` (used by both the llama and OpenVINO model resolvers) |
+| Snapshot profiles | `runtime/contenoxcli/model_snapshot_cmd.go` → `resolveSnapshotAdapters` |
 
-`Config` (same file, line ~38) is the alternative placement the blueprint rejects:
-adapters belong on the model handle, not the hardware/runtime knob struct. Keep them on
-the request types.
+Shape everywhere: `{name, path, digest?, scale?}` — digest auto-computed (sha256),
+scale defaults to 1.0. This profile JSON is the **only** origin: no CLI flag, no API
+request field, and no registry entry produces adapters yet (that is Phases 0/3).
 
-### Runtime → modeld wire
+### Identity seam (transport) — landed
 
-| Concept | Symbol | Note |
-| --- | --- | --- |
-| Typed handle | `runtime/modelrepo/modeldconn/modeldconn.go` → `ModelRef` (line ~124) | `Name, Type, Digest, Path`; add `Adapters` |
-| Request mappers | same file → `openRequest` / `loadRequest` (line ~200/211) | copy `ModelRef.Adapters` into the transport requests |
-| gRPC wire structs | `runtime/transport/grpc/wire.go` → `openSessionReq`, `loadModelReq`, `describeReq` | JSON codec (`codec.go`), so a field not added here is silently dropped over the wire |
-| gRPC client/server copy | `runtime/transport/grpc/client.go` (line ~77/109/133/186), `server.go` | each field is copied by hand; add the adapter field at every copy site |
+`transport.AdapterSpec{Name, Path, Digest, Scale}` (`session.go` ~:194), carried on
+`OpenSessionRequest` (~:215), `LoadModelRequest` (~:298), and `ActiveModel` (~:271).
+Embeddings stay adapter-free, per this blueprint. The gRPC wire carries `adapters` in
+`wire.go` (~:54, :72) with hand-copies at every site in `client.go`/`server.go`;
+round-trip proven by `grpc_test.go` (~:689–703).
 
-### llama provider identity (warm reuse)
+### Provider identity / warm-KV safety — landed (both backends)
 
-| Concept | Symbol | Note |
-| --- | --- | --- |
-| Warm-cache key | `runtime/modelrepo/llama/client.go` → `sessionCacheKey` (line ~34) | append deterministic `adapter=<digest>@<scale>` segments; this is what stops `base+A` reusing `base+B`'s KV |
-| Client handle | same file → `client.ref()` (line ~69) and `client` struct (line ~55) | carry the resolved adapter list |
-| Runtime-identity hash | `runtime/modelrepo/llama/manifest.go` → `runtimeDigest` (line ~22) | add adapters to the `runtimeIdentity` struct so the `ContextManifest` differs across variants |
-| Adapter file digest | `runtime/modelrepo/llama/model_identity.go` → `modelFileDigest` (line ~24) | reuse the same stat-cached sha256 helper for adapter files |
-| Warm cache | same file → `warm = modelrepo.NewWarmCache` (line ~18) | unchanged; evict-before-open already handles single-slot switching (`[[warmcache-evict-before-open]]`) |
+llama: `runtime/modelrepo/llama/client.go` folds deterministic
+`adapters=<digest>@<scale>` segments into `sessionCacheKey` (what stops `base+A`
+reusing `base+B`'s KV) and `manifest.go` hashes adapters in `runtimeDigest`.
+OpenVINO: `runtime/modelrepo/openvino/client.go` + `prompt.go`
+(`appendAdapterIdentity`). Daemon slot: `modeld/slot/service.go` → `sameIdentity`
+compares `Adapters` (~:889–895), so an adapter change forces a model switch;
+`activeModel` copies them for diagnostics, surfaced via `modeldapi`
+(`sanitizeAdapters`) and the OpenAPI schema.
 
-### slot identity (daemon)
+### Native attach — landed
 
-| Concept | Symbol | Note |
-| --- | --- | --- |
-| Same-model gate | `modeld/slot/service.go` → `sameIdentity` (line ~601) | compares `ModelName/Type/Digest/Path/Config`; must also compare `Adapters` so an adapter change forces a switch |
-| Active descriptor | same file → `activeModel` (line ~609) | copy adapters into `ActiveModel` |
+llama: `llamacppshim/direct.go` → `Model.LoadAdapter` / `Adapter.MetaValue` /
+`Adapter.Free` / `Context.SetAdapter` / `Context.ClearAdapters` (~:863–:925, via the
+pin's plural `llama_set_adapters_lora`); `llamasession.NewWithAdapters` /
+`applyAdapters` attach at session open and free adapters before the model on close.
+OpenVINO: `ovsession/genai.go` → `GenAIConfig.LoRAAdapters` → C ABI
+`cx_genai_lora_adapter` + `cx_genai_session_config.lora_adapters` (`genai.h`) →
+`genai.cpp` builds `AdapterConfig(MODE_DYNAMIC)`, injects `ov::genai::adapters(...)`
+into the CB pipeline construction `AnyMap`, and activates it in the default
+`GenerationConfig` (~:1839–1879).
 
-### llama session creation (where adapters attach) — Phase 2
+### Proof tests (all env-gated; they skip without real model+adapter paths)
 
-| Concept | Symbol | Note |
-| --- | --- | --- |
-| Backend-neutral contract | `modeld/llama/session.go` | `llama.Config` / `llama.Session`; `Config` gains adapter fields if adapters flow through here |
-| Session open | `modeld/llama/llamasession/llama.go` → `New` (line ~163) | after `NewContext` (line ~202): `llama_adapter_lora_init` per adapter, then `llama_set_adapter_lora(ctx, adapter, scale)`; store handles on the `session` struct; free in `Close` |
-| Model config | same file → `modelConfig` (line ~244) | adapters are context-level, not model-load-level; no change to `ModelConfig` |
-| CGo shim | `modeld/llama/llamacppshim/direct.go` | add `AdapterLoad`/`AdapterMeta`/`AdapterFree`/`SetAdapter`/`ClearAdapters` wrapping the `llama_adapter_*` calls; mirror the `Model`/`Context` ownership pattern (line ~157/493) |
-
-### OpenVINO session creation (where adapters attach) — Phase 2 parity
-
-| Concept | Symbol | Note |
-| --- | --- | --- |
-| Session open (Go) | `modeld/openvino/ovsession/genai.go` → `NewGenAI` (line ~192) → `cx_genai_session_new` (line ~232) | thread adapter paths+scales into `GenAIConfig` and the `cx_genai_session_config` struct |
-| Config struct | `modeld/openvino/ovsession/genai.h` → `cx_genai_session_config` | add adapter path/scale array fields |
-| Pipeline construction (C++) | `modeld/openvino/ovsession/genai.cpp` → `properties` AnyMap (line ~1436) feeding `ContinuousBatchingPipeline(...)` (line ~1437) | inject `ov::genai::adapters(adapter_config)` (built from `ov::genai::Adapter` + `AdapterConfig::add(adapter, alpha)`, `MODE_DYNAMIC`) into that map |
-| Per-request selection | `genai.go` → `Generate` (line ~243) / `genai.cpp` generate path | optionally pass `GenerationConfig.adapters` to select the active subset; verify CB support first (see Backend Support Position parity risk) |
-
-### Identity-isolation tests to add
-
-- `runtime/modelrepo/llama/primitives_test.go` already proves `sessionCacheKey`
-  isolates config changes (`TestUnit_LocalNodeSessionCacheKey_IncludesRuntimeIdentity`,
-  line ~59) — extend it so `base+A` and `base+B` produce different keys, and `base` vs
-  `base+A` differ.
-- `modeld/slot/service_test.go` — assert `sameIdentity` is false across an adapter
-  change (the "fake transport session treats adapter changes as model switches" proof
-  point).
+- `modeld/llama/llamasession/lora_test.go` + `service_lora_system_test.go` — need
+  `CONTENOX_LLAMA_LORA_GGUF` + `CONTENOX_LLAMA_LORA_ADAPTER`; fixture generator
+  `testdata/make_lora_gguf.py` (GGML tensor names, e.g. `blk.N.attn_q.weight.lora_a`).
+- `modeld/openvino/ovsession/genai_lora_test.go` +
+  `modeld/openvino/service_lora_system_test.go` — need
+  `CONTENOX_OPENVINO_TEST_MODEL` + `CONTENOX_OPENVINO_TEST_LORA`
+  (plus `_EXPECT_DIFF=1` to hard-assert a behavior change); fixture generator
+  `testdata/make_lora.py` (canonical PEFT tensor names).
+- `runtime/transport/grpc/grpc_test.go` — adapters survive the wire.
+- Still worth adding if not already present: a `sessionCacheKey` unit case asserting
+  `base`, `base+A`, and `base+B` all produce distinct keys, and a
+  `slot.sameIdentity` adapter-change case.
 
 ## Phased Plan
 
-### Phase 0: Product Model and Files
+### Phase 0: Product Model and Files — OPEN (partially pre-empted)
+
+The minimal non-registry origin exists: profile-JSON `adapters[]` is parsed by both
+providers, the modeld API resolver, and snapshot profiles (see Code Map → Origin).
+Registry types, the artifact layout, and validation rules remain undone.
 
 - Add registry concepts for adapter and variant, or add a minimal local variant layer
   without changing the curated registry yet.
@@ -604,7 +634,10 @@ the request types.
 Proof point: `contenox model local` can display a base model and a variant that points
 to an adapter, without serving it yet.
 
-### Phase 1: Transport Identity
+### Phase 1: Transport Identity — LANDED
+
+Everything below is implemented; see Code Map for symbols and the wire round-trip
+proof test.
 
 - Define `transport.AdapterSpec` and add `Adapters []AdapterSpec` to
   `OpenSessionRequest`, `LoadModelRequest`, and `ActiveModel` (`session.go`).
@@ -619,9 +652,11 @@ to an adapter, without serving it yet.
 
 Proof point: a fake transport session treats adapter changes as model switches.
 
-### Phase 2: llama.cpp Dynamic LoRA + OpenVINO Parity
+### Phase 2: llama.cpp Dynamic LoRA + OpenVINO Parity — LANDED (both backends)
 
-Two backend tracks; both gated on the same Phase 1 identity work.
+Both tracks are implemented and smoke-tested; the CB-pipeline spike is done and
+verified (`MODE_DYNAMIC` works on int4/u4 weight-compressed models; `MODE_FUSE`
+rejects low-bit weights). See Code Map → Native attach and Proof tests.
 
 **llama.cpp (GGUF):**
 
@@ -651,7 +686,10 @@ Proof point: a real llama.cpp build loads a tiny GGUF adapter and a real OpenVIN
 loads a safetensors adapter; each produces a different continuation than its base model
 under the same prompt, while cache identity stays separate per variant.
 
-### Phase 3: UX and Registry
+### Phase 3: UX and Registry — OPEN (the current front door work)
+
+This is now the gap that keeps adapters unusable in practice: nothing upstream of the
+profile JSON produces an `adapters[]`, and no real adapter artifacts ship.
 
 - Add CLI support for installing adapters and creating variants.
 - Add setup/doctor messages for unsupported backend modes.
@@ -691,9 +729,12 @@ difference clear.
 - Should adapter-backed variants inherit base model tool/reasoning certifications, or
   must they re-certify?
 - How should adapter provenance appear in ACP/VS Code surfaces?
-- Does the pinned `ContinuousBatchingPipeline` honor the `ov::genai::adapters` property
-  and per-request `GenerationConfig.adapters`, or only a single construction-time set?
-  (Phase 2 spike; gates how much OpenVINO can match llama's per-session flexibility.)
+- ANSWERED: the pinned `ContinuousBatchingPipeline` honors the `ov::genai::adapters`
+  property at construction and activation via the default `GenerationConfig`
+  (verified at the 2026.2 pin; `MODE_DYNAMIC`, int4-safe). Per-request adapter-subset
+  selection remains unexercised.
+- Should VLM (vision) sessions gain adapter support next, given upstream readiness and
+  the contained change (see Vision (VLM) Sessions)?
 - A variant references a backend-typed adapter file (GGUF for llama, safetensors for
   OpenVINO). Should a logical variant name be allowed to resolve to different adapter
   files per backend, or is a variant always pinned to one backend+format?
@@ -719,8 +760,9 @@ for users who want maximum runtime performance and accept full model duplication
 Reach llama/OpenVINO parity at the product surface (a variant is a variant regardless
 of backend), but respect the two mechanical divergences: GGUF vs safetensors adapter
 files, and context-level apply (llama) vs construction-time `AdapterConfig` property
-(OpenVINO). De-risk the OpenVINO path with the `ContinuousBatchingPipeline` adapter
-spike before wiring it end-to-end.
+(OpenVINO). The serving path is landed and proven on both backends; the remaining work
+is the product surface — registry adapter/variant types, install/create CLI, and
+visibility in `model list`/status — plus a decision on enabling VLM-session adapters.
 
 The load-bearing engineering rule is cache identity: adapter digest, order, and scale
 must be part of every session and manifest identity before native adapter calls ship —

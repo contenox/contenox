@@ -8,9 +8,8 @@ import "context"
 // ClientSideConnection forwards every session/update regardless of session id
 // (correct at the library layer — the app owns session bookkeeping), so a
 // driver that reconnects or swaps sessions must filter stale updates itself, or
-// a just-abandoned session's chunks leak into the new turn's UI. hash learned
-// this the hard way and filters inline (acp.go:1504); this wrapper lets future
-// consumers inherit the guard instead of re-learning it.
+// a just-abandoned session's chunks leak into the new turn's UI. This wrapper
+// lets consumers inherit the guard instead of re-learning it.
 //
 // Wrap the Client the ClientFactory returns; update live (by constructing a new
 // wrapper) whenever the driver's active session changes.

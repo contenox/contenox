@@ -1185,32 +1185,7 @@ func (exe *SimpleExec) executeLLM(
 		}
 	}
 
-	messagesC := make([]libmodelprovider.Message, 0, len(prelude)+len(input.Messages))
-	for _, m := range prelude {
-		messagesC = append(messagesC, libmodelprovider.Message{
-			Role:    m.Role,
-			Content: m.Content,
-		})
-	}
-	for _, m := range input.Messages {
-		var toolCalls []libmodelprovider.ToolCall
-		if len(m.CallTools) > 0 {
-			toolCalls = make([]libmodelprovider.ToolCall, len(m.CallTools))
-			for i, tc := range m.CallTools {
-				toolCalls[i].ID = tc.ID
-				toolCalls[i].Type = tc.Type
-				toolCalls[i].Function.Name = tc.Function.Name
-				toolCalls[i].Function.Arguments = tc.Function.Arguments
-				toolCalls[i].ProviderMeta = tc.ProviderMeta
-			}
-		}
-		messagesC = append(messagesC, libmodelprovider.Message{
-			Role:       m.Role,
-			Content:    m.Content,
-			ToolCalls:  toolCalls,
-			ToolCallID: m.ToolCallID,
-		})
-	}
+	messagesC := providerMessagesFromEngine(prelude, input.Messages)
 
 	// Prepare chat arguments
 	chatArgs := chatArgsForLLMCall(llmCall, tools)
@@ -1432,6 +1407,48 @@ func isRecoverableToolSurfaceError(err error) bool {
 		return true
 	}
 	return strings.Contains(s, "context overflow") || strings.Contains(s, "exceeded the session context window")
+}
+
+// providerMessagesFromEngine converts engine messages (prelude followed by the
+// conversation) into provider messages, carrying text, tool calls, and image
+// attachments. Prelude messages are engine-injected instructions and never
+// carry tool calls or images.
+func providerMessagesFromEngine(prelude, messages []Message) []libmodelprovider.Message {
+	out := make([]libmodelprovider.Message, 0, len(prelude)+len(messages))
+	for _, m := range prelude {
+		out = append(out, libmodelprovider.Message{
+			Role:    m.Role,
+			Content: m.Content,
+		})
+	}
+	for _, m := range messages {
+		var toolCalls []libmodelprovider.ToolCall
+		if len(m.CallTools) > 0 {
+			toolCalls = make([]libmodelprovider.ToolCall, len(m.CallTools))
+			for i, tc := range m.CallTools {
+				toolCalls[i].ID = tc.ID
+				toolCalls[i].Type = tc.Type
+				toolCalls[i].Function.Name = tc.Function.Name
+				toolCalls[i].Function.Arguments = tc.Function.Arguments
+				toolCalls[i].ProviderMeta = tc.ProviderMeta
+			}
+		}
+		var images []libmodelprovider.ImagePart
+		if len(m.Images) > 0 {
+			images = make([]libmodelprovider.ImagePart, len(m.Images))
+			for i, img := range m.Images {
+				images[i] = libmodelprovider.ImagePart{Data: img.Data, MimeType: img.MimeType}
+			}
+		}
+		out = append(out, libmodelprovider.Message{
+			Role:       m.Role,
+			Content:    m.Content,
+			Images:     images,
+			ToolCalls:  toolCalls,
+			ToolCallID: m.ToolCallID,
+		})
+	}
+	return out
 }
 
 func stripToolProtocolMessages(messages []libmodelprovider.Message) []libmodelprovider.Message {

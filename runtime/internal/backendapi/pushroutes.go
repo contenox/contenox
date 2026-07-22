@@ -27,6 +27,7 @@ type pushModelResponse struct {
 // framework Decode, which buffers the whole body in memory); this keeps a
 // multi-gigabyte model upload streaming end to end, from browser to modeld.
 func (b *backendManager) pushModel(w http.ResponseWriter, r *http.Request) {
+	// @request binary Raw model file bytes (GGUF or OpenVINO artifact), streamed as the request body.
 	ctx := r.Context()
 	id := apiframework.GetPathParam(r, "id", "The unique identifier for the backend.")
 	if id == "" {

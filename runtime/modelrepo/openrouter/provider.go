@@ -22,6 +22,7 @@ type orProvider struct {
 	canEmbed        bool
 	canStream       bool
 	canThink        bool
+	canVision       bool
 	tracker         libtracker.ActivityTracker
 }
 
@@ -48,6 +49,7 @@ func newOpenRouterProvider(apiKey, modelName, baseURL string, capability modelre
 		canEmbed:        capability.CanEmbed,
 		canStream:       capability.CanStream,
 		canThink:        capability.CanThink,
+		canVision:       capability.CanVision,
 		tracker:         tracker,
 	}
 }
@@ -63,6 +65,7 @@ func (p *orProvider) CanEmbed() bool          { return p.canEmbed }
 func (p *orProvider) CanStream() bool         { return p.canStream }
 func (p *orProvider) CanPrompt() bool         { return p.canPrompt }
 func (p *orProvider) CanThink() bool          { return p.canThink }
+func (p *orProvider) CanVision() bool         { return p.canVision }
 
 func (p *orProvider) base() orClient {
 	return orClient{

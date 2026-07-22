@@ -117,10 +117,11 @@ packages/ui/dist/
 # Ollama local data
 .ollama/
 
-# Enterprise (optional local checkout — not tracked)
-enterprise/
-
 .apikey.txt
+
+# Locally built binaries at the repo root (use bin/ for build outputs)
+/contenox
+/acp-stub-agent
 
 .notes/
 .claude

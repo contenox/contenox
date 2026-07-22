@@ -21,6 +21,7 @@ import (
 	"github.com/contenox/runtime/runtime/internal/agentregistryapi"
 	"github.com/contenox/runtime/runtime/internal/approvalapi"
 	"github.com/contenox/runtime/runtime/internal/backendapi"
+	"github.com/contenox/runtime/runtime/internal/compatapi"
 	"github.com/contenox/runtime/runtime/internal/fleetapi"
 	"github.com/contenox/runtime/runtime/internal/hitlpolicyapi"
 	"github.com/contenox/runtime/runtime/internal/localfileapi"
@@ -190,6 +191,8 @@ func workspaceHITLFactory(deps Dependencies) localfileapi.PolicyEvaluatorFactory
 
 // New registers the spine routes (not-found shape, health, version) on mux and,
 // when deps are supplied, the product API routes. Returns a cleanup function.
+//
+// openapi:exclude the only direct registration here is the GET / catch-all, which serves the not-found error envelope for unmatched paths — not an operation
 func New(ctx context.Context, mux *http.ServeMux, nodeInstanceID, tenancy string, config *Config, deps ...Dependencies) (func() error, error) {
 	if mux == nil {
 		return nil, fmt.Errorf("serverapi: mux is nil")
@@ -259,6 +262,11 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 		// GET /workspace/search streams `rg --json` matches (SSE) under a
 		// Factory-validated root — same allowlist authority as the browse API.
 		localfileapi.AddWorkspaceSearchRoutes(mux, deps.WorkspaceRoots)
+		// GET /workspace/find streams filename matches (SSE) via a recursive walk
+		// under a Factory-validated root — the `find` to search's `grep`, and the
+		// data source for Beam's workspace filter box. Same allowlist authority, and
+		// the same agent-view annotation the browse API's filter=agent provides.
+		localfileapi.AddWorkspaceFindRoutes(mux, deps.WorkspaceRoots, workspaceHITLFactory(deps))
 	} else if deps.ProjectRoot != "" {
 		projectFiles, err := localfileservice.New(deps.ProjectRoot)
 		if err != nil {
@@ -281,6 +289,22 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 
 	if deps.Agent != nil {
 		taskexecapi.AddRoutes(mux, deps.Agent, deps.Auth, stateSvc, deps.Defaults)
+	}
+
+	if deps.Agent != nil && chains != nil {
+		// OpenAI-compatible completions under /api/openai/... — the same
+		// agent/chain execution path as taskexecapi, spoken in OpenAI wire
+		// shapes. Root-level /v1 and Ollama-native aliases are registered by
+		// serve on its root mux (contenoxcli/serve_cmd.go), where clients that
+		// point a base URL at the bare host expect them.
+		compatapi.AddOpenAIRoutes(mux, compatapi.CompatDeps{
+			Agent:        deps.Agent,
+			Chains:       chains,
+			StateService: stateSvc,
+			Defaults:     deps.Defaults,
+			Auth:         deps.Auth,
+			Token:        config.Token,
+		})
 	}
 
 	if deps.TerminalService != nil {

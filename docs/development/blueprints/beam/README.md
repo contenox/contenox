@@ -1,19 +1,22 @@
 # Beam Blueprints
 
 Beam is the browser SPA embedded in the `contenox` binary and served by
-`contenox serve` (SPA at `/`, REST API under `/api`). These docs cover its
-restoration, current scope, and R&D directions.
+`contenox serve` (SPA at `/`, REST API under `/api`, chat over the `/acp`
+WebSocket). Beam's job is the supervise–review–intervene loop: the setup
+wizard, the admin control plane, the ACP chat client, and the fleet/mission
+oversight surfaces.
 
 | Doc | Status | What it covers |
 | --- | --- | --- |
 | [beam-on-acp.md](beam-on-acp.md) | rule | **The chat re-engineering doctrine.** Why Beam's chat surface is an ACP client of `acpsvc` and nothing else, the reusable-component extraction (Part A), the ACP-native surface and its wire-to-rendering data mapping (Part B), and the migration doctrine, wire-layer rule, capability-provider seam, and session-identity coexistence rule (Part C). |
-| [acp-chat-workspace.md](acp-chat-workspace.md) | primary direction | **The workspace blueprint.** Beam chat re-engineered as an ACP client: the productivity model (run/review/own; governance-surface sovereignty), reusable `chat-kit` + `acp-web-client` packages, the three-zone + command-palette layout, reclaimed assets (Monaco, canvas, visualizer, FileTree, Cmdbar), downward-repair rule, and truth-gated migration. Supersedes and folds in the former sovereign-workspace and chat-canvas blueprints. |
-| [http-ui-revival.md](http-ui-revival.md) | executed | Migration plan that restored the HTTP API + Beam UI |
-| [local-runtime-cockpit.md](local-runtime-cockpit.md) | direction | Beam as the modeld cockpit: status, capacity/fit diagnostics, KV residency, model variants |
-| [remote-connector.md](remote-connector.md) | R&D / vision | Headless `contenox-connector` for controlling a remote engine from a local client |
-| [auth.md](auth.md) | R&D / vision | Single-operator password auth for Beam; builds on the loopback + bearer `TOKEN` model |
+| [fleet-manager.md](fleet-manager.md) | design record | Beam as fleet manager: manifest, dispatch, envelopes, the ops board, exceptions up / green silence |
+| [attention-layer.md](attention-layer.md) | blueprint | The relevance computation over journals, task events, and reports: what operators must attend, ranked |
+| [ide-workflows.md](ide-workflows.md) | blueprint | The oversight cockpit arcs: changed-files + diff review and the other IDE workflows that serve supervise–review–intervene (never editing) |
+| [component-roadmap.md](component-roadmap.md) | backlog | Plumb-ready component list tiered by whether its data source exists |
+| [session-workspace-files.md](session-workspace-files.md) | implemented | One workspace root per session: sandboxed `local_fs`, file tree, @-mentions as ACP resource blocks |
+| [shell-sessions.md](shell-sessions.md) | implemented | Persistent per-session PTY shells surfaced to both agent and user |
+| [workspace-tabs.md](workspace-tabs.md) | implemented | The in-app tabbed workspace: tab model, surfaces, rails-list/tabs-hold |
+| [workspace-canvas.md](workspace-canvas.md) | landing in slices | The side-by-side working area for terminals, files, and diffs inside a chat tab |
 
-`docs/blueprints/v1-feature-map.md` describes how Beam relates to the V1
-product surface. The agent-manager direction — Beam fronting a fleet of
-declared agents rather than one chat at a time — is specified in
-[`../acp/declared-agents-and-harnesses.md`](../acp/declared-agents-and-harnesses.md).
+[`../v1-feature-map.md`](../v1-feature-map.md) describes how Beam relates to
+the V1 product surface.

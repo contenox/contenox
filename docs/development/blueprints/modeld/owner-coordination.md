@@ -4,8 +4,7 @@
 > **Sibling docs:** `multi-client-coordination.md` (parent decision —
 > picks the per-user owner model), `interface-boundary.md` (the compute
 > boundary modeld exposes), `../local-coding-node-goals.md`,
-> `../vscode/acp-permission-bridge.md`, `../acp/zed-registry.md`,
-> `openvino/coding-node-plan.md`, `llama/coding-node-plan.md`.
+> `../vscode/acp-permission-bridge.md`.
 > **Purpose:** decide *how* the per-user local runtime owner — the `modeld`
 > daemon — is elected, reached, and recovered across Linux, macOS, and Windows,
 > without requiring privilege or a system-managed service.

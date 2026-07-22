@@ -1,10 +1,8 @@
 # Contenox Local Coding Node — Goals
 
 > **Status:** product-goals blueprint (substrate-neutral). This is the "why" and
-> "what" behind the implementation tracks: `modeld/openvino/coding-node-plan.md`,
-> `modeld/llama/coding-node-plan.md`, and the AI PC compatibility lane in
-> `modeld/ortgenai-windows-ai.md`. Backends are *means* to these goals, not the
-> goals.
+> "what" behind the modeld backend implementation tracks (llama.cpp and
+> OpenVINO). Backends are *means* to these goals, not the goals.
 
 ---
 
@@ -282,8 +280,8 @@ the planner chose the right context.
   (S2), assembler drives the cache (S2.5).
 - **Budget-HARDWARE latency goal NOT yet proven:** everything ran CPU-only, where
   cold prefill is the bottleneck → a GPU is required. Proving the warm/cold GPU
-  number, then the Tier targets on the budget node, is what the `modeld/llama/coding-node-plan.md`
-  track now drives.
+  number, then the Tier targets on the budget node, is what the llama.cpp
+  backend track now drives.
 - **AI PC / alternative silicon NOT yet proven:** ORT GenAI has relevant
   append/rewind APIs, and Windows ML is a credible distribution/runtime layer,
   but each provider/device/model profile must pass capability and equivalence

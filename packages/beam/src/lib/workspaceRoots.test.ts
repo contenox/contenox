@@ -31,12 +31,12 @@ describe('activeWorkspaceRoot', () => {
 
 describe('shortenRootPath', () => {
   it('returns a short path unchanged (sans trailing slash)', () => {
-    expect(shortenRootPath('/home/naro')).toBe('/home/naro');
-    expect(shortenRootPath('/home/naro/')).toBe('/home/naro');
+    expect(shortenRootPath('/home/user')).toBe('/home/user');
+    expect(shortenRootPath('/home/user/')).toBe('/home/user');
   });
 
   it('keeps the last N segments with an ellipsis prefix when longer', () => {
-    expect(shortenRootPath('/home/naro/src/github.com/contenox/runtime')).toBe(
+    expect(shortenRootPath('/home/user/src/github.com/contenox/runtime')).toBe(
       '…/github.com/contenox/runtime',
     );
   });

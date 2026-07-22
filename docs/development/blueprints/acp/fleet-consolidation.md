@@ -7,10 +7,9 @@ technical decisions inside them are marked EXECUTED and are mine to make under
 delegation. The four questions in "Reserved" are product decisions and are the
 maintainer's.
 
-Precedes [`supervision-bus.md`](supervision-bus.md): that blueprint's S1 and S2
-are absorbed here as **repairs** (C1, C2) rather than new capability. The bus
-picks up at its S3 once this lands. Continues
-[`../beam/fleet-manager.md`](../beam/fleet-manager.md).
+Absorbs the reporting and inbox repairs (C1, C2) from an earlier
+supervision-bus draft (since retired; its remaining scope folded into the
+slices here). Continues [`../beam/fleet-manager.md`](../beam/fleet-manager.md).
 
 ## Purpose
 
@@ -145,10 +144,9 @@ routes. `attach` is deliberately **not** here — see C4.
 protocol: a button on the board, and a `tmux attach`-shaped verb in the shell.
 
 **EXECUTED decision.** Both go through the existing ACP `adopt` verb rather
-than a new REST journal-tail route. Attach is ACP-native per
-`declared-agents-and-harnesses.md`, beam already holds an app-wide ACP
-connection, and `libacp.ClientSideConnection` plus the `/acp` WebSocket shim
-already exist for the CLI side. A REST tail would be a second mechanism for
+than a new REST journal-tail route. Attach is ACP-native: beam already holds
+an app-wide ACP connection, and `libacp.ClientSideConnection` plus the `/acp`
+WebSocket shim already exist for the CLI side. A REST tail would be a second mechanism for
 something already built.
 
 **Shape.** beam: a board action per session row → adopt → navigate to the
@@ -331,10 +329,10 @@ envelope, exceptions up" made concrete rather than aspirational.
 `report` and `ask-for-attention` **only while on a mission** — they are not
 part of its standing tool set. That keeps the grant per-unit-of-work and makes
 the mission the thing that equips, which is the same equip-don't-govern shape
-harnesses use. This is also the agent-authored producer that
-[`supervision-bus.md`](supervision-bus.md) describes; that blueprint's S6 is
-therefore **promoted from a late slice to core**, and its inbox (S2) and this
-mode's attention surface are one surface, not two.
+harnesses use. This is also the agent-authored producer the retired
+supervision-bus draft described; its report tool is therefore **promoted from
+a late slice to core**, and its inbox and this mode's attention surface are
+one surface, not two.
 
 Consequence for the board: it becomes **mission-first**. A row's primary fact
 is what a unit was sent to do and whether it needs you — process state is
@@ -475,8 +473,7 @@ defaulting to the current deny behavior, in the shape of the existing
 knows nothing about what it does. `serve` wires that fallback to
 `hitlservice`, turning an unsupervised request into a durable ask with the
 mission's envelope as its policy. The auto-deny stops being the default and
-becomes the *timeout* outcome, which is what the supervision-bus blueprint
-already argued for.
+becomes the *timeout* outcome.
 
 **Acceptance.** A dispatched unit with no viewer requests permission; the ask
 appears in the inbox naming the policy that escalated it; answering it

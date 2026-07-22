@@ -14,7 +14,12 @@ type fimHandler struct {
 	deps CompatDeps
 }
 
+// handle serves an OpenAI-compatible (FIM) text completion, answering with a
+// single JSON text_completion object or, when the request sets stream, the
+// same content as SSE chunk frames over text/event-stream.
 func (h *fimHandler) handle(w http.ResponseWriter, r *http.Request) {
+	// @request compatapi.FIMCompletionRequest
+	// @response compatapi.fimCompletionResponse
 	ctx := r.Context()
 	if err := authorizeCompatRequest(r, h.deps, true); err != nil {
 		http.Error(w, `{"error":{"message":"Unauthorized","type":"auth_error"}}`, http.StatusUnauthorized)

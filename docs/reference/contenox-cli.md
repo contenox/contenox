@@ -154,10 +154,13 @@ Download a curated or custom GGUF model to `~/.contenox/models/llama/<name>/mode
 
 ```bash
 contenox model pull qwen3-4b                                         # curated model
+contenox model pull gemma4-e4b                                       # curated vision model (fetches mmproj.gguf too)
 contenox model pull my-model --url https://huggingface.co/org/repo/resolve/main/model.gguf
 ```
 
 After downloading, the model is ready for the `llama` backend (or `openvino` for `-ov` models). `contenox init` registers those backends, and the first pulled model becomes `default-model` on a fresh install. Local inference is served by the `modeld` daemon, which must be running in the matching backend mode.
+
+Curated vision models (shown as `chat+vision` in `model registry-list`) install every artifact image input needs in one pull: llama entries fetch the multimodal projector beside the model as `mmproj.gguf` (a failed projector download is a hard error, and re-running the pull adds a missing projector to an already-installed model); OpenVINO vision snapshots already include their vision encoder.
 
 | Flag    | Description                                          |
 | ------- | ---------------------------------------------------- |
@@ -234,12 +237,13 @@ contenox model push qwen3-4b --backend <name> # push to a specific modeld node
 
 #### `contenox model capability`
 
-Manage manual provider/model capability overrides — currently the reasoning (`think`) capability the runtime assumes for a given provider/model when the catalog doesn't declare it.
+Manage manual provider/model capability overrides — the reasoning (`think`) and image-input (`vision`) capabilities the runtime assumes for a given provider/model when the catalog doesn't declare them.
 
 ```bash
-contenox model capability set   <provider> <model> --think   # mark the model as supporting reasoning
-contenox model capability show  <provider> <model>           # show the current override
-contenox model capability unset <provider> <model>           # remove the override (revert to catalog)
+contenox model capability set   <provider> <model> --think true   # mark the model as supporting reasoning
+contenox model capability set   <provider> <model> --vision true  # mark the model as accepting image input
+contenox model capability show  <provider> <model>                # show the current override
+contenox model capability unset <provider> <model>                # remove the override (revert to catalog)
 ```
 
 #### `contenox model snapshot`
@@ -325,7 +329,7 @@ contenox agent remove my-goose            # (alias: rm)
 
 | Field | Description |
 | ----- | ----------- |
-| `transport` | `stdio` (spawn `command`) or `endpoint` (dial `url`; not yet implemented). Required. |
+| `transport` | `stdio` (spawn `command`). `endpoint` (dial `url`) is a reserved value: it validates but is refused at connect time. Required. |
 | `command` | Executable to spawn. Required for `stdio`. |
 | `args` | Arguments passed to `command`. |
 | `env` | Extra environment variables for the spawned process. |

@@ -61,7 +61,7 @@ export function deriveMissionChangesState(
  * a change landing while the page is open appears without a manual refresh;
  * shared by cache key with the Changes tab and the header's scope/anomaly chips,
  * so opening the tab reuses this fetch (the scope surfacing is async enhancement
- * that never blocks the header — the Sublime-nature law). Disabled on an empty
+ * that never blocks the header — the instant-feel law). Disabled on an empty
  * id so a still-resolving route param never fires a request.
  */
 export function useMissionChanges(id: string, opts?: { enabled?: boolean }): MissionChangesState {

@@ -40,6 +40,8 @@ func normalizePolicyName(raw string) (string, error) {
 	return name, nil
 }
 
+// listPolicies returns the file names of every stored HITL policy
+// (hitl-policy*.json).
 func (h *handler) listPolicies(w http.ResponseWriter, r *http.Request) {
 	files, err := h.files.List(r.Context(), ".")
 	if err != nil {
@@ -59,6 +61,7 @@ func (h *handler) listPolicies(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, names) // @response []string
 }
 
+// getPolicy reads one HITL policy file by name.
 func (h *handler) getPolicy(w http.ResponseWriter, r *http.Request) {
 	name, err := normalizePolicyName(apiframework.GetQueryParam(r, "name", "", "Policy filename, e.g. hitl-policy-strict.json."))
 	if err != nil {
@@ -78,13 +81,14 @@ func (h *handler) getPolicy(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, policy) // @response hitlservice.Policy
 }
 
+// createPolicy writes a new HITL policy file and returns the stored policy.
 func (h *handler) createPolicy(w http.ResponseWriter, r *http.Request) {
 	name, err := normalizePolicyName(apiframework.GetQueryParam(r, "name", "", "Policy filename, e.g. hitl-policy-custom.json."))
 	if err != nil {
 		_ = apiframework.Error(w, r, err, apiframework.CreateOperation)
 		return
 	}
-	policy, data, err := decodePolicy(r)
+	policy, data, err := decodePolicy(r) // @request hitlservice.Policy
 	if err != nil {
 		_ = apiframework.Error(w, r, err, apiframework.CreateOperation)
 		return
@@ -96,6 +100,8 @@ func (h *handler) createPolicy(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusCreated, policy) // @response hitlservice.Policy
 }
 
+// updatePolicy overwrites an existing HITL policy file and returns the
+// stored policy.
 func (h *handler) updatePolicy(w http.ResponseWriter, r *http.Request) {
 	name, err := normalizePolicyName(apiframework.GetQueryParam(r, "name", "", "Policy filename, e.g. hitl-policy-strict.json."))
 	if err != nil {
@@ -106,7 +112,7 @@ func (h *handler) updatePolicy(w http.ResponseWriter, r *http.Request) {
 		_ = apiframework.Error(w, r, err, apiframework.UpdateOperation)
 		return
 	}
-	policy, data, err := decodePolicy(r)
+	policy, data, err := decodePolicy(r) // @request hitlservice.Policy
 	if err != nil {
 		_ = apiframework.Error(w, r, err, apiframework.UpdateOperation)
 		return
@@ -118,6 +124,7 @@ func (h *handler) updatePolicy(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, policy) // @response hitlservice.Policy
 }
 
+// deletePolicy removes a HITL policy file by name.
 func (h *handler) deletePolicy(w http.ResponseWriter, r *http.Request) {
 	name, err := normalizePolicyName(apiframework.GetQueryParam(r, "name", "", "Policy filename, e.g. hitl-policy-custom.json."))
 	if err != nil {

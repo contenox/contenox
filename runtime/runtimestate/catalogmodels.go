@@ -37,6 +37,7 @@ func observedModelFromPullStatus(model statetype.ModelPullStatus) modelrepo.Obse
 			CanPrompt:       model.CanPrompt,
 			CanStream:       model.CanStream,
 			CanThink:        model.CanThink,
+			CanVision:       model.CanVision,
 		},
 		Meta: meta,
 	}
@@ -63,5 +64,6 @@ func pullStatusFromObservedModel(model modelrepo.ObservedModel) statetype.ModelP
 		CanPrompt:       model.CanPrompt,
 		CanStream:       model.CanStream,
 		CanThink:        model.CanThink,
+		CanVision:       model.CanVision,
 	}
 }

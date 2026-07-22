@@ -54,6 +54,22 @@ type ModelDescriptor struct {
 	// modeld still resolves the real hot-KV/effective-context fit from current
 	// device free memory, resident policy, KV profile, and runtime overhead.
 	RecommendedVRAMGB int `json:"recommendedVramGb,omitempty" example:"8"`
+	// Vision marks curated entries whose artifacts carry the full vision stack
+	// (multimodal projector beside the GGUF for llama; vision encoder models in
+	// the IR snapshot for OpenVINO), so modeld can serve image input. It is the
+	// curation-side capability signal only — the live truth stays modeld's
+	// Describe answer (ModelInfo.SupportsVision), which the providers thread
+	// into CapabilityConfig.CanVision.
+	Vision bool `json:"vision,omitempty" example:"true"`
+	// MMProjURL is the multimodal projector GGUF for llama vision entries.
+	// `model pull` fetches it beside the model as mmproj.gguf — the filename
+	// modeld resolves the projector from — and fails loudly when the projector
+	// cannot be fetched instead of leaving a silently text-only model. Empty for
+	// text entries and for OpenVINO entries (their multi-file snapshot already
+	// includes the vision models).
+	MMProjURL string `json:"mmprojUrl,omitempty" example:"https://huggingface.co/.../mmproj-....gguf"`
+	// MMProjSizeBytes is the projector file size for download reporting.
+	MMProjSizeBytes int64 `json:"mmprojSizeBytes,omitempty" example:"559874816"`
 	// Notes is a short free-text annotation shown alongside the model in
 	// listings, e.g. "native tool format", "MoE", "fastest smoke test".
 	Notes string `json:"notes,omitempty" example:"native tool format"`
@@ -92,16 +108,16 @@ const (
 )
 
 // EstimatedResidentBytes is a coarse pre-install RAM/VRAM estimate (on-disk
-// weight size plus ~25% headroom for KV cache and runtime overhead at a
-// moderate context length). It is NOT modeld's real KV-aware
-// capacity.Resolve budget computed from the live device and the model's
-// actual KV profile — only a rough signal for picking a model before modeld
-// is even installed.
+// weight size — including the multimodal projector for vision entries — plus
+// ~25% headroom for KV cache and runtime overhead at a moderate context
+// length). It is NOT modeld's real KV-aware capacity.Resolve budget computed
+// from the live device and the model's actual KV profile — only a rough
+// signal for picking a model before modeld is even installed.
 func (d ModelDescriptor) EstimatedResidentBytes() int64 {
 	if d.SizeBytes <= 0 {
 		return 0
 	}
-	return d.SizeBytes * residentHeadroomNumerator / residentHeadroomDenominator
+	return (d.SizeBytes + d.MMProjSizeBytes) * residentHeadroomNumerator / residentHeadroomDenominator
 }
 
 // FamilyGroup is a display grouping of descriptors sharing the same Family.

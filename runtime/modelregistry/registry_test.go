@@ -188,6 +188,7 @@ func TestUnit_Registry_OptimalForCurrentFamilies(t *testing.T) {
 		"DeepSeek-R1-0528-Qwen3-8B":                    "deepseek-r1-0528-qwen3-8b",
 		"bartowski/openai_gpt-oss-20b":                 "gpt-oss-20b",
 		"OpenVINO/gpt-oss-20b-int4-ov":                 "gpt-oss-20b-ov",
+		"OpenVINO/gemma-4-E4B-it-int4-ov":              "gemma4-e4b-ov",
 		"OpenVINO/Qwen2.5-Coder-0.5B-Instruct-int4-ov": "qwen2.5-coder-0.5b-ov",
 		"OpenVINO/Qwen2.5-Coder-14B-Instruct-int4-ov":  "qwen2.5-coder-14b-ov",
 		"OpenVINO/TinyLlama-1.1B-Chat-v1.0-int4-ov":    "tinyllama-1.1b-chat-v1.0-int4-ov",
@@ -241,14 +242,90 @@ func TestUnit_Registry_OpenVINOCrossSyncWithCuratedLlamaModels(t *testing.T) {
 	}
 }
 
-func TestUnit_Registry_DoesNotCurateMultimodalGemmaOpenVINOForTextBackend(t *testing.T) {
+// Gemma 4 is multimodal and is curated as a vision model on BOTH local
+// backends: the llama entry pairs the model GGUF with its mmproj projector,
+// and the OpenVINO entry is the full VLM snapshot served by the GenAI VLM
+// pipeline. All URLs/sizes verified live against Hugging Face on 2026-07-22.
+func TestUnit_Registry_CuratesGemma4VisionOnBothBackends(t *testing.T) {
 	reg := newCuratedOnly()
-	_, err := reg.Resolve(context.Background(), "gemma4-e4b-ov")
-	require.ErrorIs(t, err, modelregistry.ErrNotFound)
+
+	llamaModel, err := reg.Resolve(context.Background(), "gemma4-e4b")
+	require.NoError(t, err)
+	assert.Equal(t, "llama", llamaModel.BackendType())
+	assert.True(t, llamaModel.Vision)
+	assert.Contains(t, llamaModel.SourceURL, "ggml-org/gemma-4-E4B-it-GGUF")
+	assert.Contains(t, llamaModel.MMProjURL, "mmproj-gemma-4-E4B-it")
+	assert.Greater(t, llamaModel.MMProjSizeBytes, int64(0))
+	assert.Equal(t, 6, llamaModel.RecommendedVRAMGB, "gemma4-e4b vision is the 6GB-tier flagship default")
+
+	twelveB, err := reg.Resolve(context.Background(), "gemma4-12b")
+	require.NoError(t, err)
+	assert.True(t, twelveB.Vision)
+	assert.Contains(t, twelveB.MMProjURL, "mmproj-gemma-4-12B-it")
+
+	ovModel, err := reg.Resolve(context.Background(), "gemma4-e4b-ov")
+	require.NoError(t, err)
+	assert.Equal(t, "openvino", ovModel.BackendType())
+	assert.True(t, ovModel.Vision)
+	assert.Equal(t, "OpenVINO/gemma-4-E4B-it-int4-ov", ovModel.Repo)
+	assert.Empty(t, ovModel.MMProjURL, "OpenVINO vision entries ship the vision models inside the snapshot")
+	assert.Empty(t, ovModel.ToolProtocol, "the OpenVINO VLM pipeline is not certified for tool calls")
+	assert.True(t, ovModel.Curated)
+
+	// Smallest vision tier for CPU/iGPU machines where the Gemma 4 snapshot
+	// does not fit; verified end-to-end in the OpenVINO VLM cell.
+	tiny, err := reg.Resolve(context.Background(), "internvl2-1b-ov")
+	require.NoError(t, err)
+	assert.Equal(t, "openvino", tiny.BackendType())
+	assert.True(t, tiny.Vision)
+	assert.Equal(t, "OpenVINO/InternVL2-1B-int4-ov", tiny.Repo)
+	assert.Equal(t, 6, tiny.RecommendedVRAMGB)
+}
+
+// The multimodal OV repo id must route to the curated OV VLM entry, while the
+// generic gemma substrings keep routing text repo ids to the llama entry
+// (deliberate collision handling in defaultFamilies ordering).
+func TestUnit_Registry_Gemma4FamilySubstringsSplitByBackend(t *testing.T) {
+	reg := newCuratedOnly()
 
 	got, err := reg.OptimalFor(context.Background(), "OpenVINO/gemma-4-E4B-it-int4-ov")
 	require.NoError(t, err)
+	assert.Equal(t, "gemma4-e4b-ov", got)
+
+	got, err = reg.OptimalFor(context.Background(), "google/gemma-4-E4B-it")
+	require.NoError(t, err)
 	assert.Equal(t, "gemma4-e4b", got)
+
+	got, err = reg.OptimalFor(context.Background(), "gemma")
+	require.NoError(t, err)
+	assert.Equal(t, "gemma4-e4b", got)
+}
+
+// Vision curation invariants: a llama vision entry must record its projector
+// (one pull action fetches both artifacts), a non-vision entry must not carry
+// one, and OpenVINO entries never need one.
+func TestUnit_Registry_VisionEntriesCarryConsistentArtifacts(t *testing.T) {
+	reg := newCuratedOnly()
+	entries, err := reg.List(context.Background())
+	require.NoError(t, err)
+
+	visionCount := 0
+	for _, e := range entries {
+		switch {
+		case e.Vision && e.BackendType() == "llama":
+			visionCount++
+			assert.NotEmpty(t, e.MMProjURL, "llama vision model %q must record its mmproj URL", e.Name)
+			assert.Greater(t, e.MMProjSizeBytes, int64(0), "llama vision model %q must record its mmproj size", e.Name)
+		case e.Vision && e.BackendType() == "openvino":
+			visionCount++
+			assert.NotEmpty(t, e.Repo, "openvino vision model %q must pull the full snapshot", e.Name)
+			assert.Empty(t, e.MMProjURL, e.Name)
+		default:
+			assert.Empty(t, e.MMProjURL, "text model %q must not carry an mmproj URL", e.Name)
+			assert.Zero(t, e.MMProjSizeBytes, e.Name)
+		}
+	}
+	assert.GreaterOrEqual(t, visionCount, 3, "expected at least gemma4-e4b, gemma4-12b, and gemma4-e4b-ov vision entries")
 }
 
 func TestUnit_Registry_UserEntryKeepsCuratedBackendAndToolProtocol(t *testing.T) {
@@ -391,6 +468,10 @@ func TestUnit_Registry_CodingModelsCoverRecommendedVRAMTiers(t *testing.T) {
 func TestUnit_Registry_EstimatedResidentBytesAppliesHeadroom(t *testing.T) {
 	d := modelregistry.ModelDescriptor{SizeBytes: 4_000_000_000}
 	assert.Equal(t, int64(5_000_000_000), d.EstimatedResidentBytes())
+
+	// A vision entry's projector is resident too.
+	vision := modelregistry.ModelDescriptor{SizeBytes: 4_000_000_000, MMProjSizeBytes: 400_000_000}
+	assert.Equal(t, int64(5_500_000_000), vision.EstimatedResidentBytes())
 
 	zero := modelregistry.ModelDescriptor{}
 	assert.Equal(t, int64(0), zero.EstimatedResidentBytes())

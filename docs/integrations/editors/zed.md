@@ -120,13 +120,6 @@ Subsequent ACP sessions write structured operation traces to `~/.contenox/teleme
 
 ---
 
-## Limitations
-
-- **Assistant text is not yet streamed incrementally** with tool-using chains — it appears at the end of each generation step. Streaming-with-tools is on the roadmap; the synchronous chain shape works fine in the meantime.
-- **No mid-turn cancel inside Zed** propagates to the chain. Cancelling in Zed stops the UI from displaying further updates; the chain finishes in the background and its results are persisted.
-
----
-
 ## Where to next
 
 - [Author your first chain](/docs/guide/first-chain/) — the chain file is what defines the agent's behavior, regardless of which client drives it.

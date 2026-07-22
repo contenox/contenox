@@ -27,7 +27,7 @@
 // This is the seam the tool-hardening harness sketch calls "replayed-response mode
 // for determinism, live-model mode for the matrix".
 //
-// # Determinism honesty (the thesis's falsifiability lesson)
+// # Determinism honesty
 //
 // Model runs are measurements over a STOCHASTIC system, not assertions about one.
 // The harness pins seed and temperature where the provider honors them, runs N=1 by

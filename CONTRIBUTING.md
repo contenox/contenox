@@ -1,8 +1,9 @@
 # Contributing to Contenox
 
 Thanks for helping improve Contenox. This repository centers on the V1 runtime
-surface: local CLI usage, ACP over stdio, and the VS Code extension that embeds
-the same Go runtime.
+surface: local CLI usage, ACP over stdio, the VS Code extension that embeds
+the same Go runtime, and `contenox serve` hosting the HTTP API and the bundled
+Beam web UI.
 
 ## Code of Conduct
 
@@ -28,18 +29,20 @@ sessions, human-in-the-loop policy, session history, and local state. Editor
 integrations should stay adapters around that runtime. They should not re-create
 chain semantics in TypeScript or a separate UI server.
 
-### V1 product boundary
+### V1 product surface
 
 The V1 public surface is:
 
 - `contenox` CLI
 - `contenox acp` for ACP clients such as Zed, JetBrains, and AionUi
 - `contenox vscode-agent --stdio` through the VS Code extension
+- `contenox serve`, which hosts Beam (the bundled web UI) and the HTTP API
+  under `/api`, including the OpenAI-compatible and Ollama-compatible inbound
+  endpoints and the generated OpenAPI docs (`/api/docs`)
 
-The V1 public surface does not include `contenox serve`, Beam, a browser UI,
-OpenAI/Ollama-compatible proxy routes, or generated local OpenAPI docs. Do not
-reintroduce those surfaces without updating `docs/development/blueprints/v1-feature-map.md`
-and the relevant user docs first.
+When you change this surface, update
+`docs/development/blueprints/v1-feature-map.md` and the relevant user docs in
+the same change.
 
 ### Abstraction layers
 
@@ -125,6 +128,7 @@ Run `make help` at the repo root for the full list.
 | `test-*` | Go unit tests, explicit integration suites, direct llama.cpp shim checks, and CLI help checks |
 | `dev-*` | local binary and VS Code extension install helpers |
 | `deps-*` | modeld dependencies, pinned llama.cpp source, OpenVINO SDK/GenAI deps, and VS Code extension dependencies |
+| `openapi` | regenerate the embedded OpenAPI spec (`runtime/internal/openapidocs/openapi.json`) from route annotations |
 | `clean*` | remove generated binaries, native runtime bundles, and VS Code packaging artifacts |
 
 Version bumps and release notes for the **contenox runtime** live in
@@ -549,6 +553,8 @@ If command names, flags, README examples, or user-facing help changed, also run
 - Runtime allowlists may restrict task allowlists but must not expand them.
 - Wide interfaces are a smell. New code should accept the narrowest interface
   slice it actually needs.
-- Do not reintroduce `contenox serve`, Beam/browser UI, HTTP model proxy
-  compatibility routes, generated local OpenAPI docs, or API test harnesses
-  without an explicit roadmap change.
+- Public-surface changes (new commands, HTTP routes, compatibility endpoints)
+  need matching updates to the surface docs and a regenerated OpenAPI spec
+  (`make openapi` — see `docs/development/api_spec_generation.md`). The unit
+  suite fails when the embedded spec is stale, and the generator itself fails
+  when a route lacks request/response annotations.

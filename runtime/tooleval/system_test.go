@@ -20,8 +20,8 @@ import (
 // exactly like modelrepo's CONTENOX_RUN_VLLM_TESTS. A run's results land in a
 // timestamped JSON file.
 //
-// Determinism honesty (docs/development/blueprints/tool-hardening.md, and the thesis's
-// falsifiability lesson): these are MEASUREMENTS over a stochastic system, not
+// Determinism honesty (docs/development/blueprints/tool-hardening.md):
+// these are MEASUREMENTS over a stochastic system, not
 // assertions about one. Seed and temperature are pinned where the provider honors them
 // and recorded in every result; N=1 by default with a repeat knob. The test therefore
 // records and reports — it does NOT fail on a model's task outcome or malformed rate

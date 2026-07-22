@@ -8,9 +8,8 @@ import (
 )
 
 // TestUnit_NegotiateProtocolVersion pins libacp's min-of-both negotiation and,
-// crucially, that it does NOT require exact echo equality (hash's fragility,
-// tmp/hash acp.go:562). A future refactor toward "reject anything != what we
-// sent" must fail this test.
+// crucially, that it does NOT require exact echo equality. A future refactor
+// toward "reject anything != what we sent" must fail this test.
 func TestUnit_NegotiateProtocolVersion(t *testing.T) {
 	cases := []struct {
 		name         string
@@ -34,11 +33,11 @@ func TestUnit_NegotiateProtocolVersion(t *testing.T) {
 
 // TestUnit_NegotiateProtocolVersion_AcceptsSupportedNonEqual is the explicit
 // anti-regression: a peer that answers a version we can speak but that differs
-// from a naive "what we sent" is still accepted, unlike hash's exact-equality
+// from a naive "what we sent" is still accepted, unlike an exact-equality
 // check.
 func TestUnit_NegotiateProtocolVersion_AcceptsSupportedNonEqual(t *testing.T) {
 	// We implement up to version 2; a peer offers version 1. Exact-equality
-	// (hash) against a requested 2 would reject 1; min-of-both accepts it.
+	// against a requested 2 would reject 1; min-of-both accepts it.
 	const ours = 2
 	got := libacp.NegotiateProtocolVersion(1, ours)
 	assert.Equal(t, 1, got)

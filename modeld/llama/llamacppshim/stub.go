@@ -39,3 +39,22 @@ type ChatTemplateProbe struct {
 func ProbeChatTemplate(string) (ChatTemplateProbe, error) {
 	return ChatTemplateProbe{}, errors.New("llamacppshim: direct llama.cpp backend is not compiled in")
 }
+
+// MMProjCaps reports projector input modalities only in direct llama.cpp
+// builds; without the native backend no capability can be certified.
+func MMProjCaps(string) (vision, audio bool) {
+	return false, false
+}
+
+// MMProjProfile contains the multimodal projector metadata needed to estimate
+// per-image token cost.
+type MMProjProfile struct {
+	ImageSize       int
+	PatchSize       int
+	ProjScaleFactor int
+}
+
+// InspectMMProjProfile is available only in direct llama.cpp builds.
+func InspectMMProjProfile(string) (MMProjProfile, error) {
+	return MMProjProfile{}, errors.New("llamacppshim: direct llama.cpp backend is not compiled in")
+}

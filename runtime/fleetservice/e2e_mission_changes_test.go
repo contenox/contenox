@@ -80,7 +80,7 @@ const missionChangesChain = `{
 //     session's journal (DeliverToSession — exactly how an out-of-band update
 //     lands), standing in for a derailed unit's wander into another tree. The same
 //     fold must now trip scopeAnomaly and name the offending path, while the real
-//     changed files stay put. This is the thesis's deepest finding as the fleet's
+//     changed files stay put. This is the scope-not-steps premise as the fleet's
 //     cheapest alarm — and it is ADVICE: the flag never stops the unit.
 func TestFleetService_E2E_MissionChanges(t *testing.T) {
 	if testing.Short() {

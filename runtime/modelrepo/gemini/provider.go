@@ -23,6 +23,7 @@ type GeminiProvider struct {
 	canEmbed        bool
 	canStream       bool
 	canThink        bool
+	canVision       bool
 	tracker         libtracker.ActivityTracker
 }
 
@@ -52,21 +53,23 @@ func NewGeminiProvider(apiKey string, modelName string, baseURLs []string, cap m
 		canEmbed:        cap.CanEmbed,
 		canStream:       cap.CanStream,
 		canThink:        cap.CanThink,
+		canVision:       cap.CanVision,
 		tracker:         tracker,
 	}
 }
 
 func (p *GeminiProvider) GetBackendIDs() []string { return []string{p.baseURL} }
-func (p *GeminiProvider) ModelName() string        { return p.modelName }
-func (p *GeminiProvider) GetID() string            { return p.id }
-func (p *GeminiProvider) GetType() string          { return "gemini" }
-func (p *GeminiProvider) GetContextLength() int    { return p.contextLength }
-func (p *GeminiProvider) GetMaxOutputTokens() int  { return p.maxOutputTokens }
-func (p *GeminiProvider) CanChat() bool            { return p.canChat }
-func (p *GeminiProvider) CanEmbed() bool           { return p.canEmbed }
-func (p *GeminiProvider) CanStream() bool          { return p.canStream }
-func (p *GeminiProvider) CanPrompt() bool          { return p.canPrompt }
-func (p *GeminiProvider) CanThink() bool           { return p.canThink }
+func (p *GeminiProvider) ModelName() string       { return p.modelName }
+func (p *GeminiProvider) GetID() string           { return p.id }
+func (p *GeminiProvider) GetType() string         { return "gemini" }
+func (p *GeminiProvider) GetContextLength() int   { return p.contextLength }
+func (p *GeminiProvider) GetMaxOutputTokens() int { return p.maxOutputTokens }
+func (p *GeminiProvider) CanChat() bool           { return p.canChat }
+func (p *GeminiProvider) CanEmbed() bool          { return p.canEmbed }
+func (p *GeminiProvider) CanStream() bool         { return p.canStream }
+func (p *GeminiProvider) CanPrompt() bool         { return p.canPrompt }
+func (p *GeminiProvider) CanThink() bool          { return p.canThink }
+func (p *GeminiProvider) CanVision() bool         { return p.canVision }
 
 func (p *GeminiProvider) GetChatConnection(ctx context.Context, backendID string) (modelrepo.LLMChatClient, error) {
 	if !p.CanChat() {

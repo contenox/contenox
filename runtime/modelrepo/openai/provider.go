@@ -22,6 +22,7 @@ type OpenAIProvider struct {
 	canEmbed        bool
 	canStream       bool
 	canThink        bool
+	canVision       bool
 	tracker         libtracker.ActivityTracker
 }
 
@@ -53,6 +54,7 @@ func NewOpenAIProvider(apiKey, modelName string, backendURLs []string, capabilit
 		canEmbed:        capability.CanEmbed,
 		canStream:       capability.CanStream,
 		canThink:        capability.CanThink,
+		canVision:       capability.CanVision,
 		tracker:         tracker,
 	}
 }
@@ -73,8 +75,8 @@ func (p *OpenAIProvider) GetType() string {
 	return "openai"
 }
 
-func (p *OpenAIProvider) GetContextLength() int    { return p.contextLength }
-func (p *OpenAIProvider) GetMaxOutputTokens() int  { return p.maxOutputTokens }
+func (p *OpenAIProvider) GetContextLength() int   { return p.contextLength }
+func (p *OpenAIProvider) GetMaxOutputTokens() int { return p.maxOutputTokens }
 
 func (p *OpenAIProvider) CanChat() bool {
 	return p.canChat
@@ -94,6 +96,10 @@ func (p *OpenAIProvider) CanPrompt() bool {
 
 func (p *OpenAIProvider) CanThink() bool {
 	return p.canThink
+}
+
+func (p *OpenAIProvider) CanVision() bool {
+	return p.canVision
 }
 
 func (p *OpenAIProvider) GetChatConnection(ctx context.Context, backendID string) (modelrepo.LLMChatClient, error) {

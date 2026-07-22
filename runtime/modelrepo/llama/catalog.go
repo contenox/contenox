@@ -49,6 +49,9 @@ func (c *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 			return nil, err
 		}
 		caps := profile.capabilityConfig()
+		if mmprojPresent(dir) {
+			caps.CanVision = true
+		}
 		modelDigest := profile.ModelDigest
 		if modelDigest == "" {
 			modelDigest, err = modelFileDigest(modelPath)
@@ -69,6 +72,11 @@ func (c *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 			if derr == nil {
 				applyModeldTemplateCapabilities(&profile, info)
 				caps.CanThink = caps.CanThink || profile.Reasoning.Protocol != ""
+				// Vision is assigned, not OR'd: modeld's Describe answer is
+				// authoritative and must be able to downgrade the offline
+				// mmproj-presence signal — an older daemon without vision
+				// support reports false and would silently drop image parts.
+				caps.CanVision = info.SupportsVision
 			}
 			switch {
 			case derr == nil && info.PlannerEffectiveContext > 0:

@@ -44,6 +44,7 @@ func (c *OllamaStreamClient) Stream(ctx context.Context, messages []modelrepo.Me
 		apiMessages = append(apiMessages, api.Message{
 			Role:      msg.Role,
 			Content:   msg.Content,
+			Images:    toOllamaImages(msg.Images),
 			ToolCalls: apiToolCalls,
 		})
 	}

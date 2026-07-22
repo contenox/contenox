@@ -215,8 +215,8 @@ const (
 	StatusAbandoned Status = "abandoned"
 
 	// StatusStuck is a FIRST-CLASS terminal signal, deliberately distinct from
-	// StatusDerailed rather than folded into it. The blueprint takes the
-	// OpenHands lesson literally: "stuck" is a discrete boundary a mission can
+	// StatusDerailed rather than folded into it. The blueprint treats
+	// "stuck" as a discrete boundary a mission can
 	// hit — a loop, a wall it cannot get past, a judgement it cannot make alone —
 	// and it is worth a different word than "failed" because it asks for a
 	// different response (attention, a nudge, a replan) than a derailment does

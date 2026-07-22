@@ -588,6 +588,10 @@ type Message struct {
 	Role string `json:"role" example:"user"`
 	// Content is the content of the message.
 	Content string `json:"content,omitempty" example:"What is the capital of France?"`
+	// Images carries image attachments beside Content. Attachments travel with
+	// the message to the model; requests with images resolve only to
+	// vision-capable models and fail with a typed error when none is available.
+	Images []ImagePart `json:"images,omitempty" openapi_include_type:"taskengine.ImagePart"`
 	// Thinking is the model's internal reasoning trace.
 	// Only populated when thinking is enabled; never sent back to the model as history.
 	Thinking string `json:"thinking,omitempty"`
@@ -604,6 +608,14 @@ type Message struct {
 	// ChainRef is the turn provenance: the chain path that ran this turn.
 	// Not used by the engine.
 	ChainRef string `json:"chainRef,omitempty"`
+}
+
+// ImagePart is a binary image attachment on a Message.
+type ImagePart struct {
+	// Data is the raw image bytes. JSON encoding carries it as standard base64.
+	Data []byte `json:"data"`
+	// MimeType is the image media type.
+	MimeType string `json:"mime_type" example:"image/png"`
 }
 
 // Tool represents a tool that can be called by the model.

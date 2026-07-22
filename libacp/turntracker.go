@@ -8,9 +8,8 @@ import (
 // TurnTracker watches one prompt turn's session/update stream and tells a
 // client-side driver whether the agent ever produced a renderable answer. It
 // exists because an agent can return a perfectly normal session/prompt result
-// while never emitting a single agent_message_chunk — the empty-response
-// failure this repo fixed on the agent side, and the interop failure hash
-// guards on the client side (noOutputPromptError, tmp/hash acp.go:979). A
+// while never emitting a single agent_message_chunk — an empty-response
+// interop failure a client must guard against. A
 // driver feeds each notification to Observe and, when the turn ends, calls Err
 // to convert "nothing displayable" into an explicit ErrNoDisplayableOutput
 // instead of surfacing an empty message. Opt-in and single-turn: construct a
@@ -41,7 +40,7 @@ func (t *TurnTracker) SawDisplayableOutput() bool { return t.sawDisplayable }
 
 // ToolUpdateCount reports how many tool_call / tool_call_update notifications
 // were observed. Reported inside Err so an operator can tell "tool activity but
-// no final text" from "literally nothing" (hash captures the same count).
+// no final text" from "literally nothing".
 func (t *TurnTracker) ToolUpdateCount() int { return t.toolUpdates }
 
 // Err returns nil when the turn produced displayable output, otherwise an

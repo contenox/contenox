@@ -2,6 +2,7 @@ package vertex
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -136,6 +137,53 @@ func TestUnit_BuildVertexRequest_WrapsSchemaLikeToolResultAsText(t *testing.T) {
 	resp := req.Contents[1].Parts[0].FunctionResponse.Response
 	require.Equal(t, schemaResult, resp["content"])
 	require.NotContains(t, resp, "$defs")
+}
+
+func TestUnit_BuildVertexRequest_ImageInputAddsInlineDataPart(t *testing.T) {
+	t.Parallel()
+
+	imgBytes := []byte("fake-jpeg-bytes")
+	wantB64 := base64.StdEncoding.EncodeToString(imgBytes)
+
+	msgs := []modelrepo.Message{
+		{
+			Role:    "user",
+			Content: "describe this image",
+			Images:  []modelrepo.ImagePart{{Data: imgBytes, MimeType: "image/jpeg"}},
+		},
+	}
+
+	req, err := buildVertexRequest("gemini-flash-latest", msgs, nil)
+	require.NoError(t, err)
+
+	// White-box: the user content carries a text part then an inlineData part.
+	require.Len(t, req.Contents, 1)
+	parts := req.Contents[0].Parts
+	require.Len(t, parts, 2)
+	require.Equal(t, "describe this image", parts[0].Text)
+	require.NotNil(t, parts[1].InlineData)
+	require.Equal(t, "image/jpeg", parts[1].InlineData.MimeType)
+	require.Equal(t, imgBytes, parts[1].InlineData.Data)
+
+	// Wire shape: the marshaled JSON carries the inlineData part with the
+	// base64 payload and correct mime type.
+	raw, err := json.Marshal(req)
+	require.NoError(t, err)
+	js := string(raw)
+	require.Contains(t, js, `"inlineData":{`)
+	require.Contains(t, js, `"mimeType":"image/jpeg"`)
+	require.Contains(t, js, `"data":"`+wantB64+`"`)
+
+	// A text-only message keeps its prior single text-part shape (no inlineData).
+	textReq, err := buildVertexRequest("gemini-flash-latest", []modelrepo.Message{{Role: "user", Content: "hi"}}, nil)
+	require.NoError(t, err)
+	require.Len(t, textReq.Contents, 1)
+	require.Len(t, textReq.Contents[0].Parts, 1)
+	require.Equal(t, "hi", textReq.Contents[0].Parts[0].Text)
+	require.Nil(t, textReq.Contents[0].Parts[0].InlineData)
+	textRaw, err := json.Marshal(textReq)
+	require.NoError(t, err)
+	require.NotContains(t, string(textRaw), "inlineData")
 }
 
 func TestUnit_BuildVertexRequest_KeepsNormalObjectToolResultStructured(t *testing.T) {

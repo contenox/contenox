@@ -7,7 +7,8 @@
  * No React, no DOM — the component (MentionMenu.tsx) wires this to state and
  * keydown handlers; this module is what the tests exercise.
  */
-import { textContent, type ContentBlock } from '../../../lib/acp';
+import { imageContent, textContent, type ContentBlock } from '../../../lib/acp';
+import type { PendingImageAttachment } from './imageAttachments';
 
 /** A workspace file the user can mention: its root-relative path and display name. */
 export interface WorkspaceFileRef {
@@ -256,11 +257,18 @@ export function activeMentions(text: string, selected: WorkspaceFileRef[]): Work
 
 /**
  * Serializes a draft into ACP prompt content blocks: the text block (the draft
- * as typed, tokens included) followed by one `resource_link` block per mention.
+ * as typed, tokens included), one `resource_link` block per mention, then one
+ * `image` block per pending attachment (base64 `data` + `mimeType`, exactly
+ * the libacp `ContentBlock` wire form — no `data:` URI prefix).
  * `resource_link` is reference-only — the agent must read the file through its
- * tools; no embedded resource or attachment is ever emitted.
+ * tools; images are the ONE embedded/attached content kind, since a pasted
+ * screenshot has no workspace path the agent could read instead.
  */
-export function promptBlocksFromDraft(text: string, mentions: WorkspaceFileRef[]): ContentBlock[] {
+export function promptBlocksFromDraft(
+  text: string,
+  mentions: WorkspaceFileRef[],
+  images: PendingImageAttachment[] = [],
+): ContentBlock[] {
   const blocks: ContentBlock[] = [];
   if (text.trim() !== '') blocks.push(textContent(text));
   const seen = new Set<string>();
@@ -268,6 +276,9 @@ export function promptBlocksFromDraft(text: string, mentions: WorkspaceFileRef[]
     if (seen.has(m.path)) continue;
     seen.add(m.path);
     blocks.push({ type: 'resource_link', name: m.path, uri: m.path });
+  }
+  for (const img of images) {
+    blocks.push(imageContent(img.data, img.mimeType));
   }
   return blocks;
 }

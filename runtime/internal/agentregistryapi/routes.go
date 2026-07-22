@@ -29,6 +29,7 @@ type agentHandler struct {
 	svc agentregistryservice.Service
 }
 
+// list returns the declared agents in the registry, paginated by cursor.
 func (h *agentHandler) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -46,6 +47,7 @@ func (h *agentHandler) list(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, items) // @response []*runtimetypes.Agent
 }
 
+// get returns one declared agent by ID.
 func (h *agentHandler) get(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := apiframework.GetPathParam(r, "id", "The unique ID of the agent.")
@@ -57,6 +59,7 @@ func (h *agentHandler) get(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, agent) // @response runtimetypes.Agent
 }
 
+// getByName returns one declared agent by its unique name.
 func (h *agentHandler) getByName(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	name := apiframework.GetPathParam(r, "name", "The unique name of the agent.")

@@ -86,11 +86,18 @@ func addServeClientFlags(cmd *cobra.Command) {
 // assumes.
 func newServeClient(cmd *cobra.Command) (*serveClient, error) {
 	base, _ := cmd.Flags().GetString("server")
+	defaulted := false
 	if strings.TrimSpace(base) == "" {
 		base = os.Getenv(envServeURL)
 	}
 	if strings.TrimSpace(base) == "" {
 		base = fmt.Sprintf("http://%s:%s", defaultServeAddr, defaultServePort)
+		// Neither --server nor CONTENOX_SERVER_URL was given: this command is
+		// about to talk to the default loopback serve. Surface WHICH instance it
+		// hit — from an isolated HOME a bare `mission list`/`fleet stop` otherwise
+		// silently reads or mutates whatever serve happens to own :32123, with no
+		// hint in the output that a default was used.
+		defaulted = true
 	}
 	base = strings.TrimRight(strings.TrimSpace(base), "/")
 	if _, err := url.ParseRequestURI(base); err != nil {
@@ -100,6 +107,13 @@ func newServeClient(cmd *cobra.Command) (*serveClient, error) {
 	token, _ := cmd.Flags().GetString("token")
 	if strings.TrimSpace(token) == "" {
 		token = os.Getenv(envServeToken)
+	}
+
+	if defaulted {
+		// Hint on stderr only, so the stdout contract (e.g. `mission fire -q`
+		// prints a bare correlatable id) is untouched. Shown only when defaulted:
+		// an operator who set --server/CONTENOX_SERVER_URL already knows the target.
+		fmt.Fprintf(cmd.ErrOrStderr(), "serve: %s (default; set --server or %s to target another instance)\n", base, envServeURL)
 	}
 
 	return &serveClient{

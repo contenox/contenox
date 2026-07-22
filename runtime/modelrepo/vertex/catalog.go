@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelregistry"
 	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
@@ -79,6 +80,9 @@ func enrichGooglePublisherModel(name string) modelrepo.ObservedModel {
 		om.CanChat = true
 		om.CanPrompt = true
 		om.CanStream = true
+		// The Vertex publisher API reports no input modalities, so vision comes
+		// from the hand-maintained Google allowlist rather than runtime detection.
+		om.CanVision = modelregistry.GeminiModelSupportsVision(name)
 	}
 	return om
 }

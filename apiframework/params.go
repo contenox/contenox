@@ -6,14 +6,28 @@ import (
 	"time"
 )
 
-// GetPathParam retrieves a URL path parameter by name and is used to enforce
-// that all path parameters are documented for the OpenAPI generator.
+// GetPathParam retrieves a URL path parameter by name. The call is also the
+// documentation source: the OpenAPI generator (internal/openapigen) derives
+// the path parameter itself from the route template, and attaches the
+// description argument of a GetPathParam call found in the handler's own body
+// to it. name must be a string literal (a non-literal name fails generation);
+// naming a parameter that appears in no route template bound to the handler
+// is likewise a generation error.
 func GetPathParam(r *http.Request, name string, description string) string {
 	return r.PathValue(name)
 }
 
-// GetQueryParam retrieves a URL query parameter by name. If the parameter is not
-// present, it returns the provided defaultValue.
+// GetQueryParam retrieves a URL query parameter by name. If the parameter is
+// not present, it returns the provided defaultValue.
+//
+// The call is also the documentation source: the OpenAPI generator emits a
+// string query parameter for every GetQueryParam call in the handler's own
+// body, carrying this description and — when the defaultValue literal is
+// non-empty — a schema default. name must be a string literal (a non-literal
+// name fails generation); a non-literal defaultValue or description is
+// consumed as absent. Calls the generator cannot see (nested closures, shared
+// helpers called from the handler) are documented with the `// @param name
+// type description...` escape-hatch annotation in the handler body instead.
 func GetQueryParam(r *http.Request, name, defaultValue, description string) string {
 	val := r.URL.Query().Get(name)
 	if val == "" {
@@ -22,9 +36,13 @@ func GetQueryParam(r *http.Request, name, defaultValue, description string) stri
 	return val
 }
 
+// CursorParamDescription and LimitParamDescription are the canonical
+// documentation for the two shared pagination query parameters. The OpenAPI
+// generator emits them verbatim for every CursorParam/LimitParam/ListParams
+// call site.
 const (
-	cursorParamDescription = "An optional RFC3339Nano timestamp to fetch the next page of results."
-	limitParamDescription  = "The maximum number of items to return per page."
+	CursorParamDescription = "An optional RFC3339Nano timestamp to fetch the next page of results."
+	LimitParamDescription  = "The maximum number of items to return per page."
 )
 
 // ListParams parses the two pagination query parameters shared by every
@@ -68,7 +86,7 @@ func ListParams(r *http.Request, defaultLimit int) (*time.Time, int, error) {
 // absent (or empty) cursor yields a nil pointer and no error; a malformed one
 // yields ErrInvalidParameterValue.
 func CursorParam(r *http.Request) (*time.Time, error) {
-	raw := GetQueryParam(r, "cursor", "", cursorParamDescription)
+	raw := GetQueryParam(r, "cursor", "", CursorParamDescription)
 	if raw == "" {
 		return nil, nil
 	}
@@ -85,7 +103,7 @@ func CursorParam(r *http.Request) (*time.Time, error) {
 // a call site that wants "let the store decide" can still pass 0 or a negative
 // value of its own.
 func LimitParam(r *http.Request, defaultLimit int) (int, error) {
-	raw := GetQueryParam(r, "limit", "", limitParamDescription)
+	raw := GetQueryParam(r, "limit", "", LimitParamDescription)
 	if raw == "" {
 		return defaultLimit, nil
 	}

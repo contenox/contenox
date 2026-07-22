@@ -11,7 +11,8 @@ const docsSchema = z.object({
 });
 
 const docs = defineCollection({
-  loader: glob({ pattern: '**/*.md', base: '../docs' }),
+  // development/internal/** holds work-records, not published pages.
+  loader: glob({ pattern: ['**/*.md', '!development/internal/**'], base: '../docs' }),
   schema: docsSchema,
 });
 

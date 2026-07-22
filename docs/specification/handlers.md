@@ -46,7 +46,23 @@ Sends the current input to the LLM and waits for a reply. If the model calls a t
 (These are control tokens, not the model's text. To branch on the model's actual
 answer, use the [`route`](#route) handler.)
 
+### Image input
 
+Chat-history messages can carry image attachments beside their text `content`:
+
+```json
+{ "role": "user", "content": "What is in this screenshot?",
+  "images": [ { "data": "<base64>", "mime_type": "image/png" } ] }
+```
+
+A request containing images resolves only to models that declare the vision
+capability. When no matching vision-capable model is available the task fails
+with a distinct error — images are never silently dropped to fall back on a
+text-only model. The served OpenAI-compatible `chat/completions` endpoint also
+accepts the standard content-parts array form
+(`{"type":"image_url","image_url":{"url":"data:image/png;base64,..."}}`) and
+decodes it into these attachments; only inline `data:` URIs are accepted — the
+runtime never fetches remote image URLs on a client's behalf.
 
 ### `retry_policy`
 

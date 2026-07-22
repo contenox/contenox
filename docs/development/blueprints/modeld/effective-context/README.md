@@ -4,22 +4,15 @@ Owner: runtime / modeld
 Target: large effective context on one local accelerator, single-user/single-model,
 with bounded prefill latency, usable decode throughput, and explicit quality gates.
 
-Related OpenVINO validation:
-- [OpenVINO/modeld hardening blueprint](openvino-hardening-blueprint.md)
-- [OpenVINO benchmark findings](openvino-bench-findings.md)
-- [Local NVIDIA llama benchmark findings](local-nvidia-llama-bench-findings.md)
+Companions:
+- [Architecture: effective context beyond the model's window](architecture.md)
+- [North star: long effective context on a consumer accelerator](north-star.md)
 
 Cross-backend parity:
 - [llama/OpenVINO backend parity](backend-parity-blueprint.md)
 
-Related hardware/runtime strategy:
-- [Local inference cross-compare](modeld-local-inference-cross-compare-blueprint.md)
-- [Latency-budgeted effective context](hardware-effective-context-blueprint.md)
-- [Specialization cells and multi-GPU runtime shapes](specialization-cells-blueprint.md)
-
 Guardrails:
 - [modeld capability-truth boundary](modeld-capability-truth-blueprint.md)
-- [Benchmark integrity and reproducibility](benchmark-integrity-blueprint.md)
 
 ## 1. Backend Stance
 

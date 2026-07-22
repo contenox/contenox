@@ -33,6 +33,8 @@ type ConfigureRequest struct {
 	SetDefault   *bool  `json:"setDefault"`
 }
 
+// configure stores (or updates) a cloud provider's API key configuration and
+// returns the resulting provider status.
 func (p *providerManager) configure(w http.ResponseWriter, r *http.Request) {
 	providerType := apiframework.GetPathParam(r, "providerType", "Provider type to configure.")
 	if providerType == "" {
@@ -63,6 +65,7 @@ func (p *providerManager) configure(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, status) // @response providerservice.ProviderStatus
 }
 
+// status reports whether a provider type is configured and ready.
 func (p *providerManager) status(w http.ResponseWriter, r *http.Request) {
 	providerType := apiframework.GetPathParam(r, "providerType", "Provider type to inspect.")
 	if providerType == "" {
@@ -85,6 +88,7 @@ func (p *providerManager) status(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, status) // @response providerservice.ProviderStatus
 }
 
+// deleteConfig removes a provider type's stored configuration.
 func (p *providerManager) deleteConfig(w http.ResponseWriter, r *http.Request) {
 	providerType := apiframework.GetPathParam(r, "providerType", "Provider type to delete.")
 	if providerType == "" {
@@ -98,6 +102,7 @@ func (p *providerManager) deleteConfig(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, "provider config deleted") // @response string
 }
 
+// listConfigs returns the status of every configured provider.
 func (p *providerManager) listConfigs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -116,6 +121,8 @@ func (p *providerManager) listConfigs(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, configs) // @response []providerservice.ProviderStatus
 }
 
+// supported lists the provider types this runtime can be configured with and
+// their capabilities.
 func (p *providerManager) supported(w http.ResponseWriter, r *http.Request) {
 	providers, err := p.providerService.ListSupportedProviders(r.Context())
 	if err != nil {
@@ -125,6 +132,7 @@ func (p *providerManager) supported(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, providers) // @response []providerservice.ProviderCapability
 }
 
+// get returns the stored configuration status for one provider type.
 func (p *providerManager) get(w http.ResponseWriter, r *http.Request) {
 	providerType := apiframework.GetPathParam(r, "providerType", "Provider type to retrieve.")
 	if providerType == "" {

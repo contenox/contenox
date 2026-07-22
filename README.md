@@ -222,7 +222,7 @@ contenox config set default-provider  llama
 
 ```
 
-> **Note on Local Inference:** The native `llama` and `openvino` backends are driven by `modeld`, Contenox's local inference engine. While `contenox init` registers them, standard pre-compiled binary distributions do not yet bundle `modeld` out of the box. Using local `modeld` engines currently requires compiling from source: see the [modeld Source Build Guide](docs/development/modeld-source-build.md).
+> **Note on Local Inference:** The native `llama` and `openvino` backends are driven by `modeld`, Contenox's local inference engine. `modeld` ships as its own per-platform package: `contenox setup` resolves, downloads, and checksum-verifies a compatible build automatically. To build it yourself instead, see the [modeld Source Build Guide](docs/development/modeld-source-build.md).
 
 ---
 

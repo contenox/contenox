@@ -54,16 +54,16 @@ The workflow calls `tavily.tavily_search` (one or more queries), parses results,
 `leads.txt` ends up looking like this (real sample, names verified against actual seed announcements):
 
 ```text
-1. Company Name: Cyb3r Operations
-   Founder/CEO: Vincent Cook
+1. Company Name: Acme Robotics
+   Founder/CEO: Jordan Lee
    Summary: A cybersecurity SaaS platform that helps organizations continuously detect, assess, and manage third-party and supply-chain cyber risks in real-time.
 
-2. Company Name: Paygentic
-   Founder/CEO: Susan O'Neill and Samuel A.
+2. Company Name: Northwind Traders
+   Founder/CEO: Morgan Reyes and Alex Kim
    Summary: Provides an agent-first billing and payments infrastructure designed specifically to help AI-native and agent-driven businesses monetize their usage and outcomes.
 
-3. Company Name: Round (Round Treasury)
-   Founder/CEO: Pac O'Shea and Hayyaan Ahmad
+3. Company Name: Globex (Globex Treasury)
+   Founder/CEO: Taylor Brooks and Sam Patel
    Summary: An AI-powered finance automation platform that streamlines treasury management, accounts payable, payroll, and FX for modern B2B finance teams.
 ```
 
@@ -91,7 +91,7 @@ Once you have it:
 export HUBSPOT_TOKEN=pat-na1-...
 ```
 
-> HubSpot also ships an OAuth-only MCP server at `https://mcp.hubspot.com/` with curated CRM tools. If you'd rather use that path — particularly for read-heavy workflows where you want HubSpot's full tool surface — see the [HubSpot via MCP recipe](/cookbook/hubspot-mcp/). The OpenAPI route below is the right pick when you want a hand-curated, narrow tool surface (3 operations vs HubSpot's ~12) and finer write control, and it's the same pattern that works for any vendor shipping an OpenAPI spec without an MCP server.
+> HubSpot also ships an OAuth-only MCP server at `https://mcp.hubspot.com/` with curated CRM tools. If you'd rather use that path — particularly for read-heavy workflows where you want HubSpot's full tool surface — see the [HubSpot via MCP recipe](/docs/use-cases/hubspot-mcp/). The OpenAPI route below is the right pick when you want a hand-curated, narrow tool surface (3 operations vs HubSpot's ~12) and finer write control, and it's the same pattern that works for any vendor shipping an OpenAPI spec without an MCP server.
 
 ---
 
@@ -318,14 +318,14 @@ done
 Real output from a live run against an empty HubSpot portal:
 
 ```text
-▶ Cyb3r Operations
-OK Cyb3r Operations id=429788612851 contacts=776337158347
+▶ Acme Robotics
+OK Acme Robotics id=100000000001 contacts=200000000001
 
-▶ Paygentic
-OK Paygentic id=429822814428 contacts=776398192879,776428048595
+▶ Northwind Traders
+OK Northwind Traders id=100000000002 contacts=200000000002,200000000003
 
-▶ Round (Round Treasury)
-OK Round (Round Treasury) id=429794020561 contacts=776369215708,776422643899
+▶ Globex (Globex Treasury)
+OK Globex (Globex Treasury) id=100000000003 contacts=200000000004,200000000005
 ```
 
 `▶` lines go to stderr (status), `OK` lines to stdout (machine-parseable: company name, id, comma-separated contact ids). Wall-time for 5 leads with 8 founders total: ~30 seconds.

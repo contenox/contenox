@@ -53,6 +53,7 @@ type missionHandler struct {
 	svc missionservice.Service
 }
 
+// create stores a new mission record and returns the created mission.
 func (h *missionHandler) create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	m, err := apiframework.Decode[missionservice.Mission](r) // @request missionservice.Mission
@@ -67,6 +68,7 @@ func (h *missionHandler) create(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusCreated, m) // @response missionservice.Mission
 }
 
+// list returns mission records newest-first, keyset-paginated by creation time.
 func (h *missionHandler) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -101,6 +103,8 @@ func (h *missionHandler) get(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, m) // @response missionservice.Mission
 }
 
+// patch updates a mission's intent and/or status, and can bind it to a
+// session and instance in the same call.
 func (h *missionHandler) patch(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := apiframework.GetPathParam(r, "id", "The unique ID of the mission.")
@@ -140,6 +144,7 @@ func (h *missionHandler) patch(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, m) // @response missionservice.Mission
 }
 
+// delete removes the mission record.
 func (h *missionHandler) delete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := apiframework.GetPathParam(r, "id", "The unique ID of the mission.")

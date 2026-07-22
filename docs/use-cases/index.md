@@ -10,11 +10,11 @@ Each recipe is a **pre-built solution**: pipe data in, the model executes your c
 
 ## Categories
 
-- [Git & DevOps](/cookbook/git-devops/) — commit messages, PR reviews, log summarization
-- [Automated Release Notes](/cookbook/release-notes/) — generate `RELEASE_NOTES.md` from `git log` using a chain pipeline
-- [Stateful Agents with MCP](/cookbook/stateful-agents-mcp/) — persistent memory across tool calls via MCP
-- [Browser Automation with Playwright MCP](/cookbook/playwright-mcp/) — drive a real browser with natural language
-- [Notion as a Tool](/cookbook/notion-mcp/) — create, search, and update Notion via OAuth MCP
-- [Codebase Documentation](/cookbook/codebase-docs/) — architecture guides from your source tree
-- [Leads → HubSpot](/cookbook/leads-to-hubspot/) — pipe a leads file into HubSpot CRM via an OpenAPI sub-spec
-- [HubSpot via MCP](/cookbook/hubspot-mcp/) — OAuth + pre-issued client credentials, works for any vendor MCP without dynamic registration
+- [Git & DevOps](/docs/use-cases/git-devops/) — commit messages, PR reviews, log summarization
+- [Automated Release Notes](/docs/use-cases/release-notes/) — generate `RELEASE_NOTES.md` from `git log` using a chain pipeline
+- [Stateful Agents with MCP](/docs/use-cases/stateful-agents-mcp/) — persistent memory across tool calls via MCP
+- [Browser Automation with Playwright MCP](/docs/use-cases/playwright-mcp/) — drive a real browser with natural language
+- [Notion as a Tool](/docs/use-cases/notion-mcp/) — create, search, and update Notion via OAuth MCP
+- [Codebase Documentation](/docs/use-cases/codebase-docs/) — architecture guides from your source tree
+- [Leads → HubSpot](/docs/use-cases/leads-to-hubspot/) — pipe a leads file into HubSpot CRM via an OpenAPI sub-spec
+- [HubSpot via MCP](/docs/use-cases/hubspot-mcp/) — OAuth + pre-issued client credentials, works for any vendor MCP without dynamic registration

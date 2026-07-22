@@ -87,6 +87,8 @@ func (p *openvinoProvider) CanPrompt() bool {
 
 func (p *openvinoProvider) CanThink() bool { return p.caps.CanThink }
 
+func (p *openvinoProvider) CanVision() bool { return p.caps.CanVision }
+
 func (p *openvinoProvider) GetChatConnection(ctx context.Context, _ string) (modelrepo.LLMChatClient, error) {
 	if !p.isTargeted() && !SessionAvailable() {
 		return nil, p.notWired("chat")
@@ -147,6 +149,9 @@ func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
 	}
 	reasoningParser, reasoningStream := profile.Reasoning.protocols()
 	caps := profile.capabilityConfig()
+	if dir != "" && visionEncoderPresent(dir) {
+		caps.CanVision = true
+	}
 	maxOut := p.caps.MaxOutputTokens
 	if maxOut == 0 {
 		maxOut = caps.MaxOutputTokens
@@ -196,6 +201,10 @@ func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
 	} else {
 		info, derr = modeldconn.Describe(ctx, ref, transport.Config(cfg))
 	}
+	// Pre-Describe best effort: catalog caps or the vision encoder shipped in
+	// the snapshot. A successful Describe below overrides it — the live
+	// daemon's answer is authoritative (see applyModeldTemplateCapabilities).
+	supportsVision := p.caps.CanVision || caps.CanVision
 	if derr == nil {
 		deviceKind = info.DeviceKind
 		freeBytes = info.FreeBytes
@@ -203,6 +212,7 @@ func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
 		describedPlannerContext = info.PlannerEffectiveContext
 		describedModelMaxContext = info.ModelMaxContext
 		applyModeldTemplateCapabilities(&caps, info)
+		supportsVision = info.SupportsVision
 		if v := backendVersionFromModelInfo(info); v != "" {
 			backendID = v
 		}
@@ -222,6 +232,7 @@ func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
 		deviceKind:                deviceKind,
 		freeBytes:                 freeBytes,
 		supportsThinking:          p.caps.CanThink || caps.CanThink,
+		supportsVision:            supportsVision,
 		describedEffectiveContext: describedEffectiveContext,
 		describedPlannerContext:   describedPlannerContext,
 		describedModelMaxContext:  describedModelMaxContext,
@@ -233,6 +244,12 @@ func applyModeldTemplateCapabilities(caps *modelrepo.CapabilityConfig, info tran
 	if info.ChatTemplateSupportsThinking || info.ChatTemplateSupportsReasoningEffort || info.ChatTemplateReasoningFormat != "" {
 		caps.CanThink = true
 	}
+	// Vision is assigned, not OR'd: a live daemon's Describe answer is the
+	// authoritative truth and must be able to downgrade the offline
+	// file-presence signal — an older daemon without VLM support reports false
+	// (or omits the field) and would silently drop image parts if the resolver
+	// still routed images to it.
+	caps.CanVision = info.SupportsVision
 }
 
 func curatedToolProtocol(ctx context.Context, modelName, backendType string) string {

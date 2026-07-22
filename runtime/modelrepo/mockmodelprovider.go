@@ -15,6 +15,7 @@ type MockProvider struct {
 	CanEmbedFlag    bool
 	CanStreamFlag   bool
 	CanPromptFlag   bool
+	CanVisionFlag   bool
 	Backends        []string
 }
 
@@ -67,6 +68,11 @@ func (m *MockProvider) CanPrompt() bool {
 // CanThink returns whether the mock provider can think.
 func (m *MockProvider) CanThink() bool {
 	return false
+}
+
+// CanVision returns whether the mock provider accepts image input.
+func (m *MockProvider) CanVision() bool {
+	return m.CanVisionFlag
 }
 
 // GetChatConnection returns a mock chat client.

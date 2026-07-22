@@ -9,6 +9,7 @@
 package messages
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -58,6 +59,8 @@ type wireBlock struct {
 	Type string `json:"type"`
 	// text
 	Text string `json:"text,omitempty"`
+	// image
+	Source *wireImageSource `json:"source,omitempty"`
 	// tool_use
 	ID    string          `json:"id,omitempty"`
 	Name  string          `json:"name,omitempty"`
@@ -65,6 +68,15 @@ type wireBlock struct {
 	// tool_result
 	ToolUseID string `json:"tool_use_id,omitempty"`
 	Content   string `json:"content,omitempty"`
+}
+
+// wireImageSource is the `source` object of an Anthropic `image` content block.
+// Only the base64 inline form is emitted: type="base64", the image media_type
+// (e.g. image/png), and the base64-encoded image bytes in data.
+type wireImageSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
 }
 
 type wireTool struct {
@@ -86,7 +98,7 @@ func Build(messages []modelrepo.Message, cfg *modelrepo.ChatConfig) (Request, ma
 		}
 		req.Temperature = cfg.Temperature
 		req.TopP = cfg.TopP
-		
+
 		seen := map[string]int{}
 		for _, t := range cfg.Tools {
 			if strings.ToLower(t.Type) != "function" || t.Function == nil {
@@ -100,7 +112,7 @@ func Build(messages []modelrepo.Message, cfg *modelrepo.ChatConfig) (Request, ma
 			name = uniquifyToolName(seen, name)
 			nameMap[name] = orig
 			origToSanitized[orig] = name
-			
+
 			req.Tools = append(req.Tools, wireTool{
 				Name:        name,
 				Description: t.Function.Description,
@@ -141,7 +153,7 @@ func Build(messages []modelrepo.Message, cfg *modelrepo.ChatConfig) (Request, ma
 						name = "tool"
 					}
 				}
-				
+
 				input := json.RawMessage(tc.Function.Arguments)
 				if len(strings.TrimSpace(tc.Function.Arguments)) == 0 {
 					input = json.RawMessage("{}")
@@ -158,6 +170,13 @@ func Build(messages []modelrepo.Message, cfg *modelrepo.ChatConfig) (Request, ma
 			}
 			req.Messages = append(req.Messages, wireMessage{Role: "assistant", Content: blocks})
 		default: // "user" and anything else
+			if len(m.Images) > 0 {
+				req.Messages = append(req.Messages, wireMessage{
+					Role:    "user",
+					Content: imageContentBlocks(m),
+				})
+				continue
+			}
 			if m.Content == "" {
 				continue
 			}
@@ -171,6 +190,29 @@ func Build(messages []modelrepo.Message, cfg *modelrepo.ChatConfig) (Request, ma
 		req.System = strings.Join(systemParts, "\n\n")
 	}
 	return req, nameMap
+}
+
+// imageContentBlocks renders a message's text plus its image attachments as an
+// Anthropic content-blocks array: a leading text block (only when the message
+// carries text), then one base64 `image` block per attachment, in attachment
+// order. Each image block's source is {type:"base64", media_type, data} where
+// data is the base64-encoding of the raw image bytes.
+func imageContentBlocks(m modelrepo.Message) []wireBlock {
+	blocks := make([]wireBlock, 0, len(m.Images)+1)
+	if m.Content != "" {
+		blocks = append(blocks, wireBlock{Type: "text", Text: m.Content})
+	}
+	for _, img := range m.Images {
+		blocks = append(blocks, wireBlock{
+			Type: "image",
+			Source: &wireImageSource{
+				Type:      "base64",
+				MediaType: img.MimeType,
+				Data:      base64.StdEncoding.EncodeToString(img.Data),
+			},
+		})
+	}
+	return blocks
 }
 
 // Response is the non-streaming Anthropic Messages response body.

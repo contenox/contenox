@@ -32,7 +32,7 @@ export type ChatMessageBaseProps = {
   /**
    * Whether the per-message Hide/Show collapse affordance is shown at all.
    * Default true, preserving every existing consumer's behavior. Set false
-   * for Zed-style transcripts where plain messages are never collapsible —
+   * for transcript surfaces where plain messages are never collapsible —
    * only thought blocks / tool detail collapse — so no toggle is rendered
    * and the body always renders open.
    */

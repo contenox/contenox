@@ -175,6 +175,8 @@ func (c *Client) Describe(ctx context.Context, req transport.OpenSessionRequest)
 		ResolvedGpuLayers:                   out.ResolvedGpuLayers,
 		SparseAttention:                     out.SparseAttention,
 		SlidingWindowAttentionTokens:        out.SlidingWindowAttentionTokens,
+		SupportsVision:                      out.SupportsVision,
+		VisionTokensPerImage:                out.VisionTokensPerImage,
 		ChatTemplateFormat:                  out.ChatTemplateFormat,
 		ChatTemplateThinkingStartTag:        out.ChatTemplateThinkingStartTag,
 		ChatTemplateReasoningFormat:         out.ChatTemplateReasoningFormat,

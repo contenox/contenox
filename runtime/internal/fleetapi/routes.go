@@ -61,6 +61,7 @@ type fleetHandler struct {
 	fleet fleetservice.Service
 }
 
+// list returns every fleet instance the kernel currently tracks.
 func (h *fleetHandler) list(w http.ResponseWriter, r *http.Request) {
 	entries, err := h.fleet.List(r.Context())
 	if err != nil {
@@ -70,6 +71,7 @@ func (h *fleetHandler) list(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, entries) // @response []agentinstance.FleetEntry
 }
 
+// get returns the live status of one fleet instance.
 func (h *fleetHandler) get(w http.ResponseWriter, r *http.Request) {
 	id := apiframework.GetPathParam(r, "instanceID", "The unique ID of the instance.")
 	status, err := h.fleet.Get(r.Context(), id)

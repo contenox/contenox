@@ -1,7 +1,9 @@
 # Shell Sessions: a live terminal surface for agent and user
 
-Status: draft blueprint, 2026-07-16. Decisions settled; phases 1+2 planned
-for implementation. Phase 3 (user co-input) explicitly deferred.
+Status: implemented — phases 1+2 landed (`runtime/shellsession`, the
+`acpsvc` terminal verbs, and the Beam terminal surface). Phase 3 (user
+co-input) explicitly deferred. Kept as the design record; decisions dated
+2026-07-16.
 
 ## Definition
 

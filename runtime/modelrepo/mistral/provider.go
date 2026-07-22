@@ -22,6 +22,7 @@ type mistralProvider struct {
 	canEmbed        bool
 	canStream       bool
 	canThink        bool
+	canVision       bool
 	tracker         libtracker.ActivityTracker
 }
 
@@ -50,6 +51,7 @@ func NewMistralProvider(apiKey, modelName string, backendURLs []string, capabili
 		canEmbed:        capability.CanEmbed,
 		canStream:       capability.CanStream,
 		canThink:        capability.CanThink,
+		canVision:       capability.CanVision,
 		tracker:         tracker,
 	}
 }
@@ -65,6 +67,7 @@ func (p *mistralProvider) CanEmbed() bool          { return p.canEmbed }
 func (p *mistralProvider) CanStream() bool         { return p.canStream }
 func (p *mistralProvider) CanPrompt() bool         { return p.canPrompt }
 func (p *mistralProvider) CanThink() bool          { return p.canThink }
+func (p *mistralProvider) CanVision() bool         { return p.canVision }
 
 func (p *mistralProvider) base() mistralClient {
 	return mistralClient{

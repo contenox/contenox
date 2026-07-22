@@ -28,6 +28,7 @@ import (
 	"github.com/contenox/runtime/runtime/enginesvc"
 	"github.com/contenox/runtime/runtime/fleetservice"
 	"github.com/contenox/runtime/runtime/hitlservice"
+	"github.com/contenox/runtime/runtime/internal/compatapi"
 	"github.com/contenox/runtime/runtime/internal/fleetapi"
 	internaltools "github.com/contenox/runtime/runtime/internal/tools"
 	internalweb "github.com/contenox/runtime/runtime/internal/web"
@@ -73,6 +74,13 @@ setup-status, providers, tools, mcp-servers, task-chains, hitl-policies, task
 execution, task events, terminal sessions). Chat, its HITL approvals, and
 execution-state/event replay run over the /acp WebSocket instead (see
 'contenox acp'). The Beam web UI is served at /.
+
+OpenAI- and Ollama-compatible endpoints are served for external clients:
+point an OpenAI client's base URL at the server root (POST /v1/chat/completions,
+GET /v1/models; also under /api/openai) or an Ollama client at the same host
+(GET /api/tags, POST /api/chat, POST /api/generate). Requests execute through
+the configured default chain and runtime defaults; a requested model is honored
+when the default provider serves it, otherwise the default model is used.
 
 Terminal routes are enabled by default on local serve under /api/terminal/sessions.
 Set TERMINAL_ENABLED=false to disable them. TERMINAL_ALLOWED_ROOT defaults to the
@@ -473,7 +481,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// The fleet's lifecycle-policy layer (runtime/fleetservice), wrapping
 	// instances: the /fleet REST routes below are a thin surface over this.
-	fleet := fleetservice.New(instances, agentRegistry, missions, workspaceFactory, workspaceRoot, tracker)
+	fleet := fleetservice.New(instances, agentRegistry, missions, workspaceFactory, workspaceRoot, tracker,
+		// Refuse a dispatch that names a nonexistent HITL envelope, over the same
+		// policy source the approval gate reads.
+		fleetservice.WithPolicyValidator(hitlservice.NewPolicyValidator(hitlSource, runtimetypes.LocalTenantID, "")))
 
 	// The supervision edge's delivery half. A durable operator inbox for reports
 	// that reached no live supervisor (surfaced by /operator-inbox below), and the
@@ -543,6 +554,16 @@ func runServe(cmd *cobra.Command, args []string) error {
 		})
 	}
 
+	runtimeDefaults := stateservice.RuntimeDefaults{
+		ChainRef:    firstNonEmptyStr(opts.EffectiveChain, "default-chain.json"),
+		Model:       opts.EffectiveDefaultModel,
+		Provider:    opts.EffectiveDefaultProvider,
+		AltModel:    opts.EffectiveAltDefaultModel,
+		AltProvider: opts.EffectiveAltDefaultProvider,
+		MaxTokens:   opts.EffectiveMaxTokens,
+		Think:       opts.EffectiveThink,
+	}
+
 	apiMux := http.NewServeMux()
 	cleanupAPI, err := serverapi.New(ctx, apiMux, nodeID, "local", config, serverapi.Dependencies{
 		DB:                   db,
@@ -585,15 +606,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		// (the service's built-in default), mirroring hitlSvc above.
 		HITLPolicySource:      hitlSource,
 		HITLDefaultPolicyName: "",
-		Defaults: stateservice.RuntimeDefaults{
-			ChainRef:    firstNonEmptyStr(opts.EffectiveChain, "default-chain.json"),
-			Model:       opts.EffectiveDefaultModel,
-			Provider:    opts.EffectiveDefaultProvider,
-			AltModel:    opts.EffectiveAltDefaultModel,
-			AltProvider: opts.EffectiveAltDefaultProvider,
-			MaxTokens:   opts.EffectiveMaxTokens,
-			Think:       opts.EffectiveThink,
-		},
+		Defaults:              runtimeDefaults,
 	})
 	if err != nil {
 		return fmt.Errorf("build server: %w", err)
@@ -623,6 +636,23 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// reachable before the browser holds the cookie it issues. stdio ACP is
 	// unaffected — these routes exist only on the serve HTTP surface.
 	serverapi.AddUIAuthRoutes(rootMux, config.Token)
+	// OpenAI- and Ollama-compatible aliases at the root, for clients configured
+	// with a bare base URL (OpenAI: /v1/*; Ollama-native: /api/tags, /api/chat,
+	// ...). These literal patterns are more specific than the /api/ subtree
+	// handler above, so they win without shadowing any /api product route (no
+	// product route registers /chat, /tags, /ps, /show, or /generate). Mutating
+	// compat routes enforce config.Token themselves (authorizeCompatRequest);
+	// the /api/openai/* form is registered inside serverapi.New behind
+	// ProtectAPI like the rest of the product API.
+	compatDeps := compatapi.CompatDeps{
+		Agent:        agent,
+		Chains:       chains,
+		StateService: stateservice.New(engine.State, db, workspaceID),
+		Defaults:     runtimeDefaults,
+		Token:        config.Token,
+	}
+	compatapi.AddRootRoutes(rootMux, compatDeps)
+	compatapi.AddOllamaRoutes(rootMux, compatDeps)
 	if acpAgentFactory != nil {
 		rootMux.Handle("/acp", acpWebSocketHandler(acpAgentFactory, config.Token))
 	}

@@ -119,7 +119,7 @@ func extractTerminalToken(r *http.Request) string {
 	if apiKey != "" {
 		return apiKey
 	}
-	if token := strings.TrimSpace(r.URL.Query().Get("token")); token != "" {
+	if token := strings.TrimSpace(apiframework.GetQueryParam(r, "token", "", "Serve credential passed as a query parameter — the auth fallback for browser WebSocket handshakes, which cannot set an Authorization header. Auth headers take precedence when present.")); token != "" {
 		return token
 	}
 	if cookie, err := r.Cookie("auth_token"); err == nil && cookie != nil {
@@ -128,7 +128,10 @@ func extractTerminalToken(r *http.Request) string {
 	return ""
 }
 
+// createSession opens a new host terminal session for the authenticated
+// principal and returns its ID plus the websocket attach URL.
 func (h *handler) createSession(w http.ResponseWriter, r *http.Request) {
+	// @param token string Serve credential accepted as a query-parameter auth fallback (read via principalFromRequest); auth headers take precedence when present.
 	ctx := r.Context()
 	principal, err := h.principalFromRequest(r)
 	if err != nil {
@@ -162,7 +165,9 @@ func (h *handler) createSession(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusCreated, resp) // @response terminalapi.createSessionResponse
 }
 
+// listSessions returns the authenticated principal's terminal sessions.
 func (h *handler) listSessions(w http.ResponseWriter, r *http.Request) {
+	// @param token string Serve credential accepted as a query-parameter auth fallback (read via principalFromRequest); auth headers take precedence when present.
 	ctx := r.Context()
 	principal, err := h.principalFromRequest(r)
 	if err != nil {
@@ -188,7 +193,9 @@ func (h *handler) listSessions(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, items) // @response []terminalstore.Session
 }
 
+// getSession returns one of the principal's terminal sessions by ID.
 func (h *handler) getSession(w http.ResponseWriter, r *http.Request) {
+	// @param token string Serve credential accepted as a query-parameter auth fallback (read via principalFromRequest); auth headers take precedence when present.
 	ctx := r.Context()
 	principal, err := h.principalFromRequest(r)
 	if err != nil {
@@ -212,7 +219,9 @@ func (h *handler) getSession(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, sess) // @response terminalstore.Session
 }
 
+// deleteSession closes a terminal session by ID and responds 204.
 func (h *handler) deleteSession(w http.ResponseWriter, r *http.Request) {
+	// @param token string Serve credential accepted as a query-parameter auth fallback (read via principalFromRequest); auth headers take precedence when present.
 	principal, err := h.principalFromRequest(r)
 	if err != nil {
 		writeAuthError(w, r, err)
@@ -231,7 +240,7 @@ func (h *handler) deleteSession(w http.ResponseWriter, r *http.Request) {
 		_ = apiframework.Error(w, r, err, apiframework.DeleteOperation)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	w.WriteHeader(http.StatusNoContent) // @response none session closed; the handler writes 204 with no body
 }
 
 func (h *handler) wsHandler() http.Handler {

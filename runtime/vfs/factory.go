@@ -15,17 +15,17 @@ import (
 // The first root is the default, used when a client asks for the sentinel "/"
 // (or nothing), which keeps existing clients that always send cwd:"/" working.
 //
-// # Containment, not exact match (maintainer ruling, 2026-07-21)
+// # Containment, not exact match
 //
 // This Factory once required a requested root to EQUAL an allowlisted root
 // byte-for-byte. That was false protection dressed as safety: it refused
 // legitimate subdirectories of a granted root (you could grant ~/src but not
 // browse ~/src/project) while adding nothing an escape check does not already
 // give — the symlink/traversal guard in Contain/within is what actually keeps a
-// path inside its root. The maintainer's ruling is that the SCOPE of a workspace
-// is the operator's choice: granting a root grants everything under it, and the
-// runtime's job is to enforce that boundary honestly (a sibling, a prefix-trick
-// neighbour like /home/naroX against /home/naro, and a symlink escaping all
+// path inside its root. The SCOPE of a workspace is the operator's choice:
+// granting a root grants everything under it, and the runtime's job is to enforce
+// that boundary honestly (a sibling, a prefix-trick
+// neighbour like /home/userX against /home/user, and a symlink escaping all
 // roots are all refused), not to second-guess the operator by also demanding an
 // exact path.
 //
@@ -185,7 +185,7 @@ func (f *Factory) DescribeRoots() string {
 // roots.
 //
 // Segment-aware containment: the check is filepath.Rel-based (see within), so
-// /home/naroX is NOT "under" /home/naro even though it shares the string prefix.
+// /home/userX is NOT "under" /home/user even though it shares the string prefix.
 // Symlink safety: ResolveRoot follows symlinks before the check, so a link inside
 // a granted root that points outside every root resolves to its real target and
 // is refused.

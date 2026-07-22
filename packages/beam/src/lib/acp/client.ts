@@ -82,6 +82,8 @@ import {
   type AvailableCommand,
   type ClientCapabilities,
   type ContentBlock,
+  type ImagePart,
+  imagePartFromBlock,
   type Implementation,
   type InitializeResponse,
   type ListSessionsResponse,
@@ -191,10 +193,11 @@ export interface SessionInfoEvent {
  * session at once.
  */
 export interface SessionEventHandlers {
-  onMessageChunk?: (text: string, messageId?: string) => void;
+  /** `image` is set when the chunk's content block is an image instead of text (`text` is then `''`) — see `imagePartFromBlock`. */
+  onMessageChunk?: (text: string, messageId?: string, image?: ImagePart) => void;
   onThoughtChunk?: (text: string, messageId?: string) => void;
-  /** `user_message_chunk` — mainly seen during `session/load` history replay. */
-  onUserMessageChunk?: (text: string, messageId?: string) => void;
+  /** `user_message_chunk` — mainly seen during `session/load` history replay. `image` as on `onMessageChunk`. */
+  onUserMessageChunk?: (text: string, messageId?: string, image?: ImagePart) => void;
   onToolCall?: (event: ToolCallEvent) => void;
   onPlan?: (entries: PlanEntry[]) => void;
   onUsage?: (usage: UsageEvent) => void;
@@ -451,10 +454,18 @@ export class AcpClient {
   private routeSessionUpdate(update: SessionUpdate, handlers: SessionEventHandlers): void {
     switch (update.sessionUpdate) {
       case 'user_message_chunk':
-        handlers.onUserMessageChunk?.(update.content.text ?? '', update.messageId);
+        handlers.onUserMessageChunk?.(
+          update.content.text ?? '',
+          update.messageId,
+          imagePartFromBlock(update.content) ?? undefined,
+        );
         return;
       case 'agent_message_chunk':
-        handlers.onMessageChunk?.(update.content.text ?? '', update.messageId);
+        handlers.onMessageChunk?.(
+          update.content.text ?? '',
+          update.messageId,
+          imagePartFromBlock(update.content) ?? undefined,
+        );
         return;
       case 'agent_thought_chunk':
         handlers.onThoughtChunk?.(update.content.text ?? '', update.messageId);

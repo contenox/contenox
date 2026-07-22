@@ -72,7 +72,7 @@ are listed. Use 'contenox model local' to inspect installed local artifacts even
 when modeld is stopped or serving the other local backend.
 
 Shows model name, backend, and effective capabilities observed at runtime plus
-manual overrides (chat, embed, prompt, think, context length).
+manual overrides (chat, embed, prompt, think, vision, context length).
 
 Examples:
   contenox model list`,
@@ -153,6 +153,7 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 		canEmbed    map[string]bool
 		canPrompt   map[string]bool
 		canThink    map[string]bool
+		canVision   map[string]bool
 		ctx         map[string]int
 	}
 	var entries []entry
@@ -165,6 +166,7 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 			canEmbed:    map[string]bool{},
 			canPrompt:   map[string]bool{},
 			canThink:    map[string]bool{},
+			canVision:   map[string]bool{},
 			ctx:         map[string]int{},
 		}
 		for _, pm := range bs.PulledModels {
@@ -173,6 +175,7 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 			e.canEmbed[pm.Model] = pm.CanEmbed
 			e.canPrompt[pm.Model] = pm.CanPrompt
 			e.canThink[pm.Model] = pm.CanThink
+			e.canVision[pm.Model] = pm.CanVision
 			e.ctx[pm.Model] = pm.ContextLength
 		}
 		// Some providers only report model names; when the backend is healthy,
@@ -187,7 +190,7 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 
 	any := false
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "BACKEND\tMODEL\tCHAT\tEMBED\tPROMPT\tTHINK\tCTX")
+	fmt.Fprintln(w, "BACKEND\tMODEL\tCHAT\tEMBED\tPROMPT\tTHINK\tVISION\tCTX")
 	activeModeldBackend := modeldconn.Backend()
 	for _, e := range entries {
 		if hideInactiveLocalBackend(e.backendType, activeModeldBackend, e.backendErr, e.pulled) {
@@ -198,11 +201,11 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 			if len(errMsg) > 80 {
 				errMsg = errMsg[:80] + "..."
 			}
-			fmt.Fprintf(w, "%s\t(unreachable: %s)\t\t\t\t\t\n", e.backendName, errMsg)
+			fmt.Fprintf(w, "%s\t(unreachable: %s)\t\t\t\t\t\t\n", e.backendName, errMsg)
 			continue
 		}
 		if len(e.pulled) == 0 {
-			fmt.Fprintf(w, "%s\t(no models)\t\t\t\t\t\n", e.backendName)
+			fmt.Fprintf(w, "%s\t(no models)\t\t\t\t\t\t\n", e.backendName)
 			continue
 		}
 		for _, m := range e.pulled {
@@ -211,12 +214,13 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 			if preferredModel != "" && m == preferredModel {
 				displayName += " *"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%d\n",
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\n",
 				e.backendName, displayName,
 				boolMark(e.canChat[m]),
 				boolMark(e.canEmbed[m]),
 				boolMark(e.canPrompt[m]),
 				boolMark(e.canThink[m]),
+				boolMark(e.canVision[m]),
 				e.ctx[m],
 			)
 		}
@@ -586,6 +590,9 @@ tar-stream support that hasn't landed yet, anywhere.`,
 				}
 				if d.SourceURL == "" {
 					return fmt.Errorf("curated model %q has no source URL to stream from", name)
+				}
+				if d.MMProjURL != "" {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: %q is a vision model but push streams only the model GGUF — the multimodal projector (mmproj.gguf) is not pushed, so the target serves it text-only until %s is placed beside model.gguf on that node (e.g. via 'contenox model pull %s' there)\n", name, llamaMMProjFileName, name)
 				}
 				fmt.Fprintf(cmd.ErrOrStderr(), "streaming %s from registry source -> backend %s\n  %s\n", name, backendName, d.SourceURL)
 				resp, httpErr := http.Get(d.SourceURL) //nolint:gosec

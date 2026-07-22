@@ -19,6 +19,7 @@ type OllamaProvider struct {
 	SupportsStream  bool
 	SupportsPrompt  bool
 	SupportsThink   bool
+	SupportsVision  bool
 	apiKey          string
 	httpClient      *http.Client
 	Backends        []string
@@ -43,6 +44,7 @@ func NewOllamaProvider(name string, backends []string, httpClient *http.Client, 
 		SupportsStream:  caps.CanStream,
 		SupportsPrompt:  caps.CanPrompt,
 		SupportsThink:   caps.CanThink,
+		SupportsVision:  caps.CanVision,
 		apiKey:          apiKey,
 		Backends:        backends,
 		httpClient:      httpClient,
@@ -87,6 +89,10 @@ func (p *OllamaProvider) CanPrompt() bool {
 
 func (p *OllamaProvider) CanThink() bool {
 	return p.SupportsThink
+}
+
+func (p *OllamaProvider) CanVision() bool {
+	return p.SupportsVision
 }
 
 func (p *OllamaProvider) GetChatConnection(ctx context.Context, backendID string) (modelrepo.LLMChatClient, error) {

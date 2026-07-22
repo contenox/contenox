@@ -168,10 +168,15 @@ func (s *State) applyCapabilityOverrides(ctx context.Context, provider string, m
 		return model
 	}
 	override, ok, err := modelcapability.New(runtimetypes.New(s.dbInstance.WithoutTransaction())).Get(ctx, provider, name)
-	if err != nil || !ok || override.CanThink == nil {
+	if err != nil || !ok {
 		return model
 	}
-	model.CanThink = *override.CanThink
+	if override.CanThink != nil {
+		model.CanThink = *override.CanThink
+	}
+	if override.CanVision != nil {
+		model.CanVision = *override.CanVision
+	}
 	return model
 }
 

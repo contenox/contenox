@@ -17,6 +17,9 @@ type Provider interface {
 	CanStream() bool
 	CanPrompt() bool
 	CanThink() bool
+	// CanVision reports whether the model accepts image input. The resolver
+	// only routes image-bearing requests to providers that return true.
+	CanVision() bool
 	GetChatConnection(ctx context.Context, backendID string) (LLMChatClient, error)
 	GetPromptConnection(ctx context.Context, backendID string) (LLMPromptExecClient, error)
 	GetEmbedConnection(ctx context.Context, backendID string) (LLMEmbedClient, error)
@@ -33,4 +36,6 @@ type CapabilityConfig struct {
 	CanStream       bool
 	CanPrompt       bool
 	CanThink        bool
+	// CanVision marks models that accept image input.
+	CanVision bool
 }

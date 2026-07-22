@@ -16,6 +16,8 @@ type oauthStartResponse struct {
 	AuthorizationURL string `json:"authorizationUrl"`
 }
 
+// oauthStart begins the OAuth authorization flow for an MCP server and
+// returns the provider authorization URL to visit.
 func (h *mcpServerHandler) oauthStart(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if err := h.authorize(r); err != nil {
@@ -41,7 +43,10 @@ func (h *mcpServerHandler) oauthStart(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, resp) // @response mcpserverapi.oauthStartResponse
 }
 
+// oauthCallback completes an MCP server OAuth flow from the provider's
+// redirect and 302-redirects back to the client UI.
 func (h *mcpServerHandler) oauthCallback(w http.ResponseWriter, r *http.Request) {
+	// @response redirect 302 redirect back to the client UI with success or error query parameters appended; no response body.
 	ctx := r.Context()
 	req := mcpserverservice.OAuthCallbackRequest{
 		State:            strings.TrimSpace(apiframework.GetQueryParam(r, "state", "", "The OAuth state value returned by the provider.")),

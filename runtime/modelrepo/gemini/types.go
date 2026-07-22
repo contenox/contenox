@@ -21,8 +21,19 @@ type geminiPart struct {
 	Text             string                  `json:"text,omitempty"`
 	Thought          bool                    `json:"thought,omitempty"`
 	ThoughtSignature string                  `json:"thoughtSignature,omitempty"`
+	InlineData       *geminiInlineData       `json:"inlineData,omitempty"`
 	FunctionCall     *geminiFunctionCall     `json:"functionCall,omitempty"`
 	FunctionResponse *geminiFunctionResponse `json:"functionResponse,omitempty"`
+}
+
+// geminiInlineData is an inline binary blob part (e.g. an image) sent in a
+// content part. The Gemini v1beta REST JSON is proto3-JSON and accepts the
+// lowerCamelCase field names, matching the casing this package already uses for
+// functionCall / functionResponse / thoughtSignature. encoding/json base64
+// (StdEncoding) encodes the Data []byte on the wire.
+type geminiInlineData struct {
+	MimeType string `json:"mimeType"`
+	Data     []byte `json:"data"`
 }
 
 type geminiContent struct {

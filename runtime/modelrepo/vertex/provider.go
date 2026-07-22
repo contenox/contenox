@@ -26,6 +26,7 @@ type vertexProvider struct {
 	canEmbed        bool
 	canStream       bool
 	canThink        bool
+	canVision       bool
 	tracker         libtracker.ActivityTracker
 
 	// Cached token source. Initialized once on first use and reused across all
@@ -67,21 +68,23 @@ func NewVertexProvider(publisher, modelName string, baseURLs []string, cap model
 		canEmbed:        cap.CanEmbed,
 		canStream:       cap.CanStream,
 		canThink:        cap.CanThink,
+		canVision:       cap.CanVision,
 		tracker:         tracker,
 	}
 }
 
-func (p *vertexProvider) GetBackendIDs() []string  { return []string{p.baseURL} }
-func (p *vertexProvider) ModelName() string        { return p.modelName }
-func (p *vertexProvider) GetID() string            { return p.id }
-func (p *vertexProvider) GetType() string          { return "vertex-" + p.publisher }
-func (p *vertexProvider) GetContextLength() int    { return p.contextLength }
-func (p *vertexProvider) GetMaxOutputTokens() int  { return p.maxOutputTokens }
-func (p *vertexProvider) CanChat() bool            { return p.canChat }
-func (p *vertexProvider) CanEmbed() bool           { return p.canEmbed }
-func (p *vertexProvider) CanStream() bool          { return p.canStream }
-func (p *vertexProvider) CanPrompt() bool          { return p.canPrompt }
-func (p *vertexProvider) CanThink() bool           { return p.canThink }
+func (p *vertexProvider) GetBackendIDs() []string { return []string{p.baseURL} }
+func (p *vertexProvider) ModelName() string       { return p.modelName }
+func (p *vertexProvider) GetID() string           { return p.id }
+func (p *vertexProvider) GetType() string         { return "vertex-" + p.publisher }
+func (p *vertexProvider) GetContextLength() int   { return p.contextLength }
+func (p *vertexProvider) GetMaxOutputTokens() int { return p.maxOutputTokens }
+func (p *vertexProvider) CanChat() bool           { return p.canChat }
+func (p *vertexProvider) CanEmbed() bool          { return p.canEmbed }
+func (p *vertexProvider) CanStream() bool         { return p.canStream }
+func (p *vertexProvider) CanPrompt() bool         { return p.canPrompt }
+func (p *vertexProvider) CanThink() bool          { return p.canThink }
+func (p *vertexProvider) CanVision() bool         { return p.canVision }
 
 // tokenFn returns an access token using the provider's cached oauth2 source.
 // The source is built once on first use (with context.Background so it

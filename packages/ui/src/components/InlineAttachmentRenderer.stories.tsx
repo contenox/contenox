@@ -120,11 +120,27 @@ export const StateUnit: Story = {
   ),
 };
 
+// A 1x1 transparent PNG — enough to exercise the data-URI assembly.
+const image: InlineAttachment = {
+  kind: "image",
+  mimeType: "image/png",
+  data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+  alt: "A tiny example image",
+};
+
+export const Image: Story = {
+  render: () => (
+    <div style={{ width: 560 }}>
+      <InlineAttachmentRenderer attachment={image} />
+    </div>
+  ),
+};
+
 export const AllKinds: Story = {
   render: () => (
     <div style={{ width: 560 }}>
       <InlineAttachments
-        attachments={[fileView, terminalExcerpt, planSummary, dag, stateUnit]}
+        attachments={[fileView, terminalExcerpt, planSummary, dag, stateUnit, image]}
       />
     </div>
   ),

@@ -24,6 +24,7 @@ type bedrockProvider struct {
 	canPrompt       bool
 	canStream       bool
 	canThink        bool
+	canVision       bool
 	tracker         libtracker.ActivityTracker
 
 	// aws.Config / SDK client built once and reused (mirrors vertex tokenOnce).
@@ -51,6 +52,7 @@ func NewBedrockProvider(region, credBlob, modelName string, cap modelrepo.Capabi
 		canPrompt:       cap.CanPrompt,
 		canStream:       cap.CanStream,
 		canThink:        cap.CanThink,
+		canVision:       cap.CanVision,
 		tracker:         tracker,
 	}
 }
@@ -66,6 +68,7 @@ func (p *bedrockProvider) CanEmbed() bool          { return false }
 func (p *bedrockProvider) CanStream() bool         { return p.canStream }
 func (p *bedrockProvider) CanPrompt() bool         { return p.canPrompt }
 func (p *bedrockProvider) CanThink() bool          { return p.canThink }
+func (p *bedrockProvider) CanVision() bool         { return p.canVision }
 
 func (p *bedrockProvider) client(ctx context.Context) (bedrockClient, error) {
 	p.once.Do(func() {

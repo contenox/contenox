@@ -171,6 +171,39 @@ func TestUnit_ChatService_PersistDiff_WithinBatchDedup(t *testing.T) {
 	require.Len(t, msgs, 2, "duplicate user message must be deduped within the batch; only 2 distinct rows expected")
 }
 
+// Image attachments ride inside the opaque JSON payload, so persistence needs
+// no schema change — this guards the base64 []byte round-trip end to end.
+func TestUnit_ChatService_PersistDiff_RoundTripsImages(t *testing.T) {
+	ctx, db := setupDB(t)
+	store := messagestore.New(db.WithoutTransaction(), "")
+	mgr := chatservice.NewManager("")
+
+	require.NoError(t, store.CreateMessageIndex(ctx, "idx-img", "carol"))
+
+	now := time.Now().UTC()
+	png := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
+	history := []taskengine.Message{
+		{
+			ID:      "img1",
+			Role:    "user",
+			Content: "what is in this screenshot?",
+			Images: []taskengine.ImagePart{
+				{Data: png, MimeType: "image/png"},
+			},
+			Timestamp: now,
+		},
+	}
+	require.NoError(t, mgr.PersistDiff(ctx, db.WithoutTransaction(), "idx-img", history))
+
+	messages, err := mgr.ListMessages(ctx, db.WithoutTransaction(), "idx-img")
+	require.NoError(t, err)
+	require.Len(t, messages, 1)
+	require.Equal(t, "what is in this screenshot?", messages[0].Content)
+	require.Len(t, messages[0].Images, 1)
+	require.Equal(t, png, messages[0].Images[0].Data)
+	require.Equal(t, "image/png", messages[0].Images[0].MimeType)
+}
+
 func TestUnit_MessageStore_WithTransaction(t *testing.T) {
 	ctx, db := setupDB(t)
 	store := messagestore.New(db.WithoutTransaction(), "")

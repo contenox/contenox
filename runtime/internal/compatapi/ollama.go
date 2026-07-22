@@ -2,6 +2,7 @@ package compatapi
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -15,6 +16,10 @@ import (
 	"github.com/contenox/runtime/runtime/taskengine"
 )
 
+// AddOllamaRoutes registers the Ollama-native compat aliases (/api/chat,
+// /api/generate, ...) for clients that point an Ollama base URL at the bare host.
+//
+// openapi:exclude mounted on the serve ROOT mux (contenoxcli/serve_cmd.go); under the spec's servers:/api these would document /api/api/* URLs that do not exist
 func AddOllamaRoutes(mux *http.ServeMux, deps CompatDeps) {
 	h := &ollamaHandler{deps: deps}
 
@@ -56,6 +61,10 @@ type ollamaModelDetails struct {
 type ollamaMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+	// Images are base64-encoded image attachments (Ollama's native multimodal
+	// field). Request-only: responses never carry images, so omitempty keeps
+	// them out of the reply.
+	Images []string `json:"images,omitempty"`
 }
 
 type ollamaChatRequest struct {
@@ -79,6 +88,7 @@ type ollamaGenerateRequest struct {
 	Model   string         `json:"model"`
 	Prompt  string         `json:"prompt"`
 	Suffix  string         `json:"suffix,omitempty"`
+	Images  []string       `json:"images,omitempty"`
 	Stream  *bool          `json:"stream,omitempty"`
 	Options map[string]any `json:"options,omitempty"`
 }
@@ -114,6 +124,7 @@ type ollamaModelInfo struct {
 	CanPrompt     bool
 	CanStream     bool
 	CanThink      bool
+	CanVision     bool
 }
 
 func (h *ollamaHandler) tags(w http.ResponseWriter, r *http.Request) {
@@ -228,9 +239,15 @@ func (h *ollamaHandler) chat(w http.ResponseWriter, r *http.Request) {
 
 	messages := make([]taskengine.Message, 0, len(req.Messages))
 	for _, m := range req.Messages {
+		images, err := decodeOllamaImages(m.Images)
+		if err != nil {
+			writeOllamaError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		messages = append(messages, taskengine.Message{
 			Role:    m.Role,
 			Content: m.Content,
+			Images:  images,
 		})
 	}
 	resp, err := h.deps.Agent.Prompt(ctx, agentservice.PromptRequest{
@@ -327,7 +344,12 @@ func (h *ollamaHandler) generate(w http.ResponseWriter, r *http.Request) {
 	if useFIM {
 		input = buildFIMHistory(req.Prompt, req.Suffix)
 	} else {
-		input = taskengine.ChatHistory{Messages: []taskengine.Message{{Role: "user", Content: req.Prompt}}}
+		images, imgErr := decodeOllamaImages(req.Images)
+		if imgErr != nil {
+			writeOllamaError(w, http.StatusBadRequest, imgErr.Error())
+			return
+		}
+		input = taskengine.ChatHistory{Messages: []taskengine.Message{{Role: "user", Content: req.Prompt, Images: images}}}
 	}
 	resp, err := h.deps.Agent.Prompt(ctx, agentservice.PromptRequest{
 		SessionID:    sessionID,
@@ -501,6 +523,7 @@ func ollamaModelInfoFromPulled(pulled statetype.ModelPullStatus, fallback time.T
 		CanPrompt:     pulled.CanPrompt,
 		CanStream:     pulled.CanStream,
 		CanThink:      pulled.CanThink,
+		CanVision:     pulled.CanVision,
 	}
 }
 
@@ -541,6 +564,7 @@ func mergeOllamaModelInfo(existing, next ollamaModelInfo) ollamaModelInfo {
 	merged.CanPrompt = existing.CanPrompt || next.CanPrompt
 	merged.CanStream = existing.CanStream || next.CanStream
 	merged.CanThink = existing.CanThink || next.CanThink
+	merged.CanVision = existing.CanVision || next.CanVision
 	return merged
 }
 
@@ -558,6 +582,9 @@ func (m ollamaModelInfo) capabilities() []string {
 	}
 	if m.CanThink {
 		caps = append(caps, "thinking")
+	}
+	if m.CanVision {
+		caps = append(caps, "vision")
 	}
 	return caps
 }
@@ -676,6 +703,30 @@ func writeJSONLine(w http.ResponseWriter, payload any) error {
 		f.Flush()
 	}
 	return nil
+}
+
+// decodeOllamaImages decodes Ollama's native base64 image list into image
+// attachments. Ollama sends raw base64 (no data: URI and no declared media
+// type), so the media type is sniffed from the decoded bytes; a payload that
+// does not sniff as an image is rejected rather than forwarded as a phantom
+// attachment the model would silently ignore.
+func decodeOllamaImages(images []string) ([]taskengine.ImagePart, error) {
+	if len(images) == 0 {
+		return nil, nil
+	}
+	out := make([]taskengine.ImagePart, 0, len(images))
+	for i, enc := range images {
+		raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(enc))
+		if err != nil {
+			return nil, fmt.Errorf("image %d is not valid base64: %w", i, err)
+		}
+		mimeType := http.DetectContentType(raw)
+		if !strings.HasPrefix(mimeType, "image/") {
+			return nil, fmt.Errorf("image %d is not a recognized image (sniffed %q)", i, mimeType)
+		}
+		out = append(out, taskengine.ImagePart{Data: raw, MimeType: mimeType})
+	}
+	return out, nil
 }
 
 func writeOllamaError(w http.ResponseWriter, status int, message string) {
