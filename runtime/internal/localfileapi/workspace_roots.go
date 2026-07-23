@@ -8,16 +8,23 @@ import (
 	"strings"
 
 	apiframework "github.com/contenox/runtime/apiframework"
+	"github.com/contenox/runtime/runtime/project"
 	"github.com/contenox/runtime/runtime/vfs"
 	"github.com/contenox/runtime/runtime/workspacegrants"
 )
 
 // workspaceRoot is one entry of the /workspace/roots response: an allowlisted
-// directory a client may choose as a workspace, with `default` marking the one
-// that "/" and the empty root resolve to (see vfs.Factory.Default).
+// project directory a client may choose as a workspace. `default` marks the one
+// that "/" and the empty root resolve to (see vfs.Factory.Default); `name` is the
+// project's EXPLICIT marker name — empty for an unmarked or unnamed root, so a
+// client can tell a real named project from a structural root (it applies its own
+// basename fallback for display); and `managed` marks a root the operator granted
+// at runtime — the forgettable ones, as opposed to serve's launch roots.
 type workspaceRoot struct {
 	Path    string `json:"path"`
+	Name    string `json:"name"`
 	Default bool   `json:"default"`
+	Managed bool   `json:"managed"`
 }
 
 // workspaceRootsResponse is the /workspace/roots response body — the shape GET,
@@ -28,9 +35,12 @@ type workspaceRootsResponse struct {
 }
 
 // addWorkspaceRootRequest is the POST /workspace/roots body: the directory to
-// grant as a workspace root.
+// register as a project workspace root, and an optional friendly name stamped
+// into its marker (re-adding an already-registered path under a new name
+// renames the project).
 type addWorkspaceRootRequest struct {
 	Path string `json:"path"`
+	Name string `json:"name"`
 }
 
 // RootsMutators carries the write half of the workspace-roots surface: the
@@ -46,12 +56,17 @@ type addWorkspaceRootRequest struct {
 // workspacegrants.ErrInvalidGrant is a client input fault (422); any other error
 // is a storage/apply fault (500).
 type RootsMutators struct {
-	// Add persists and applies a grant for path. Returning
-	// workspacegrants.ErrInvalidGrant means the path was bad input.
-	Add func(ctx context.Context, path string) error
+	// Add registers path as a project workspace root under an optional friendly
+	// name (stamped into the project's marker; an explicit name renames an
+	// already-named project), then persists and applies the grant. Returning
+	// workspacegrants.ErrInvalidGrant means the path or name was bad input.
+	Add func(ctx context.Context, path, name string) error
 	// Remove revokes the grant for path (idempotent — revoking a path that was
 	// never granted is not an error).
 	Remove func(ctx context.Context, path string) error
+	// Grants returns the paths the operator granted at runtime, so the response can
+	// mark them `managed` (forgettable). Optional: nil leaves every root unmanaged.
+	Grants func(ctx context.Context) []string
 }
 
 // AddWorkspaceRootsRoutes registers GET /workspace/roots — which reports the
@@ -90,7 +105,7 @@ func AddWorkspaceRootsRoutes(mux *http.ServeMux, factory *vfs.Factory, mutators 
 		return
 	}
 	mux.HandleFunc("GET /workspace/roots", func(w http.ResponseWriter, r *http.Request) {
-		writeRootsResponse(w, r, factory) // @response localfileapi.workspaceRootsResponse
+		writeRootsResponse(w, r, factory, mutators) // @response localfileapi.workspaceRootsResponse
 	})
 	if mutators == nil {
 		return
@@ -108,11 +123,11 @@ func AddWorkspaceRootsRoutes(mux *http.ServeMux, factory *vfs.Factory, mutators 
 					apiframework.CreateOperation)
 				return
 			}
-			if err := mutators.Add(r.Context(), req.Path); err != nil {
+			if err := mutators.Add(r.Context(), req.Path, req.Name); err != nil {
 				_ = apiframework.Error(w, r, grantError(err), apiframework.CreateOperation)
 				return
 			}
-			writeRootsResponse(w, r, factory) // @response localfileapi.workspaceRootsResponse
+			writeRootsResponse(w, r, factory, mutators) // @response localfileapi.workspaceRootsResponse
 		})
 	}
 	if mutators.Remove != nil {
@@ -128,7 +143,7 @@ func AddWorkspaceRootsRoutes(mux *http.ServeMux, factory *vfs.Factory, mutators 
 				_ = apiframework.Error(w, r, grantError(err), apiframework.DeleteOperation)
 				return
 			}
-			writeRootsResponse(w, r, factory) // @response localfileapi.workspaceRootsResponse
+			writeRootsResponse(w, r, factory, mutators) // @response localfileapi.workspaceRootsResponse
 		})
 	}
 }
@@ -137,14 +152,37 @@ func AddWorkspaceRootsRoutes(mux *http.ServeMux, factory *vfs.Factory, mutators 
 // GET, POST, and DELETE all end here, so a mutating call returns the SAME body a
 // fresh GET would — the client re-renders the picker from the response it already
 // has, with no follow-up read.
-func writeRootsResponse(w http.ResponseWriter, r *http.Request, factory *vfs.Factory) {
+func writeRootsResponse(w http.ResponseWriter, r *http.Request, factory *vfs.Factory, mutators *RootsMutators) {
 	def := factory.Default()
 	roots := factory.Roots()
+	managed := managedRootSet(r.Context(), mutators)
 	resp := workspaceRootsResponse{Roots: make([]workspaceRoot, len(roots))}
 	for i, root := range roots {
-		resp.Roots[i] = workspaceRoot{Path: root, Default: root == def}
+		resp.Roots[i] = workspaceRoot{
+			Path:    root,
+			Name:    project.MarkerName(root),
+			Default: root == def,
+			Managed: managed[root],
+		}
 	}
 	_ = apiframework.Encode(w, r, http.StatusOK, resp) // @response localfileapi.workspaceRootsResponse
+}
+
+// managedRootSet resolves the operator's runtime grants into the same
+// symlink-resolved space factory.Roots() reports, so a grant marks its matching
+// root `managed` even when the configured path was a symlink. Empty when no
+// grants resolver was supplied (read-only mount) — every root is then unmanaged.
+func managedRootSet(ctx context.Context, mutators *RootsMutators) map[string]bool {
+	set := map[string]bool{}
+	if mutators == nil || mutators.Grants == nil {
+		return set
+	}
+	for _, g := range mutators.Grants(ctx) {
+		if resolved, err := vfs.ResolveRoot(g); err == nil {
+			set[resolved] = true
+		}
+	}
+	return set
 }
 
 // grantError maps a mutator failure onto the right API error: a bad grant path

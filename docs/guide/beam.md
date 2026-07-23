@@ -123,6 +123,33 @@ WORKSPACE_ROOTS="$HOME/code/api:$HOME/code/web" contenox serve
 A session can only ever choose a workspace inside this allowlist — it bounds what
 any browser client can reach.
 
+#### The Projects page
+
+Those launch-time roots are structural — they live in the serve command. To
+manage projects *from the browser*, without restarting serve, open **Projects**
+in the admin navigation (or press ⌘/Ctrl-K and search "projects"). It is the
+allowlist made legible: every root the runtime can open sessions in, each shown
+by its friendly project **name** (the folder's `.contenox/workspace.id` marker
+name, or the folder name when unset).
+
+- **Add a project** points the runtime at an existing folder on its host and
+  names it. A too-broad location — your home folder, a drive root — is refused
+  with a teaching message; grant the project folder itself. Adding a folder that
+  is already registered under a new name **renames** it.
+- **New session** on any project row is a launcher: it opens a fresh chat already
+  scoped to that project, so you go from "register a folder" to "work in it" in
+  one click instead of adding it and then re-picking it in the chat's Workspace
+  control.
+- **Forget** appears only on the projects you added at runtime (the *managed*
+  ones — the serve launch roots and the default root are structural and stay).
+  Forgetting removes the folder from the runtime only; the folder and its files
+  are never touched, and the confirmation says so, noting how many open sessions
+  live under it.
+
+This is the same registry the CLI's [`contenox workspace`](/docs/reference/contenox-cli/#contenox-workspace)
+verbs manage and the [`init --project`](/docs/reference/contenox-cli/#contenox-init-provider)
+marker writes — one project identity across serve, the CLI, and the browser.
+
 ---
 
 ## 2. A tour of the window
@@ -130,8 +157,13 @@ any browser client can reach.
 ### Session sidebar
 
 The left sidebar lists your chat sessions. **New session** starts a fresh one;
-each row links to its conversation and carries a delete button. These are the
-same sessions the CLI sees — see [step 3](#3-shared-with-the-cli).
+each row links to its conversation and carries a delete button. Sessions are
+grouped by the **project** they run in — the friendly name of the registered
+root that contains the session's directory (see the [Projects page](#the-projects-page)),
+falling back to the folder name for a session outside any named project. Each
+group header shows the project and its session count; with only one project in
+play the list stays flat. These are the same sessions the CLI sees — see
+[step 3](#3-shared-with-the-cli).
 
 Next to **New session** is a chevron — **New chat with an agent**. It only
 appears once you have [registered an external ACP agent](/docs/integrations/agents/external-acp-agents/),
@@ -151,7 +183,7 @@ under an **Options** dropdown on narrow viewports):
 | **HITL Policy** | The named [HITL policy](/docs/guide/hitl/) that decides which tool calls pause for approval. |
 | **Think** | Reasoning effort — `Auto`, `Off`, `Minimal`, `Low`, `Medium`, `High`, or `XHigh`. |
 | **Token Limit** | The per-turn output token budget. |
-| **Workspace** | Which allowlisted directory (see step 1) the session is bound to — chosen on the empty chat before the first message, immutable afterwards. |
+| **Workspace** | Which [registered project](#the-projects-page) the session is bound to — chosen on the empty chat before the first message, immutable afterwards. A launcher on the Projects page pre-selects it. |
 
 Changing a control affects only that session, so you can keep one session on a
 local model with a strict policy and another on a hosted model — side by side.

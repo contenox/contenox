@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/contenox/runtime/runtime/project"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/workspacegrants"
 	"github.com/spf13/cobra"
@@ -26,7 +27,9 @@ func workspaceTestRoot(sub *cobra.Command) *cobra.Command {
 func runWorkspace(t *testing.T, dbPath string, args ...string) (string, error) {
 	t.Helper()
 	sub := &cobra.Command{Use: "workspace"}
-	sub.AddCommand(&cobra.Command{Use: "add", Args: cobra.ExactArgs(1), RunE: runWorkspaceAdd})
+	addCmd := &cobra.Command{Use: "add", Args: cobra.ExactArgs(1), RunE: runWorkspaceAdd}
+	addCmd.Flags().String("name", "", "friendly project name (mirrors the real flag)")
+	sub.AddCommand(addCmd)
 	sub.AddCommand(&cobra.Command{Use: "remove", Args: cobra.ExactArgs(1), RunE: runWorkspaceRemove})
 	sub.AddCommand(&cobra.Command{Use: "list", Args: cobra.NoArgs, RunE: runWorkspaceList})
 	root := workspaceTestRoot(sub)
@@ -74,6 +77,47 @@ func TestUnit_WorkspaceCLI_AddListRemoveRoundTrip(t *testing.T) {
 
 	ctx, store, done = storeAt(t, dbPath)
 	require.Empty(t, workspacegrants.ReadGrants(ctx, store))
+	done()
+}
+
+// TestUnit_WorkspaceCLI_AddStampsProjectMarker verifies CLI/serve parity for the
+// project registry: `workspace add --name` stamps the same .contenox marker the
+// serve-side REST mutator writes, `list` shows the friendly name, re-adding with
+// a new --name renames, and a bad name is refused before anything persists.
+func TestUnit_WorkspaceCLI_AddStampsProjectMarker(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "workspace-cli.db")
+	grant := t.TempDir()
+
+	out, err := runWorkspace(t, dbPath, "add", grant, "--name", "acme-api")
+	require.NoError(t, err)
+	require.Contains(t, out, "(acme-api)", "the add echo shows the project name")
+
+	m, ok := project.ReadFromProjectRoot(grant)
+	require.True(t, ok, "the grant carries a project marker")
+	require.NotEmpty(t, m.ID)
+	require.Equal(t, "acme-api", m.Name)
+
+	out, err = runWorkspace(t, dbPath, "list")
+	require.NoError(t, err)
+	require.Contains(t, out, "(acme-api)", "list shows the friendly name next to the path")
+
+	// Re-adding under a new name renames the project; the ID stays stable.
+	out, err = runWorkspace(t, dbPath, "add", grant, "--name", "acme-api-v2")
+	require.NoError(t, err)
+	require.Contains(t, out, "(acme-api-v2)")
+	renamed, ok := project.ReadFromProjectRoot(grant)
+	require.True(t, ok)
+	require.Equal(t, m.ID, renamed.ID, "renaming never rewrites the workspace id")
+	require.Equal(t, "acme-api-v2", renamed.Name)
+
+	// A control-character name is refused BEFORE the grant persists.
+	other := t.TempDir()
+	_, err = runWorkspace(t, dbPath, "add", other, "--name", "bad\nname")
+	require.Error(t, err)
+	require.ErrorIs(t, err, workspacegrants.ErrInvalidGrant)
+	ctx, store, done := storeAt(t, dbPath)
+	require.NotContains(t, workspacegrants.ReadGrants(ctx, store), filepath.Clean(other),
+		"a refused name must not leave a grant behind")
 	done()
 }
 

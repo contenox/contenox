@@ -146,7 +146,34 @@ func normalizeGrant(path string) (string, error) {
 	if !info.IsDir() {
 		return "", fmt.Errorf("%w: %q is a file, not a directory; a workspace root must be a directory", ErrInvalidGrant, abs)
 	}
+	if broad, why := isBroadParent(abs); broad {
+		return "", fmt.Errorf("%w: %q %s; grant a specific project directory, not a broad parent", ErrInvalidGrant, abs, why)
+	}
 	return abs, nil
+}
+
+// isBroadParent refuses roots that would defeat project scoping by handing a
+// session an entire home, disk, or top-level system tree: the filesystem root,
+// the operator's home directory, and any single-segment absolute path (e.g.
+// "/home", "/mnt", "/srv"). A real project directory is at least two segments
+// deep ("/home/me/proj", "/srv/app"), so this blocks the footguns without
+// blocking real layouts. It is enforced INSIDE normalizeGrant so both the REST
+// mutator and the CLI `workspace add` inherit it by construction — the same place
+// the control-plane refusal is applied by the callers.
+func isBroadParent(abs string) (bool, string) {
+	sep := string(filepath.Separator)
+	if abs == filepath.Dir(abs) {
+		return true, "is the filesystem root"
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		if h, herr := filepath.Abs(home); herr == nil && filepath.Clean(h) == abs {
+			return true, "is your home directory"
+		}
+	}
+	if trimmed := strings.Trim(abs, sep); trimmed != "" && !strings.Contains(trimmed, sep) {
+		return true, "is a top-level system directory"
+	}
+	return false, ""
 }
 
 // samePath reports whether two grant paths denote the same directory, compared

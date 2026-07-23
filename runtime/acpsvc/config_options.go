@@ -3,12 +3,12 @@ package acpsvc
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 
 	libacp "github.com/contenox/runtime/libacp"
+	"github.com/contenox/runtime/runtime/project"
 	"github.com/contenox/runtime/runtime/reasoning"
 	"github.com/contenox/runtime/runtime/statetype"
 )
@@ -119,11 +119,10 @@ func (t *Transport) workspaceRootConfigOption(sess *sessionEntry) (libacp.Sessio
 }
 
 func workspaceRootDisplayName(root string) string {
-	base := filepath.Base(root)
-	if base == "" || base == string(filepath.Separator) || base == "." {
-		return root
-	}
-	return base
+	// A registered project's friendly name (its marker's name), falling back to
+	// the basename — so the session workspace picker lists named projects, matching
+	// the /workspace/roots registry and Beam's project switcher.
+	return project.DisplayName(root)
 }
 
 func (t *Transport) modelConfigOption(ctx context.Context, sess *sessionEntry) libacp.SessionConfigOption {

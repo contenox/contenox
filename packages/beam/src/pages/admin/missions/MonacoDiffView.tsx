@@ -1,7 +1,8 @@
-import { DiffEditor, Editor } from '@monaco-editor/react';
+import { DiffEditor } from '@monaco-editor/react';
 import { Button, InlineNotice, Span } from '@contenox/ui';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import MonacoView, { MONACO_READONLY_OPTIONS } from '../../../components/editors/MonacoView';
 import { useMediaQuery } from '../../../hooks/useMediaQuery';
 import type { TranslationKey } from '../../../i18n';
 import { defineBeamMonacoThemes, useMonacoAppTheme } from '../../../lib/monacoAppTheme';
@@ -20,16 +21,6 @@ import type { MissionChangeStatus, MissionFileDiff } from '../../../lib/types';
  */
 
 type DiffView = 'old' | 'diff' | 'new';
-
-const READONLY_OPTIONS = {
-  readOnly: true,
-  automaticLayout: true,
-  minimap: { enabled: false },
-  scrollBeyondLastLine: false,
-  fontFamily: '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
-  renderWhitespace: 'selection',
-  padding: { top: 8, bottom: 8 },
-} as const;
 
 export default function MonacoDiffView({
   path,
@@ -98,16 +89,13 @@ export default function MonacoDiffView({
               language={language}
               theme={theme}
               beforeMount={defineBeamMonacoThemes}
-              options={{ ...READONLY_OPTIONS, renderSideBySide: sideBySide }}
+              options={{ ...MONACO_READONLY_OPTIONS, renderSideBySide: sideBySide }}
             />
           ) : (
-            <Editor
-              height="100%"
+            <MonacoView
               value={view === 'old' ? diff.original : diff.modified}
               language={language}
-              theme={theme}
-              beforeMount={defineBeamMonacoThemes}
-              options={READONLY_OPTIONS}
+              className="h-full"
             />
           )}
         </div>

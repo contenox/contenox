@@ -371,22 +371,27 @@ If the agent's config declares an `mcp_servers` allowlist, `check` forwards thos
 
 Initializes a workspace (`.contenox/`) and ensures default runtime presets exist globally (`~/.contenox/`). It's best to run `contenox setup` first for a guided configuration.
 
-`init` creates the `.contenox/workspace.id` marker. Default chains and HITL policies are written under `~/.contenox/` unless they already exist. Workspace-local `.contenox/` files can override these global presets by name.
+`init` creates the `.contenox/workspace.id` marker — a project's portable identity. The marker carries a stable workspace UUID (the database scoping token every session under the project is filed under) plus an optional friendly **name** (what the Beam project registry and the folder picker show). It travels *with* the directory, so a project means one thing to serve, the CLI, and the API alike. Default chains and HITL policies are written under `~/.contenox/` unless they already exist. Workspace-local `.contenox/` files can override these global presets by name.
+
+By default `init` walks up to reuse an ancestor's `.contenox` if one exists (like `git`). Pass `--project` to force a *fresh* project marker in the current directory instead — a distinct workspace nested under a larger one — and `--name` to give it a friendly name (default: the folder's own name). Marking a project does not by itself let sessions open it; `init --project` prints the `contenox workspace add` line that grants it.
 
 You can optionally specify a provider to pre-configure defaults.
 
 ```bash
-contenox init                    # local-first default
-contenox init gemini             # pre-configure for Gemini
-contenox init openai             # pre-configure for OpenAI
-contenox init --force            # overwrite existing files
-contenox init --update           # refresh unchanged default files
+contenox init                          # local-first default
+contenox init gemini                   # pre-configure for Gemini
+contenox init openai                   # pre-configure for OpenAI
+contenox init --force                  # overwrite existing files
+contenox init --update                 # refresh unchanged default files
+contenox init --project --name "API"   # a fresh named project in the current dir
 ```
 
 | Flag        | Description                         |
 | ----------- | ----------------------------------- |
 | `-f, --force` | Overwrite existing preset files |
 | `--update`  | Refresh unchanged default files to the latest embedded versions |
+| `--project` | Create a fresh project marker in the current directory (a new workspace id) instead of reusing an ancestor's `.contenox` |
+| `--name <name>` | Friendly project name for the marker (default: the directory name) |
 
 ### `contenox backend`
 
@@ -611,20 +616,26 @@ contenox approvals answer <id> --deny
 
 ### `contenox workspace`
 
-Grant or revoke the **workspace roots** a session may run in — the directories a chat, a dispatched mission unit, or a Beam file browse may choose as its working directory. Granting a root grants everything **under** it; a directory outside every granted root (a sibling, a prefix-trick neighbour like `/home/meX` against `/home/me`, or a symlink whose real target escapes) is refused.
+Grant or revoke the **workspace roots** a session may run in — the directories a chat, a dispatched mission unit, or a Beam file browse may choose as its working directory. Granting a root grants everything **under** it; a directory outside every granted root (a sibling, a prefix-trick neighbour like `/home/meX` against `/home/me`, or a symlink whose real target escapes) is refused. A too-broad root — the filesystem root, your home directory, or a top-level system directory like `/srv` — is also refused, so a grant can never hand a session an entire home or disk; grant the specific project directory.
 
 ```bash
-contenox workspace add /home/me/src        # grant a root (and everything under it)
-contenox workspace add /home/me/scratch
-contenox workspace list                     # the roots you have granted
-contenox workspace remove /home/me/scratch  # revoke a grant
+contenox workspace add /home/me/src              # grant a root (and everything under it)
+contenox workspace add /home/me/api --name "API" # grant AND name the project
+contenox workspace list                           # the roots you have granted
+contenox workspace remove /home/me/scratch        # revoke a grant
 ```
+
+Granting a root also **registers it as a project**: `add` writes (or reuses) the folder's `.contenox/workspace.id` marker, so a root added here shows the same friendly name in `list`, the API, and the Beam project registry. `--name` sets that name (default: the folder's own name); re-running `add` on an already-granted path with a new `--name` **renames** the project without changing its workspace id, so its existing sessions stay attached. This is the exact same marker stamp `init --project` and Beam's "Add project" apply — one on-disk result across all three entry points.
 
 Unlike `fleet` / `mission`, these do **not** reach serve over REST. A grant is durable config in the shared database (`~/.contenox/local.db`), so `add`/`remove` write it directly and then ring a reload doorbell on the shared bus. A running `contenox serve` picks up the signal and swaps its live workspace-root set **without a restart**; a serve started later reads the same durable config at boot. So these verbs work whether or not serve is up, and a running serve applies them live.
 
-`add` requires the path to be an existing directory (a workspace root must be a real directory); `remove` does not, so a grant to a since-deleted directory can be cleaned up. Both are idempotent. `list` prints the durable grants these verbs manage — serve additionally always allows its own launched default root (its served directory, or home for a bare `contenox serve`), which is not a grant and appears in the API and Beam folder picker (`GET /workspace/roots`) rather than here.
+`add` requires the path to be an existing directory (a workspace root must be a real directory); `remove` does not, so a grant to a since-deleted directory can be cleaned up. Both are idempotent. `list` prints the durable grants these verbs manage, each with its project name when set — serve additionally always allows its own launched default root (its served directory, or home for a bare `contenox serve`), which is not a grant and appears in the API and Beam folder picker (`GET /workspace/roots`) rather than here.
 
-A LAN operator working only through the browser has the same two verbs over the authenticated REST surface: `POST /workspace/roots {"path": "<dir>"}` grants and `DELETE /workspace/roots?path=<dir>` revokes, each token-authed and returning the new root list — the same validation, durable write, and reload doorbell as the CLI.
+| Flag | Description |
+| ---- | ----------- |
+| `--name <name>` (on `add`) | Friendly project name stamped into the folder's marker; re-adding with a new name renames the project |
+
+A LAN operator working only through the browser has the same verbs over the authenticated REST surface: `POST /workspace/roots {"path": "<dir>", "name": "<name>"}` grants (and names) and `DELETE /workspace/roots?path=<dir>` revokes, each token-authed and returning the new root list — the same validation, project-marker stamp, durable write, and reload doorbell as the CLI. Each returned root carries its `name` (the marker's, empty when unset), a `default` flag, and a `managed` flag marking the operator-added roots the browser may forget (as opposed to serve's structural launch roots).
 
 ### `contenox code [vscode args...]`
 

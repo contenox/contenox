@@ -261,6 +261,25 @@ export const api = {
   // caller (useWorkspaceRoots) reads as "feature absent" — the picker
   // affordances simply do not appear — rather than surfacing an error.
   getWorkspaceRoots: () => apiFetch<WorkspaceRootsResponse>('/api/workspace/roots'),
+  /**
+   * Registers a folder as a managed workspace root and returns the SAME roots
+   * list the picker reads (re-render from it, no separate refetch needed). A bad
+   * path — not a directory, the control plane, or a broad parent like `~` /
+   * `/home` / `/` — answers 422 with a teaching message in the standard error
+   * envelope, which apiFetch surfaces as an ApiError (`.message` / `.status`).
+   */
+  addWorkspaceRoot: (body: { path: string; name: string }) =>
+    apiFetch<WorkspaceRootsResponse>('/api/workspace/roots', options('POST', body)),
+  /**
+   * Forgets a managed workspace root, returning the updated roots list.
+   * Idempotent — forgetting an unknown path still answers 200. Only `managed`
+   * roots are forgettable server-side; the default and launch roots are not.
+   */
+  removeWorkspaceRoot: (path: string) =>
+    apiFetch<WorkspaceRootsResponse>(
+      `/api/workspace/roots?path=${encodeURIComponent(path)}`,
+      options('DELETE'),
+    ),
 
   // Interactive terminal (see runtime/internal/terminalapi). createTerminalSession
   // opens a PTY under `cwd` (validated against the workspace-root allowlist,

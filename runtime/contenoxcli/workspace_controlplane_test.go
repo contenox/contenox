@@ -89,7 +89,7 @@ func TestUnit_WorkspaceREST_AddControlPlaneRefused(t *testing.T) {
 	defer done()
 
 	reloader := newWorkspaceRootReloader(factory, []string{base}, store)
-	err = reloader.mutators(nil).Add(ctx, controlPlane)
+	err = reloader.mutators(nil).Add(ctx, controlPlane, "")
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, workspacegrants.ErrInvalidGrant), "REST control-plane grant is a client fault, got %v", err)
 	assert.Contains(t, strings.ToLower(err.Error()), "control plane")

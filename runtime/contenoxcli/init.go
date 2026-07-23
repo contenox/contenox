@@ -17,6 +17,7 @@ import (
 	"github.com/contenox/runtime/runtime/internal/clikv"
 	"github.com/contenox/runtime/runtime/internal/setupcheck"
 	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/project"
 	"github.com/contenox/runtime/runtime/runtimestate"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/google/uuid"
@@ -291,7 +292,10 @@ func RunGlobalInit(out io.Writer) error {
 // RunInit scaffolds .contenox/ with default chain files.
 // provider is "" (defaults to the already-configured provider or "llama"), or one of providerConfigs.
 // contenoxDir is the target data directory (e.g. from --data-dir or the default .contenox/).
-func RunInit(out, errOut io.Writer, force, update bool, provider string, contenoxDir string) error {
+// projectName is the friendly name to stamp into the marker — an explicit name
+// renames an already-named project; "" leaves the marker's name (or lack of one)
+// alone, preserving legacy bare-UUID-equivalent behavior for a plain init.
+func RunInit(out, errOut io.Writer, force, update bool, provider string, contenoxDir string, projectName string) error {
 	provider = modelrepo.CanonicalBackendType(provider)
 	if provider == "" {
 		// Default to the provider already configured in the database so that
@@ -320,9 +324,17 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 	if err := os.MkdirAll(contenoxDir, 0750); err != nil {
 		return fmt.Errorf("failed to create .contenox directory: %w", err)
 	}
-	wsPath := filepath.Join(contenoxDir, "workspace.id")
-	if _, err := os.Stat(wsPath); os.IsNotExist(err) {
-		_ = os.WriteFile(wsPath, []byte(uuid.NewString()), 0o644)
+	// The project package owns the marker format (JSON {id,name}); a fresh marker
+	// gets a new UUID, an existing one keeps its ID (an explicit projectName
+	// renames it; "" leaves the stored name alone). ResolveWorkspaceID reads both
+	// this and the legacy bare-UUID form, so an existing install's DB token stays
+	// stable.
+	marker, err := project.EnsureInContenoxDir(contenoxDir, projectName)
+	if err != nil {
+		return fmt.Errorf("failed to write project marker: %w", err)
+	}
+	if marker.Name != "" {
+		fmt.Fprintf(out, "Marked project %q (%s)\n", marker.Name, filepath.Join(contenoxDir, project.MarkerFileName))
 	}
 	writeFile := func(path, content string) error {
 		// If the file doesn't exist, we always write it.

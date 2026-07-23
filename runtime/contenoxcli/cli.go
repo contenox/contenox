@@ -19,6 +19,7 @@ import (
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/internal/clikv"
 	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/project"
 	"github.com/contenox/runtime/runtime/reasoning"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/version"
@@ -423,6 +424,8 @@ func init() {
 	rootCmd.InitDefaultHelpCmd() // so "contenox help" is handled by Cobra, not passed as run input
 	initCmd.Flags().BoolP("force", "f", false, "Overwrite existing files")
 	initCmd.Flags().Bool("update", false, "Update unchanged default files to the latest version")
+	initCmd.Flags().Bool("project", false, "Create a project marker in the CURRENT directory (a fresh workspace id), instead of reusing an ancestor's .contenox")
+	initCmd.Flags().String("name", "", "Friendly project name for the marker (default: the directory name)")
 
 	// Chat-specific local flags (not exposed globally).
 	chatCmd.Flags().Int("trim", 0, "Only send the last N messages from session history to the model (0 = send all)")
@@ -515,29 +518,66 @@ func controlPlaneDirs(contenoxDir string) []string {
 }
 
 func ResolveWorkspaceID(contenoxDir string) string {
-	data, err := os.ReadFile(filepath.Join(contenoxDir, "workspace.id"))
-	if err != nil {
-		return DefaultWorkspaceID
+	// The project package owns the marker format (JSON {id,name}, with a
+	// legacy bare-UUID read) so serve, the CLI, and the /workspace/roots API
+	// agree on a project's identity. The DB scoping token is the marker's ID.
+	if m, ok := project.ReadFromContenoxDir(contenoxDir); ok && m.ID != "" {
+		return m.ID
 	}
-	id := strings.TrimSpace(string(data))
-	if id == "" {
-		return DefaultWorkspaceID
-	}
-	return id
+	return DefaultWorkspaceID
 }
 
 func runInitCmd(cmd *cobra.Command, args []string) error {
 	force, _ := cmd.Flags().GetBool("force")
 	update, _ := cmd.Flags().GetBool("update")
+	projectMode, _ := cmd.Flags().GetBool("project")
+	rawName, _ := cmd.Flags().GetString("name")
+	projectName, err := project.NormalizeName(rawName)
+	if err != nil {
+		return err
+	}
 	provider := ""
 	if len(args) > 0 {
 		provider = args[0]
 	}
-	contenoxDir, err := ResolveContenoxDir(cmd)
+
+	var contenoxDir string
+	if projectMode {
+		// Force a LOCAL project marker in the current directory, bypassing the
+		// git-style walk-up that would otherwise reuse an ancestor's .contenox.
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to resolve current directory: %w", err)
+		}
+		contenoxDir, projectName = resolveProjectInit(cwd, projectName)
+		if err := RunInit(cmd.OutOrStdout(), cmd.ErrOrStderr(), force, update, provider, contenoxDir, projectName); err != nil {
+			return err
+		}
+		// Marking a project does NOT grant it as a workspace root — that is a
+		// separate, explicit security decision. Bridge the journey with the verb
+		// that registers it for serve and the Beam picker.
+		fmt.Fprintf(cmd.OutOrStdout(),
+			"To let sessions open it (serve + Beam picker): contenox workspace add %s\n", cwd)
+		return nil
+	}
+	contenoxDir, err = ResolveContenoxDir(cmd)
 	if err != nil {
 		return fmt.Errorf("failed to resolve .contenox dir: %w", err)
 	}
-	return RunInit(cmd.OutOrStdout(), cmd.ErrOrStderr(), force, update, provider, contenoxDir)
+	return RunInit(cmd.OutOrStdout(), cmd.ErrOrStderr(), force, update, provider, contenoxDir, projectName)
+}
+
+// resolveProjectInit computes the target .contenox dir and effective marker name
+// for `init --project`: a LOCAL marker in cwd (bypassing the ancestor walk-up in
+// ResolveContenoxDir), always named — defaulting to the project directory's
+// basename when no explicit --name is given.
+func resolveProjectInit(cwd, name string) (contenoxDir, projectName string) {
+	contenoxDir = filepath.Join(cwd, project.ContenoxDirName)
+	projectName = name
+	if strings.TrimSpace(projectName) == "" {
+		projectName = filepath.Base(filepath.Dir(contenoxDir))
+	}
+	return contenoxDir, projectName
 }
 
 func runChat(cmd *cobra.Command, args []string) error {

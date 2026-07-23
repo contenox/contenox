@@ -6,10 +6,16 @@
  *   workspace.line         = "line"
  *   workspace.lines        = "lines"
  */
-import { CodeBlock, InlineNotice } from '@contenox/ui';
-import { useEffect, useState } from 'react';
+import { InlineNotice } from '@contenox/ui';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { WorkspaceFilePeek } from '../../../hooks/useWorkspaceFiles';
+
+// The shared read-only Monaco viewer, kept ONLY behind this lazy boundary so
+// Monaco never enters the main bundle and only loads once a file tab is actually
+// opened (the instant-feel law); until it arrives, the "loading" span stands in
+// as the fallback. Same component the mission diff's old/new panes use.
+const MonacoView = lazy(() => import('../../../components/editors/MonacoView'));
 
 export interface FileViewTabProps {
   /** The workspace-relative path this read-only view renders. */
@@ -23,10 +29,11 @@ type ViewState = { status: 'loading' } | { status: 'loaded'; peek: WorkspaceFile
 /**
  * A read-only file view hosted as a CANVAS tab (successor to the old workspace
  * sidebar preview): fetches `path`'s content once via the shared `readFile` and
- * renders it directly, expanded, in a scrollable code block. Because a file tab
- * holds exactly one file and the tab strip already names it, there is NO
- * collapsible attachment-card chrome here — just a small line-count header line
- * over the content. The canvas tab strip supplies the label and ✕.
+ * renders it in a read-only Monaco editor (lazily loaded, so Monaco stays out of
+ * the main bundle). Because a file tab holds exactly one file and the tab strip
+ * already names it, there is NO collapsible attachment-card chrome here — just a
+ * small line-count header line over the content. The canvas tab strip supplies
+ * the label and ✕.
  */
 export function FileViewTab({ path, readFile }: FileViewTabProps) {
   const { t } = useTranslation();
@@ -62,7 +69,12 @@ export function FileViewTab({ path, readFile }: FileViewTabProps) {
       <div className="text-text-muted dark:text-dark-text-muted shrink-0 px-1 pb-1 text-[11px]">
         {lineCount} {lineCount === 1 ? t('workspace.line') : t('workspace.lines')}
       </div>
-      <CodeBlock className="min-h-0 flex-1 px-1">{state.peek.text}</CodeBlock>
+      <Suspense
+        fallback={
+          <span className="text-text-muted dark:text-dark-text-muted block px-1 py-1 text-xs">{t('workspace.loading')}</span>
+        }>
+        <MonacoView path={path} value={state.peek.text} />
+      </Suspense>
     </div>
   );
 }

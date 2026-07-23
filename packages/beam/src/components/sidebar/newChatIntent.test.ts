@@ -9,12 +9,14 @@ import { startNewChat, type NewChatDeps } from './newChatIntent';
  */
 function mockDeps(): NewChatDeps & {
   setStagedAgent: ReturnType<typeof vi.fn>;
+  setStagedRoot: ReturnType<typeof vi.fn>;
   focusEmptyTab: ReturnType<typeof vi.fn>;
   navigate: ReturnType<typeof vi.fn>;
   closeSidebar: ReturnType<typeof vi.fn>;
 } {
   return {
     setStagedAgent: vi.fn(),
+    setStagedRoot: vi.fn(),
     focusEmptyTab: vi.fn(),
     navigate: vi.fn(),
     closeSidebar: vi.fn(),
@@ -44,12 +46,35 @@ describe('startNewChat', () => {
     const calls: string[] = [];
     const deps: NewChatDeps = {
       setStagedAgent: () => calls.push('stage'),
+      setStagedRoot: () => calls.push('stageRoot'),
       focusEmptyTab: () => calls.push('focusEmptyTab'),
       navigate: () => calls.push('navigate'),
       closeSidebar: () => calls.push('close'),
     };
     startNewChat('claude', deps);
-    expect(calls).toEqual(['stage', 'focusEmptyTab', 'navigate', 'close']);
+    expect(calls).toEqual(['stage', 'stageRoot', 'focusEmptyTab', 'navigate', 'close']);
+  });
+
+  it('a launcher stages its project cwd; a non-launcher path clears the context stage', () => {
+    // The Projects-page launcher passes { cwd }, staging that project for the next
+    // chat. Every non-launcher path passes no cwd, clearing the context stage —
+    // defensive hygiene against an un-consumed launcher stage leaking. (The empty
+    // chat's own sticky pick is separate and is not touched here.)
+    const launcher = mockDeps();
+    startNewChat(null, launcher, { cwd: '/home/me/api' });
+    expect(launcher.setStagedRoot).toHaveBeenCalledWith('/home/me/api');
+
+    const plain = mockDeps();
+    startNewChat(null, plain);
+    expect(plain.setStagedRoot).toHaveBeenCalledWith(null);
+  });
+
+  it('is a no-op-safe call when a caller omits setStagedRoot (isolated test / older caller)', () => {
+    // setStagedRoot is optional; a caller that never launches into a project may
+    // omit it, and startNewChat must not throw.
+    const { setStagedRoot: _omit, ...rest } = mockDeps();
+    expect(() => startNewChat(null, rest)).not.toThrow();
+    expect(rest.focusEmptyTab).toHaveBeenCalledTimes(1);
   });
 
   it('picking while already on the empty surface still updates the staged agent (navigate is a no-op there)', () => {

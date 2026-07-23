@@ -11,6 +11,7 @@ import { routes } from './config/routes';
 import { AuthProvider } from './lib/AuthProvider';
 import { AcpWorkspaceProvider } from './lib/acp/AcpWorkspaceProvider';
 import { StagedAgentProvider } from './lib/stagedAgent';
+import { StagedRootProvider } from './lib/stagedRoot';
 import { AdoptIntentProvider } from './lib/adoptIntent';
 import { AuthContext } from './lib/authContext';
 
@@ -84,6 +85,11 @@ export default function App() {
                 sidebar (which seeds it) and the empty chat surface (which shows,
                 changes, and consumes it). See lib/stagedAgent.tsx. */}
             <StagedAgentProvider>
+            {/* Shares "the next new chat's PROJECT (cwd)" between the Projects
+                admin page (whose launcher rows seed it) and the empty chat
+                surface (which consumes it one-shot into its Workspace pick). The
+                sibling of StagedAgentProvider. See lib/stagedRoot.tsx. */}
+            <StagedRootProvider>
             {/* Shares "the next chat should ADOPT this running unit" between the
                 fleet board / mission detail (which stage it) and the chat
                 workspace (which eagerly adopts once connected). See
@@ -127,6 +133,7 @@ export default function App() {
             />
             </NavbarSlotProvider>
             </AdoptIntentProvider>
+            </StagedRootProvider>
             </StagedAgentProvider>
           </AuthenticatedAcpProvider>
         </AuthGate>

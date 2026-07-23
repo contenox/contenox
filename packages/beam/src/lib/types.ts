@@ -1378,10 +1378,20 @@ export const HandleTools: TaskHandler = 'tools';
  * value and "/" resolve to (see vfs.Factory.Default). The list is the legible
  * boundary a client offers as a folder picker instead of discovering it by
  * probing paths and reading the 422 the per-request `root` check returns.
+ *
+ * `name` is the root's EXPLICIT project name (its marker's name) — empty/absent
+ * for a structural or unnamed root, which is how a client tells a real
+ * registered project apart (display fallback to the path basename is the
+ * client's job, see `projectName`). `managed` distinguishes a runtime grant
+ * (operator-forgettable) from a launch root. Both are optional so a serve
+ * predating them — and older fixtures/tests — still typecheck against the
+ * earlier `{ path, default }` shape.
  */
 export type WorkspaceRoot = {
   path: string;
   default: boolean;
+  name?: string;
+  managed?: boolean;
 };
 
 /**

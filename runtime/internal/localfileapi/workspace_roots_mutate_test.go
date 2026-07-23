@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/contenox/runtime/runtime/internal/localfileapi"
@@ -27,7 +29,7 @@ type stubGrants struct {
 
 func (s *stubGrants) mutators() *localfileapi.RootsMutators {
 	return &localfileapi.RootsMutators{
-		Add: func(_ context.Context, path string) error {
+		Add: func(_ context.Context, path, _ string) error {
 			if s.rejectAdd {
 				return fmt.Errorf("%w: %q is a file, not a directory", workspacegrants.ErrInvalidGrant, path)
 			}
@@ -43,6 +45,11 @@ func (s *stubGrants) mutators() *localfileapi.RootsMutators {
 			}
 			s.roots = kept
 			return s.factory.SetRoots(s.roots)
+		},
+		Grants: func(_ context.Context) []string {
+			out := make([]string, len(s.roots))
+			copy(out, s.roots)
+			return out
 		},
 	}
 }
@@ -170,4 +177,55 @@ func readBody(t *testing.T, resp *http.Response) []byte {
 	_, err := buf.ReadFrom(resp.Body)
 	require.NoError(t, err)
 	return buf.Bytes()
+}
+
+func TestUnit_WorkspaceRoots_NameAndManaged(t *testing.T) {
+	base := t.TempDir()  // launch root → default, unmanaged
+	grant := t.TempDir() // runtime grant → managed, named from its marker
+	require.NoError(t, os.MkdirAll(filepath.Join(grant, ".contenox"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(grant, ".contenox", "workspace.id"),
+		[]byte(`{"id":"gid","name":"my-proj"}`), 0o644))
+
+	factory, err := vfs.NewFactory(base, grant)
+	require.NoError(t, err)
+	mut := &localfileapi.RootsMutators{
+		// Only `grant` is a runtime grant; `base` is a launch root.
+		Grants: func(context.Context) []string { return []string{grant} },
+	}
+	mux := http.NewServeMux()
+	localfileapi.AddWorkspaceRootsRoutes(mux, factory, mut)
+
+	req := httptest.NewRequest(http.MethodGet, "/workspace/roots", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Roots []struct {
+			Path    string `json:"path"`
+			Name    string `json:"name"`
+			Default bool   `json:"default"`
+			Managed bool   `json:"managed"`
+		} `json:"roots"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Len(t, resp.Roots, 2)
+
+	var named, dflt int = -1, -1
+	for i, r := range resp.Roots {
+		if r.Name == "my-proj" {
+			named = i
+		}
+		if r.Default {
+			dflt = i
+		}
+	}
+	require.NotEqual(t, -1, named, "the granted project shows its marker name")
+	require.True(t, resp.Roots[named].Managed, "a runtime grant is managed (forgettable)")
+
+	require.NotEqual(t, -1, dflt, "one root is the default")
+	require.False(t, resp.Roots[dflt].Managed, "the launch/default root is not managed")
+	require.Equal(t, "", resp.Roots[dflt].Name,
+		"an unmarked root reports NO name — clients apply their own basename fallback, and the empty name is how they tell a structural root from a real project")
 }

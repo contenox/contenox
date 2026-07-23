@@ -11,6 +11,7 @@ import i18n from './i18n';
  */
 const NEW_NAMESPACES = [
   'roots',
+  'projects',
   'inspector',
   'hostTerminal',
   'changes',

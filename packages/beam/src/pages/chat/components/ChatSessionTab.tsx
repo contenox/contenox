@@ -27,6 +27,7 @@ import { externalAgentFromMeta, type SessionConfigOption, type SessionConfigOpti
 import { adoptResultFromMeta } from '../../../lib/adoptMeta';
 import { AdoptedSessionBanner } from '../../../components/AdoptedSessionBanner';
 import { useStagedAgent } from '../../../lib/stagedAgent';
+import { useStagedRoot } from '../../../lib/stagedRoot';
 import { useSetupStatus } from '../../../hooks/useSetupStatus';
 import { usePersistentToggle } from '../../../hooks/usePersistentToggle';
 import { classifyAcpExecutionError } from '../../../lib/acpFailureKind';
@@ -176,6 +177,20 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
   // agent reads under the same cwd). See lib/workspaceRoot.ts for the full rules;
   // notably an external session exposes no root PICKER, so it falls back to the
   // default root — the cwd the runtime creates it under.
+  // A Projects-page launcher stages the project to open in via the shared
+  // StagedRoot context (the sibling of stagedAgent). On the empty chat we consume
+  // it ONE-SHOT into the local staged config so the existing Workspace picker
+  // reflects it and can still override it. Clearing the context immediately makes
+  // the effect idempotent: a re-fire before unmount (React Router's
+  // startTransition can commit state early) sees `null` and no-ops, and a later
+  // user picker change wins because the launch value is already spent.
+  const { stagedRoot: launchRoot, setStagedRoot: setLaunchRoot } = useStagedRoot();
+  useEffect(() => {
+    if (!onEmptyChat || launchRoot == null) return;
+    setStagedConfig(prev => ({ ...prev, [WORKSPACE_ROOT_CONFIG_ID]: launchRoot }));
+    setLaunchRoot(null);
+  }, [onEmptyChat, launchRoot, setLaunchRoot]);
+
   const stagedRoot = stagedConfig[WORKSPACE_ROOT_CONFIG_ID];
   const activeSessionCwd = sessionInfo?.cwd ?? null;
   const defaultRoot = configOptionCurrentValue(workspace.workspaceConfigOptions, WORKSPACE_ROOT_CONFIG_ID);

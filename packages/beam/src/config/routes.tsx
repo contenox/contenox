@@ -1,4 +1,4 @@
-import { Cpu, Database, Inbox, Radar, Rocket, Settings, type LucideIcon } from 'lucide-react';
+import { Cpu, Database, Folder, Inbox, Radar, Rocket, Settings, type LucideIcon } from 'lucide-react';
 import { lazy } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import i18n, { type TranslationKey } from '../i18n';
@@ -12,6 +12,7 @@ const MissionListPage = lazy(() => import('../pages/admin/missions/MissionListPa
 const MissionDetailPage = lazy(() => import('../pages/admin/missions/MissionDetailPage.tsx'));
 const MissionDispatchPage = lazy(() => import('../pages/admin/missions/MissionDispatchPage.tsx'));
 const InboxPage = lazy(() => import('../pages/admin/inbox/InboxPage.tsx'));
+const ProjectsPage = lazy(() => import('../pages/admin/projects/ProjectsPage.tsx'));
 const ControlPlanePage = lazy(() => import('../pages/admin/control/ControlPlanePage.tsx'));
 const SettingsPage = lazy(() => import('../pages/admin/settings/SettingsPage.tsx'));
 const ByePage = lazy(() => import('../pages/public/bye/Bye.tsx'));
@@ -68,6 +69,10 @@ const adminRouteDefinitions: AdminRouteDefinition[] = [
   // up to be answered, and where its reports come back.
   { path: '/inbox', element: InboxPage, labelKey: 'navbar.inbox', Icon: Inbox },
   { path: '/backends', element: BackendsPage, labelKey: 'navbar.backends', Icon: Database },
+  // The project registry — the folders this runtime may open sessions in. Sits
+  // with the other configuration surfaces (backends, defaults); managed roots
+  // are added/forgotten here, the launch/default roots stay structural.
+  { path: '/projects', element: ProjectsPage, labelKey: 'navbar.projects', Icon: Folder },
   { path: '/settings', element: SettingsPage, labelKey: 'navbar.settings', Icon: Settings },
 ];
 

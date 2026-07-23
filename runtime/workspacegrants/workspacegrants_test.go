@@ -156,3 +156,27 @@ func TestUnit_PublishChanged(t *testing.T) {
 		require.Error(t, workspacegrants.PublishChanged(ctx, pub, []string{"/a"}))
 	})
 }
+
+func TestUnit_Add_RefusesBroadParents(t *testing.T) {
+	ctx, store := setupStore(t)
+
+	// The filesystem root and top-level system dirs (single-segment, e.g. /tmp)
+	// are refused: granting them would defeat project scoping.
+	for _, broad := range []string{string(filepath.Separator), filepath.Join(string(filepath.Separator), "tmp")} {
+		_, err := workspacegrants.Add(ctx, store, broad)
+		require.ErrorIs(t, err, workspacegrants.ErrInvalidGrant, "broad parent %q must be refused", broad)
+	}
+
+	// The operator's home directory is refused.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	_, err := workspacegrants.Add(ctx, store, home)
+	require.ErrorIs(t, err, workspacegrants.ErrInvalidGrant, "the home directory must be refused")
+
+	// A specific project directory (>=2 segments deep) is accepted.
+	proj := filepath.Join(home, "proj")
+	require.NoError(t, os.MkdirAll(proj, 0o750))
+	got, err := workspacegrants.Add(ctx, store, proj)
+	require.NoError(t, err)
+	require.Contains(t, got, proj)
+}

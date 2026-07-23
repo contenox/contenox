@@ -2,7 +2,7 @@ import { Badge, cn } from '@contenox/ui';
 import { FolderTree } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { WorkspaceRoot } from '../../lib/types';
-import { shortenRootPath } from '../../lib/workspaceRoots';
+import { projectName } from '../../lib/workspaceRoots';
 
 export interface RootChipProps {
   /** The root to show; `undefined` renders nothing (nil-gated affordance). */
@@ -16,7 +16,8 @@ export interface RootChipProps {
  * the boundary is legible up front rather than discovered by probing paths.
  * Nil-gated — with no root (the allowlist is absent or empty) it renders
  * nothing, so a serve without a workspace allowlist simply shows no chip. The
- * full path is always available as the title; the visible label is shortened.
+ * visible label is the root's friendly project name (its `name`, path-basename
+ * fallback); the full path is always available as the title.
  */
 export function RootChip({ root, className }: RootChipProps) {
   const { t } = useTranslation();
@@ -29,7 +30,7 @@ export function RootChip({ root, className }: RootChipProps) {
       title={root.path}
       className={cn('inline-flex max-w-full items-center gap-1', className)}>
       <FolderTree aria-hidden="true" className="h-3 w-3 shrink-0" />
-      <span className="truncate">{shortenRootPath(root.path)}</span>
+      <span className="truncate">{projectName(root)}</span>
       {root.default && (
         <span className="text-text-muted dark:text-dark-text-muted shrink-0">
           · {t('roots.default_marker')}

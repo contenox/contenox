@@ -4,6 +4,17 @@ import { useTranslation } from 'react-i18next';
 import type { WorkspaceRoot } from '../../lib/types';
 import { shortenRootPath } from '../../lib/workspaceRoots';
 
+/**
+ * A root's option label: a named project reads "Name (…/path)" so the registry
+ * name leads but the actual cwd being granted stays visible; an unnamed
+ * (structural / legacy) root keeps its plain shortened path.
+ */
+function rootOptionLabel(root: WorkspaceRoot): string {
+  const name = root.name?.trim();
+  const path = shortenRootPath(root.path);
+  return name ? `${name} (${path})` : path;
+}
+
 /** Select sentinel for "type a path outside the offered roots". */
 export const CUSTOM_ROOT_VALUE = '__custom_root__';
 
@@ -51,8 +62,8 @@ export function RootSelector({ value, onChange, roots, isAbsent }: RootSelectorP
     ...roots.map(r => ({
       value: r.path,
       label: r.default
-        ? `${shortenRootPath(r.path)} — ${t('roots.default_marker')}`
-        : shortenRootPath(r.path),
+        ? `${rootOptionLabel(r)} — ${t('roots.default_marker')}`
+        : rootOptionLabel(r),
     })),
     { value: CUSTOM_ROOT_VALUE, label: t('roots.selector_custom') },
   ];

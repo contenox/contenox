@@ -1,6 +1,7 @@
 import {
   Bot,
   Database,
+  Folder,
   FolderOpen,
   Inbox,
   MessageSquare,
@@ -33,6 +34,7 @@ const NAV_TARGETS: { path: string; labelKey: TranslationKey; icon: LucideIcon; k
   { path: '/missions', labelKey: 'navbar.missions', icon: Rocket, keywords: ['missions', 'missionen'] },
   { path: '/inbox', labelKey: 'navbar.inbox', icon: Inbox, keywords: ['inbox', 'posteingang', 'approvals', 'freigaben', 'asks'] },
   { path: '/backends', labelKey: 'navbar.backends', icon: Database, keywords: ['backends', 'models', 'modelle', 'providers'] },
+  { path: '/projects', labelKey: 'navbar.projects', icon: Folder, keywords: ['projects', 'projekte', 'workspace', 'workspaces', 'arbeitsbereich', 'roots', 'root'] },
   { path: '/settings', labelKey: 'navbar.settings', icon: Settings, keywords: ['settings', 'einstellungen', 'defaults', 'config'] },
 ];
 

@@ -31,6 +31,77 @@ export function shortenRootPath(path: string, maxSegments = 3): string {
   return '…/' + segments.slice(-maxSegments).join('/');
 }
 
+/** The basename of an absolute path — its last non-empty segment — or `''` for
+ * `"/"` or an empty path. Internal to the project-name helpers below. */
+function basename(path: string): string {
+  const segments = path.split('/').filter(s => s.length > 0);
+  return segments.length > 0 ? segments[segments.length - 1] : '';
+}
+
+/**
+ * The friendly name to show for a root: its server-supplied `name` (the
+ * EXPLICIT marker name — the server sends no fallback), falling back to the
+ * basename of its `path` when the name is absent or empty, and to the raw path
+ * itself only for a `"/"` root that has neither. Never empty for a non-empty
+ * path, so a chip or label always has something to render.
+ */
+export function projectName(root: WorkspaceRoot): string {
+  const name = root.name?.trim();
+  if (name) return name;
+  return basename(root.path) || root.path;
+}
+
+/** Whether `root` contains `target` on a path-segment boundary: `/a/b` contains
+ * `/a/b` and `/a/b/c` but NOT `/a/bc`. Both are expected trailing-slash-free. */
+function containsPath(root: string, target: string): boolean {
+  return target === root || target.startsWith(root + '/');
+}
+
+/**
+ * The root that CONTAINS a cwd: the one whose `path` is the LONGEST segment-aware
+ * prefix of `cwd`. Segment-aware means `/a/b` contains `/a/b` and `/a/b/c` but
+ * NOT `/a/bc`, so sibling folders sharing a name prefix never cross-match; the
+ * matching roots form an ancestor chain, so longest path = deepest = most
+ * specific. Returns null when no root contains the cwd — an absent cwd, or a
+ * legacy session opened outside every current grant.
+ */
+export function projectForCwd(
+  cwd: string | undefined | null,
+  roots: readonly WorkspaceRoot[],
+): WorkspaceRoot | null {
+  if (!cwd) return null;
+  const target = cwd.replace(/\/+$/, '');
+  let best: WorkspaceRoot | null = null;
+  let bestLen = -1;
+  for (const root of roots) {
+    const rootPath = root.path.replace(/\/+$/, '');
+    if (!containsPath(rootPath, target)) continue;
+    if (rootPath.length > bestLen) {
+      best = root;
+      bestLen = rootPath.length;
+    }
+  }
+  return best;
+}
+
+/**
+ * The project name for the root that contains a cwd (see {@link projectForCwd})
+ * — considering ONLY explicitly named roots (real registered projects). A
+ * structural root without a marker name (serve's home default, a legacy
+ * pre-registry grant) must NOT swallow the label: a session at
+ * `/home/me/demo-app` under a bare home root should read "demo-app" (the
+ * caller's cwd-basename fallback), not "me". Null when no named root contains
+ * the cwd.
+ */
+export function workspaceNameForCwd(
+  cwd: string | undefined | null,
+  roots: readonly WorkspaceRoot[],
+): string | null {
+  const named = roots.filter(r => (r.name?.trim() ?? '') !== '');
+  const root = projectForCwd(cwd, named);
+  return root ? projectName(root) : null;
+}
+
 /**
  * Whether a server error message is the workspace-root refusal — the 422 the
  * per-request `root` check returns for a path outside the allowlist (see

@@ -12,6 +12,7 @@
  *   workspace.access_unreachable   = "Outside the workspace boundary"
  *   workspace.access_read          = "Read"
  *   workspace.access_write         = "Write"
+ *   workspace.filter_toggle        = "Filter files"
  *   workspace.filter_label         = "Filter files"
  *   workspace.filter_type          = "Filter type"
  *   workspace.filter_type_ext      = "Extension"
@@ -26,11 +27,12 @@
  *   workspace.filter_truncated     = "Showing first {{count}} — narrow your filter"
  */
 import { Button, FileTree, SearchBar, Select, type FileTreeNode } from '@contenox/ui';
-import { RefreshCw, ShieldCheck } from 'lucide-react';
+import { Filter, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RootChip } from '../../../components/workspace/RootChip';
 import { WorkspaceBoundaryNotice } from '../../../components/workspace/WorkspaceBoundaryNotice';
+import { usePersistentToggle } from '../../../hooks/usePersistentToggle';
 import { useWorkspaceRoots } from '../../../hooks/useWorkspaceRoots';
 import { type UseWorkspaceFilesResult } from '../../../hooks/useWorkspaceFiles';
 import { useWorkspaceFind } from '../../../hooks/useWorkspaceFind';
@@ -96,6 +98,11 @@ export function WorkspacePanel({ root, files, onOpenFile, selectedFilePath }: Wo
   );
 
   // --- Filter facility (extensible; types live in `workspaceFilter.ts`). ---
+  // The whole filter section is collapsible behind a header toggle; when hidden
+  // it is INACTIVE (no streamed find runs, the ordinary lazy tree shows). The
+  // open/closed choice is a workspace-wide, persisted preference. Default =
+  // collapsed, so the panel is clean until the user reaches for filtering.
+  const filterPanel = usePersistentToggle('workspace.filterOpen');
   const filterTypes = useMemo(() => availableFilterTypes({ agentView }), [agentView]);
   const [filterTypeId, setFilterTypeId] = useState(filterTypes[0]?.id ?? 'ext');
   const [filterValue, setFilterValue] = useState('');
@@ -115,7 +122,9 @@ export function WorkspacePanel({ root, files, onOpenFile, selectedFilePath }: Wo
   const filterPlaceholder = inputSpec?.kind === 'text' ? tk(inputSpec.placeholderKey) : '';
   const optionValues = inputSpec?.kind === 'options' ? inputSpec.options : [];
   const query = useMemo(() => activeType?.toQuery(appliedValue) ?? null, [activeType, appliedValue]);
-  const filterActive = query !== null;
+  // A collapsed filter is inactive regardless of any pending value, so hiding it
+  // clears the filter and the tree shows normally.
+  const filterActive = filterPanel.open && query !== null;
 
   // A filter runs a SERVER-SIDE recursive find: one streamed request returns
   // every matching file across the tree (the per-directory client walk is gone).
@@ -123,8 +132,8 @@ export function WorkspacePanel({ root, files, onOpenFile, selectedFilePath }: Wo
   // agent view we request filter=agent so matches carry the same verdicts the
   // lazy tree shows, and the `access` type can refine on them.
   const findGlobs = useMemo(
-    () => (query ? (query.globs.length > 0 ? query.globs : ['*']) : []),
-    [query],
+    () => (filterActive && query ? (query.globs.length > 0 ? query.globs : ['*']) : []),
+    [filterActive, query],
   );
   const find = useWorkspaceFind({
     globs: findGlobs,
@@ -167,6 +176,17 @@ export function WorkspacePanel({ root, files, onOpenFile, selectedFilePath }: Wo
           </Button>
           <Button
             type="button"
+            variant={filterPanel.open ? 'primary' : 'ghost'}
+            palette="neutral"
+            size="icon"
+            aria-pressed={filterPanel.open}
+            aria-label={t('workspace.filter_toggle')}
+            title={t('workspace.filter_toggle')}
+            onClick={() => filterPanel.toggle()}>
+            <Filter className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            type="button"
             variant="ghost"
             size="icon"
             aria-label={t('workspace.refresh')}
@@ -181,46 +201,48 @@ export function WorkspacePanel({ root, files, onOpenFile, selectedFilePath }: Wo
         <RootChip root={activeRoot} />
       </div>
 
-      <div className="border-surface-200 dark:border-dark-surface-600 flex shrink-0 flex-col gap-1.5 border-b px-3 py-2">
-        <Select
-          aria-label={t('workspace.filter_type')}
-          value={activeType?.id ?? ''}
-          onChange={e => {
-            setFilterTypeId(e.target.value);
-            setFilterValue('');
-          }}
-          options={filterTypes.map(ft => ({ value: ft.id, label: tk(ft.labelKey) }))}
-          className="w-full"
-        />
-        {inputSpec?.kind === 'options' ? (
+      {filterPanel.open && (
+        <div className="border-surface-200 dark:border-dark-surface-600 flex shrink-0 flex-col gap-1.5 border-b px-3 py-2">
           <Select
-            aria-label={t('workspace.filter_label')}
-            value={filterValue}
-            onChange={e => setFilterValue(e.target.value)}
-            placeholder={t('workspace.filter_label')}
-            options={optionValues.map(o => ({ value: o, label: o }))}
+            aria-label={t('workspace.filter_type')}
+            value={activeType?.id ?? ''}
+            onChange={e => {
+              setFilterTypeId(e.target.value);
+              setFilterValue('');
+            }}
+            options={filterTypes.map(ft => ({ value: ft.id, label: tk(ft.labelKey) }))}
             className="w-full"
           />
-        ) : (
-          <SearchBar
-            aria-label={t('workspace.filter_label')}
-            value={filterValue}
-            onChange={e => setFilterValue(e.target.value)}
-            onClear={() => setFilterValue('')}
-            placeholder={filterPlaceholder}
-          />
-        )}
-        {filterActive && find.status === 'searching' && (
-          <span className="text-text-muted dark:text-dark-text-muted px-0.5 text-[11px]">
-            {t('workspace.filter_searching')}
-          </span>
-        )}
-        {filterActive && find.truncated && (
-          <span className="text-text-muted dark:text-dark-text-muted px-0.5 text-[11px]">
-            {t('workspace.filter_truncated', { count: find.count })}
-          </span>
-        )}
-      </div>
+          {inputSpec?.kind === 'options' ? (
+            <Select
+              aria-label={t('workspace.filter_label')}
+              value={filterValue}
+              onChange={e => setFilterValue(e.target.value)}
+              placeholder={t('workspace.filter_label')}
+              options={optionValues.map(o => ({ value: o, label: o }))}
+              className="w-full"
+            />
+          ) : (
+            <SearchBar
+              aria-label={t('workspace.filter_label')}
+              value={filterValue}
+              onChange={e => setFilterValue(e.target.value)}
+              onClear={() => setFilterValue('')}
+              placeholder={filterPlaceholder}
+            />
+          )}
+          {filterActive && find.status === 'searching' && (
+            <span className="text-text-muted dark:text-dark-text-muted px-0.5 text-[11px]">
+              {t('workspace.filter_searching')}
+            </span>
+          )}
+          {filterActive && find.truncated && (
+            <span className="text-text-muted dark:text-dark-text-muted px-0.5 text-[11px]">
+              {t('workspace.filter_truncated', { count: find.count })}
+            </span>
+          )}
+        </div>
+      )}
 
       {agentView && (
         <div className="border-surface-200 dark:border-dark-surface-600 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b px-3 py-1.5 text-[11px] text-text-muted dark:text-dark-text-muted">

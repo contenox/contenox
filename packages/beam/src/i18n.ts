@@ -444,6 +444,7 @@ const resources = {
         fleet: 'Fleet',
         missions: 'Missions',
         inbox: 'Inbox',
+        projects: 'Projects',
       },
       model_registry: {
         loading: 'Loading model registry...',
@@ -2057,6 +2058,7 @@ const resources = {
         mention_menu_label: 'Workspace files',
         mention_loading: 'Loading…',
         mention_preview_label: 'File preview',
+        filter_toggle: 'Filter files',
         filter_label: 'Filter files',
         filter_type: 'Filter type',
         filter_type_ext: 'Extension',
@@ -2086,6 +2088,37 @@ const resources = {
         out_of_bounds_body_path:
           '“{{path}}” is outside the roots this runtime was started with.',
         out_of_bounds_allowed_label: 'Allowed roots',
+      },
+      // The project-registry management page (/projects, Slice 4): add, name, and
+      // forget the managed workspace roots this runtime may open sessions in.
+      // Forgetting only removes the runtime's grant — the folder is left untouched.
+      projects: {
+        title: 'Projects',
+        description:
+          'Projects are the folders this runtime is allowed to open sessions in. Add one to name a workspace, or forget one to remove it from the runtime — the folder itself is never touched.',
+        loading: 'Loading projects…',
+        load_error: 'Could not load the projects.',
+        empty_title: 'No projects yet',
+        empty_description:
+          'Add a folder below to give the runtime a workspace it can open sessions in.',
+        default_badge: 'default',
+        open: 'New session',
+        add_title: 'Add a project',
+        add_description:
+          'Point the runtime at an existing folder on its host to allow sessions in it. Broad locations — your home folder, a drive root — are refused; pick the project folder itself. Adding an already-registered folder under a new name renames it.',
+        name_label: 'Name',
+        name_placeholder: 'Optional — defaults to the folder name',
+        path_label: 'Folder path',
+        path_placeholder: '/home/you/code/my-project',
+        add_submit: 'Add project',
+        add_submitting: 'Adding…',
+        add_error_fallback: 'Could not add this folder.',
+        forget: 'Forget',
+        forget_confirm:
+          'Forget the project “{{name}}”? This only removes it from the runtime — the folder and its files are left untouched.',
+        forget_confirm_sessions:
+          'Forget the project “{{name}}”? {{count}} open session(s) live under it and will lose their project label. The folder and its files are left untouched.',
+        forget_error_fallback: 'Could not forget this project.',
       },
       // Mission inspector tab bar (Arc 4). Flat tabs on the mission detail; more
       // entries (Changes/Search) join as those slices land.
@@ -2610,6 +2643,7 @@ const resources = {
         fleet: 'Flotte',
         missions: 'Missionen',
         inbox: 'Eingang',
+        projects: 'Projekte',
       },
       model_registry: {
         loading: 'Modell-Registry wird geladen...',
@@ -3878,6 +3912,7 @@ const resources = {
         mention_menu_label: 'Arbeitsbereich-Dateien',
         mention_loading: 'Wird geladen…',
         mention_preview_label: 'Dateivorschau',
+        filter_toggle: 'Dateien filtern',
         filter_label: 'Dateien filtern',
         filter_type: 'Filtertyp',
         filter_type_ext: 'Endung',
@@ -3904,6 +3939,34 @@ const resources = {
         out_of_bounds_body_path:
           '„{{path}}“ liegt außerhalb der Wurzeln, mit denen diese Runtime gestartet wurde.',
         out_of_bounds_allowed_label: 'Erlaubte Wurzeln',
+      },
+      projects: {
+        title: 'Projekte',
+        description:
+          'Projekte sind die Ordner, in denen diese Runtime Sitzungen öffnen darf. Füge einen hinzu, um einen Arbeitsbereich zu benennen, oder entferne einen, um ihn aus der Runtime zu nehmen — der Ordner selbst wird dabei nie verändert.',
+        loading: 'Projekte werden geladen…',
+        load_error: 'Die Projekte konnten nicht geladen werden.',
+        empty_title: 'Noch keine Projekte',
+        empty_description:
+          'Füge unten einen Ordner hinzu, um der Runtime einen Arbeitsbereich für Sitzungen zu geben.',
+        default_badge: 'Standard',
+        open: 'Neue Sitzung',
+        add_title: 'Projekt hinzufügen',
+        add_description:
+          'Verweise die Runtime auf einen vorhandenen Ordner auf ihrem Host, um dort Sitzungen zu erlauben. Zu breite Orte — dein Home-Verzeichnis, eine Laufwerkswurzel — werden abgelehnt; wähle den Projektordner selbst. Wird ein bereits registrierter Ordner unter neuem Namen hinzugefügt, wird er umbenannt.',
+        name_label: 'Name',
+        name_placeholder: 'Optional — voreingestellt auf den Ordnernamen',
+        path_label: 'Ordnerpfad',
+        path_placeholder: '/home/du/code/mein-projekt',
+        add_submit: 'Projekt hinzufügen',
+        add_submitting: 'Wird hinzugefügt…',
+        add_error_fallback: 'Dieser Ordner konnte nicht hinzugefügt werden.',
+        forget: 'Entfernen',
+        forget_confirm:
+          'Projekt „{{name}}“ entfernen? Damit wird es nur aus der Runtime entfernt — der Ordner und seine Dateien bleiben unberührt.',
+        forget_confirm_sessions:
+          'Projekt „{{name}}“ entfernen? {{count}} offene Sitzung(en) liegen darunter und verlieren ihre Projektzuordnung. Der Ordner und seine Dateien bleiben unberührt.',
+        forget_error_fallback: 'Dieses Projekt konnte nicht entfernt werden.',
       },
       inspector: {
         tab_overview: 'Übersicht',

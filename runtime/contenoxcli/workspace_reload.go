@@ -8,6 +8,7 @@ import (
 
 	libbus "github.com/contenox/runtime/libbus"
 	"github.com/contenox/runtime/runtime/internal/localfileapi"
+	"github.com/contenox/runtime/runtime/project"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/vfs"
 	"github.com/contenox/runtime/runtime/workspacegrants"
@@ -68,7 +69,14 @@ func (r *workspaceRootReloader) apply(ctx context.Context) error {
 // logged, never surfaced as a failed grant.
 func (r *workspaceRootReloader) mutators(bus libbus.Messenger) *localfileapi.RootsMutators {
 	return &localfileapi.RootsMutators{
-		Add: func(ctx context.Context, path string) error {
+		Add: func(ctx context.Context, path, name string) error {
+			// A bad friendly name is a client input fault (422) caught BEFORE anything
+			// persists — otherwise the grant would succeed and the name be silently
+			// dropped by the best-effort marker write below.
+			name, nameErr := project.NormalizeName(name)
+			if nameErr != nil {
+				return fmt.Errorf("%w: %v", workspacegrants.ErrInvalidGrant, nameErr)
+			}
 			// Control-plane isolation (vfs-invariant slice): a client may not grant
 			// the runtime's own state dir as a workspace root. serve set the global
 			// denylist at boot, so consult it here — a bad grant is a client input
@@ -77,8 +85,21 @@ func (r *workspaceRootReloader) mutators(bus libbus.Messenger) *localfileapi.Roo
 			if denied, ok := vfs.IsControlPlanePath(path); ok {
 				return fmt.Errorf("%w: %q is inside the runtime's control plane (%s) and can never be a workspace root — the runtime never lets a session reach its own config, database, or policies", workspacegrants.ErrInvalidGrant, path, denied)
 			}
+			// Persist the grant first (this validates the path: exists, is a dir, not
+			// a broad parent). Only after it is accepted do we stamp the project
+			// marker, so a rejected path never gets a stray `.contenox/` written into it.
 			if _, err := workspacegrants.Add(ctx, r.store, path); err != nil {
 				return err
+			}
+			// Make it a real, named project: registering is naming — a fresh marker
+			// defaults its name to the folder basename, an explicit name renames, and
+			// re-adding without a name never clobbers a chosen one. Best-effort —
+			// the grant is already valid and durable, so a marker write failure only
+			// costs the friendly name (the root falls back to its basename), never the
+			// grant itself.
+			if _, err := project.Register(path, name); err != nil {
+				slog.Warn("contenox serve: workspace root granted but project marker could not be written",
+					"path", path, "error", err)
 			}
 			return r.applyAndRing(ctx, bus)
 		},
@@ -87,6 +108,9 @@ func (r *workspaceRootReloader) mutators(bus libbus.Messenger) *localfileapi.Roo
 				return err
 			}
 			return r.applyAndRing(ctx, bus)
+		},
+		Grants: func(ctx context.Context) []string {
+			return workspacegrants.ReadGrants(ctx, r.store)
 		},
 	}
 }

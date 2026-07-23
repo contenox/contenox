@@ -27,6 +27,7 @@ import (
 	libbus "github.com/contenox/runtime/libbus"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/project"
 	"github.com/contenox/runtime/runtime/vfs"
 	"github.com/contenox/runtime/runtime/workspacegrants"
 	"github.com/spf13/cobra"
@@ -56,11 +57,17 @@ it appears in the API and the Beam folder picker (GET /workspace/roots).`,
 
 var workspaceAddCmd = &cobra.Command{
 	Use:   "add <path>",
-	Short: "Grant a directory as a workspace root.",
+	Short: "Grant a directory as a project workspace root.",
 	Long: `Grant <path> as a workspace root. The path must be an existing directory;
 granting it grants everything under it. The grant is durable and, if a
 'contenox serve' is running, applies live (no restart). Granting a path already
-granted is a no-op.`,
+granted is a no-op.
+
+The granted directory is also registered as a project: its
+.contenox/workspace.id marker is created if absent, and --name stamps a friendly
+display name into it (shown by 'workspace list', the API, and the Beam picker;
+default: the folder's basename shows). Re-adding an already-granted path with a
+new --name renames the project.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runWorkspaceAdd,
 }
@@ -87,12 +94,21 @@ root, which is shown by the API and the Beam folder picker, not here.`,
 }
 
 func init() {
+	workspaceAddCmd.Flags().String("name", "", "Friendly project name stamped into the folder's marker (default: keep an existing name, else the folder name shows)")
 	workspaceCmd.AddCommand(workspaceAddCmd)
 	workspaceCmd.AddCommand(workspaceRemoveCmd)
 	workspaceCmd.AddCommand(workspaceListCmd)
 }
 
 func runWorkspaceAdd(cmd *cobra.Command, args []string) error {
+	// Same boundary rule as the REST mutator (workspace_reload.go): a bad friendly
+	// name is refused BEFORE anything persists, never silently dropped.
+	rawName, _ := cmd.Flags().GetString("name")
+	name, err := project.NormalizeName(rawName)
+	if err != nil {
+		return fmt.Errorf("%w: %v", workspacegrants.ErrInvalidGrant, err)
+	}
+
 	// Control-plane isolation (vfs-invariant slice): refuse granting the runtime's
 	// own state dir (~/.contenox: config, database, HITL policies, declared agents)
 	// as a workspace root. This CLI runs in a SEPARATE process from serve, which is
@@ -115,6 +131,16 @@ func runWorkspaceAdd(cmd *cobra.Command, args []string) error {
 	roots, err := workspacegrants.Add(ctx, store, args[0])
 	if err != nil {
 		return err
+	}
+	// Register the granted directory as a project — the SAME best-effort marker
+	// stamp the serve-side REST mutator applies (fresh markers default their name
+	// to the folder basename; an explicit --name renames), so a CLI grant and a
+	// Beam "Add project" produce the same on-disk result. The grant is already
+	// durable, so a marker write failure (e.g. a read-only folder) only costs the
+	// friendly name, never the grant.
+	if _, merr := project.Register(args[0], name); merr != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"note: root granted, but its project marker could not be written (the name falls back to the folder name): %v\n", merr)
 	}
 	ringReloadDoorbell(ctx, cmd, db, roots)
 	printWorkspaceGrants(cmd, roots)
@@ -172,6 +198,12 @@ func printWorkspaceGrants(cmd *cobra.Command, roots []string) {
 	}
 	fmt.Fprintln(out, "Granted workspace roots:")
 	for _, r := range roots {
+		// The project's friendly name, when its marker carries one — the same label
+		// the API and the Beam picker show for this root.
+		if m, ok := project.ReadFromProjectRoot(r); ok && m.Name != "" {
+			fmt.Fprintf(out, "  %s  (%s)\n", r, m.Name)
+			continue
+		}
 		fmt.Fprintf(out, "  %s\n", r)
 	}
 }
