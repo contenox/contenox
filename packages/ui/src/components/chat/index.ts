@@ -30,5 +30,7 @@ export {
   ChatTranscriptStreamingPlaceholder,
   chatTranscriptMarkdownComponents,
 } from "./chatTranscript";
+export { CodeBlockView } from "./CodeBlockView";
+export type { CodeBlockViewProps } from "./CodeBlockView";
 export type { TranscriptEmbedCardProps } from "./TranscriptEmbedCard";
 export { TranscriptEmbedCard } from "./TranscriptEmbedCard";

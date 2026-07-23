@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   ChatStreamingCaret,
   ChatStreamThinkingBox,
@@ -17,7 +18,8 @@ type Story = StoryObj;
 export const Caret: Story = {
   render: () => (
     <span>
-      Streaming output<ChatStreamingCaret />
+      Streaming output
+      <ChatStreamingCaret />
     </span>
   ),
 };
@@ -46,19 +48,72 @@ export const ThinkingBoxLong: Story = {
   ),
 };
 
-export const MarkdownComponents: Story = {
-  render: () => (
-    <div style={{ maxWidth: "640px" }}>
-      <ReactMarkdown components={chatTranscriptMarkdownComponents}>
-        {`Inline \`code\` looks like this.
+const RICH_MARKDOWN = `# Heading level 1
+
+A paragraph with **bold**, _italic_, inline \`code\`, and a [link to the docs](https://example.com).
+
+## Lists
+
+- First bullet
+- Second bullet
+  1. Nested ordered
+  2. Another one
+
+## A GFM table
+
+| Provider | Streaming | Notes            |
+| -------- | :-------: | ---------------- |
+| modeld   |    yes    | local, 24/7 tier |
+| openai   |    yes    | remote           |
+
+## Syntax highlighting
 
 \`\`\`ts
 export function add(a: number, b: number): number {
-  return a + b;
+  return a + b; // language: typescript
 }
 \`\`\`
 
-> A blockquote rendered through the transcript markdown map.`}
+\`\`\`python
+def greet(name: str) -> str:
+    return f"hello {name}"
+\`\`\`
+
+\`\`\`bash
+curl -s https://example.com | jq '.data[]'
+\`\`\`
+
+> A blockquote rendered through the transcript markdown map.
+
+---
+
+Trailing paragraph after a rule.`;
+
+export const MarkdownComponents: Story = {
+  render: () => (
+    <div style={{ maxWidth: "680px" }}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={chatTranscriptMarkdownComponents}
+      >
+        {RICH_MARKDOWN}
+      </ReactMarkdown>
+    </div>
+  ),
+};
+
+/** Same content under the dark theme flip — verifies the vs2015 highlight palette. */
+export const MarkdownComponentsDark: Story = {
+  render: () => (
+    <div
+      className="dark bg-dark-surface-100 text-dark-text"
+      style={{ maxWidth: "680px", padding: 16 }}
+    >
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={chatTranscriptMarkdownComponents}
+      >
+        {RICH_MARKDOWN}
       </ReactMarkdown>
     </div>
   ),

@@ -26,6 +26,128 @@
   }
 }
 
+@layer components {
+  /* Syntax highlighting for chat code fences (highlight.js). Mirrors VS Code's
+     `vs` (light) / `vs2015` (dark) so transcript code matches the Monaco
+     editors. Colors are hex by design: this is a code theme, not UI chrome —
+     the card frame/background comes from surface tokens in CodeBlockView. The
+     `.dark` overrides ride the same theme flip as the rest of the design system. */
+  .hljs {
+    color: inherit;
+    background: transparent;
+  }
+  .hljs-comment,
+  .hljs-quote {
+    color: #008000;
+    font-style: italic;
+  }
+  .hljs-keyword,
+  .hljs-selector-tag,
+  .hljs-literal,
+  .hljs-name,
+  .hljs-tag,
+  .hljs-built_in,
+  .hljs-doctag {
+    color: #0000ff;
+  }
+  .hljs-string,
+  .hljs-regexp,
+  .hljs-addition,
+  .hljs-attribute,
+  .hljs-meta .hljs-string {
+    color: #a31515;
+  }
+  .hljs-number,
+  .hljs-symbol,
+  .hljs-bullet,
+  .hljs-link {
+    color: #098658;
+  }
+  .hljs-type,
+  .hljs-class .hljs-title,
+  .hljs-title.class_,
+  .hljs-title.function_,
+  .hljs-function .hljs-title,
+  .hljs-section {
+    color: #267f99;
+  }
+  .hljs-attr,
+  .hljs-variable,
+  .hljs-template-variable,
+  .hljs-selector-class,
+  .hljs-selector-attr,
+  .hljs-selector-pseudo {
+    color: #001080;
+  }
+  .hljs-meta {
+    color: #808080;
+  }
+  .hljs-deletion {
+    color: #a31515;
+  }
+  .hljs-emphasis {
+    font-style: italic;
+  }
+  .hljs-strong {
+    font-weight: 600;
+  }
+
+  /* Dark — VS Code `vs2015` / Dark+ */
+  .dark .hljs-comment,
+  .dark .hljs-quote {
+    color: #6a9955;
+  }
+  .dark .hljs-keyword,
+  .dark .hljs-selector-tag,
+  .dark .hljs-literal,
+  .dark .hljs-name,
+  .dark .hljs-tag,
+  .dark .hljs-doctag {
+    color: #569cd6;
+  }
+  .dark .hljs-built_in,
+  .dark .hljs-type,
+  .dark .hljs-class .hljs-title,
+  .dark .hljs-title.class_ {
+    color: #4ec9b0;
+  }
+  .dark .hljs-string,
+  .dark .hljs-regexp,
+  .dark .hljs-attribute,
+  .dark .hljs-meta .hljs-string {
+    color: #ce9178;
+  }
+  .dark .hljs-number,
+  .dark .hljs-symbol,
+  .dark .hljs-bullet,
+  .dark .hljs-addition {
+    color: #b5cea8;
+  }
+  .dark .hljs-title.function_,
+  .dark .hljs-function .hljs-title,
+  .dark .hljs-section {
+    color: #dcdcaa;
+  }
+  .dark .hljs-attr,
+  .dark .hljs-variable,
+  .dark .hljs-template-variable,
+  .dark .hljs-selector-class,
+  .dark .hljs-selector-attr,
+  .dark .hljs-selector-pseudo {
+    color: #9cdcfe;
+  }
+  .dark .hljs-meta {
+    color: #9b9b9b;
+  }
+  .dark .hljs-link {
+    color: #569cd6;
+    text-decoration: underline;
+  }
+  .dark .hljs-deletion {
+    color: #f14c4c;
+  }
+}
+
 @theme {
   /* ========== Light Mode Palettes ========== */
   /* Light Mode - monochrome primary */
@@ -298,7 +420,7 @@
 
   /* ========== Dark Mode Surface Colors (Graphite) ========== */
   /* Cool neutral near-blacks — no warm/brown shift             */
-  --color-dark-surface-50: #08090a;  /* True black */
+  --color-dark-surface-50: #08090a; /* True black */
   --color-dark-surface-100: #0d0e10; /* App background */
   --color-dark-surface-200: #121416; /* Card/panel bg */
   --color-dark-surface-300: #1a1c1f; /* Elevated surface */
@@ -562,8 +684,14 @@
 
 /* Terminal block cursor (TerminalPromptInput). */
 @keyframes contenoxTerminalCursorBlink {
-  0%, 49% { opacity: 1; }
-  50%, 100% { opacity: 0; }
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
 }
 .contenox-terminal-cursor {
   display: inline-block;
