@@ -34,6 +34,7 @@ import (
 	"github.com/contenox/runtime/runtime/internal/operatorinboxapi"
 	"github.com/contenox/runtime/runtime/internal/providerapi"
 	"github.com/contenox/runtime/runtime/internal/setupapi"
+	"github.com/contenox/runtime/runtime/internal/shellenvapi"
 	"github.com/contenox/runtime/runtime/internal/taskchainapi"
 	"github.com/contenox/runtime/runtime/internal/taskeventsapi"
 	"github.com/contenox/runtime/runtime/internal/taskexecapi"
@@ -49,6 +50,7 @@ import (
 	"github.com/contenox/runtime/runtime/providerservice"
 	"github.com/contenox/runtime/runtime/runtimestate"
 	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/shellenvservice"
 	"github.com/contenox/runtime/runtime/stateservice"
 	"github.com/contenox/runtime/runtime/taskchainservice"
 	"github.com/contenox/runtime/runtime/terminalservice"
@@ -84,6 +86,25 @@ type Config struct {
 	// hour) — see runtime/contenoxcli/serve_cmd.go's
 	// parseHITLApprovalCeiling.
 	HITLApprovalTimeout string `json:"hitl_approval_timeout"`
+	// SandboxShellScrub selects how the environment handed to an agent-reachable
+	// shell (the local_shell tool and the ACP "!"/shell_session PTY) is scrubbed
+	// of the serve process's own credentials: "deny-secrets" (the default — pass
+	// everything except the control plane and known credential shapes), "strict"
+	// (pass only a safe base set plus SandboxEnvAllow), or "off" (inherit
+	// everything, the legacy behavior). See libsandbox.EnvPolicyForMode.
+	SandboxShellScrub string `json:"sandbox_shell_scrub"`
+	// SandboxTerminalScrub is the same posture for the interactive terminal panel
+	// — a trusted operator shell, so it defaults to "off". Set "deny-secrets" or
+	// "strict" for a LAN-exposed serve where the terminal is less trusted.
+	SandboxTerminalScrub string `json:"sandbox_terminal_scrub"`
+	// SandboxEnvAllow adds variable names or globs (comma/whitespace-separated,
+	// e.g. "GOCACHE,CARGO_HOME,HTTP_PROXY") to whichever scrub is active — the
+	// toolchain and deployment variables a shell needs that are not in the safe
+	// base set.
+	SandboxEnvAllow string `json:"sandbox_env_allow"`
+	// SandboxEnvDeny adds variable names or globs always dropped by an active
+	// scrub, on top of the built-in denies.
+	SandboxEnvDeny string `json:"sandbox_env_deny"`
 }
 
 // Dependencies are the services the product routes are mounted on. All fields
@@ -241,6 +262,10 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 	modelregistryapi.AddRoutes(mux, registrySvc, registry, backendSvc, store)
 
 	setupapi.AddSetupRoutes(mux, stateSvc, deps.Auth)
+	// Global shell-env injection: the operator-defined variables added on top of
+	// whatever the scrub passes into every shell contenox spawns. Plaintext config,
+	// authenticated like the other mutating routes.
+	shellenvapi.AddShellEnvRoutes(mux, shellenvservice.New(deps.DB), deps.Auth)
 	providerSvc := providerservice.New(deps.DB, deps.WorkspaceID)
 	providerapi.AddProviderRoutes(mux, providerSvc)
 

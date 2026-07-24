@@ -39,11 +39,15 @@ func buildStubAgent(t *testing.T) string {
 // underneath) actually works end to end, not just in mocks. Close then
 // tears the whole thing down cleanly.
 func TestHost_ExternalACPAgent_ConnectAndInitialize(t *testing.T) {
+	requireSandboxable(t)
 	agentBin := buildStubAgent(t)
 
 	host := agenthost.NewExternalACPAgent(runtimetypes.ExternalACPConfig{
 		Transport: runtimetypes.ExternalACPTransportStdio,
 		Command:   agentBin,
+		// The sandbox is the only spawn path and needs a workspace; Connect
+		// (unlike DriveTurn) has no session cwd to default from, so it is set here.
+		Cwd: t.TempDir(),
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -83,11 +87,13 @@ func TestHost_ExternalACPAgent_ConnectAndInitialize(t *testing.T) {
 // full connect/initialize/close cycle and asserts calling Close twice is
 // safe and returns the same result both times.
 func TestHost_ExternalACPAgent_CloseIsIdempotent(t *testing.T) {
+	requireSandboxable(t)
 	agentBin := buildStubAgent(t)
 
 	host := agenthost.NewExternalACPAgent(runtimetypes.ExternalACPConfig{
 		Transport: runtimetypes.ExternalACPTransportStdio,
 		Command:   agentBin,
+		Cwd:       t.TempDir(),
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

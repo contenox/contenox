@@ -52,7 +52,14 @@ func (s *service) Create(ctx context.Context, principal string, req CreateReques
 		cmd = exec.Command(shell)
 	}
 	cmd.Dir = cwd
-	cmd.Env = append(execEnv(), "TERM=xterm-256color")
+	// Scrub serve's credentials out of the terminal's environment when configured
+	// (default off — the terminal is the operator's own shell); TERM is appended
+	// last so it wins regardless of the policy.
+	parent := os.Environ()
+	if s.cfg.ScrubEnv != nil {
+		parent = s.cfg.ScrubEnv(parent)
+	}
+	cmd.Env = append(parent, "TERM=xterm-256color")
 
 	tty, err := pty.Start(cmd)
 	if err != nil {
@@ -95,5 +102,3 @@ func (s *service) Create(ctx context.Context, principal string, req CreateReques
 
 	return &CreateResponse{ID: id}, nil
 }
-
-func execEnv() []string { return os.Environ() }

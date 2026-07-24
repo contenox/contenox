@@ -2103,6 +2103,28 @@
         },
         "type": "object"
       },
+      "shellenvapi_shellEnvRequest": {
+        "properties": {
+          "vars": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "shellenvapi_shellEnvResponse": {
+        "properties": {
+          "vars": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
       "statetype_BackendRuntimeState": {
         "properties": {
           "backend": {
@@ -6192,6 +6214,75 @@
         "summary": "refreshStatus re-runs the setup checks and returns the fresh result.",
         "tags": [
           "setup"
+        ]
+      }
+    },
+    "/shell-env": {
+      "get": {
+        "operationId": "shellenv_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/shellenvapi_shellEnvResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /shell-env",
+        "tags": [
+          "shellenv"
+        ]
+      },
+      "put": {
+        "operationId": "shellenv_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/shellenvapi_shellEnvRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/shellenvapi_shellEnvResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "PUT /shell-env",
+        "tags": [
+          "shellenv"
         ]
       }
     },

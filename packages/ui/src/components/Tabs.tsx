@@ -97,7 +97,10 @@ export function Tabs<T extends string = string>({
                 aria-label={tab.closeLabel}
                 tabIndex={isActive ? 0 : -1}
                 className={cn(
-                  "absolute top-1/2 right-1.5 -translate-y-1/2 rounded p-0.5",
+                  // p-1.5 gives a ~26px tap target (over the WCAG 2.5.8 AA 24px
+                  // floor) while the icon stays h-3.5 — comfortable on touch,
+                  // visually unchanged on desktop.
+                  "absolute top-1/2 right-1 -translate-y-1/2 rounded p-1.5",
                   "text-foreground/50 hover:text-foreground hover:bg-white/10",
                   "focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/30",
                 )}

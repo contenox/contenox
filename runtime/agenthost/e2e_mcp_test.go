@@ -68,6 +68,7 @@ func registerAgentWithMcp(t *testing.T, name, command string, mcpRows []*runtime
 // proving the spec we forwarded was complete enough for a foreign agent to
 // actually connect to the server and use it.
 func TestHostE2E_Testy_McpPassDownThroughComposedPath(t *testing.T) {
+	requireSandboxable(t)
 	testyBin := testyBinFromEnv(t)
 	mcpBin := os.Getenv(hostMcpEchoBinEnv)
 	if mcpBin == "" {
@@ -110,6 +111,7 @@ func TestHostE2E_Testy_McpPassDownThroughComposedPath(t *testing.T) {
 // forwarded http server must be withheld — and reported as dropped — while a
 // stdio server passes through as the protocol baseline.
 func TestHost_DriveTurn_McpCapabilityFilterDropsUnsupported(t *testing.T) {
+	requireSandboxable(t)
 	stubBin := buildStubAgent(t)
 	ctx, agent := registerAgent(t, "stub-mcp-filter", stubBin)
 

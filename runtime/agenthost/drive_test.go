@@ -49,6 +49,7 @@ func registerAgent(t *testing.T, name, command string, args ...string) (context.
 // the streamed reply landing on the recording harness — registry → host →
 // live ACP session → answer, no piece mocked.
 func TestHost_DriveTurn_RegistryToStubRoundTrip(t *testing.T) {
+	requireSandboxable(t)
 	stubBin := buildStubAgent(t)
 	ctx, agent := registerAgent(t, "stub-roundtrip", stubBin)
 
@@ -86,6 +87,7 @@ func TestHost_DriveTurn_RegistryToStubRoundTrip(t *testing.T) {
 // the caller's harness in wire order, pinning that the harness seam really is
 // pass-through for non-message updates too.
 func TestHost_DriveTurn_StreamingUpdatesReachHarness(t *testing.T) {
+	requireSandboxable(t)
 	stubBin := buildStubAgent(t)
 	ctx, agent := registerAgent(t, "stub-streaming", stubBin)
 

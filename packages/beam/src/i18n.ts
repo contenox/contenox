@@ -52,6 +52,21 @@ const resources = {
         run_wizard_title: 'Setup wizard',
         run_wizard_description: 'Reconfigure providers, models, and backends step by step.',
         run_wizard_action: 'Run setup wizard',
+        shell_env_section_title: 'Shell environment variables',
+        shell_env_section_description:
+          'Injected into the shells contenox spawns (local_shell, terminal), applied on top of the environment scrub. These are plain config strings — do not put secrets here.',
+        shell_env_name_label: 'Name',
+        shell_env_value_label: 'Value',
+        shell_env_name_placeholder: 'e.g. HTTP_PROXY',
+        shell_env_value_placeholder: 'Value',
+        shell_env_add: 'Add variable',
+        shell_env_empty: 'No variables set. Saving with none removes all injected variables.',
+        shell_env_loading: 'Loading shell environment variables…',
+        shell_env_load_error: 'Could not load shell environment variables.',
+        shell_env_error_empty_name: 'Every variable needs a name.',
+        shell_env_error_invalid_name:
+          'Names must start with a letter or underscore and contain only letters, digits, and underscores.',
+        shell_env_error_duplicate_name: 'Each variable name must be unique.',
       },
       // New Settings-page coverage for the CLI config keys the UI previously
       // omitted (see `contenox config --help`). Kept in its own namespace so
@@ -445,6 +460,7 @@ const resources = {
         missions: 'Missions',
         inbox: 'Inbox',
         projects: 'Projects',
+        console: 'Console',
       },
       model_registry: {
         loading: 'Loading model registry...',
@@ -2113,6 +2129,18 @@ const resources = {
         add_submit: 'Add project',
         add_submitting: 'Adding…',
         add_error_fallback: 'Could not add this folder.',
+        browse_open: 'Browse for a folder…',
+        dialog_title: 'Add a project',
+        browse_hint: 'Open folders to look inside, then select the one to register as a project.',
+        browse_start_label: 'Start from',
+        browse_loading: 'Loading folders…',
+        browse_empty: 'No sub-folders here.',
+        selected_label: 'Selected folder',
+        selected_none: 'No folder selected yet — click one above.',
+        manual_toggle: 'Enter a path manually',
+        browse_toggle: 'Browse folders instead',
+        already_project: 'This folder is already registered as the project “{{name}}”. Adding it again just updates its name.',
+        add_update: 'Update project',
         forget: 'Forget',
         forget_confirm:
           'Forget the project “{{name}}”? This only removes it from the runtime — the folder and its files are left untouched.',
@@ -2211,6 +2239,8 @@ const resources = {
         take_over_confirm_confirm: 'Take the shell',
         take_over_confirm_cancel: 'Keep watching',
         interactive_badge: 'Interactive',
+        page_title: 'Console',
+        cwd_label: 'Shell working directory',
       },
       // The goto-anything command palette (Cmd/Ctrl+K): fuzzy-select over
       // missions, fleet instances, agents, sessions, workspace roots, pending
@@ -2278,6 +2308,22 @@ const resources = {
         run_wizard_description:
           'Anbieter, Modelle und Backends Schritt für Schritt neu konfigurieren.',
         run_wizard_action: 'Einrichtungsassistent starten',
+        shell_env_section_title: 'Shell-Umgebungsvariablen',
+        shell_env_section_description:
+          'Werden in die von contenox gestarteten Shells injiziert (local_shell, Terminal), zusätzlich zum bereinigten Environment (Scrub). Es handelt sich um einfache Konfigurationswerte — hier keine Geheimnisse ablegen.',
+        shell_env_name_label: 'Name',
+        shell_env_value_label: 'Wert',
+        shell_env_name_placeholder: 'z. B. HTTP_PROXY',
+        shell_env_value_placeholder: 'Wert',
+        shell_env_add: 'Variable hinzufügen',
+        shell_env_empty:
+          'Keine Variablen gesetzt. Speichern ohne Einträge entfernt alle injizierten Variablen.',
+        shell_env_loading: 'Shell-Umgebungsvariablen werden geladen…',
+        shell_env_load_error: 'Shell-Umgebungsvariablen konnten nicht geladen werden.',
+        shell_env_error_empty_name: 'Jede Variable braucht einen Namen.',
+        shell_env_error_invalid_name:
+          'Namen müssen mit einem Buchstaben oder Unterstrich beginnen und dürfen nur Buchstaben, Ziffern und Unterstriche enthalten.',
+        shell_env_error_duplicate_name: 'Jeder Variablenname muss eindeutig sein.',
       },
       settingsAdvanced: {
         not_set: 'Nicht gesetzt',
@@ -2644,6 +2690,7 @@ const resources = {
         missions: 'Missionen',
         inbox: 'Eingang',
         projects: 'Projekte',
+        console: 'Konsole',
       },
       model_registry: {
         loading: 'Modell-Registry wird geladen...',
@@ -2971,6 +3018,7 @@ const resources = {
         created_at: 'Erstellt am',
         selected: 'Ausgewählt',
         retry: 'Wiederholen',
+        close: 'Schließen',
         edit: 'Bearbeiten',
         deleting: 'Löschen',
         updating: 'Aktualisieren',
@@ -3961,6 +4009,18 @@ const resources = {
         add_submit: 'Projekt hinzufügen',
         add_submitting: 'Wird hinzugefügt…',
         add_error_fallback: 'Dieser Ordner konnte nicht hinzugefügt werden.',
+        browse_open: 'Ordner auswählen…',
+        dialog_title: 'Projekt hinzufügen',
+        browse_hint: 'Öffne Ordner, um hineinzusehen, und wähle dann den Ordner, der als Projekt registriert werden soll.',
+        browse_start_label: 'Ausgehend von',
+        browse_loading: 'Ordner werden geladen…',
+        browse_empty: 'Keine Unterordner hier.',
+        selected_label: 'Ausgewählter Ordner',
+        selected_none: 'Noch kein Ordner gewählt — klicke oben einen an.',
+        manual_toggle: 'Pfad manuell eingeben',
+        browse_toggle: 'Stattdessen Ordner durchsuchen',
+        already_project: 'Dieser Ordner ist bereits als Projekt „{{name}}“ registriert. Erneutes Hinzufügen aktualisiert nur seinen Namen.',
+        add_update: 'Projekt aktualisieren',
         forget: 'Entfernen',
         forget_confirm:
           'Projekt „{{name}}“ entfernen? Damit wird es nur aus der Runtime entfernt — der Ordner und seine Dateien bleiben unberührt.',
@@ -4047,6 +4107,8 @@ const resources = {
         take_over_confirm_confirm: 'Shell übernehmen',
         take_over_confirm_cancel: 'Weiter beobachten',
         interactive_badge: 'Interaktiv',
+        page_title: 'Konsole',
+        cwd_label: 'Arbeitsverzeichnis der Shell',
       },
       palette: {
         aria_label: 'Befehlspalette',

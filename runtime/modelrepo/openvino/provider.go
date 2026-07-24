@@ -3,7 +3,6 @@ package openvino
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 
 	"github.com/contenox/runtime/runtime/modelregistry"
 	"github.com/contenox/runtime/runtime/modelrepo"
@@ -134,18 +133,38 @@ func (p *openvinoProvider) notWired(kind string) error {
 }
 
 func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
+	// Identity comes from the model's own files (no hardcoded format): the digest
+	// content-addresses the model, and the template digest tracks its Jinja chat
+	// template, which modeld applies via the IR tokenizer.
 	var dir string
+	var profile modelProfile
+	var adapters []transport.AdapterSpec
+	var modelDigest, templateDigest string
+	// curatedName keys the curated-registry tool lookup. For a variant it is the
+	// BASE model name (the registry knows the base, not the variant); for a base
+	// model it is the model itself.
+	curatedName := p.name
 	if p.modelDir != "" {
-		dir = filepath.Join(p.modelDir, p.name)
+		// Files-are-truth: resolve the on-disk backing fresh. This transparently
+		// handles a base model (IR entrypoint in its own dir) and a variant
+		// (contenox-variant.json reusing a sibling base's IR + adapters).
+		src, err := resolveModelSource(p.modelDir, p.name)
+		if err != nil {
+			return nil, err
+		}
+		dir = src.modelDir
+		profile = src.profile
+		adapters = src.adapters
+		modelDigest = src.modelDigest
+		templateDigest = src.templateDigest
+		curatedName = src.baseName
 	} else if p.target.Endpoint == "" {
 		return nil, fmt.Errorf("openvino provider for %q has no modelDir and no target endpoint", p.name)
 	}
-	profile, err := loadModelProfile(dir)
-	if err != nil {
-		return nil, err
-	}
+	// else: remote/explicit node — rely on wire identity + node; adapters carried
+	// in ModelRef when known.
 	if profile.ToolCalls.Protocol == "" {
-		profile.ToolCalls.Protocol = curatedToolProtocol(ctx, p.name, "openvino")
+		profile.ToolCalls.Protocol = curatedToolProtocol(ctx, curatedName, "openvino")
 	}
 	reasoningParser, reasoningStream := profile.Reasoning.protocols()
 	caps := profile.capabilityConfig()
@@ -155,21 +174,6 @@ func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
 	maxOut := p.caps.MaxOutputTokens
 	if maxOut == 0 {
 		maxOut = caps.MaxOutputTokens
-	}
-	// Identity comes from the model's own files (no hardcoded format): the digest
-	// content-addresses the model, and the template digest tracks its Jinja chat
-	// template, which modeld applies via the IR tokenizer.
-	var modelDigest, templateDigest string
-	var adapters []transport.AdapterSpec
-	if dir != "" {
-		modelDigest, templateDigest = modelIdentity(dir)
-		var err error
-		adapters, err = resolveProfileAdapters(dir, profile.Adapters)
-		if err != nil {
-			return nil, err
-		}
-	} else if p.target.Endpoint != "" {
-		// Remote: rely on wire identity + node; adapters carried in ModelRef when known.
 	}
 	profileID := p.name
 	// NumCtx stays 0 (auto) end-to-end: modeld's authoritative, post-eviction
@@ -265,15 +269,19 @@ func curatedToolProtocol(ctx context.Context, modelName, backendType string) str
 
 func (p *openvinoProvider) newEmbedClient() (*embedClient, error) {
 	var dir string
+	var modelDigest string
 	if p.modelDir != "" {
-		dir = filepath.Join(p.modelDir, p.name)
-		if _, err := loadModelProfile(dir); err != nil {
+		src, err := resolveModelSource(p.modelDir, p.name)
+		if err != nil {
 			return nil, err
 		}
-	}
-	var modelDigest string
-	if dir != "" {
-		modelDigest, _ = modelIdentity(dir)
+		// Embeddings stay adapter-free (per the LoRA blueprint): a variant's whole
+		// point is its adapters, so refuse rather than silently embed the base.
+		if src.isVariant {
+			return nil, NewUnsupportedFeatureError("embeddings for LoRA variant " + p.name + " (embeddings are adapter-free)")
+		}
+		dir = src.modelDir
+		modelDigest = src.modelDigest
 	}
 	return &embedClient{
 		modelName:   p.name,

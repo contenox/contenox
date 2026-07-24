@@ -2,14 +2,18 @@ package agenthost
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/contenox/runtime/libacp"
 	"github.com/contenox/runtime/libacp/acpexec"
+	"github.com/contenox/runtime/libsandbox"
+	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 )
 
@@ -40,6 +44,13 @@ type ExternalACPAgent struct {
 	// most editor adapters — never exit on stdin-close, so a short grace
 	// here is what keeps their teardown from stalling for the full default.
 	KillGrace time.Duration
+
+	// Tracker observes the sandbox that confines the spawned agent (the
+	// libsandbox.Command assembly lifecycle, and — in later libsandbox slices —
+	// every blocked bypass attempt). It is an optional seam so a caller can wire
+	// real telemetry later without this package requiring it: nil is treated as
+	// libtracker.NoopTracker (see buildAgentCmd), so the default is silent.
+	Tracker libtracker.ActivityTracker
 }
 
 // NewExternalACPAgent returns an ExternalACPAgent for cfg.
@@ -85,12 +96,9 @@ func (a *ExternalACPAgent) Connect(ctx context.Context, harness libacp.Client) (
 // should pass one it controls directly (e.g. context.Background()) and rely
 // on Handle.Close, not ctx cancellation, for teardown.
 func (a *ExternalACPAgent) connectStdio(ctx context.Context, harness libacp.Client) (*Handle, error) {
-	cmd := exec.Command(a.Config.Command, a.Config.Args...)
-	if a.Config.Cwd != "" {
-		cmd.Dir = a.Config.Cwd
-	}
-	if len(a.Config.Env) > 0 {
-		cmd.Env = append(os.Environ(), envPairs(a.Config.Env)...)
+	cmd, err := buildAgentCmd(ctx, a)
+	if err != nil {
+		return nil, fmt.Errorf("agenthost: sandbox external ACP agent %q: %w", a.Config.Command, err)
 	}
 
 	var opts []acpexec.Option
@@ -132,12 +140,107 @@ func (a *ExternalACPAgent) connectStdio(ctx context.Context, harness libacp.Clie
 	return &Handle{Conn: conn, closeFn: closeFn}, nil
 }
 
-// envPairs renders env as "KEY=VALUE" pairs suitable for appending to
-// exec.Cmd.Env.
-func envPairs(env map[string]string) []string {
-	pairs := make([]string, 0, len(env))
-	for k, v := range env {
-		pairs = append(pairs, k+"="+v)
+// sandboxCarveoutFile is the control-plane necessity-list an operator may place
+// at ~/.contenox/sandbox-carveouts.json to widen the wall for a specific
+// deployment: extra filesystem holes and the registry hosts the agent's
+// toolchain must reach. Absent = the defaults only, offline by construction. It
+// is read from the OPERATOR's real home (the parent process configuring the
+// wall), never from the confined agent's reach — ~/.contenox is not carved, so
+// the agent cannot see it.
+const sandboxCarveoutFile = ".contenox/sandbox-carveouts.json"
+
+// buildAgentCmd assembles the confined *exec.Cmd for spawning the external ACP
+// agent described by a, through libsandbox: the agent is ALWAYS spawned inside
+// "the wall" (a workspace-pinned, credential-scrubbed, offline-by-default
+// sandbox), never as a bare subprocess. There is deliberately no unsandboxed
+// path — the sandbox is the only spawn path — so on a host where the wall cannot
+// be built (non-Linux, or a Linux kernel without unprivileged user namespaces or
+// Landlock) libsandbox.Command fails closed and the agent does not run.
+//
+// The Spec is fixed policy, not caller-tunable:
+//   - WorkspaceRoot is a.Config.Cwd, the one writable root. An empty Cwd is a
+//     fail-closed error: the wall needs a concrete workspace and must never
+//     default to the whole filesystem.
+//   - Home is the operator's REAL home. "~" in a carve-out resolves against it,
+//     so "~/.claude" reaches the operator's actual agent config — while Landlock
+//     denies everything not carved, so ~/.ssh, ~/.aws, ~/.contenox stay out of
+//     reach even though the real home is $HOME. (A separate scoped home would
+//     make "~/.claude" resolve to an empty dir and the agent would not find its
+//     config.)
+//   - EnvAllow is the resolved default env policy (PATH/TERM/locale, no secrets);
+//     EnvSet is the agent config's explicit vars. HOME is forced to Home by
+//     libsandbox regardless of either.
+//   - FS carves the agent auth/config dirs read-only, plus anything the operator
+//     added in the carve-out file. Net comes only from that file — empty means
+//     offline. AllowPrivateEgress and SyscallTap are off.
+func buildAgentCmd(ctx context.Context, a *ExternalACPAgent) (*exec.Cmd, error) {
+	if a.Config.Cwd == "" {
+		return nil, errors.New("cwd is required to confine the agent (the wall needs a workspace; it will not default to the whole filesystem)")
 	}
-	return pairs
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("resolve operator home for the sandbox: %w", err)
+	}
+
+	tracker := a.Tracker
+	if tracker == nil {
+		tracker = libtracker.NoopTracker{}
+	}
+
+	spec := libsandbox.Spec{
+		WorkspaceRoot:      a.Config.Cwd,
+		Home:               home,
+		EnvAllow:           libsandbox.DefaultEnvPolicy().Resolve(os.Environ()),
+		EnvSet:             a.Config.Env,
+		FS:                 defaultAgentCarveouts(),
+		AllowPrivateEgress: false,
+		SyscallTap:         false,
+		Tracker:            tracker,
+	}
+
+	// Layer on any operator-authored carve-outs from the control-plane file: extra
+	// filesystem holes appended to the defaults, and the network hosts (the only
+	// source of an egress route — no file means no net). An absent file is the
+	// deny-by-construction default; a present-but-malformed file fails closed
+	// rather than silently widening or narrowing the wall.
+	if err := applyCarveoutFile(filepath.Join(home, sandboxCarveoutFile), &spec); err != nil {
+		return nil, err
+	}
+
+	return libsandbox.Command(ctx, spec, a.Config.Command, a.Config.Args...)
+}
+
+// defaultAgentCarveouts is the baseline read-only filesystem necessity list every
+// confined agent gets: the auth/config directories the common agent CLIs read to
+// start. "~" resolves against Spec.Home (the operator's real home). Missing dirs
+// are harmless — libsandbox skips a carve-out path that does not exist.
+func defaultAgentCarveouts() []libsandbox.FSCarveout {
+	return []libsandbox.FSCarveout{
+		{Path: "~/.claude", Mode: libsandbox.ModeRO, Needs: "agent auth/config"},
+		{Path: "~/.codex", Mode: libsandbox.ModeRO, Needs: "agent auth/config"},
+		{Path: "~/.config/goose", Mode: libsandbox.ModeRO, Needs: "agent auth/config"},
+	}
+}
+
+// applyCarveoutFile appends the filesystem carve-outs and sets the network
+// carve-outs from the necessity-list file at path (see LoadCarveouts) into spec.
+// An absent file is the offline-by-construction default and not an error; a file
+// that cannot be opened or parsed fails closed.
+func applyCarveoutFile(path string, spec *libsandbox.Spec) error {
+	f, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil // absent file = defaults + no net
+		}
+		return fmt.Errorf("open sandbox carve-out file %q: %w", path, err)
+	}
+	defer f.Close()
+
+	fs, net, err := libsandbox.LoadCarveouts(f)
+	if err != nil {
+		return fmt.Errorf("load sandbox carve-outs from %q: %w", path, err)
+	}
+	spec.FS = append(spec.FS, fs...)
+	spec.Net = net
+	return nil
 }

@@ -84,7 +84,7 @@ export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =>
   // is BOTH the per-row label and the grouping key, so a row and its group header
   // always read the same name.
   const projectLabelFor = (session: SessionInfo): string =>
-    workspaceNameForCwd(session.cwd, roots) ?? workspaceLabel(session.cwd);
+    workspaceNameForCwd(session.cwd, roots) ?? workspaceLabel(session.cwd) ?? '';
 
   // One session row. `showProjectLabel` is false when the row sits under a project
   // group header (which already names the project), so the per-row folder line is

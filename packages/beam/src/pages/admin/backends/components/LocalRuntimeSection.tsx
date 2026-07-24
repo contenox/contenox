@@ -9,9 +9,6 @@ import {
   Section,
   Select,
   Span,
-  Table,
-  TableCell,
-  TableRow,
   Tooltip,
 } from '@contenox/ui';
 import { Play, Power, RefreshCw } from 'lucide-react';
@@ -115,21 +112,27 @@ const formatDevices = (devices: ModeldCapacityDevice[] | undefined): string | un
     .join('; ');
 };
 
+// A key/value list, NOT a <Table>: the shared Table forces `min-w-[600px]`, which
+// on a phone turns a plain two-column status readout into a horizontal-scroll grid.
+// A definition list stacks label-over-value on mobile and goes side-by-side at ≥sm,
+// so it fits natively at any width (the value stays font-mono + break-all for paths).
 function DetailTable({ rows }: { rows: DetailRow[] }) {
   const { t } = useTranslation();
   return (
-    <Table columns={[t('state.local_runtime_col_field'), t('state.local_runtime_col_value')]}>
+    <dl className="divide-surface-200 dark:divide-dark-surface-600 divide-y">
       {rows.map(row => (
-        <TableRow key={row.label}>
-          <TableCell className="text-text-muted dark:text-dark-text-muted w-64">
+        <div
+          key={row.label}
+          className="flex flex-col gap-0.5 py-2 sm:flex-row sm:items-baseline sm:gap-4 sm:py-1.5">
+          <dt className="text-text-muted dark:text-dark-text-muted shrink-0 text-sm sm:w-56">
             {row.label}
-          </TableCell>
-          <TableCell className="font-mono text-xs break-all" title={row.title}>
+          </dt>
+          <dd className="min-w-0 font-mono text-xs break-all" title={row.title}>
             {detailValue(row.value, t('common.yes'), t('common.no'))}
-          </TableCell>
-        </TableRow>
+          </dd>
+        </div>
       ))}
-    </Table>
+    </dl>
   );
 }
 
@@ -444,7 +447,7 @@ export default function LocalRuntimeSection({
   return (
     <div className="space-y-6">
       <Section title={t('state.local_runtime_title')} description={t('state.local_runtime_intro')}>
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           <Tooltip content={t('state.local_runtime_load_help')}>
             <Button
               type="button"

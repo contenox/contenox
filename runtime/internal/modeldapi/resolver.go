@@ -296,6 +296,11 @@ func resolveLlamaModel(root, name string, pulled statetype.ModelPullStatus) (mod
 	}
 	modelPath := filepath.Join(dir, "model.gguf")
 	if _, err := os.Stat(modelPath); err != nil {
+		// No model.gguf in this dir — it may be a convention-based variant
+		// (contenox-variant.json) reusing a sibling base model's weights.
+		if _, verr := os.Stat(filepath.Join(dir, llamaVariantFileName)); verr == nil {
+			return resolveLlamaVariant(root, dir, name, pulled)
+		}
 		return modeldconn.ModelRef{}, transport.Config{}, "", apiframework.NotFound(fmt.Sprintf("llama model %q is not available", name))
 	}
 
@@ -316,6 +321,72 @@ func resolveLlamaModel(root, name string, pulled statetype.ModelPullStatus) (mod
 		return modeldconn.ModelRef{}, transport.Config{}, "", err
 	}
 	return modeldconn.ModelRef{Name: name, Type: "llama", Digest: digest, Path: modelPath, Adapters: adapters}, cfg, digest, nil
+}
+
+// llamaVariantFileName is the convention marker (mirrors
+// llama.variantFileName) that defines a local model VARIANT: base model weights
+// reused from a sibling directory plus LoRA adapters. It lets the modeld HTTP/API
+// serving path load a variant the catalog advertised, at parity with base
+// models.
+const llamaVariantFileName = "contenox-variant.json"
+
+// llamaVariant is the on-disk variant marker; it names a sibling base model
+// (whose model.gguf is reused, never copied) and the adapters applied on top.
+type llamaVariant struct {
+	Name      string           `json:"name,omitempty"`
+	Backend   string           `json:"backend,omitempty"`
+	BaseModel string           `json:"base_model"`
+	Adapters  []adapterProfile `json:"adapters,omitempty"`
+}
+
+// resolveLlamaVariant resolves a variant directory into a ModelRef that opens
+// the base model.gguf with the variant's adapters attached and inherits the base
+// model's runtime profile — so the rest of the runtime serves it like any model.
+func resolveLlamaVariant(root, variantDir, name string, pulled statetype.ModelPullStatus) (modeldconn.ModelRef, transport.Config, string, error) {
+	var v llamaVariant
+	if err := decodeStrictJSON(filepath.Join(variantDir, llamaVariantFileName), &v); err != nil {
+		return modeldconn.ModelRef{}, transport.Config{}, "", err
+	}
+	if b := strings.TrimSpace(v.Backend); b != "" && b != "llama" {
+		return modeldconn.ModelRef{}, transport.Config{}, "", apiframework.BadRequest(fmt.Sprintf("llama variant %q declares non-llama backend %q", name, v.Backend))
+	}
+	if v.Name != "" && v.Name != name {
+		return modeldconn.ModelRef{}, transport.Config{}, "", apiframework.BadRequest(fmt.Sprintf("llama variant %q name %q must match its directory", name, v.Name))
+	}
+	if strings.TrimSpace(v.BaseModel) == "" {
+		return modeldconn.ModelRef{}, transport.Config{}, "", apiframework.BadRequest(fmt.Sprintf("llama variant %q is missing base_model", name))
+	}
+	if len(v.Adapters) == 0 {
+		return modeldconn.ModelRef{}, transport.Config{}, "", apiframework.BadRequest(fmt.Sprintf("llama variant %q requires at least one adapter", name))
+	}
+	// safeModelDir constrains base_model to a single path segment under root —
+	// the same isolation guard used for a directly-named model.
+	baseDir, err := safeModelDir(root, v.BaseModel)
+	if err != nil {
+		return modeldconn.ModelRef{}, transport.Config{}, "", err
+	}
+	baseModelPath := filepath.Join(baseDir, "model.gguf")
+	if _, err := os.Stat(baseModelPath); err != nil {
+		return modeldconn.ModelRef{}, transport.Config{}, "", apiframework.NotFound(fmt.Sprintf("llama variant %q base model %q is not available", name, v.BaseModel))
+	}
+
+	var profile llamaProfile
+	if err := decodeOptionalJSON(filepath.Join(baseDir, llamaProfileFileName), &profile); err != nil {
+		return modeldconn.ModelRef{}, transport.Config{}, "", err
+	}
+	cfg := llamaTransportConfig(profile, pulled)
+	digest := strings.TrimSpace(profile.ModelDigest)
+	if digest == "" {
+		digest, err = fileSHA256(baseModelPath)
+		if err != nil {
+			return modeldconn.ModelRef{}, transport.Config{}, "", err
+		}
+	}
+	adapters, err := resolveAdapterProfiles(variantDir, v.Adapters)
+	if err != nil {
+		return modeldconn.ModelRef{}, transport.Config{}, "", err
+	}
+	return modeldconn.ModelRef{Name: name, Type: "llama", Digest: digest, Path: baseModelPath, Adapters: adapters}, cfg, digest, nil
 }
 
 func llamaTransportConfig(profile llamaProfile, pulled statetype.ModelPullStatus) transport.Config {
@@ -366,6 +437,11 @@ func resolveOpenVINOModel(root, name string, pulled statetype.ModelPullStatus) (
 		return modeldconn.ModelRef{}, transport.Config{}, "", err
 	}
 	if !hasOpenVINOEntrypoint(dir) {
+		// No IR entrypoint in this dir — it may be a convention-based variant
+		// (contenox-variant.json) reusing a sibling base model's IR.
+		if _, verr := os.Stat(filepath.Join(dir, openvinoVariantFileName)); verr == nil {
+			return resolveOpenVINOVariant(root, dir, name, pulled)
+		}
 		return modeldconn.ModelRef{}, transport.Config{}, "", apiframework.NotFound(fmt.Sprintf("OpenVINO model %q is not available", name))
 	}
 
@@ -387,6 +463,75 @@ func resolveOpenVINOModel(root, name string, pulled statetype.ModelPullStatus) (
 		PromptTemplateDigest: templateDigest,
 	}
 	return modeldconn.ModelRef{Name: name, Type: "openvino", Digest: digest, Path: dir, Adapters: adapters}, cfg, digest, nil
+}
+
+// openvinoVariantFileName is the convention marker (mirrors llama.variantFileName
+// / llamaVariantFileName) that defines a local OpenVINO model VARIANT: base IR
+// reused from a sibling directory plus safetensors LoRA adapters. It lets the
+// modeld HTTP/API serving path load a variant the catalog advertised, at parity
+// with base models. The filename is shared across backends; the backend field
+// inside selects the target.
+const openvinoVariantFileName = "contenox-variant.json"
+
+// openvinoVariant is the on-disk variant marker; it names a sibling base model
+// (whose OpenVINO IR is reused, never copied) and the adapters applied on top.
+type openvinoVariant struct {
+	Name      string           `json:"name,omitempty"`
+	Backend   string           `json:"backend,omitempty"`
+	BaseModel string           `json:"base_model"`
+	Adapters  []adapterProfile `json:"adapters,omitempty"`
+}
+
+// resolveOpenVINOVariant resolves a variant directory into a ModelRef that opens
+// the base IR with the variant's adapters attached and inherits the base model's
+// runtime profile — so the rest of the runtime serves it like any model. It
+// mirrors resolveLlamaVariant.
+func resolveOpenVINOVariant(root, variantDir, name string, _ statetype.ModelPullStatus) (modeldconn.ModelRef, transport.Config, string, error) {
+	var v openvinoVariant
+	if err := decodeStrictJSON(filepath.Join(variantDir, openvinoVariantFileName), &v); err != nil {
+		return modeldconn.ModelRef{}, transport.Config{}, "", err
+	}
+	if b := strings.TrimSpace(v.Backend); b != "" && b != "openvino" {
+		return modeldconn.ModelRef{}, transport.Config{}, "", apiframework.BadRequest(fmt.Sprintf("openvino variant %q declares non-openvino backend %q", name, v.Backend))
+	}
+	if v.Name != "" && v.Name != name {
+		return modeldconn.ModelRef{}, transport.Config{}, "", apiframework.BadRequest(fmt.Sprintf("openvino variant %q name %q must match its directory", name, v.Name))
+	}
+	if strings.TrimSpace(v.BaseModel) == "" {
+		return modeldconn.ModelRef{}, transport.Config{}, "", apiframework.BadRequest(fmt.Sprintf("openvino variant %q is missing base_model", name))
+	}
+	if len(v.Adapters) == 0 {
+		return modeldconn.ModelRef{}, transport.Config{}, "", apiframework.BadRequest(fmt.Sprintf("openvino variant %q requires at least one adapter", name))
+	}
+	// safeModelDir constrains base_model to a single path segment under root — the
+	// same isolation guard used for a directly-named model.
+	baseDir, err := safeModelDir(root, v.BaseModel)
+	if err != nil {
+		return modeldconn.ModelRef{}, transport.Config{}, "", err
+	}
+	if !hasOpenVINOEntrypoint(baseDir) {
+		return modeldconn.ModelRef{}, transport.Config{}, "", apiframework.NotFound(fmt.Sprintf("openvino variant %q base model %q is not available", name, v.BaseModel))
+	}
+
+	var profile openvinoProfile
+	if err := decodeOptionalJSON(filepath.Join(baseDir, openvinoProfileFileName), &profile); err != nil {
+		return modeldconn.ModelRef{}, transport.Config{}, "", err
+	}
+	digest, templateDigest := openvinoIdentity(baseDir)
+	adapters, err := resolveAdapterProfiles(variantDir, v.Adapters)
+	if err != nil {
+		return modeldconn.ModelRef{}, transport.Config{}, "", err
+	}
+	// NumCtx stays 0 (auto) unless the base profile declares an explicit context:
+	// modeld resolves the window fresh from live memory, and derives the trained
+	// ceiling from the model files itself. The variant reuses the base IR path
+	// with its own adapters attached.
+	cfg := transport.Config{
+		NumCtx:               profile.ContextLength,
+		PromptFormat:         "openvino-chat-template",
+		PromptTemplateDigest: templateDigest,
+	}
+	return modeldconn.ModelRef{Name: name, Type: "openvino", Digest: digest, Path: baseDir, Adapters: adapters}, cfg, digest, nil
 }
 
 func resolveAdapterProfiles(profileDir string, adapters []adapterProfile) ([]transport.AdapterSpec, error) {
@@ -464,6 +609,24 @@ func decodeOptionalJSON(path string, dst any) error {
 	defer f.Close()
 	if err := json.NewDecoder(f).Decode(dst); err != nil {
 		return apiframework.BadRequest(fmt.Sprintf("invalid local model profile %s: %v", filepath.Base(path), err))
+	}
+	return nil
+}
+
+// decodeStrictJSON reads a required JSON file rejecting unknown fields, matching
+// the DisallowUnknownFields discipline the llama profile parser uses. Unlike
+// decodeOptionalJSON it errors when the file is absent (the caller has already
+// confirmed presence) so a typo in the marker name is not silently ignored.
+func decodeStrictJSON(path string, dst any) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return apiframework.BadRequest(fmt.Sprintf("could not read %s", filepath.Base(path)))
+	}
+	defer f.Close()
+	dec := json.NewDecoder(f)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		return apiframework.BadRequest(fmt.Sprintf("invalid %s: %v", filepath.Base(path), err))
 	}
 	return nil
 }

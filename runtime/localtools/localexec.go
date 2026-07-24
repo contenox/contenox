@@ -39,6 +39,7 @@ type LocalExecTools struct {
 	deniedCommands  []string // if set, executable basename or path must not be in this list (checked first)
 	runner          CommandRunner
 	shell           PlatformShell
+	scrubEnv        func([]string) []string // if set, the default runner scrubs the child environment
 }
 
 // LocalExecOption configures LocalExecTools.
@@ -80,6 +81,18 @@ func WithLocalExecShell(shell PlatformShell) LocalExecOption {
 	}
 }
 
+// WithLocalExecScrubEnv sets the environment scrub applied to every local_shell
+// command run through the default runner: `scrub` maps the parent environment to
+// the one the command inherits, so credentials in serve's environment do not leak
+// into an LLM-driven shell (see libsandbox.EnvScrub). Nil (the default) keeps the
+// full inherited environment. Ignored when an explicit runner is supplied to
+// NewLocalExecToolsWith, which owns its own environment handling.
+func WithLocalExecScrubEnv(scrub func([]string) []string) LocalExecOption {
+	return func(h *LocalExecTools) {
+		h.scrubEnv = scrub
+	}
+}
+
 // NewLocalExecTools creates a new LocalExecTools with the given options.
 func NewLocalExecTools(opts ...LocalExecOption) taskengine.ToolsRepo {
 	return NewLocalExecToolsWith(nil, opts...)
@@ -94,7 +107,7 @@ func NewLocalExecToolsWith(runner CommandRunner, opts ...LocalExecOption) tasken
 		opt(h)
 	}
 	if runner == nil {
-		runner = NewOSCommandRunnerWithShell(h.shell)
+		runner = NewOSCommandRunnerWithShellAndScrub(h.shell, h.scrubEnv)
 	}
 	h.runner = runner
 	return h

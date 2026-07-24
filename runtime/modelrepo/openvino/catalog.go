@@ -2,6 +2,7 @@ package openvino
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,23 +39,39 @@ func (c *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 		if !e.IsDir() {
 			continue
 		}
-		modelPath := filepath.Join(c.dir, e.Name())
-		if _, ok := modelEntrypointPath(modelPath); !ok {
-			continue
+		dir := filepath.Join(c.dir, e.Name())
+		// A directory is a selectable model when it holds an OpenVINO IR entrypoint
+		// (a base model) or a contenox-variant.json marker (a base+adapters variant,
+		// which reuses a sibling base's IR). Anything else is ignored, exactly as
+		// before.
+		if _, ok := modelEntrypointPath(dir); !ok {
+			if _, verr := os.Stat(variantProfilePath(dir)); verr != nil {
+				continue
+			}
 		}
-		profile, err := loadModelProfile(modelPath)
+		src, err := resolveModelSource(c.dir, e.Name())
 		if err != nil {
+			// A stray marker that targets a DIFFERENT backend (both backends scan
+			// the same marker filename under different roots) must not break the
+			// scan — skip it. A genuinely malformed openvino marker still fails fast.
+			if errors.Is(err, errVariantForeignBackend) {
+				continue
+			}
 			return nil, err
 		}
+		profile := src.profile
+		modelPath := src.modelDir
+		adapters := src.adapters
 		caps := profile.capabilityConfig()
-		if visionEncoderPresent(modelPath) {
+		if visionEncoderPresent(src.modelDir) {
 			caps.CanVision = true
 		}
-		modelDigest, _ := modelIdentity(modelPath)
-		adapters, err := resolveProfileAdapters(modelPath, profile.Adapters)
-		if err != nil {
-			return nil, err
+		// A variant's identity is base IR + adapters; embeddings stay adapter-free
+		// by design, so a variant never advertises embeddings.
+		if src.isVariant {
+			caps.CanEmbed = false
 		}
+		modelDigest := src.modelDigest
 		// Context window is modeld's logical planner decision when available. The
 		// dense effective context remains the hot KV budget, but a configured
 		// host-cold budget lets the runtime assemble longer contexts that modeld

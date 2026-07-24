@@ -193,8 +193,8 @@ export function ComposerImageAttachments({
               onClick={() => onRemove(img.id)}
               aria-label={t('acp_chat.attachment_remove_label', { name })}
               title={t('acp_chat.attachment_remove_label', { name })}
-              className="bg-surface-50 text-text border-surface-300 hover:bg-surface-100 dark:bg-dark-surface-600 dark:text-dark-text dark:border-dark-surface-400 dark:hover:bg-dark-surface-500 absolute -top-1.5 -right-1.5 rounded-full border p-0.5 shadow-sm">
-              <X className="h-3 w-3" />
+              className="bg-surface-50 text-text border-surface-300 hover:bg-surface-100 dark:bg-dark-surface-600 dark:text-dark-text dark:border-dark-surface-400 dark:hover:bg-dark-surface-500 absolute -top-1.5 -right-1.5 rounded-full border p-1.5 shadow-sm">
+              <X className="h-3.5 w-3.5" />
             </button>
           </div>
         );

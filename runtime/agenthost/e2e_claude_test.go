@@ -26,6 +26,7 @@ const claudeACPBinEnv = "ACP_CLAUDE_ACP_BIN"
 // asserting only what every well-behaved agent must produce: a normal
 // end_turn and at least one displayable reply chunk.
 func TestHostE2E_Claude_TurnShape(t *testing.T) {
+	requireSandboxable(t)
 	bin := os.Getenv(claudeACPBinEnv)
 	if bin == "" {
 		t.Skipf("skipping: set %s to an executable serving Claude Code over ACP "+

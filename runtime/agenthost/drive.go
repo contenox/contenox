@@ -212,6 +212,17 @@ func DriveTurn(ctx context.Context, agent *runtimetypes.Agent, harness libacp.Cl
 		return nil, fmt.Errorf("agenthost: resolve agent %q: %w", agent.Name, err)
 	}
 
+	// The agent is spawned inside the sandbox, whose workspace is Config.Cwd (see
+	// buildAgentCmd). An agent is usually registered by command alone, with no
+	// Cwd — its working directory is chosen per turn — so default the sandbox
+	// workspace to this turn's session cwd (already validated non-empty above).
+	// That both satisfies the wall's non-empty-workspace requirement and pins the
+	// spawned process to the very directory the ACP session works in. An explicit
+	// registered Cwd, if set, still wins.
+	if cfg.Cwd == "" {
+		cfg.Cwd = req.Cwd
+	}
+
 	host := &ExternalACPAgent{Config: *cfg, Stderr: req.Stderr, KillGrace: req.KillGrace}
 	handle, err := host.Connect(ctx, harness)
 	if err != nil {

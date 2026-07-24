@@ -1,4 +1,14 @@
-import { Cpu, Database, Folder, Inbox, Radar, Rocket, Settings, type LucideIcon } from 'lucide-react';
+import {
+  Cpu,
+  Database,
+  Folder,
+  Inbox,
+  Radar,
+  Rocket,
+  Settings,
+  SquareTerminal,
+  type LucideIcon,
+} from 'lucide-react';
 import { lazy } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import i18n, { type TranslationKey } from '../i18n';
@@ -15,13 +25,16 @@ const InboxPage = lazy(() => import('../pages/admin/inbox/InboxPage.tsx'));
 const ProjectsPage = lazy(() => import('../pages/admin/projects/ProjectsPage.tsx'));
 const ControlPlanePage = lazy(() => import('../pages/admin/control/ControlPlanePage.tsx'));
 const SettingsPage = lazy(() => import('../pages/admin/settings/SettingsPage.tsx'));
+const ConsolePage = lazy(() => import('../pages/admin/console/ConsolePage.tsx'));
 const ByePage = lazy(() => import('../pages/public/bye/Bye.tsx'));
 const AuthPage = lazy(() => import('../pages/public/login/AuthPage.tsx'));
 
-// pages/admin/chats/{ChatPage,ChatLandingPage}.tsx and
-// pages/admin/console/ConsolePage.tsx are no longer imported here — every
-// route that used to point at them now redirects to /chat (below). The files
-// themselves are untouched; Stage 5 deletes them.
+// The old chat surfaces (pages/admin/chats/{ChatPage,ChatLandingPage}.tsx and
+// the FORMER pages/admin/console/ConsolePage.tsx chat console) are gone; the
+// routes that used to point at them now redirect to /chat (below). NOTE:
+// pages/admin/console now hosts a DIFFERENT page — the host-terminal console
+// (ConsolePage, imported above, mounted at /terminal) — so these /console*
+// redirects are unrelated to it.
 const LegacyChatsRedirect = () => <Navigate to="/chat" replace />;
 const LegacyConsoleRedirect = () => <Navigate to="/chat" replace />;
 /** `/chat-acp/:sessionId` -> `/chat/:sessionId`, preserving the id (unlike the other legacy redirects, which all just land bare on /chat). */
@@ -73,6 +86,12 @@ const adminRouteDefinitions: AdminRouteDefinition[] = [
   // with the other configuration surfaces (backends, defaults); managed roots
   // are added/forgotten here, the launch/default roots stay structural.
   { path: '/projects', element: ProjectsPage, labelKey: 'navbar.projects', Icon: Folder },
+  // The host console — a full-page interactive shell on the machine that serves
+  // this runtime, scoped to a chosen project root. Read-only until an explicit
+  // take-over; degrades to an "unavailable" notice when serve has the terminal
+  // feature turned off (TERMINAL_ENABLED). Path is /terminal (bare /console is a
+  // legacy redirect to /chat), navbar label "Console".
+  { path: '/terminal', element: ConsolePage, labelKey: 'navbar.console', Icon: SquareTerminal },
   { path: '/settings', element: SettingsPage, labelKey: 'navbar.settings', Icon: Settings },
 ];
 

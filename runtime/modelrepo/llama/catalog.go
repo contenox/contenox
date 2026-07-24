@@ -40,17 +40,31 @@ func (c *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 			continue
 		}
 		dir := filepath.Join(c.dir, e.Name())
-		modelPath := filepath.Join(dir, "model.gguf")
-		if _, err := os.Stat(modelPath); err != nil {
-			continue
+		// A directory is a selectable model when it holds model.gguf (a base
+		// model) or a contenox-variant.json marker (a base+adapters variant, which
+		// reuses a sibling base's model.gguf). Anything else is ignored, exactly as
+		// before.
+		_, gerr := os.Stat(filepath.Join(dir, "model.gguf"))
+		if gerr != nil {
+			if _, verr := os.Stat(variantProfilePath(dir)); verr != nil {
+				continue
+			}
 		}
-		profile, err := loadModelProfile(dir)
+		src, err := resolveModelSource(c.dir, e.Name())
 		if err != nil {
 			return nil, err
 		}
+		profile := src.profile
+		modelPath := src.modelPath
+		adapters := src.adapters
 		caps := profile.capabilityConfig()
-		if mmprojPresent(dir) {
+		if mmprojPresent(src.baseDir) {
 			caps.CanVision = true
+		}
+		// A variant's identity is base weights + adapters; embeddings stay
+		// adapter-free by design, so a variant never advertises embeddings.
+		if src.isVariant {
+			caps.CanEmbed = false
 		}
 		modelDigest := profile.ModelDigest
 		if modelDigest == "" {
@@ -58,10 +72,6 @@ func (c *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 			if err != nil {
 				return nil, err
 			}
-		}
-		adapters, err := resolveProfileAdapters(dir, profile.Adapters)
-		if err != nil {
-			return nil, err
 		}
 		// Context window is modeld's logical planner decision when available. The
 		// dense effective context remains the hot KV budget, but a configured

@@ -247,6 +247,189 @@ func TestLoadResolvesLocalModelWithAdaptersAndSanitizesResponse(t *testing.T) {
 	}
 }
 
+func TestLoadResolvesLlamaVariantAgainstBaseWeights(t *testing.T) {
+	root := t.TempDir()
+	// Base model with real weights the variant reuses in place.
+	baseDir := filepath.Join(root, "qwen3-coder-8b")
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	baseModelPath := filepath.Join(baseDir, "model.gguf")
+	if err := os.WriteFile(baseModelPath, []byte("fake gguf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(baseDir, "contenox-llama.json"), []byte(`{"runtime":{"num_ctx":4096}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Variant marker in a sibling directory, no duplicated weights.
+	variantDir := filepath.Join(root, "qwen3-coder-8b-acme")
+	if err := os.MkdirAll(variantDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	adapterBytes := []byte("fake adapter")
+	adapterPath := filepath.Join(variantDir, "acme.gguf")
+	if err := os.WriteFile(adapterPath, adapterBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(variantDir, "contenox-variant.json"), []byte(`{
+		"name":"qwen3-coder-8b-acme",
+		"backend":"llama",
+		"base_model":"qwen3-coder-8b",
+		"adapters":[{"name":"acme","path":"acme.gguf","scale":2}]
+	}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	adapterSum := sha256.Sum256(adapterBytes)
+	adapterDigest := hex.EncodeToString(adapterSum[:])
+
+	provider := &fakeStatusProvider{
+		loadActive: transport.ActiveModel{
+			ModelName:  "qwen3-coder-8b-acme",
+			Type:       "llama",
+			Digest:     "model-digest",
+			Path:       baseModelPath,
+			Generation: 3,
+		},
+	}
+	// The variant is a selectable pulled model in the runtime state.
+	state := fakeStateReader{states: []statetype.BackendRuntimeState{{
+		ID:   "backend-llama",
+		Name: "llama",
+		Backend: runtimetypes.Backend{
+			ID:      "backend-llama",
+			Name:    "llama",
+			Type:    "llama",
+			BaseURL: root,
+		},
+		PulledModels: []statetype.ModelPullStatus{{
+			Name:    "qwen3-coder-8b-acme",
+			Model:   "qwen3-coder-8b-acme",
+			CanChat: true,
+		}},
+	}}}
+	mux := http.NewServeMux()
+	addRoutesForTest(mux, provider, state)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/modeld/load", strings.NewReader(`{"model":"llama:qwen3-coder-8b-acme"}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	// The variant loads the BASE model.gguf (weights reused, never duplicated)
+	// with the variant's adapter attached — identity = base weights + adapter.
+	if provider.loadRef.Name != "qwen3-coder-8b-acme" || provider.loadRef.Path != baseModelPath {
+		t.Fatalf("variant load ref should target base weights: %#v", provider.loadRef)
+	}
+	if len(provider.loadRef.Adapters) != 1 {
+		t.Fatalf("expected one adapter in variant load ref, got %#v", provider.loadRef.Adapters)
+	}
+	adapter := provider.loadRef.Adapters[0]
+	if adapter.Name != "acme" || adapter.Path != adapterPath || adapter.Digest != adapterDigest || adapter.Scale != 2 {
+		t.Fatalf("unexpected variant adapter ref: %#v", adapter)
+	}
+	// Variant inherits the base model's runtime profile (num_ctx here).
+	if provider.loadCfg.NumCtx != 4096 {
+		t.Fatalf("variant should inherit base runtime profile, got %#v", provider.loadCfg)
+	}
+}
+
+func TestLoadResolvesOpenVINOVariantAgainstBaseIR(t *testing.T) {
+	root := t.TempDir()
+	// Base OpenVINO IR the variant reuses in place: entrypoint + the config files
+	// openvinoIdentity content-addresses.
+	baseDir := filepath.Join(root, "qwen3-8b-ov")
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"openvino_language_model.xml": "<xml/>",
+		"config.json":                 `{"max_position_embeddings":32768}`,
+		"tokenizer_config.json":       `{"chat_template":"{{ messages }}"}`,
+		"generation_config.json":      `{"eos_token_id":1}`,
+		"contenox-openvino.json":      `{"context_length":4096}`,
+	} {
+		if err := os.WriteFile(filepath.Join(baseDir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Variant marker in a sibling directory, no duplicated IR.
+	variantDir := filepath.Join(root, "qwen3-8b-ov-acme")
+	if err := os.MkdirAll(variantDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	adapterBytes := []byte("fake safetensors adapter")
+	adapterPath := filepath.Join(variantDir, "acme.safetensors")
+	if err := os.WriteFile(adapterPath, adapterBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(variantDir, "contenox-variant.json"), []byte(`{
+		"name":"qwen3-8b-ov-acme",
+		"backend":"openvino",
+		"base_model":"qwen3-8b-ov",
+		"adapters":[{"name":"acme","path":"acme.safetensors","scale":2}]
+	}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	adapterSum := sha256.Sum256(adapterBytes)
+	adapterDigest := hex.EncodeToString(adapterSum[:])
+
+	provider := &fakeStatusProvider{
+		loadActive: transport.ActiveModel{
+			ModelName:  "qwen3-8b-ov-acme",
+			Type:       "openvino",
+			Digest:     "model-digest",
+			Path:       baseDir,
+			Generation: 3,
+		},
+	}
+	// The variant is a selectable pulled model in the runtime state.
+	state := fakeStateReader{states: []statetype.BackendRuntimeState{{
+		ID:   "backend-openvino",
+		Name: "openvino",
+		Backend: runtimetypes.Backend{
+			ID:      "backend-openvino",
+			Name:    "openvino",
+			Type:    "openvino",
+			BaseURL: root,
+		},
+		PulledModels: []statetype.ModelPullStatus{{
+			Name:    "qwen3-8b-ov-acme",
+			Model:   "qwen3-8b-ov-acme",
+			CanChat: true,
+		}},
+	}}}
+	mux := http.NewServeMux()
+	addRoutesForTest(mux, provider, state)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/modeld/load", strings.NewReader(`{"model":"openvino:qwen3-8b-ov-acme"}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	// The variant loads the BASE IR directory (reused, never duplicated) with the
+	// variant's adapter attached — identity = base IR + adapter.
+	if provider.loadRef.Name != "qwen3-8b-ov-acme" || provider.loadRef.Path != baseDir {
+		t.Fatalf("variant load ref should target base IR dir: %#v", provider.loadRef)
+	}
+	if len(provider.loadRef.Adapters) != 1 {
+		t.Fatalf("expected one adapter in variant load ref, got %#v", provider.loadRef.Adapters)
+	}
+	adapter := provider.loadRef.Adapters[0]
+	if adapter.Name != "acme" || adapter.Path != adapterPath || adapter.Digest != adapterDigest || adapter.Scale != 2 {
+		t.Fatalf("unexpected variant adapter ref: %#v", adapter)
+	}
+	// Variant inherits the base model's declared context.
+	if provider.loadCfg.NumCtx != 4096 {
+		t.Fatalf("variant should inherit base context_length, got %#v", provider.loadCfg)
+	}
+}
+
 func TestModelsReturnsLocalModelsWithoutBackendPaths(t *testing.T) {
 	root := t.TempDir()
 	provider := &fakeStatusProvider{}

@@ -4,16 +4,26 @@
  *   terminal.open_in_canvas = "Open the terminal…" (open-terminal affordance)
  *   canvas.close_tab        = "Close {{name}}"     (canvas tab ✕ aria-label)
  */
-import { Button, cn, ResizablePanel, ResizablePanelGroup, ResizablePanelHandle, Tabs, TabPanel, TabPanels, type Tab } from '@contenox/ui';
+import {
+  Button,
+  cn,
+  ResizablePanel,
+  ResizablePanelGroup,
+  ResizablePanelHandle,
+  TabPanel,
+  TabPanels,
+  Tabs,
+  type Tab,
+} from '@contenox/ui';
 import { Terminal } from 'lucide-react';
 import { useCallback, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { UseCanvasTabsResult } from '../../../hooks/useCanvasTabs';
 import { useMediaQuery } from '../../../hooks/useMediaQuery';
 import type { WorkspaceFilePeek } from '../../../hooks/useWorkspaceFiles';
 import { TERMINAL_CANVAS_TAB, type CanvasTab } from '../lib/canvasTabs';
-import type { UseCanvasTabsResult } from '../../../hooks/useCanvasTabs';
-import { TerminalTab } from './TerminalTab';
 import { FileViewTab } from './FileViewTab';
+import { TerminalTab } from './TerminalTab';
 
 /** The canvas becomes a side-by-side split at/above this width; below it, a full-width takeover. */
 const SIDE_BY_SIDE_QUERY = '(min-width: 1024px)';
@@ -78,7 +88,9 @@ export function CanvasRegion({
       aria-label={terminalLabel}
       title={terminalLabel}
       className={
-        terminalOpen ? 'bg-surface-200 text-text dark:bg-dark-surface-300 dark:text-dark-text' : undefined
+        terminalOpen
+          ? 'bg-surface-200 text-text dark:bg-dark-surface-300 dark:text-dark-text'
+          : undefined
       }
       onClick={toggleTerminal}>
       <Terminal className="h-4 w-4" />
@@ -86,12 +98,15 @@ export function CanvasRegion({
   );
 
   // Collapsed: no canvas tab open — the chat body takes the full width, with a
-  // slim rail carrying the always-available "open terminal" affordance.
+  // slim rail carrying the always-available "open sidecar" affordance. The rail
+  // is `hidden sm:flex`: on a phone it would just eat ~28px of the chat, so the
+  // opener moves to the header toggle (see ChatSessionToolbar) and the chat gets
+  // the full width.
   if (canvas.tabs.length === 0) {
     return (
       <div className={cn('flex min-h-0 min-w-0 flex-1', className)}>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
-        <div className="border-surface-200 dark:border-dark-surface-600 flex shrink-0 flex-col items-center gap-1 border-l px-1 py-2">
+        <div className="border-surface-200 dark:border-dark-surface-600 hidden shrink-0 flex-col items-center gap-1 border-l px-1 py-2 sm:flex">
           {openTerminalButton}
         </div>
       </div>
@@ -111,7 +126,15 @@ export function CanvasRegion({
 
   const stripTabs: Tab[] = canvas.tabs.map(tab => {
     const label = tabLabel(tab);
-    return { id: tab.id, label, closable: true, closeLabel: t('canvas.close_tab', { name: label }) };
+    // Cap the tab width so a long file path (canvas tabs can carry one) truncates
+    // with an ellipsis instead of stretching the tab and forcing the strip to
+    // scroll — matching the session strip's label treatment (WorkspaceTabs).
+    return {
+      id: tab.id,
+      label: <span className="block max-w-[12rem] truncate">{label}</span>,
+      closable: true,
+      closeLabel: t('canvas.close_tab', { name: label }),
+    };
   });
   const activeId = canvas.activeId ?? '';
 
@@ -129,7 +152,11 @@ export function CanvasRegion({
       </div>
       <TabPanels>
         {canvas.tabs.map(tab => (
-          <TabPanel key={tab.id} tabId={tab.id} activeTab={activeId} className="flex min-h-0 flex-col p-2">
+          <TabPanel
+            key={tab.id}
+            tabId={tab.id}
+            activeTab={activeId}
+            className="flex min-h-0 flex-col p-2">
             {tab.kind === 'terminal' && <TerminalTab sessionId={sessionId} />}
             {tab.kind === 'file' && tab.path && <FileViewTab path={tab.path} readFile={readFile} />}
           </TabPanel>

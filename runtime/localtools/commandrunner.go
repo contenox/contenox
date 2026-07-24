@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -33,8 +34,20 @@ func NewOSCommandRunnerWithShell(shell PlatformShell) CommandRunner {
 	return osCommandRunner{shell: shell.WithDefaults()}
 }
 
+// NewOSCommandRunnerWithShellAndScrub is NewOSCommandRunnerWithShell plus an
+// environment scrub: `scrub` maps the parent process environment to the one the
+// spawned command inherits, so credentials in serve's own environment do not ride
+// into an LLM-driven shell. A nil scrub keeps the OS default (full inherit) — the
+// scrub is applied in Run only when set.
+func NewOSCommandRunnerWithShellAndScrub(shell PlatformShell, scrub func([]string) []string) CommandRunner {
+	return osCommandRunner{shell: shell.WithDefaults(), scrub: scrub}
+}
+
 type osCommandRunner struct {
 	shell PlatformShell
+	// scrub, when set, replaces the inherited environment with scrub(os.Environ())
+	// — the credential-leak fix for the local_shell tool (see libsandbox.EnvScrub).
+	scrub func([]string) []string
 }
 
 func (r osCommandRunner) Run(ctx context.Context, spec CommandSpec, stdout, stderr io.Writer) (int, error) {
@@ -51,6 +64,12 @@ func (r osCommandRunner) Run(ctx context.Context, spec CommandSpec, stdout, stde
 	}
 	if spec.Cwd != "" {
 		cmd.Dir = spec.Cwd
+	}
+	// Scrub the inherited environment when configured. exec leaves cmd.Env nil =
+	// "inherit os.Environ()" by default, which hands the child every secret in
+	// serve's environment; replacing it with the scrubbed set closes that leak.
+	if r.scrub != nil {
+		cmd.Env = r.scrub(os.Environ())
 	}
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr

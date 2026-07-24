@@ -69,6 +69,7 @@ func testyCommandPrompt(t *testing.T, v any) []libacp.ContentBlock {
 // exactly the message it was sent as a single agent_message_chunk, so the
 // reply on the harness is byte-for-byte deterministic.
 func TestHostE2E_Testy_EchoRoundTrip(t *testing.T) {
+	requireSandboxable(t)
 	testyBin := testyBinFromEnv(t)
 	ctx, agent := registerAgent(t, "testy-echo", testyBin)
 
@@ -111,6 +112,7 @@ func TestHostE2E_Testy_EchoRoundTrip(t *testing.T) {
 // the same composed path: its deterministic reply is the single message chunk
 // "Hello, world!".
 func TestHostE2E_Testy_Greet(t *testing.T) {
+	requireSandboxable(t)
 	testyBin := testyBinFromEnv(t)
 	ctx, agent := registerAgent(t, "testy-greet", testyBin)
 

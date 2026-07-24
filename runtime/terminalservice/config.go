@@ -18,11 +18,16 @@ type Config struct {
 	// MaxSessions is the maximum number of concurrent live PTY sessions.
 	// Zero means unlimited.
 	MaxSessions int
+	// ScrubEnv, when set, maps the parent process environment to the one a spawned
+	// terminal inherits — the credential-leak fix. Nil (the default) inherits the
+	// full environment: the terminal is the operator's own trusted shell, so it is
+	// scrubbed only when the operator opts in (SANDBOX_TERMINAL_SCRUB).
+	ScrubEnv func([]string) []string
 }
 
 const (
-	DefaultIdleTimeout  = 30 * time.Minute
-	DefaultMaxSessions  = 8
+	DefaultIdleTimeout = 30 * time.Minute
+	DefaultMaxSessions = 8
 )
 
 // IsEnabled returns true for accepted truthy terminal feature flag values.

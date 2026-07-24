@@ -33,6 +33,8 @@ import {
   PushModelResult,
   RemoteHook,
   SetupStatus,
+  ShellEnvResponse,
+  ShellEnvUpdateRequest,
   StatusResponse,
   SupportedProvider,
   TaskExecutionRequest,
@@ -330,6 +332,14 @@ export const api = {
   getCLIConfig: () => apiFetch<CLIConfig>('/api/cli-config'),
   putCLIConfig: (body: CLIConfigUpdateRequest) =>
     apiFetch<CLIConfigUpdateResponse>('/api/cli-config', options('PUT', body)),
+
+  /**
+   * Global shell environment variables injected into spawned shells. PUT is a
+   * FULL replacement (omitting a key deletes it), returning the same shape.
+   */
+  getShellEnv: () => apiFetch<ShellEnvResponse>('/api/shell-env'),
+  putShellEnv: (body: ShellEnvUpdateRequest) =>
+    apiFetch<ShellEnvResponse>('/api/shell-env', options('PUT', body)),
 
   /** HITL policy presets stored alongside task chains. */
   listPolicies: () => apiFetch<string[]>('/api/hitl-policies/list'),

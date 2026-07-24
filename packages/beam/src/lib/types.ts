@@ -291,6 +291,20 @@ export type CLIConfigUpdateRequest = {
   'update-check'?: string;
 };
 
+/**
+ * Global shell environment variables contenox injects into the shells it
+ * spawns (local_shell, terminal). Plain config strings, NOT secrets. Same
+ * shape for GET and the PUT response.
+ */
+export type ShellEnvResponse = {
+  vars: Record<string, string>;
+};
+
+/** PUT /api/shell-env body — a FULL replacement of the injected variable map. */
+export type ShellEnvUpdateRequest = {
+  vars: Record<string, string>;
+};
+
 export type HITLCondition = {
   key: string;
   op: 'eq' | 'glob';

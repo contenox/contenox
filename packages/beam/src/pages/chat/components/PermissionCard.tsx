@@ -1,4 +1,4 @@
-import { Button, Collapsible, DiffView, diffLinesFromTexts, Span } from '@contenox/ui';
+import { Button, Collapsible, diffLinesFromTexts, DiffView, Span } from '@contenox/ui';
 import { useTranslation } from 'react-i18next';
 import type { PermissionOption, RequestPermissionRequest } from '../../../lib/acp';
 import { orderedPermissionOptions } from '../lib/permissionKeymap';
@@ -51,14 +51,16 @@ export function PermissionCard({ permission, onRespond }: PermissionCardProps) {
         <Span variant="status" className="text-text-muted dark:text-dark-text-muted">
           {toolCall.kind ?? t('acp_chat.permission_default_kind')}
         </Span>
-        <p className="text-text dark:text-dark-text mt-1 text-sm font-medium">{toolCall.title ?? toolCall.toolCallId}</p>
+        <p className="text-text dark:text-dark-text mt-1 text-sm font-medium">
+          {toolCall.title ?? toolCall.toolCallId}
+        </p>
       </div>
 
       <div className="mt-3 space-y-3">
         {toolCall.locations && toolCall.locations.length > 0 && (
           <ul className="text-text-muted dark:text-dark-text-muted space-y-0.5 text-xs">
             {toolCall.locations.map((loc, i) => (
-              <li key={i}>
+              <li key={i} className="break-all">
                 {loc.path}
                 {loc.line ? `:${loc.line}` : ''}
               </li>
@@ -67,7 +69,11 @@ export function PermissionCard({ permission, onRespond }: PermissionCardProps) {
         )}
 
         {diffs.map((d, i) => (
-          <DiffView key={i} filePath={d.path ?? ''} lines={diffLinesFromTexts(d.oldText ?? '', d.newText ?? '')} />
+          <DiffView
+            key={i}
+            filePath={d.path ?? ''}
+            lines={diffLinesFromTexts(d.oldText ?? '', d.newText ?? '')}
+          />
         ))}
 
         {toolCall.rawInput != null && (

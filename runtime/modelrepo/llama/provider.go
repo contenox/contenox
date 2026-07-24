@@ -130,28 +130,27 @@ func (p *provider) GetEmbedConnection(_ context.Context, _ string) (modelrepo.LL
 	if !p.isTargeted() && !EmbedAvailable() {
 		return nil, p.notWired("embed")
 	}
-	var dir string
-	if p.modelDir != "" {
-		dir = filepath.Join(p.modelDir, p.name)
-	}
 	var profile modelProfile
-	var loadErr error
-	if dir != "" {
-		profile, loadErr = loadModelProfile(dir)
-		if loadErr != nil {
-			return nil, loadErr
-		}
-	}
 	modelPath := ""
-	if dir != "" {
-		modelPath = filepath.Join(dir, "model.gguf")
-	}
-	modelDigest := profile.ModelDigest
-	if modelDigest == "" && modelPath != "" {
-		var err error
-		modelDigest, err = modelFileDigest(modelPath)
+	modelDigest := ""
+	if p.modelDir != "" {
+		src, err := resolveModelSource(p.modelDir, p.name)
 		if err != nil {
 			return nil, err
+		}
+		// Embeddings stay adapter-free (per the LoRA blueprint): a variant's whole
+		// point is its adapters, so refuse rather than silently embed the base.
+		if src.isVariant {
+			return nil, NewUnsupportedFeatureError("embeddings for LoRA variant " + p.name + " (embeddings are adapter-free)")
+		}
+		profile = src.profile
+		modelPath = src.modelPath
+		modelDigest = profile.ModelDigest
+		if modelDigest == "" && modelPath != "" {
+			modelDigest, err = modelFileDigest(modelPath)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	return &embedClient{
@@ -165,14 +164,27 @@ func (p *provider) GetEmbedConnection(_ context.Context, _ string) (modelrepo.LL
 
 func (p *provider) newClient(ctx context.Context) (*client, error) {
 	var profile modelProfile
-	var dir string
+	var modelPath string
+	var baseDir string
+	var adapters []AdapterSpec
+	// curatedName keys the curated-registry tool/reasoning lookup. For a variant
+	// it is the BASE model name (the registry knows the base, not the variant);
+	// for a base model it is the model itself.
+	curatedName := p.name
 	var err error
 	if p.modelDir != "" {
-		dir = filepath.Join(p.modelDir, p.name)
-		profile, err = loadModelProfile(dir)
-		if err != nil {
-			return nil, err
+		// Files-are-truth: resolve the on-disk backing fresh. This transparently
+		// handles a base model (model.gguf in its own dir) and a variant
+		// (contenox-variant.json reusing a sibling base's model.gguf + adapters).
+		src, serr := resolveModelSource(p.modelDir, p.name)
+		if serr != nil {
+			return nil, serr
 		}
+		profile = src.profile
+		modelPath = src.modelPath
+		baseDir = src.baseDir
+		adapters = src.adapters
+		curatedName = src.baseName
 	} else if p.target.Endpoint != "" {
 		// Remote or explicit modeld node. No local FS required for the model bits.
 		// Profiles (tool/reasoning hints) can be minimal; rich info (context, chat template)
@@ -182,27 +194,16 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 		return nil, fmt.Errorf("llama provider for %q has no modelDir and no target endpoint", p.name)
 	}
 	if profile.ToolCalls.Protocol == "" {
-		profile.ToolCalls.Protocol = curatedToolProtocol(ctx, p.name, "llama")
+		profile.ToolCalls.Protocol = curatedToolProtocol(ctx, curatedName, "llama")
 	}
 	if profile.Reasoning.Protocol == "" {
-		profile.Reasoning.Protocol, profile.Reasoning.Format = curatedReasoning(ctx, p.name, "llama")
+		profile.Reasoning.Protocol, profile.Reasoning.Format = curatedReasoning(ctx, curatedName, "llama")
 	} else if profile.Reasoning.Format == "" {
-		_, profile.Reasoning.Format = curatedReasoning(ctx, p.name, "llama")
-	}
-	var modelPath string
-	if dir != "" {
-		modelPath = filepath.Join(dir, "model.gguf")
+		_, profile.Reasoning.Format = curatedReasoning(ctx, curatedName, "llama")
 	}
 	modelDigest := profile.ModelDigest
 	if modelDigest == "" && modelPath != "" {
 		modelDigest, err = modelFileDigest(modelPath)
-		if err != nil {
-			return nil, err
-		}
-	}
-	var adapters []AdapterSpec
-	if dir != "" {
-		adapters, err = resolveProfileAdapters(dir, profile.Adapters)
 		if err != nil {
 			return nil, err
 		}
@@ -216,7 +217,7 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 	// authoritative, and an older daemon without vision support reports false
 	// (it would silently drop image parts if images were still routed to it).
 	supportsVision := p.caps.CanVision
-	if dir != "" && mmprojPresent(dir) {
+	if baseDir != "" && mmprojPresent(baseDir) {
 		supportsVision = true
 	}
 	baseCfg := profile.config()

@@ -108,6 +108,10 @@ type Config struct {
 	ScrollbackBytes int
 	// IdleTimeout kills inactive shells (default 15m; <=0 disables reaping).
 	IdleTimeout time.Duration
+	// ScrubEnv, when set, maps the parent process environment to the one a spawned
+	// shell inherits — the credential-leak fix, so serve's own secrets do not ride
+	// into an agent-reachable PTY. Nil (the default) inherits the full environment.
+	ScrubEnv func([]string) []string
 }
 
 type manager struct {
@@ -268,7 +272,7 @@ func (m *manager) ensureShell(ctx context.Context, sessionID string) (*shell, bo
 	if err != nil {
 		return nil, false, err
 	}
-	pty, err := startPTY(cwd, m.cfg.Shell)
+	pty, err := startPTY(cwd, m.cfg.Shell, m.cfg.ScrubEnv)
 	if err != nil {
 		return nil, false, err
 	}

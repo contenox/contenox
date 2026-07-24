@@ -2,6 +2,7 @@ package contenoxcli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -266,6 +267,9 @@ type localModelInventoryEntry struct {
 	Model       string
 	Path        string
 	Status      string
+	// Detail is a human-readable annotation shown after the model name, used to
+	// surface a variant's base model and adapters (empty for plain base models).
+	Detail string
 }
 
 type localModelScanRoot struct {
@@ -286,7 +290,11 @@ func printLocalModelInventory(ctx context.Context, db libdb.DBManager, out io.Wr
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "BACKEND\tTYPE\tMODEL\tSTATUS\tPATH")
 	for _, e := range entries {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", e.BackendName, e.Type, e.Model, e.Status, e.Path)
+		model := e.Model
+		if e.Detail != "" {
+			model = e.Model + "  (" + e.Detail + ")"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", e.BackendName, e.Type, model, e.Status, e.Path)
 	}
 	return w.Flush()
 }
@@ -366,19 +374,146 @@ func scanLocalModelRoot(backendName, typ, root string, status transport.DaemonSt
 		}
 		name := e.Name()
 		dir := filepath.Join(root, name)
-		path, ok := localModelArtifactPath(typ, dir)
-		if !ok {
+		if path, ok := localModelArtifactPath(typ, dir); ok {
+			out = append(out, localModelInventoryEntry{
+				BackendName: backendName,
+				Type:        typ,
+				Model:       name,
+				Path:        path,
+				Status:      localModelStatus(typ, path, status),
+			})
 			continue
 		}
-		out = append(out, localModelInventoryEntry{
-			BackendName: backendName,
-			Type:        typ,
-			Model:       name,
-			Path:        path,
-			Status:      localModelStatus(typ, path, status),
-		})
+		// A directory without a base artifact may be a convention-based variant
+		// (contenox-variant.json): the base weights/IR reused from a sibling dir
+		// plus adapters. Surface it as a selectable model showing its base +
+		// adapters.
+		if typ == "llama" {
+			if basePath, detail, ok := localLlamaVariant(root, dir); ok {
+				out = append(out, localModelInventoryEntry{
+					BackendName: backendName,
+					Type:        typ,
+					Model:       name,
+					Path:        basePath,
+					Status:      localModelStatus(typ, basePath, status),
+					Detail:      detail,
+				})
+			}
+		}
+		if typ == "openvino" {
+			if basePath, detail, ok := localOpenVINOVariant(root, dir); ok {
+				out = append(out, localModelInventoryEntry{
+					BackendName: backendName,
+					Type:        typ,
+					Model:       name,
+					Path:        basePath,
+					Status:      localModelStatus(typ, basePath, status),
+					Detail:      detail,
+				})
+			}
+		}
 	}
 	return out, nil
+}
+
+// localLlamaVariant recognizes a llama variant directory and returns the reused
+// base model.gguf path plus a "base X + adapters …" annotation. It is a
+// best-effort offline inventory read (unlike the catalog scan it does not fail
+// hard on a malformed marker); an unreadable marker or a missing base model
+// yields ok=false so the directory is simply skipped.
+func localLlamaVariant(root, variantDir string) (basePath, detail string, ok bool) {
+	f, err := os.Open(filepath.Join(variantDir, "contenox-variant.json"))
+	if err != nil {
+		return "", "", false
+	}
+	defer f.Close()
+	var v struct {
+		BaseModel string `json:"base_model"`
+		Adapters  []struct {
+			Name string `json:"name"`
+			Path string `json:"path"`
+		} `json:"adapters"`
+	}
+	if err := json.NewDecoder(f).Decode(&v); err != nil {
+		return "", "", false
+	}
+	base := strings.TrimSpace(v.BaseModel)
+	if base == "" || strings.ContainsAny(base, `/\`) {
+		return "", "", false
+	}
+	basePath = filepath.Join(root, base, "model.gguf")
+	if _, err := os.Stat(basePath); err != nil {
+		return "", "", false
+	}
+	names := make([]string, 0, len(v.Adapters))
+	for _, a := range v.Adapters {
+		n := strings.TrimSpace(a.Name)
+		if n == "" {
+			n = strings.TrimSpace(filepath.Base(a.Path))
+		}
+		if n != "" {
+			names = append(names, n)
+		}
+	}
+	detail = "variant of " + base
+	if len(names) > 0 {
+		detail += " + " + strings.Join(names, ", ")
+	}
+	return basePath, detail, true
+}
+
+// localOpenVINOVariant recognizes an OpenVINO variant directory and returns the
+// reused base IR directory plus a "variant of X + adapters …" annotation. Like
+// localLlamaVariant it is a best-effort offline inventory read: an unreadable
+// marker, a marker targeting a different backend, or a missing base model yields
+// ok=false so the directory is simply skipped (never a scan-breaking error).
+func localOpenVINOVariant(root, variantDir string) (basePath, detail string, ok bool) {
+	f, err := os.Open(filepath.Join(variantDir, "contenox-variant.json"))
+	if err != nil {
+		return "", "", false
+	}
+	defer f.Close()
+	var v struct {
+		Backend   string `json:"backend"`
+		BaseModel string `json:"base_model"`
+		Adapters  []struct {
+			Name string `json:"name"`
+			Path string `json:"path"`
+		} `json:"adapters"`
+	}
+	if err := json.NewDecoder(f).Decode(&v); err != nil {
+		return "", "", false
+	}
+	// Emit only openvino variants: a marker targeting another backend belongs to
+	// that backend's root, not here.
+	if b := strings.TrimSpace(v.Backend); b != "" && b != "openvino" {
+		return "", "", false
+	}
+	base := strings.TrimSpace(v.BaseModel)
+	if base == "" || strings.ContainsAny(base, `/\`) {
+		return "", "", false
+	}
+	baseDir := filepath.Join(root, base)
+	if _, ok := openVINOModelEntrypointPath(baseDir); !ok {
+		return "", "", false
+	}
+	names := make([]string, 0, len(v.Adapters))
+	for _, a := range v.Adapters {
+		n := strings.TrimSpace(a.Name)
+		if n == "" {
+			n = strings.TrimSpace(filepath.Base(a.Path))
+		}
+		if n != "" {
+			names = append(names, n)
+		}
+	}
+	detail = "variant of " + base
+	if len(names) > 0 {
+		detail += " + " + strings.Join(names, ", ")
+	}
+	// The base IR directory is the artifact path for an openvino model (mirrors
+	// localModelArtifactPath's openvino case), so status resolves against it.
+	return baseDir, detail, true
 }
 
 func localModelArtifactPath(typ, dir string) (string, bool) {

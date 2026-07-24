@@ -146,7 +146,7 @@ function ToolCallDetail({ toolCall }: { toolCall: AcpToolCallState }) {
       {toolCall.locations && toolCall.locations.length > 0 && (
         <ul className="text-text-muted dark:text-dark-text-muted space-y-0.5">
           {toolCall.locations.map((loc, i) => (
-            <li key={locationKey(loc.path, loc.line, i)}>
+            <li key={locationKey(loc.path, loc.line, i)} className="break-all">
               {loc.path}
               {loc.line ? `:${loc.line}` : ''}
             </li>

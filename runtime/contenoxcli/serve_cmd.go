@@ -42,6 +42,7 @@ import (
 	"github.com/contenox/runtime/runtime/reportrouter"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/serverapi"
+	"github.com/contenox/runtime/runtime/shellenvservice"
 	"github.com/contenox/runtime/runtime/shellsession"
 	"github.com/contenox/runtime/runtime/stateservice"
 	"github.com/contenox/runtime/runtime/taskchainservice"
@@ -243,6 +244,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
+	// Environment handling for the shells serve spawns: the SANDBOX_* scrub
+	// (agent shells default to deny-secrets, the operator terminal to off) composed
+	// with the operator's global shell-env injection (read live, cached briefly, so
+	// a Beam/CLI edit applies on the next shell without a restart). The two hooks
+	// are threaded into local_shell, the shell_session PTY, and the terminal below.
+	injectGlobalShellEnv := newLiveGlobalShellEnv(shellenvservice.New(db), 3*time.Second)
+	sandboxShellScrub, sandboxTerminalScrub := resolveSandboxScrubs(config, injectGlobalShellEnv)
+
 	contenoxDir, err := ResolveContenoxDir(cmd)
 	if err != nil {
 		return fmt.Errorf("resolve .contenox dir: %w", err)
@@ -371,6 +380,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 		if opts.EffectiveLocalExecAllowedDir != "" {
 			execOpts = append(execOpts, localtools.WithLocalExecAllowedDir(opts.EffectiveLocalExecAllowedDir))
 		}
+		if sandboxShellScrub != nil {
+			execOpts = append(execOpts, localtools.WithLocalExecScrubEnv(sandboxShellScrub))
+		}
 		localTools["local_shell"] = localtools.NewLocalExecTools(execOpts...)
 	}
 
@@ -385,6 +397,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		shellSessions = shellsession.NewManager(shellsession.Config{
 			CwdResolver: acpsvc.NewServeCwdResolver(db, workspaceFactory),
 			Workspace:   workspaceFactory,
+			ScrubEnv:    sandboxShellScrub,
 		})
 		defer shellSessions.Shutdown()
 		localTools[shellsession.ToolsProviderName] = shellsession.NewTools(shellSessions)
@@ -480,6 +493,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	terminalCfg.ScrubEnv = sandboxTerminalScrub
 	terminalSvc, err := terminalservice.New(terminalCfg, db, nodeID, workspaceID)
 	if err != nil {
 		return fmt.Errorf("create terminal service: %w", err)

@@ -217,13 +217,30 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
   // The canvas tab-model (per-session): the terminal now lives here as a
   // side-by-side canvas tab rather than a cramped right sidebar.
   const canvas = useCanvasTabs();
-  const { open: openCanvasTab } = canvas;
+  const { open: openCanvasTab, close: closeCanvasTab } = canvas;
   const openTerminal = useCallback(() => openCanvasTab(TERMINAL_CANVAS_TAB), [openCanvasTab]);
   // Clicking a file in the workspace sidebar opens it as a read-only canvas tab
   // (dedup by path), rather than previewing inline in the sidebar.
   const openFile = useCallback((path: string) => openCanvasTab(fileCanvasTab(path)), [openCanvasTab]);
   const activeFileTab = canvas.tabs.find(tab => tab.id === canvas.activeId && tab.kind === 'file');
   const selectedFilePath = activeFileTab?.path ?? null;
+
+  // Mobile header-toggle wiring for the two secondary surfaces (desktop uses the
+  // edge rails). The sidecar toggle opens/closes its terminal tab — the canvas's
+  // default payload; opening a file from the mobile drawer dismisses the drawer
+  // so the canvas takeover is what you land on.
+  const terminalOpen = canvas.tabs.some(tab => tab.id === TERMINAL_CANVAS_TAB.id);
+  const toggleSidecar = useCallback(
+    () => (terminalOpen ? closeCanvasTab(TERMINAL_CANVAS_TAB.id) : openTerminal()),
+    [terminalOpen, closeCanvasTab, openTerminal],
+  );
+  const openFileFromDrawer = useCallback(
+    (path: string) => {
+      openFile(path);
+      if (panelOpen) togglePanel();
+    },
+    [openFile, panelOpen, togglePanel],
+  );
 
   // Surface the terminal canvas tab automatically the first time THIS session
   // produces shell output. The canvas is per-session, so the `!`-passthrough on
@@ -446,6 +463,11 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
         onConfigChange={handleConfigChange}
         showNewSession={!onEmptyChat}
         onNewSession={onNewSession}
+        showFilesToggle={!!workspaceRoot}
+        filesOpen={panelOpen}
+        onToggleFiles={togglePanel}
+        sidecarOpen={terminalOpen}
+        onToggleSidecar={toggleSidecar}
       />
 
       {adopted && (
@@ -494,6 +516,27 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
               onOpenFile={openFile}
               selectedFilePath={selectedFilePath}
             />
+          </div>
+        )}
+        {/* Mobile: the file explorer as a left drawer overlay (desktop uses the
+            inline rail + panel above). Mirrors MobileSidebar — dismiss on the
+            backdrop, anchored below the app navbar. Opening a file closes the
+            drawer so the canvas takeover is what you land on. */}
+        {panelOpen && workspaceRoot && (
+          <div
+            className="fixed inset-x-0 top-16 bottom-0 z-40 flex sm:hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('workspace.panel_title')}>
+            <div className="absolute inset-0 bg-black/50" onClick={togglePanel} aria-hidden />
+            <div className="relative z-10 flex h-full max-w-[85vw]">
+              <WorkspacePanel
+                root={workspaceRoot}
+                files={files}
+                onOpenFile={openFileFromDrawer}
+                selectedFilePath={selectedFilePath}
+              />
+            </div>
           </div>
         )}
         <CanvasRegion

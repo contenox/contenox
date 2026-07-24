@@ -3,27 +3,23 @@ import {
   Button,
   EmptyState,
   ErrorState,
-  FormField,
   H1,
   InlineNotice,
-  Input,
   LoadingState,
   P,
   Page,
   Section,
   Span,
 } from '@contenox/ui';
-import { MessageSquarePlus, Trash2 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { FolderPlus, MessageSquarePlus, Trash2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
 import { startNewChat } from '../../../components/sidebar/newChatIntent';
+import { AddProjectDialog } from '../../../components/workspace/AddProjectDialog';
 import { useAcpWorkspace } from '../../../hooks/useAcpWorkspace';
-import {
-  useAddWorkspaceRoot,
-  useForgetWorkspaceRoot,
-} from '../../../hooks/useWorkspaceRootMutations';
+import { useForgetWorkspaceRoot } from '../../../hooks/useWorkspaceRootMutations';
 import { useWorkspaceRoots } from '../../../hooks/useWorkspaceRoots';
 import { ApiError } from '../../../lib/fetch';
 import { workspaceRootKeys } from '../../../lib/queryKeys';
@@ -56,31 +52,14 @@ export default function ProjectsPage() {
   const { setStagedAgent } = useStagedAgent();
   const { setStagedRoot } = useStagedRoot();
 
-  const addMutation = useAddWorkspaceRoot();
   const forgetMutation = useForgetWorkspaceRoot();
 
-  const [name, setName] = useState('');
-  const [path, setPath] = useState('');
+  const [addOpen, setAddOpen] = useState(false);
 
   // Sessions whose cwd resolves (deepest segment-aware match) to THIS root —
   // the same containment rule the sidebar uses to label a session's project.
   const sessionCountForRoot = (root: WorkspaceRoot): number =>
     workspace.sessions.filter(s => projectForCwd(s.cwd, roots)?.path === root.path).length;
-
-  const handleAdd = (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmedPath = path.trim();
-    if (!trimmedPath) return;
-    addMutation.mutate(
-      { path: trimmedPath, name: name.trim() },
-      {
-        onSuccess: () => {
-          setName('');
-          setPath('');
-        },
-      },
-    );
-  };
 
   // Each project row is a LAUNCHER (the JetBrains welcome-screen journey):
   // "New session here" opens the empty chat already scoped to this project,
@@ -130,15 +109,6 @@ export default function ProjectsPage() {
       </Page>
     );
   }
-
-  // apiFetch always throws an ApiError; the 422 for a bad path carries the
-  // server's teaching message. Fall back to a generic line for the (unexpected)
-  // non-ApiError case so a failed add is never a blank crash.
-  const addErrorMessage = addMutation.error
-    ? addMutation.error instanceof ApiError
-      ? addMutation.error.message
-      : t('projects.add_error_fallback')
-    : null;
 
   const forgetErrorMessage = forgetMutation.error
     ? forgetMutation.error instanceof ApiError
@@ -226,33 +196,14 @@ export default function ProjectsPage() {
         )}
 
         <Section title={t('projects.add_title')} description={t('projects.add_description')}>
-          <form onSubmit={handleAdd} className="space-y-4">
-            <FormField label={t('projects.name_label')}>
-              <Input
-                value={name}
-                onChange={e => setName(e.target.value)}
-                placeholder={t('projects.name_placeholder')}
-              />
-            </FormField>
-            <FormField label={t('projects.path_label')} required>
-              <Input
-                value={path}
-                onChange={e => setPath(e.target.value)}
-                placeholder={t('projects.path_placeholder')}
-                required
-              />
-            </FormField>
-            {addErrorMessage && (
-              <InlineNotice variant="error" role="alert">
-                {addErrorMessage}
-              </InlineNotice>
-            )}
-            <Button type="submit" isLoading={addMutation.isPending} disabled={addMutation.isPending}>
-              {addMutation.isPending ? t('projects.add_submitting') : t('projects.add_submit')}
-            </Button>
-          </form>
+          <Button type="button" onClick={() => setAddOpen(true)}>
+            <FolderPlus className="h-4 w-4" aria-hidden />
+            {t('projects.browse_open')}
+          </Button>
         </Section>
       </div>
+
+      <AddProjectDialog open={addOpen} onClose={() => setAddOpen(false)} roots={roots} />
     </Page>
   );
 }

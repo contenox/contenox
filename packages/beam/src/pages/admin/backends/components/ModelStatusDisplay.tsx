@@ -9,9 +9,9 @@ export function ModelStatusDisplay({ modelName }: ModelStatusDisplayProps) {
   const { t } = useTranslation();
 
   return (
-    <div className="flex items-center justify-between py-1">
-      <Span className="text-sm font-medium">{modelName}</Span>
-      <Badge variant="success" size="sm">
+    <div className="flex items-center justify-between gap-2 py-1" title={modelName}>
+      <Span className="min-w-0 truncate text-sm font-medium">{modelName}</Span>
+      <Badge variant="success" size="sm" className="shrink-0">
         {t('backends.status.available')}
       </Badge>
     </div>

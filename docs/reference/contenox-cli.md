@@ -532,6 +532,9 @@ Binds `127.0.0.1:32123` by default (override with `ADDR`/`PORT`). Set `TOKEN` to
 | `TERMINAL_IDLE_TIMEOUT` | Idle duration after which a terminal session is reaped. |
 | `HITL_APPROVAL_TIMEOUT` | Ceiling for pending HITL approvals, a Go duration (e.g. `1h`); expired asks are auto-resolved. |
 | `ALLOWED_API_ORIGINS` / `PROXY_ORIGIN` | CORS: extra allowed API origins / the trusted reverse-proxy origin. |
+| `SANDBOX_SHELL_SCRUB` | Environment-scrub policy for agent-reachable shells (`local_shell`, the `!` / `shell_session` PTY): `deny-secrets` (default), `strict`, `off`. See [Least-privilege shell environment](/docs/guide/environment-scrubbing/). |
+| `SANDBOX_TERMINAL_SCRUB` | Environment-scrub policy for the interactive terminal panel: `off` (default), `deny-secrets`, `strict`. Enable it for LAN-exposed serves. |
+| `SANDBOX_ENV_ALLOW` / `SANDBOX_ENV_DENY` | Extra variable names or globs to also pass through / always drop under the active scrub. Preview the result with `contenox sandbox env`. |
 
 ### `contenox fleet`
 

@@ -103,8 +103,20 @@ export function Dialog({
         className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 focus:outline-none"
         onClick={(e) => e.stopPropagation()}
       >
-        <Card className={cn("w-[400px]", className)}>
-          <div className="mb-4 flex items-center justify-between">
+        {/* Bounded to the viewport (min of dvh and content) as a flex column, so a
+            dialog taller than the screen — a landscape phone, a tall form — pins its
+            header and SCROLLS its body instead of running its title and action
+            buttons off the top and bottom with no way to reach them (body scroll is
+            locked while open). The default width caps to the viewport too, so a
+            caller that passes no width no longer overflows a narrow screen; a caller
+            that sets its own `w-*`/`max-w-*` in `className` still wins (twMerge). */}
+        <Card
+          className={cn(
+            "flex max-h-[calc(100dvh-2rem)] w-[min(400px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] flex-col overflow-hidden",
+            className,
+          )}
+        >
+          <div className="mb-4 flex shrink-0 items-center justify-between">
             <H3
               id={titleId}
               className="text-primary-600 dark:text-dark-primary-500 text-lg font-semibold"
@@ -119,7 +131,7 @@ export function Dialog({
               <X className="h-5 w-5 dark:text-dark-secondary-400" />
             </Button>
           </div>
-          {children}
+          <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
         </Card>
       </div>
     </div>,

@@ -5,6 +5,7 @@ import { AutocompleteSettingsSection } from './AutocompleteSettingsSection';
 import { GlobalSettingsSection } from './GlobalSettingsSection';
 import { ResponseSettingsSection } from './ResponseSettingsSection';
 import { SetupWizardSection } from './SetupWizardSection';
+import { ShellEnvSettingsSection } from './ShellEnvSettingsSection';
 import { TelemetrySettingsSection } from './TelemetrySettingsSection';
 import { WorkspaceSettingsSection } from './WorkspaceSettingsSection';
 
@@ -24,6 +25,7 @@ export default function SettingsPage() {
         <ResponseSettingsSection />
         <AutocompleteSettingsSection />
         <WorkspaceSettingsSection />
+        <ShellEnvSettingsSection />
         <TelemetrySettingsSection />
         <AccessSettingsSection />
         <SetupWizardSection />

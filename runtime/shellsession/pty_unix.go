@@ -20,7 +20,7 @@ type ptySession struct {
 // startPTY launches an interactive shell rooted at cwd on a fresh PTY. The PTY
 // becomes the shell's controlling terminal, so job control and an interactive
 // prompt behave as on a real terminal.
-func startPTY(cwd, shell string) (*ptySession, error) {
+func startPTY(cwd, shell string, scrub func([]string) []string) (*ptySession, error) {
 	if shell == "" {
 		shell = defaultShell()
 	}
@@ -32,7 +32,13 @@ func startPTY(cwd, shell string) (*ptySession, error) {
 		cmd = exec.Command(shell)
 	}
 	cmd.Dir = cwd
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	// Scrub serve's credentials out of the shell's environment when configured;
+	// TERM is appended last so it wins regardless of the policy.
+	parent := os.Environ()
+	if scrub != nil {
+		parent = scrub(parent)
+	}
+	cmd.Env = append(parent, "TERM=xterm-256color")
 	master, err := pty.Start(cmd)
 	if err != nil {
 		return nil, err
