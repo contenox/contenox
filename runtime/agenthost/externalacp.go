@@ -207,7 +207,32 @@ func buildAgentCmd(ctx context.Context, a *ExternalACPAgent) (*exec.Cmd, error) 
 		return nil, err
 	}
 
+	// The namespaced network wall (a routeless userns/netns + the per-host egress
+	// that serves the Net carve-outs) is OPT-IN: it needs unprivileged user
+	// namespaces the host may withhold (e.g. AppArmor-restricted Ubuntu 24.04), so
+	// the default is the zero-privilege fence — Landlock confines the filesystem and
+	// exec and the env is scrubbed, but the network is left open. Turn it on when the
+	// operator asked to confine the network: either by naming hosts in the carve-out
+	// file (Net carve-outs are only reachable THROUGH the netns that serves them, so
+	// naming one implies it) or explicitly via CONTENOX_SANDBOX_NETWORK_WALL for a
+	// fully-offline netns with no carve-outs. On a host without unprivileged userns
+	// the opt-in fails closed (libsandbox.Command refuses) rather than run unconfined.
+	spec.NetworkWall = len(spec.Net) > 0 || networkWallOptIn()
+
 	return libsandbox.Command(ctx, spec, a.Config.Command, a.Config.Args...)
+}
+
+// networkWallOptIn reports whether the operator opted into the namespaced network
+// wall via the CONTENOX_SANDBOX_NETWORK_WALL environment toggle (a truthy value:
+// "1" or "true"). Absent or unset, the default zero-privilege fence is used. See
+// the opt-in comment in buildAgentCmd and Spec.NetworkWall.
+func networkWallOptIn() bool {
+	switch os.Getenv("CONTENOX_SANDBOX_NETWORK_WALL") {
+	case "1", "true", "TRUE", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 // defaultAgentCarveouts is the baseline read-only filesystem necessity list every

@@ -307,7 +307,7 @@ func TestManager_External_StartGetStop(t *testing.T) {
 	mgr := New(svc)
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "ext-agent")
+	id, err := mgr.Start(ctx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 	require.NotEmpty(t, id)
 
@@ -345,7 +345,7 @@ func TestManager_Chain_SelfSpawnConfig(t *testing.T) {
 	mgr := New(svc, WithSelfExecutable(stub))
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "chain-unit")
+	id, err := mgr.Start(ctx, "chain-unit", t.TempDir())
 	require.NoError(t, err)
 
 	inst := instanceOf(t, mgr, id)
@@ -372,7 +372,7 @@ func TestManager_Chain_RunsThroughTheSameBringUp(t *testing.T) {
 	mgr := New(svc, WithSelfExecutable(stub))
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "chain-unit")
+	id, err := mgr.Start(ctx, "chain-unit", t.TempDir())
 	require.NoError(t, err)
 
 	st, err := mgr.Get(id)
@@ -403,7 +403,7 @@ func TestManager_Chain_RejectsUnusableConfig(t *testing.T) {
 	mgr := New(svc, WithSelfExecutable("/nonexistent/contenox"))
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	_, err := mgr.StartResolved(ctx, &runtimetypes.Agent{Name: "pathless", Kind: runtimetypes.AgentKindChain})
+	_, err := mgr.StartResolved(ctx, &runtimetypes.Agent{Name: "pathless", Kind: runtimetypes.AgentKindChain}, "")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "path is required")
 }
@@ -425,9 +425,11 @@ func TestManager_Chain_DefaultsToTheRunningExecutable(t *testing.T) {
 	mgr := New(svc)
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	spawner, err := mgr.(*manager).chainSpawner(agent)
+	spawner, err := mgr.(*manager).chainSpawner(agent, "/tmp/chain-cwd")
 	require.NoError(t, err)
 	require.Equal(t, self, spawner.(*agenthost.ExternalACPAgent).Config.Command)
+	require.Equal(t, "/tmp/chain-cwd", spawner.(*agenthost.ExternalACPAgent).Config.Cwd,
+		"a chain agent's sandbox workspace is the caller's cwd (it declares none of its own)")
 }
 
 func TestManager_Start_UnknownAgent(t *testing.T) {
@@ -435,7 +437,7 @@ func TestManager_Start_UnknownAgent(t *testing.T) {
 	mgr := New(svc)
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	_, err := mgr.Start(ctx, "does-not-exist")
+	_, err := mgr.Start(ctx, "does-not-exist", "")
 	require.Error(t, err)
 }
 
@@ -476,7 +478,7 @@ func TestManager_StartResolved_PerformsNoRegistryRead(t *testing.T) {
 	mgr := New(counting)
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.StartResolved(ctx, agent)
+	id, err := mgr.StartResolved(ctx, agent, t.TempDir())
 	require.NoError(t, err)
 	require.Zero(t, counting.reads(), "the kernel spawns what it is handed; it must not re-resolve it")
 
@@ -487,7 +489,7 @@ func TestManager_StartResolved_PerformsNoRegistryRead(t *testing.T) {
 	require.Equal(t, agent.Name, st.AgentName)
 
 	// Start is the by-name convenience over the same spawn: exactly one read.
-	_, err = mgr.Start(ctx, "ext-agent")
+	_, err = mgr.Start(ctx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 	require.Equal(t, 1, counting.reads(), "Start resolves once and delegates; it is not a second spawn implementation")
 }
@@ -500,10 +502,10 @@ func TestManager_StartResolved_RejectsUnusableRecords(t *testing.T) {
 	mgr := New(svc)
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	_, err := mgr.StartResolved(ctx, nil)
+	_, err := mgr.StartResolved(ctx, nil, "")
 	require.Error(t, err)
 
-	_, err = mgr.StartResolved(ctx, &runtimetypes.Agent{Name: "weird", Kind: "no-such-kind"})
+	_, err = mgr.StartResolved(ctx, &runtimetypes.Agent{Name: "weird", Kind: "no-such-kind"}, "")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unsupported kind")
 }
@@ -525,7 +527,7 @@ func TestManager_Stop_Idempotent(t *testing.T) {
 	mgr := New(svc)
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "ext-agent")
+	id, err := mgr.Start(ctx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 
 	require.NoError(t, mgr.Stop(id))
@@ -541,9 +543,9 @@ func TestManager_Close_StopsAll(t *testing.T) {
 
 	mgr := New(svc)
 
-	idA, err := mgr.Start(ctx, "ext-a")
+	idA, err := mgr.Start(ctx, "ext-a", t.TempDir())
 	require.NoError(t, err)
-	idB, err := mgr.Start(ctx, "ext-b")
+	idB, err := mgr.Start(ctx, "ext-b", t.TempDir())
 	require.NoError(t, err)
 
 	handleA := currentHandle(instanceOf(t, mgr, idA))
@@ -553,7 +555,7 @@ func TestManager_Close_StopsAll(t *testing.T) {
 	requireConnClosed(t, handleA)
 	requireConnClosed(t, handleB)
 
-	_, err = mgr.Start(ctx, "ext-a")
+	_, err = mgr.Start(ctx, "ext-a", t.TempDir())
 	require.Error(t, err, "Start after Close must be refused")
 	require.NoError(t, mgr.Close(), "Close is idempotent")
 }
@@ -571,7 +573,7 @@ func TestManager_Attach_FanoutAndControllerPermission(t *testing.T) {
 	mgr := New(svc)
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "ext-agent")
+	id, err := mgr.Start(ctx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 
 	sid := openSession(t, mgr, id)
@@ -619,7 +621,7 @@ func TestManager_Attach_JournalReplayThenLive(t *testing.T) {
 	mgr := New(svc)
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "ext-agent")
+	id, err := mgr.Start(ctx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 	sid := openSession(t, mgr, id)
 
@@ -657,7 +659,7 @@ func TestManager_Detach_PromotesNextController(t *testing.T) {
 	mgr := New(svc)
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "ext-agent")
+	id, err := mgr.Start(ctx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 	sid := openSession(t, mgr, id)
 
@@ -685,7 +687,7 @@ func TestManager_NoController_PermissionDenyFallback(t *testing.T) {
 	mgr := New(svc)
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "ext-agent")
+	id, err := mgr.Start(ctx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 	sid := openSession(t, mgr, id)
 
@@ -725,7 +727,7 @@ func TestUnit_EventSink_UnsupervisedDenyEmitsEvent(t *testing.T) {
 	}))
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "ext-agent")
+	id, err := mgr.Start(ctx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 	sid := openSession(t, mgr, id)
 
@@ -769,7 +771,7 @@ func TestManager_WatchDog_RestartUpToLimitThenWarning(t *testing.T) {
 	mgr := New(svc, WithRestart(1)) // one restart allowed, then Warning
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "ext-agent")
+	id, err := mgr.Start(ctx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 	inst := instanceOf(t, mgr, id)
 
@@ -804,7 +806,7 @@ func TestManager_WatchDog_ManualStopNeverRestarts(t *testing.T) {
 	mgr := New(svc, WithRestart(5))
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "ext-agent")
+	id, err := mgr.Start(ctx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 	inst := instanceOf(t, mgr, id)
 
@@ -829,7 +831,7 @@ func TestManager_External_UnexpectedExitBecomesError(t *testing.T) {
 	mgr := New(svc)
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "dies-immediately")
+	id, err := mgr.Start(ctx, "dies-immediately", t.TempDir())
 	require.NoError(t, err)
 
 	require.Eventually(t, func() bool {
@@ -866,7 +868,7 @@ func TestManager_List_JoinsConfigAndRuntime(t *testing.T) {
 	}
 
 	// Start one; it now shows a running instance, the other still idle.
-	id, err := mgr.Start(ctx, "live-agent")
+	id, err := mgr.Start(ctx, "live-agent", t.TempDir())
 	require.NoError(t, err)
 
 	entries, err = mgr.List(ctx)
@@ -923,7 +925,7 @@ func TestManager_EventSink_FiresOnLifecycle(t *testing.T) {
 	mgr := New(svc, WithEventSink(sink))
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "ext-agent")
+	id, err := mgr.Start(ctx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 	require.True(t, hasStateEvent(StateRunning), "start fires a Running state_change")
 
@@ -969,7 +971,7 @@ func TestManager_OpenSession_PromptRoundTrip(t *testing.T) {
 
 	// External instance: OpenSession drives the downstream handshake; Prompt drives a
 	// turn whose stream a viewer observes.
-	id, err := mgr.Start(ctx, "ext-agent")
+	id, err := mgr.Start(ctx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 
 	sid := openSession(t, mgr, id)
@@ -998,7 +1000,7 @@ func TestManager_ConfigOptions_RoundTrip(t *testing.T) {
 	mgr := New(svc)
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "ext-agent")
+	id, err := mgr.Start(ctx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 	sid := openSession(t, mgr, id)
 
@@ -1039,7 +1041,7 @@ func TestManager_SyntheticModeModelOptions_RoundTrip(t *testing.T) {
 	mgr := New(svc)
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "ext-agent")
+	id, err := mgr.Start(ctx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 	sid := openSession(t, mgr, id)
 
@@ -1077,7 +1079,7 @@ func TestManager_AvailableCommands_Captured(t *testing.T) {
 	mgr := New(svc)
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "ext-agent")
+	id, err := mgr.Start(ctx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 	sid := openSession(t, mgr, id)
 
@@ -1108,7 +1110,7 @@ func TestManager_Terminal_RoutesToControllerTerminalServer(t *testing.T) {
 	mgr := New(svc)
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "ext-agent")
+	id, err := mgr.Start(ctx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 
 	// Terminal advertised (spec) AND the controller serves terminals.
@@ -1140,7 +1142,7 @@ func TestManager_Terminal_MethodNotFoundWithoutTerminalServer(t *testing.T) {
 	mgr := New(svc)
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "ext-agent")
+	id, err := mgr.Start(ctx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 
 	// Terminal advertised, but the controller is a PLAIN viewer (no TerminalServer).
@@ -1167,7 +1169,7 @@ func TestManager_Terminal_CapabilityWithheld(t *testing.T) {
 	mgr := New(svc)
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "ext-agent")
+	id, err := mgr.Start(ctx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 
 	// SessionSpec withholds the terminal capability (default): the downstream is never told
@@ -1197,7 +1199,7 @@ func TestManager_Cancel_UnblocksInFlightTurn(t *testing.T) {
 	mgr := New(svc)
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "ext-agent")
+	id, err := mgr.Start(ctx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 	sid := openSession(t, mgr, id)
 
@@ -1242,7 +1244,7 @@ func TestManager_CloseSession_DropsStateNotInstance(t *testing.T) {
 	mgr := New(svc)
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "ext-agent")
+	id, err := mgr.Start(ctx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 	sid := openSession(t, mgr, id)
 
@@ -1296,7 +1298,7 @@ func TestManager_Status_SessionIDsReflectOpenSessions(t *testing.T) {
 	mgr := New(svc)
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "ext-agent")
+	id, err := mgr.Start(ctx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 
 	// No sessions opened yet: an empty, non-nil slice.
@@ -1370,7 +1372,7 @@ func TestManager_OwnershipSurvivesCallerCtxCancel(t *testing.T) {
 	t.Cleanup(func() { _ = mgr.Close() })
 
 	callerCtx, cancel := context.WithCancel(context.Background())
-	id, err := mgr.Start(callerCtx, "ext-agent")
+	id, err := mgr.Start(callerCtx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 
 	inst := instanceOf(t, mgr, id)

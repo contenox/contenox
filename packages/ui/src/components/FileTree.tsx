@@ -1,14 +1,33 @@
-import { forwardRef, useCallback, useState } from "react";
+import { forwardRef, useCallback, useState, type ReactNode } from "react";
 import { ChevronRight, File, Folder, FolderOpen } from "lucide-react";
 import { cn } from "../utils";
 
 /**
- * Optional per-node access status, rendered as a small colored dot before the
- * name. Consumer-defined semantics; the workspace file panel uses it to overlay
- * an agent-view policy verdict (`allow`/`approve`/`deny`) or an `unreachable`
- * boundary marker, which also dims the row. Absent = no dot, full opacity.
+ * Severity of a single {@link FileTreeIndicator}, which tints its icon.
+ * Consumer-defined semantics; the workspace file panel maps a HITL policy verdict
+ * onto it — `allow` → a calm success green, `approve` → warning, `deny` → error,
+ * `unreachable` → muted (paired with {@link FileTreeNode.dimmed} on the row).
  */
-export type FileTreeNodeStatus = "allow" | "approve" | "deny" | "unreachable";
+export type FileTreeIndicatorStatus = "allow" | "approve" | "deny" | "unreachable";
+
+/**
+ * A small trailing status icon on a row (e.g. a read or write access marker). The
+ * icon element is CONSUMER-supplied so this component stays domain-agnostic — the
+ * tree only tints it by {@link FileTreeIndicatorStatus} (via `currentColor`) and
+ * wires its tooltip / accessible label. A node may carry several (rendered in
+ * order, right-aligned), which is how the workspace panel shows the two
+ * independent read + write axes.
+ */
+export interface FileTreeIndicator {
+  /** Stable id within a node's indicator list (used as the React key). */
+  key: string;
+  /** Icon element to render, e.g. a lucide `<Eye />`. Sized/styled by the consumer; tinted here. */
+  icon: ReactNode;
+  /** Severity that tints the icon. */
+  status: FileTreeIndicatorStatus;
+  /** Per-indicator tooltip and accessible label (e.g. the localized policy reason). */
+  title?: string;
+}
 
 export interface FileTreeNode {
   /** Unique id for this node. */
@@ -21,29 +40,39 @@ export interface FileTreeNode {
   isDirectory?: boolean;
   /** Nested children (only for directories). */
   children?: FileTreeNode[];
-  /** Optional access-status dot (see {@link FileTreeNodeStatus}); `unreachable` also dims the row. */
-  status?: FileTreeNodeStatus;
-  /** Optional row tooltip (e.g. the policy reason behind {@link status}). */
+  /** Trailing status indicators (e.g. read + write access), rendered after the name. */
+  indicators?: FileTreeIndicator[];
+  /** Dims the row to half opacity (e.g. an out-of-boundary / unreachable path). */
+  dimmed?: boolean;
+  /** Optional row tooltip. */
   title?: string;
 }
 
-/** Tailwind class for each status dot; kept optional so unstatused trees are untouched. */
-const STATUS_DOT_CLASS: Record<FileTreeNodeStatus, string> = {
-  allow: "bg-success-500 dark:bg-dark-success-500",
-  approve: "bg-warning-500 dark:bg-dark-warning-500",
-  deny: "bg-error-500 dark:bg-dark-error-500",
-  unreachable: "bg-text-muted dark:bg-dark-text-muted",
+/** Icon tint per severity. `allow` is a calm success green (a thin stroke, not a loud fill). */
+const INDICATOR_TINT_CLASS: Record<FileTreeIndicatorStatus, string> = {
+  allow: "text-success-500 dark:text-dark-success-500",
+  approve: "text-warning-500 dark:text-dark-warning-500",
+  deny: "text-error-500 dark:text-dark-error-500",
+  unreachable: "text-text-muted dark:text-dark-text-muted",
 };
 
-function StatusDot({ status }: { status: FileTreeNodeStatus }) {
+/** The right-aligned run of trailing indicators (kept optional so plain trees are untouched). */
+function IndicatorRow({ indicators }: { indicators: FileTreeIndicator[] }) {
   return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        "h-2 w-2 shrink-0 rounded-full",
-        status === "allow" ? "ring-1 ring-inset ring-success-500/60 bg-transparent dark:ring-dark-success-500/60" : STATUS_DOT_CLASS[status],
-      )}
-    />
+    <span className="ml-auto flex shrink-0 items-center gap-1 pl-1.5">
+      {indicators.map((ind) => (
+        <span
+          key={ind.key}
+          className={cn("inline-flex shrink-0 items-center", INDICATOR_TINT_CLASS[ind.status])}
+          title={ind.title}
+          role={ind.title ? "img" : undefined}
+          aria-label={ind.title || undefined}
+          aria-hidden={ind.title ? undefined : true}
+        >
+          {ind.icon}
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -129,6 +158,7 @@ function FileTreeItem({
   );
 
   const isSelected = selectedId === node.id;
+  const hasIndicators = !!node.indicators && node.indicators.length > 0;
 
   const toggleExpand = useCallback(() => {
     setExpanded((v) => !v);
@@ -173,7 +203,7 @@ function FileTreeItem({
     "flex w-full items-center gap-1.5 rounded px-2 py-1 text-left",
     "text-text dark:text-dark-text",
     "hover:bg-surface-100 dark:hover:bg-dark-surface-200",
-    node.status === "unreachable" && "opacity-50",
+    node.dimmed && "opacity-50",
     isSelected &&
       "bg-primary-50/50 text-primary-700 dark:bg-dark-primary-900/30 dark:text-dark-primary-400",
   );
@@ -206,8 +236,8 @@ function FileTreeItem({
             ) : (
               <Folder className="h-4 w-4 shrink-0 text-warning dark:text-dark-warning" />
             )}
-            <span className="truncate font-mono text-xs">{node.name}</span>
-            {node.status && <StatusDot status={node.status} />}
+            <span className="min-w-0 flex-1 truncate font-mono text-xs">{node.name}</span>
+            {hasIndicators && <IndicatorRow indicators={node.indicators!} />}
           </button>
         </div>
       ) : (
@@ -240,8 +270,8 @@ function FileTreeItem({
               <File className="h-4 w-4 shrink-0 text-text-muted dark:text-dark-text-muted" />
             </>
           )}
-          <span className="truncate font-mono text-xs">{node.name}</span>
-          {node.status && <StatusDot status={node.status} />}
+          <span className="min-w-0 flex-1 truncate font-mono text-xs">{node.name}</span>
+          {hasIndicators && <IndicatorRow indicators={node.indicators!} />}
         </button>
       )}
 

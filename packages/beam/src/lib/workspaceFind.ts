@@ -1,4 +1,3 @@
-import type { WorkspaceAccess } from '../pages/chat/lib/workspaceTree';
 import { parseSSEFrames } from './workspaceSearch';
 
 /**
@@ -16,14 +15,16 @@ import { parseSSEFrames } from './workspaceSearch';
  * against a mocked fetch with no DOM.
  */
 
-/** One `event: match` frame: a matching file entry (mirrors Go `localfileapi.Entry`). */
+/**
+ * One `event: match` frame: a matching file entry (mirrors Go `localfileapi.Entry`).
+ * A RAW listing — the agent-view overlay's verdicts come from a separate
+ * `POST /workspace/access` batch, merged by path in the panel.
+ */
 export interface WorkspaceFindMatch {
   path: string;
   name: string;
   isDirectory: boolean;
   size?: number;
-  /** Present only when the request carried `filter=agent`. */
-  access?: WorkspaceAccess;
 }
 
 /** The single terminal `event: done` frame (mirrors Go `localfileapi.findDone`). */

@@ -20,6 +20,62 @@
         },
         "type": "object"
       },
+      "accessapi_EvaluateRequest": {
+        "properties": {
+          "paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "accessapi_EvaluateResponse": {
+        "properties": {
+          "policyName": {
+            "type": "string"
+          },
+          "verdicts": {
+            "items": {
+              "$ref": "#/components/schemas/accessview_PathVerdict"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "accessview_DimensionVerdict": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "rule": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "accessview_PathVerdict": {
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "reachable": {
+            "type": "boolean"
+          },
+          "read": {
+            "$ref": "#/components/schemas/accessview_DimensionVerdict"
+          },
+          "write": {
+            "$ref": "#/components/schemas/accessview_DimensionVerdict"
+          }
+        },
+        "type": "object"
+      },
       "agentinstance_FleetEntry": {
         "properties": {
           "agentId": {
@@ -7177,6 +7233,66 @@
         "summary": "GET /version",
         "tags": [
           "server"
+        ]
+      }
+    },
+    "/workspace/access": {
+      "post": {
+        "operationId": "access_evaluate",
+        "parameters": [
+          {
+            "description": "HITL policy name to evaluate against; omitted uses the runtime's default policy resolution (the same resolution the live agent uses).",
+            "in": "query",
+            "name": "policy",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Workspace root the request operates in: a granted root (or a directory under one); empty or \"/\" resolves to the default (first-configured) root.",
+            "in": "query",
+            "name": "root",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/accessapi_EvaluateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/accessapi_EvaluateResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "evaluate batch-evaluates the HITL policy's read/write verdict for every path in the request body against the `root` workspace (query param, same allowlist as /files) and `policy` (query param; omitted uses the runtime's default policy resolution, matching the live agent).",
+        "tags": [
+          "access"
         ]
       }
     },

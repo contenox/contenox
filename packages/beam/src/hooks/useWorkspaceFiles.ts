@@ -4,19 +4,22 @@ import {
   flattenFiles,
   ROOT_DIR,
   type DirCache,
-  type WorkspaceAccess,
   type WorkspaceEntry,
 } from '../pages/chat/lib/workspaceTree';
 import type { WorkspaceFileRef } from '../pages/chat/lib/mentions';
 
-/** One entry from the `/files` list endpoint (localfileservice.Entry + optional agent-view `access`). */
+/**
+ * The Default-policy sentinel, re-exported from its canonical home in
+ * `lib/workspaceAccess` for this hook's existing importers.
+ */
+export { HITL_POLICY_DEFAULT_VALUE } from '../lib/workspaceAccess';
+
+/** One entry from the `/files` list endpoint (localfileservice.Entry). Now a RAW listing. */
 interface FilesListEntry {
   path: string;
   name: string;
   isDirectory: boolean;
   size: number;
-  /** Present only when the listing was fetched with `filter=agent`. */
-  access?: WorkspaceAccess;
 }
 
 /** The `/files/content` response (localfileapi.fileContentResponse). */
@@ -52,39 +55,22 @@ export interface UseWorkspaceFilesResult {
   refresh: () => void;
   /** Reads a file's content for peek. */
   readFile: (path: string) => Promise<WorkspaceFilePeek>;
-  /** Whether the agent-view policy filter is active (listings carry an `access` verdict). */
+  /** Whether the agent-view policy overlay is active (drives the /workspace/access batch). */
   agentView: boolean;
-  /** Toggles the agent-view filter; re-fetches the tree under the new view. */
+  /** Toggles the agent-view overlay. Does NOT re-list files — the overlay is a separate call. */
   setAgentView: (on: boolean) => void;
+  /** The session's HITL policy the agent-view overlay evaluates against (for the access batch). */
+  hitlPolicyName?: string | null;
 }
 
 /**
- * The per-session "use configured default" HITL policy sentinel. Mirrors
- * acpsvc's `hitlPolicyDefaultValue`: it is the toolbar HITL option's value when
- * the session defers to Contenox's configured fallback policy. The agent-view
- * fetch omits `policy=` for it so the server default-resolves, matching a live
- * agent that also runs under the configured default.
+ * Root-relative `/files` browse URL. A RAW listing: agent-view verdicts no longer
+ * ride on this endpoint (they come from a separate `POST /workspace/access` batch),
+ * so the listing is byte-identical regardless of the overlay — toggling agent view
+ * never re-lists the tree.
  */
-export const HITL_POLICY_DEFAULT_VALUE = '__contenox_default__';
-
-export function filesUrl(
-  path: string,
-  root: string,
-  agentView: boolean,
-  hitlPolicyName?: string | null,
-): string {
+export function filesUrl(path: string, root: string): string {
   const params = new URLSearchParams({ path: path === ROOT_DIR ? '.' : path, root });
-  // `filter=agent` makes the server annotate each entry with a policy verdict
-  // (`access`). When the session's toolbar HITL policy is a CONCRETE selection,
-  // pin the evaluation to it via `policy=<name>` so the tree's verdicts match the
-  // policy the live agent gates under. For the "Default" sentinel (or no value)
-  // `policy` is omitted so the server default-resolves the configured
-  // `hitl-policy-name` — the same fallback a defaulting session runs under.
-  if (agentView) {
-    params.set('filter', 'agent');
-    const policy = hitlPolicyName?.trim();
-    if (policy && policy !== HITL_POLICY_DEFAULT_VALUE) params.set('policy', policy);
-  }
   return `/api/files?${params.toString()}`;
 }
 
@@ -97,10 +83,15 @@ function contentUrl(path: string, root: string): string {
  * Data hook for the session workspace's file tree: fetches per-directory
  * listings from the `/files` browse API (rooted at `root`, validated
  * server-side against the workspace allowlist), caches them by path, and
- * lazily loads a directory's children on demand. Resets when `root` — or the
- * session's `hitlPolicyName` under agent-view — changes. Kept free of
- * tree/serialization logic — that lives in the pure `workspaceTree.ts` helpers
- * this composes.
+ * lazily loads a directory's children on demand. Resets only when `root`
+ * changes — the agent-view overlay is a separate `/workspace/access` batch
+ * (see `useWorkspaceAccess`), so toggling it or switching HITL policy re-colors
+ * the tree WITHOUT re-listing it. Kept free of tree/serialization logic — that
+ * lives in the pure `workspaceTree.ts` helpers this composes.
+ *
+ * `hitlPolicyName` is threaded through unchanged (exposed on the result) so the
+ * panel can pin the access-batch evaluation to the same policy the live agent
+ * gates under.
  */
 export function useWorkspaceFiles(
   root: string | null,
@@ -109,8 +100,8 @@ export function useWorkspaceFiles(
   const [cache, setCache] = useState<DirCache>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
-  // Agent-view policy overlay. OFF by default so the raw filesystem tree (today's
-  // behavior, byte-identical response) renders until the user opts in.
+  // Agent-view policy overlay. OFF by default so the raw filesystem tree renders
+  // until the user opts in; flipping it only toggles the separate verdict batch.
   const [agentView, setAgentView] = useState(false);
   // Guards against setState after the root changed (or unmount) mid-fetch.
   const rootRef = useRef(root);
@@ -125,13 +116,12 @@ export function useWorkspaceFiles(
       requestedRef.current.add(dir);
       setLoading(prev => ({ ...prev, [dir]: true }));
       try {
-        const entries = await apiFetch<FilesListEntry[]>(filesUrl(dir, root, agentView, hitlPolicyName));
+        const entries = await apiFetch<FilesListEntry[]>(filesUrl(dir, root));
         if (rootRef.current !== root) return;
         const mapped: WorkspaceEntry[] = entries.map(e => ({
           path: e.path,
           name: e.name,
           isDirectory: e.isDirectory,
-          ...(e.access ? { access: e.access } : {}),
         }));
         setCache(prev => ({ ...prev, [dir]: mapped }));
         setError(null);
@@ -142,13 +132,12 @@ export function useWorkspaceFiles(
         if (rootRef.current === root) setLoading(prev => ({ ...prev, [dir]: false }));
       }
     },
-    [root, agentView, hitlPolicyName],
+    [root],
   );
 
-  // (Re)load the root whenever the workspace root changes — or the agent-view
-  // toggle flips, or the session's HITL policy changes: each reidentifies `load`
-  // (it now fetches under a new filter/policy), so the cache clears and every
-  // requested dir reloads under the new verdicts.
+  // (Re)load the root whenever the workspace root changes. The listing no longer
+  // depends on the overlay/policy (those are a separate verdict call), so the
+  // cache and expansion survive an agent-view toggle.
   useEffect(() => {
     requestedRef.current = new Set();
     setCache({});
@@ -199,5 +188,6 @@ export function useWorkspaceFiles(
     readFile,
     agentView,
     setAgentView,
+    hitlPolicyName,
   };
 }

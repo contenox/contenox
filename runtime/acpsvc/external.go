@@ -1616,7 +1616,7 @@ func (t *Transport) bringUpExternal(ctx context.Context, upstreamID libacp.Sessi
 		// read is the one the Enabled check was made against, so spawning from it
 		// closes the TOCTOU window Start's second read would open — and saves a query
 		// per bring-up. (The connCtx branch below already spawns from this same read.)
-		instanceID, err := t.deps.Instances.StartResolved(ctx, agent)
+		instanceID, err := t.deps.Instances.StartResolved(ctx, agent, cwd)
 		if err != nil {
 			return nil, libacp.InternalError(fmt.Sprintf("acpsvc: start agent %q instance: %v", agentName, err))
 		}

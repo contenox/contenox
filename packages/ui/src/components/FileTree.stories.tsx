@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { FileTree, type FileTreeNode } from "./FileTree";
+import { Eye, Pencil } from "lucide-react";
+import { FileTree, type FileTreeIndicator, type FileTreeNode } from "./FileTree";
 
 const meta: Meta<typeof FileTree> = {
   title: "Data/FileTree",
@@ -113,6 +114,60 @@ export const NavigateMode: Story = {
   render: () => (
     <div style={{ width: 360 }}>
       <FileTree nodes={richTree} directoryClickMode="navigate" />
+    </div>
+  ),
+};
+
+/* ------------------------------------------------------------------ */
+/* Two-axis access indicators: an eye (read) + a pencil (write), each tinted
+   independently by its verdict. This is the shape the workspace agent-view
+   feeds — a normal file reads green-eye / yellow-pencil, a secret is red on
+   both, an out-of-boundary entry is muted + a dimmed row. */
+
+const eye = <Eye className="h-3.5 w-3.5" />;
+const pencil = <Pencil className="h-3.5 w-3.5" />;
+
+function access(
+  read: FileTreeIndicator["status"],
+  write: FileTreeIndicator["status"],
+): FileTreeIndicator[] {
+  return [
+    { key: "read", icon: eye, status: read, title: `Read: ${read}` },
+    { key: "write", icon: pencil, status: write, title: `Write: ${write}` },
+  ];
+}
+
+const accessTree: FileTreeNode[] = [
+  {
+    id: "src",
+    name: "src",
+    isDirectory: true,
+    indicators: access("allow", "approve"),
+    children: [
+      { id: "src/main.go", name: "main.go", indicators: access("allow", "approve") },
+      { id: "src/config.ts", name: "config.ts", indicators: access("allow", "deny") },
+    ],
+  },
+  { id: "README.md", name: "README.md", indicators: access("allow", "approve") },
+  {
+    id: ".ssh/id_rsa",
+    name: "id_rsa",
+    indicators: access("deny", "deny"),
+    title: "Read: blocked — policy rule",
+  },
+  {
+    id: "../escape",
+    name: "escape",
+    dimmed: true,
+    title: "Outside the workspace boundary",
+    indicators: access("unreachable", "unreachable"),
+  },
+];
+
+export const AccessIndicators: Story = {
+  render: () => (
+    <div style={{ width: 320 }}>
+      <FileTree nodes={accessTree} defaultExpanded={new Set(["src"])} />
     </div>
   ),
 };

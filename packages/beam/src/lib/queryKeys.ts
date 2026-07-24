@@ -235,6 +235,19 @@ export const workspaceRootKeys = {
   list: () => [...workspaceRootKeys.all, 'list'] as const,
 };
 
+export const workspaceAccessKeys = {
+  all: ['workspaceAccess'] as const,
+  /**
+   * One `POST /workspace/access` batch, keyed by root, resolved-policy, and the
+   * sorted/de-duped loaded-path union (`pathsKey`). Keying on the union means an
+   * expand that grows the union re-requests it, while re-visiting a previously
+   * loaded union hits the cache instead of re-POSTing (`keepPreviousData` keeps
+   * the last verdicts on screen through the refetch, so expands don't thrash).
+   */
+  batch: (root: string, policy: string, pathsKey: string) =>
+    [...workspaceAccessKeys.all, root, policy, pathsKey] as const,
+};
+
 export const terminalKeys = {
   all: ['terminal'] as const,
   /**

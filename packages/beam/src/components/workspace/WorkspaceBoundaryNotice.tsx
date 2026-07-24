@@ -29,13 +29,24 @@ export function WorkspaceBoundaryNotice({ message, roots, onRetry }: WorkspaceBo
   const refused = isWorkspaceRootRefusal(message);
 
   if (!refused) {
+    // Unrecognized error: never clip it to a one-line sliver in the narrow
+    // sidebar. Wrap (breaking mid-token for long paths/URLs), cap the height so
+    // a pathological wire string can't eat the panel, and stack the retry button
+    // below so it doesn't fight the text on any width. Full text stays available
+    // via the title tooltip.
     return (
       <InlineNotice variant="error" className="mb-2">
-        <div className="flex items-center justify-between gap-2">
-          <span className="min-w-0 truncate">{message}</span>
-          <Button type="button" variant="outline" size="xs" onClick={onRetry}>
-            {t('workspace.refresh')}
-          </Button>
+        <div className="flex flex-col gap-2">
+          <p
+            className="max-h-40 overflow-y-auto text-xs break-words [overflow-wrap:anywhere]"
+            title={message}>
+            {message}
+          </p>
+          <div>
+            <Button type="button" variant="outline" size="xs" onClick={onRetry}>
+              {t('workspace.refresh')}
+            </Button>
+          </div>
         </div>
       </InlineNotice>
     );

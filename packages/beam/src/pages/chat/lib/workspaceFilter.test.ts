@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import type { PathVerdict } from '../../../lib/workspaceAccess';
 import type { WorkspaceFindMatch } from '../../../lib/workspaceFind';
 import {
   availableFilterTypes,
+  axisMatches,
   buildTreeFromMatches,
   filterTypeById,
   WORKSPACE_FILTER_TYPES,
   type FindQuery,
 } from './workspaceFilter';
+import type { NodeDecoration, NodeDecorator } from './workspaceTree';
 
 /** Compiles a type's value, asserting it isn't the "inactive" null. */
 function query(id: string, value: string): FindQuery {
@@ -15,12 +18,17 @@ function query(id: string, value: string): FindQuery {
   return q;
 }
 
-const match = (path: string, access?: WorkspaceFindMatch['access']): WorkspaceFindMatch => ({
+const match = (path: string): WorkspaceFindMatch => ({
   path,
   name: path.split('/').pop()!,
   isDirectory: false,
-  ...(access ? { access } : {}),
 });
+
+const verdict = (
+  read: PathVerdict['read'],
+  write: PathVerdict['write'],
+  reachable = true,
+): PathVerdict => ({ path: 'x', reachable, read, write });
 
 describe('ext filter type', () => {
   it('compiles each extension into a *.<ext> glob', () => {
@@ -51,24 +59,58 @@ describe('name filter type', () => {
   });
 });
 
-describe('access filter type', () => {
-  it('is only offered under the agent view', () => {
-    expect(availableFilterTypes({ agentView: false }).some(t => t.id === 'access')).toBe(false);
-    expect(availableFilterTypes({ agentView: true }).some(t => t.id === 'access')).toBe(true);
+describe('axisMatches', () => {
+  it('matches a reachable path on the chosen dimension only', () => {
+    const v = verdict({ action: 'allow' }, { action: 'deny' });
+    expect(axisMatches(v, 'read', 'allow')).toBe(true);
+    expect(axisMatches(v, 'read', 'deny')).toBe(false);
+    expect(axisMatches(v, 'write', 'deny')).toBe(true);
+    expect(axisMatches(v, 'write', 'allow')).toBe(false);
   });
 
-  it('walks everything (*) and refines by the worst read/write verdict', () => {
-    const q = query('access', 'approve');
+  it('matches unreachable independent of dimension, and never a reachable path', () => {
+    const unreachable = verdict(undefined, undefined, false);
+    expect(axisMatches(unreachable, 'read', 'unreachable')).toBe(true);
+    expect(axisMatches(unreachable, 'write', 'unreachable')).toBe(true);
+    expect(axisMatches(verdict({ action: 'allow' }, { action: 'allow' }), 'read', 'unreachable')).toBe(false);
+  });
+
+  it('excludes a path with no verdict yet (not evaluated)', () => {
+    expect(axisMatches(undefined, 'read', 'allow')).toBe(false);
+  });
+});
+
+describe('access axis filter types', () => {
+  it('offers both read and write axes only under the agent view', () => {
+    const off = availableFilterTypes({ agentView: false }).map(t => t.id);
+    const on = availableFilterTypes({ agentView: true }).map(t => t.id);
+    expect(off).not.toContain('access_read');
+    expect(off).not.toContain('access_write');
+    expect(on).toContain('access_read');
+    expect(on).toContain('access_write');
+  });
+
+  it('read axis walks everything (*) and refines on the READ verdict', () => {
+    const q = query('access_read', 'deny');
     expect(q.globs).toEqual(['*']);
-    expect(q.refine!(match('secret.env', { reachable: true, read: 'allow', write: 'approve' }))).toBe(true);
-    expect(q.refine!(match('ok.txt', { reachable: true, read: 'allow', write: 'allow' }))).toBe(false);
-    expect(q.refine!(match('plain.txt'))).toBe(false); // no verdict → excluded
+    expect(q.refine!(match('secret'), verdict({ action: 'deny' }, { action: 'deny' }))).toBe(true);
+    expect(q.refine!(match('ok'), verdict({ action: 'allow' }, { action: 'deny' }))).toBe(false); // write deny, read allow → excluded
+    expect(q.refine!(match('none'), undefined)).toBe(false);
+  });
+
+  it('write axis refines on the WRITE verdict, independent of read', () => {
+    const q = query('access_write', 'approve');
+    expect(q.refine!(match('env'), verdict({ action: 'allow' }, { action: 'approve' }))).toBe(true);
+    expect(q.refine!(match('ro'), verdict({ action: 'allow' }, { action: 'allow' }))).toBe(false);
+  });
+
+  it('is inactive (null) for an empty value', () => {
+    expect(filterTypeById('access_read')!.toQuery('  ')).toBeNull();
+    expect(filterTypeById('access_write')!.toQuery('')).toBeNull();
   });
 });
 
 describe('buildTreeFromMatches', () => {
-  const labels = { unreachable: 'Outside', read: 'Read', write: 'Write' };
-
   it('assembles flat file matches into a tree, synthesizing ancestor dirs, dirs-first', () => {
     const nodes = buildTreeFromMatches([
       match('README.md'),
@@ -84,20 +126,23 @@ describe('buildTreeFromMatches', () => {
     expect(beam.children!.map(n => n.id)).toEqual(['docs/beam/guide.md']);
   });
 
-  it('threads the agent-view status + tooltip onto file leaves from their verdict', () => {
-    const nodes = buildTreeFromMatches(
-      [match('secret.env', { reachable: true, read: 'allow', write: 'deny', writeReason: 'ro' })],
-      labels,
-    );
+  it('threads the agent-view decorator onto file leaves (not the synthesized dirs)', () => {
+    const decorate: NodeDecorator = path => {
+      const table: Record<string, NodeDecoration> = {
+        'secret.env': { dimmed: false, indicators: [{ key: 'write', icon: null, status: 'deny', title: 'Write: blocked' }] },
+      };
+      return table[path];
+    };
+    const nodes = buildTreeFromMatches([match('secret.env')], decorate);
     const file = nodes.find(n => n.id === 'secret.env')!;
-    expect(file.status).toBe('deny');
-    expect(file.title).toBe('Write: deny (ro)');
+    expect(file.indicators?.[0].status).toBe('deny');
+    expect(file.indicators?.[0].title).toBe('Write: blocked');
   });
 
-  it('leaves status/title absent for a raw match (no verdict)', () => {
+  it('leaves indicators absent for a raw match (no decorator)', () => {
     const file = buildTreeFromMatches([match('a.ts')])[0];
-    expect(file.status).toBeUndefined();
-    expect(file.title).toBeUndefined();
+    expect(file.indicators).toBeUndefined();
+    expect(file.dimmed).toBeUndefined();
   });
 
   it('returns [] for no matches', () => {

@@ -1,64 +1,54 @@
 import { Button, InlineNotice, LoadingState, Page } from '@contenox/ui';
 import { SquareTerminal } from 'lucide-react';
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { TerminalView } from '../../../components/terminal/TerminalView';
-import { RootSelector } from '../../../components/workspace/RootSelector';
 import { useHostTerminalSession } from '../../../hooks/useHostTerminalSession';
-import { useWorkspaceRoots } from '../../../hooks/useWorkspaceRoots';
 
 /**
- * The standalone host-console surface: a full-page interactive shell on the
- * machine that serves this runtime, scoped to a chosen project root. It is the
- * top-level sibling of the terminal already embedded in the mission inspector
- * and chat canvas — same `useHostTerminalSession` + `TerminalView` stack, just
- * given the whole viewport.
+ * The break-glass operator console: a full-page interactive shell on the machine
+ * that serves this runtime, for manual host intervention — unstick a wedged
+ * process, restart or kill a service, free memory, or patch up whatever state an
+ * agent left in a bad way. It is the operator's OWN shell (see terminalservice),
+ * NOT an agent's terminal — agent command output is the separate ACP/shellsession
+ * path rendered inside the chat/mission timeline.
+ *
+ * Deliberately un-scoped: this is a rescue tool, so it opens ONE shell at serve's
+ * default root and you navigate from there — no project picker gating the way to
+ * a prompt. (There is no confinement to scope, either: cwd only seeds the shell's
+ * starting directory; the PTY runs as serve's OS user and can cd anywhere. Real
+ * confinement is an agent concern — libsandbox / goja capabilities — not this
+ * human surface.)
  *
  * Responsive by construction: `TerminalView` fits xterm to its container via a
- * FitAddon + ResizeObserver (rotation, the mobile keyboard, or a root switch all
- * re-fit and re-send the PTY size), so the only layout job here is to give it a
- * full-height, non-scrolling box (`Page bodyScroll="hidden"`) with a header that
- * stacks on narrow screens. The shell opens READ-ONLY until an explicit
- * take-over (TerminalView owns that confirmation), and degrades to a graceful
- * "unavailable" state when serve does not expose the terminal feature (404).
+ * FitAddon + ResizeObserver (rotation or the mobile keyboard re-fit and re-send
+ * the PTY size), so the only layout job here is to give it a full-height,
+ * non-scrolling box (`Page bodyScroll="hidden"`). The shell opens READ-ONLY until
+ * an explicit take-over (TerminalView owns that confirmation), and degrades to a
+ * graceful "unavailable" state when serve does not expose the terminal feature
+ * (404).
  *
- * The cwd is part of the session identity: `useHostTerminalSession` memoizes one
- * PTY per `ownerKey`, so keying it by cwd means switching roots opens a fresh
- * shell there and switching back re-attaches to the still-live one rather than
- * spawning duplicates (server-side idle-timeout + max-sessions bound the rest).
+ * A single stable session key (`host-console`): `useHostTerminalSession` memoizes
+ * one PTY per key, so leaving the page and returning re-attaches to the same
+ * still-live shell — your history and half-typed command survive — rather than
+ * spawning a duplicate (server-side idle-timeout + max-sessions bound the rest).
  */
 export default function ConsolePage() {
   const { t } = useTranslation();
-  const { roots, isAbsent: rootsAbsent } = useWorkspaceRoots();
-  // '' = serve's default root; a concrete path scopes the shell to that project.
-  const [cwd, setCwd] = useState('');
-  const { session, isAbsent, isLoading, error, retry } = useHostTerminalSession(
-    `host-console:${cwd}`,
-    { enabled: true, cwd },
-  );
+  const { session, isAbsent, isLoading, error, retry } = useHostTerminalSession('host-console', {
+    enabled: true,
+  });
 
   return (
     <Page bodyScroll="hidden">
       <div className="flex h-full min-h-0 flex-col">
-        <div className="border-surface-200 dark:border-dark-surface-600 flex shrink-0 flex-col gap-2 border-b px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-          <div className="flex min-w-0 items-center gap-2">
-            <SquareTerminal
-              className="text-text-muted dark:text-dark-text-muted h-4 w-4 shrink-0"
-              aria-hidden
-            />
-            <h1 className="text-text dark:text-dark-text truncate text-sm font-semibold">
-              {t('hostTerminal.page_title')}
-            </h1>
-          </div>
-          {/* Project scoping — hidden when the terminal feature is absent, since
-              there is no shell to scope. RootSelector itself degrades to a free
-              path input when serve publishes no workspace-root allowlist. */}
-          {!isAbsent && (
-            <label className="w-full sm:w-72 sm:shrink-0">
-              <span className="sr-only">{t('hostTerminal.cwd_label')}</span>
-              <RootSelector value={cwd} onChange={setCwd} roots={roots} isAbsent={rootsAbsent} />
-            </label>
-          )}
+        <div className="border-surface-200 dark:border-dark-surface-600 flex shrink-0 items-center gap-2 border-b px-3 py-2">
+          <SquareTerminal
+            className="text-text-muted dark:text-dark-text-muted h-4 w-4 shrink-0"
+            aria-hidden
+          />
+          <h1 className="text-text dark:text-dark-text truncate text-sm font-semibold">
+            {t('hostTerminal.page_title')}
+          </h1>
         </div>
 
         <div className="min-h-0 flex-1">
@@ -87,7 +77,6 @@ export default function ConsolePage() {
               <LoadingState message={t('hostTerminal.connecting')} />
             </div>
           ) : (
-            // Remount on a new session (root switch) so xterm is rebuilt cleanly.
             <TerminalView key={session.wsPath} wsPath={session.wsPath} />
           )}
         </div>

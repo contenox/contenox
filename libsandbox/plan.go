@@ -128,10 +128,13 @@ func buildPlan(spec Spec, execPath string, args []string) (isolationPlan, error)
 		Home:      filepath.Clean(spec.Home),
 		FS:        fs,
 		Net:       net,
-		// The Linux net wall always lands the process in a fresh netns; bring "lo"
-		// up so localhost binds work. The plan is consumed only by the Linux shim
-		// (a no-op elsewhere), so setting it here unconditionally is safe.
-		Loopback: true,
+		// Loopback (raising "lo" inside the fresh netns) is meaningful only when the
+		// namespaced network wall is on — that is the only mode that lands the process
+		// in a netns whose "lo" starts DOWN. With NetworkWall off there is no netns
+		// (the agent keeps the host network), so the shim must NOT touch loopback; it
+		// skips the step when this is false. The plan is consumed only by the Linux
+		// shim (a no-op elsewhere).
+		Loopback: spec.NetworkWall,
 	}, nil
 }
 

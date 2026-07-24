@@ -640,6 +640,37 @@ Unlike `fleet` / `mission`, these do **not** reach serve over REST. A grant is d
 
 A LAN operator working only through the browser has the same verbs over the authenticated REST surface: `POST /workspace/roots {"path": "<dir>", "name": "<name>"}` grants (and names) and `DELETE /workspace/roots?path=<dir>` revokes, each token-authed and returning the new root list — the same validation, project-marker stamp, durable write, and reload doorbell as the CLI. Each returned root carries its `name` (the marker's, empty when unset), a `default` flag, and a `managed` flag marking the operator-added roots the browser may forget (as opposed to serve's structural launch roots).
 
+#### `contenox workspace access [--root <root>] [--policy <name>] <path> [<path>...]`
+
+Preview what the active HITL policy would decide for a read and a write access to one or more paths — without touching the filesystem, prompting for approval, or running any tool call. This is the same evaluation the live agent's tool dispatch gates run for `local_fs` (`read_file`/`list_dir` for the read dimension, `write_file` for the write dimension); it is also the batch, structured-reason data source behind Beam's access-preview panel.
+
+Unlike `add`/`remove`/`list` (durable grants, no serve required), a verdict is computed live by a running `contenox serve` — this reaches its REST API (`POST /workspace/access`), the same `--server`/`--token`/`CONTENOX_SERVER_URL`/`CONTENOX_SERVER_TOKEN` convention as `contenox approvals`.
+
+```bash
+contenox workspace access src/main.go
+contenox workspace access --policy hitl-policy-strict.json .ssh/id_rsa
+contenox workspace access --root /home/me/project src/main.go .ssh/id_rsa ../escape
+```
+
+Each `<path>` is relative to the workspace root being evaluated. A path that does not resolve inside that root (outside every allowlisted root, or past a symlink escape) comes back `reachable:false` with no read/write verdict — no policy is evaluated for a path that is not really inside the root. Sample run against a workspace root containing a normal source file and a `.ssh/id_rsa` key, evaluated under `hitl-policy-strict.json`:
+
+```
+$ contenox workspace access --policy hitl-policy-strict.json src/main.go .ssh/id_rsa ../escape
+Policy: hitl-policy-strict.json
+PATH         REACHABLE  READ   WRITE    REASON
+src/main.go  true       allow  approve  write:matched_rule#30
+.ssh/id_rsa  true       deny   deny     read:matched_rule#0 write:matched_rule#0
+../escape    false      -      -        -
+```
+
+The header line names the *resolved* policy (the one that actually gated the batch — the active-policy KV value or the configured fallback, not merely whatever `--policy` was requested). `READ`/`WRITE` show each dimension's action (`allow`/`approve`/`deny`); the `REASON` column omits a plain `allow` (the routine, expected case) and otherwise shows which rule decided it (`matched_rule#<index>`) or that the policy's `default_action` applied.
+
+| Flag | Description |
+| ---- | ----------- |
+| `--root <root>` | Workspace root the paths resolve against (a granted root, or a directory under one); omitted resolves to serve's default (first-configured) root |
+| `--policy <name>` | HITL policy file name to evaluate against, e.g. `hitl-policy-strict.json`; omitted uses the runtime's active policy resolution, the same one the live agent uses |
+| `--server <url>` / `--token <token>` | Reach a running `contenox serve` (as `contenox approvals`) |
+
 ### `contenox code [vscode args...]`
 
 Launches VS Code with Contenox's proposed-API extension enabled. Extra arguments are passed through to `code`.

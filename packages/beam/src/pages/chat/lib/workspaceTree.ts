@@ -4,60 +4,118 @@
  * (built lazily — a directory's children appear only once that directory has
  * been loaded) and a flat file list for mention autocomplete. No React, no
  * fetching — `useWorkspaceFiles` owns those; this is what the tests exercise.
+ *
+ * The agent-view overlay is now a SEPARATE data path: the listing here is raw
+ * (no verdict), and `POST /workspace/access` (see `lib/workspaceAccess`) supplies
+ * a `path → verdict` map the panel merges in. This module owns the pure, icon-free
+ * projection of a verdict onto the two independent axes the tree renders
+ * ({@link verdictToAccess}); the panel attaches the eye/pencil icons and threads
+ * the result onto nodes via a {@link NodeDecorator}.
  */
-import type { FileTreeNode, FileTreeNodeStatus } from '@contenox/ui';
+import type { FileTreeIndicatorStatus, FileTreeNode } from '@contenox/ui';
+import type { DimensionVerdict, PathVerdict } from '../../../lib/workspaceAccess';
 import type { WorkspaceFileRef } from './mentions';
 
 /**
- * The agent-view verdict the `/files?filter=agent` endpoint annotates each entry
- * with (mirrors `agentview.Verdict`): whether the path is reachable at all
- * (inside the workspace boundary) and, if so, the HITL action a read/write would
- * take under the active policy (`allow` | `approve` | `deny`), with an optional
- * human reason. Absent entirely in the raw (non-agent) view.
+ * Localized phrases used to build the two-axis access tooltips from the
+ * STRUCTURED verdict codes (not English server strings): the dimension names, the
+ * per-action phrase, the per-reason phrase, the boundary marker, and the format
+ * that assembles them (e.g. "Read: needs approval — default policy").
  */
-export interface WorkspaceAccess {
-  reachable: boolean;
-  read?: string;
-  write?: string;
-  readReason?: string;
-  writeReason?: string;
-}
-
-/** i18n'd labels used to build a row tooltip from a {@link WorkspaceAccess}. */
 export interface AccessLabels {
-  unreachable: string;
+  /** "Read" — the read dimension name. */
   read: string;
+  /** "Write" — the write dimension name. */
   write: string;
+  /** "Outside the workspace boundary" — the unreachable marker. */
+  unreachable: string;
+  /** "allowed" — action === 'allow'. */
+  actionAllow: string;
+  /** "needs approval" — action === 'approve'. */
+  actionApprove: string;
+  /** "blocked" — action === 'deny'. */
+  actionDeny: string;
+  /** "policy rule" — reason === 'matched_rule'. */
+  reasonRule: string;
+  /** "default policy" — reason === 'default_action' (or absent). */
+  reasonDefault: string;
+  /** Assembles one dimension's tooltip, e.g. (dim, action, reason) => `${dim}: ${action} — ${reason}`. */
+  format: (dim: string, action: string, reason: string) => string;
 }
 
-/** Worst-of(read, write) severity, or `unreachable` when outside the workspace boundary. */
-export function accessToStatus(access: WorkspaceAccess): FileTreeNodeStatus {
-  if (!access.reachable) return 'unreachable';
-  if (access.read === 'deny' || access.write === 'deny') return 'deny';
-  if (access.read === 'approve' || access.write === 'approve') return 'approve';
-  return 'allow';
+/** One rendered access axis: a severity (which tints the icon) + its localized tooltip. */
+export interface AxisIndicator {
+  status: FileTreeIndicatorStatus;
+  title: string;
 }
 
-/** Builds a row tooltip from a verdict's reasons, or the boundary marker when unreachable. */
-export function accessTooltip(access: WorkspaceAccess, labels: AccessLabels): string | undefined {
-  if (!access.reachable) return labels.unreachable;
-  const parts: string[] = [];
-  if (access.read && access.read !== 'allow') {
-    parts.push(`${labels.read}: ${access.read}${access.readReason ? ` (${access.readReason})` : ''}`);
-  }
-  if (access.write && access.write !== 'allow') {
-    parts.push(`${labels.write}: ${access.write}${access.writeReason ? ` (${access.writeReason})` : ''}`);
-  }
-  return parts.length > 0 ? parts.join(' · ') : undefined;
+/**
+ * The two-axis, icon-free view of a path verdict: whether the row is dimmed
+ * (unreachable) and the per-dimension read/write markers. The panel maps this
+ * onto `FileTree` indicators by attaching the eye (read) and pencil (write) icons.
+ */
+export interface NodeAccess {
+  dimmed: boolean;
+  read?: AxisIndicator;
+  write?: AxisIndicator;
 }
+
+function actionLabel(action: DimensionVerdict['action'], labels: AccessLabels): string {
+  switch (action) {
+    case 'allow':
+      return labels.actionAllow;
+    case 'approve':
+      return labels.actionApprove;
+    case 'deny':
+      return labels.actionDeny;
+  }
+}
+
+function reasonLabel(dim: DimensionVerdict, labels: AccessLabels): string {
+  return dim.reason === 'matched_rule' ? labels.reasonRule : labels.reasonDefault;
+}
+
+function axisIndicator(dimName: string, dim: DimensionVerdict, labels: AccessLabels): AxisIndicator {
+  return {
+    status: dim.action,
+    title: labels.format(dimName, actionLabel(dim.action, labels), reasonLabel(dim, labels)),
+  };
+}
+
+/**
+ * Maps a structured {@link PathVerdict} onto the two independent axes the tree
+ * renders. An unreachable path dims the row and shows a muted marker on BOTH axes
+ * (with the boundary tooltip); a reachable path maps each dimension's action to
+ * its own severity + a tooltip assembled from the structured action/reason codes.
+ * Read and write are kept independent — a normal file is `allow` read / `approve`
+ * write, so green (read) and yellow (write) appear side by side.
+ */
+export function verdictToAccess(verdict: PathVerdict, labels: AccessLabels): NodeAccess {
+  if (!verdict.reachable) {
+    const marker: AxisIndicator = { status: 'unreachable', title: labels.unreachable };
+    return { dimmed: true, read: marker, write: marker };
+  }
+  return {
+    dimmed: false,
+    ...(verdict.read ? { read: axisIndicator(labels.read, verdict.read, labels) } : {}),
+    ...(verdict.write ? { write: axisIndicator(labels.write, verdict.write, labels) } : {}),
+  };
+}
+
+/**
+ * Node fields a caller attaches from a verdict: the trailing indicators (icons
+ * wired by the caller), whether the row is dimmed, and an optional row tooltip.
+ */
+export type NodeDecoration = Pick<FileTreeNode, 'indicators' | 'dimmed' | 'title'>;
+
+/** Supplies the per-path {@link NodeDecoration} (verdict → indicators); returns undefined for no overlay. */
+export type NodeDecorator = (path: string) => NodeDecoration | undefined;
 
 export interface WorkspaceEntry {
   /** Path relative to the workspace root. */
   path: string;
   name: string;
   isDirectory: boolean;
-  /** Agent-view verdict for this path; present only under the `agent` filter. */
-  access?: WorkspaceAccess;
 }
 
 /** Per-directory listing cache. Key: a directory's root-relative path; the root is `''`. */
@@ -70,28 +128,24 @@ export const ROOT_DIR = '';
  * Builds `FileTree` nodes for the directory at `dirPath` from the cache. A
  * subdirectory's `children` is populated when that directory is loaded and left
  * `undefined` when it is not (so the tree can lazy-load on expand). Files carry
- * no children.
+ * no children. When a {@link NodeDecorator} is given, each node is enriched with
+ * its access overlay (indicators / dimmed / tooltip) merged by path.
  */
 export function toFileTreeNodes(
   cache: DirCache,
   dirPath: string = ROOT_DIR,
-  labels?: AccessLabels,
+  decorate?: NodeDecorator,
 ): FileTreeNode[] {
   const entries = cache[dirPath];
   if (!entries) return [];
-  return entries.map(e => {
-    const status = e.access ? accessToStatus(e.access) : undefined;
-    const title = e.access && labels ? accessTooltip(e.access, labels) : undefined;
-    return {
-      id: e.path,
-      name: e.name,
-      path: e.path,
-      isDirectory: e.isDirectory,
-      children: e.isDirectory ? (cache[e.path] ? toFileTreeNodes(cache, e.path, labels) : undefined) : undefined,
-      ...(status ? { status } : {}),
-      ...(title ? { title } : {}),
-    };
-  });
+  return entries.map(e => ({
+    id: e.path,
+    name: e.name,
+    path: e.path,
+    isDirectory: e.isDirectory,
+    children: e.isDirectory ? (cache[e.path] ? toFileTreeNodes(cache, e.path, decorate) : undefined) : undefined,
+    ...(decorate?.(e.path) ?? {}),
+  }));
 }
 
 /**

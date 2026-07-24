@@ -32,7 +32,7 @@ import (
 func dispatchLike(t *testing.T, mgr agentinstance.Manager, agentName, cwd string) (string, libacp.SessionID) {
 	t.Helper()
 	ctx := context.Background()
-	instanceID, err := mgr.Start(ctx, agentName)
+	instanceID, err := mgr.Start(ctx, agentName, t.TempDir())
 	require.NoError(t, err)
 	sessionID, err := mgr.OpenSession(ctx, instanceID, agentinstance.SessionSpec{Cwd: cwd})
 	require.NoError(t, err)
@@ -784,9 +784,9 @@ func (m *fakeAdoptManager) stops() int {
 	return m.stopCount
 }
 
-func (m *fakeAdoptManager) Start(context.Context, string) (string, error) { return "", nil }
+func (m *fakeAdoptManager) Start(context.Context, string, string) (string, error) { return "", nil }
 
-func (m *fakeAdoptManager) StartResolved(context.Context, *runtimetypes.Agent) (string, error) {
+func (m *fakeAdoptManager) StartResolved(context.Context, *runtimetypes.Agent, string) (string, error) {
 	return "", nil
 }
 

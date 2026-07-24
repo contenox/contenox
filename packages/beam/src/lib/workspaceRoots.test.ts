@@ -55,11 +55,25 @@ describe('shortenRootPath', () => {
 });
 
 describe('isWorkspaceRootRefusal', () => {
-  it('matches the server refusal phrasing regardless of the wrapped prefix or case', () => {
+  it('matches the legacy "not permitted" phrasing regardless of the wrapped prefix or case', () => {
     expect(
       isWorkspaceRootRefusal('unprocessable entity: workspace root "/etc" is not permitted'),
     ).toBe(true);
     expect(isWorkspaceRootRefusal('Workspace Root "/x" Is Not Permitted')).toBe(true);
+  });
+
+  it('matches the current "not under any configured workspace root" phrasing', () => {
+    // The exact wire string localfileapi list/find/search emits today — the one
+    // that used to leak through untranslated and truncated in the file tree.
+    expect(
+      isWorkspaceRootRefusal(
+        'serverops: unprocessable entity: workspace root "/home/naro" is not under any configured workspace root; roots: /home/naro/src/github.com/contenox/runtime, /home/naro/src',
+      ),
+    ).toBe(true);
+    // The vfs cwd-check variant ("workspace directory") must route too.
+    expect(
+      isWorkspaceRootRefusal('workspace directory "/tmp" is not under any configured workspace root; roots: /srv'),
+    ).toBe(true);
   });
 
   it('does not match unrelated errors', () => {
@@ -159,6 +173,20 @@ describe('extractRefusedRoot', () => {
     expect(
       extractRefusedRoot('unprocessable entity: workspace root "/etc/passwd" is not permitted'),
     ).toBe('/etc/passwd');
+  });
+
+  it('pulls the path from the current "not under any configured root" phrasing', () => {
+    expect(
+      extractRefusedRoot(
+        'serverops: unprocessable entity: workspace root "/home/naro" is not under any configured workspace root; roots: /home/naro/src',
+      ),
+    ).toBe('/home/naro');
+  });
+
+  it('pulls the path from the "workspace directory" cwd-check variant', () => {
+    expect(
+      extractRefusedRoot('workspace directory "/tmp/x" is not under any configured workspace root; roots: /srv'),
+    ).toBe('/tmp/x');
   });
 
   it('returns null when there is no quoted path', () => {

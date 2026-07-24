@@ -21,7 +21,7 @@ import { useTranslation } from 'react-i18next';
 import logoMarkDarkUrl from '../../../assets/logo-mark.svg?url';
 import logoMarkLightUrl from '../../../assets/logo-mark-light.svg?url';
 import type { AcpChatMessage, AcpErrorCard, AcpSessionState, AcpTerminalCard, AcpToolCallState } from '../../../hooks/acpSessionState';
-import { classifyAcpExecutionError } from '../../../lib/acpFailureKind';
+import { acpFailureCopyKeys, classifyAcpExecutionError } from '../../../lib/acpFailureKind';
 import { useTheme } from '../../../lib/ThemeProvider';
 import { shouldShowStreamingCaret, shouldShowStreamingPlaceholder } from '../lib/streamingPresentation';
 import { PermissionCard } from './PermissionCard';
@@ -209,28 +209,31 @@ function TranscriptTerminal({ card }: { card: AcpTerminalCard }) {
 
 /**
  * A failed turn, rendered inline in the transcript where it happened. Reuses
- * the same `classifyAcpExecutionError` taxonomy as the top recovery banner (see
- * SessionBanners' `ExecutionErrorBanner`) so a backend-unreachable /
- * model-not-servable / generic failure each gets a matching localized headline,
+ * the same `classifyAcpExecutionError` taxonomy and `acpFailureCopyKeys`
+ * mapping as the top recovery banner (see SessionBanners' `ExecutionErrorBanner`)
+ * so a backend-unreachable / model-not-servable / workspace-required / generic
+ * failure each gets a matching localized headline and plain-language body,
  * with the raw runtime error kept behind a collapsed disclosure. This is what
  * replaces the old silent dead-state: the chat can no longer just go quiet.
  */
 function TranscriptError({ card }: { card: AcpErrorCard }) {
   const { t } = useTranslation();
+  // Loosened `t` for the dynamic keys acpFailureCopyKeys returns (mirrors WorkspacePanel's `tk`).
+  const tk = t as (key: string) => string;
   const kind = classifyAcpExecutionError(card.message);
-  const headline =
-    kind === 'backend_unreachable'
-      ? t('acp_recovery.backend_unreachable_title')
-      : kind === 'model_unavailable'
-        ? t('acp_recovery.model_unavailable_title')
-        : t('acp_chat.turn_failed_label');
+  const copy = acpFailureCopyKeys(kind);
+  const headline = copy.titleKey ? tk(copy.titleKey) : t('acp_chat.turn_failed_label');
+  const hint = copy.descriptionKey ? tk(copy.descriptionKey) : null;
   return (
     <InlineNotice variant="error">
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1.5">
         <Span className="font-medium">{headline}</Span>
+        {hint && <Span className="text-sm">{hint}</Span>}
         {card.message && (
           <Collapsible defaultOpen={false} title={t('acp_chat.error_details_toggle')}>
-            <p className="mt-1 text-xs whitespace-pre-wrap">{card.message}</p>
+            <p className="mt-1 max-h-40 overflow-y-auto text-xs break-words whitespace-pre-wrap [overflow-wrap:anywhere]">
+              {card.message}
+            </p>
           </Collapsible>
         )}
       </div>
@@ -269,6 +272,22 @@ export function TranscriptItems({ session, agentName, onRespondPermission }: Tra
       ? pendingToolCallId
       : null;
 
+  // The reducer's `prompt_error` case (acpSessionState.ts) sets `session.error`
+  // AND appends this SAME failed turn's card to `errorCards` in one atomic
+  // step, so for as long as `session.error` is non-null it is, by
+  // construction, exactly this most-recently-added error item's message.
+  // `ChatSessionTab` renders that live message once already, at the top, via
+  // `ExecutionErrorBanner` — skipping its in-transcript twin here (by item id,
+  // not by message text, so two DIFFERENT failed turns that happen to carry
+  // identical wording still both get their own card) is what collapses the
+  // "shown twice" bug into one presentation. `session.error` is cleared on the
+  // next `prompt_start`/`session_reset`, at which point this card starts
+  // rendering normally as part of the permanent history.
+  const latestErrorItemId =
+    session.error != null
+      ? ([...session.items].reverse().find(it => it.kind === 'error')?.id ?? null)
+      : null;
+
   return (
     <>
       {session.items.map((item, i) => {
@@ -284,7 +303,7 @@ export function TranscriptItems({ session, agentName, onRespondPermission }: Tra
           rendered = card ? <TranscriptTerminal key={`x-${item.id}`} card={card} /> : null;
         } else if (item.kind === 'error') {
           const card = session.errorCards[item.id];
-          rendered = card ? <TranscriptError key={`e-${item.id}`} card={card} /> : null;
+          rendered = card && item.id !== latestErrorItemId ? <TranscriptError key={`e-${item.id}`} card={card} /> : null;
         } else {
           const toolCall = session.toolCalls[item.id];
           rendered = toolCall ? <TranscriptToolCall key={`t-${item.id}`} toolCall={toolCall} /> : null;

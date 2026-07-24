@@ -100,3 +100,20 @@ When HITL is enabled and a tool call needs evaluation, the engine resolves the p
 2. If set, load that file from the workspace `.contenox/` directory, falling back to `~/.contenox/`.
 3. If the key is empty or the file is missing, fall back to `hitl-policy-default.json`.
 4. If that file is also missing, use a built-in fail-closed policy (same shape as `hitl-policy-default.json`: reads and safe webtools verbs are allowed, everything else — including any tool call that matches no rule — requires approval).
+
+## Previewing a verdict without running anything
+
+`contenox workspace access` asks a running `contenox serve` what a policy would decide for a read and a write to one or more paths, without touching the filesystem or prompting for approval — useful for checking a policy's `rules` actually cover what you think they do before pointing an agent at a workspace:
+
+```bash
+contenox workspace access --policy hitl-policy-strict.json src/main.go .ssh/id_rsa
+```
+
+```
+Policy: hitl-policy-strict.json
+PATH         REACHABLE  READ   WRITE    REASON
+src/main.go  true       allow  approve  write:matched_rule#30
+.ssh/id_rsa  true       deny   deny     read:matched_rule#0 write:matched_rule#0
+```
+
+See [`contenox workspace`](/docs/reference/contenox-cli/#contenox-workspace) in the CLI reference for the full flag list.

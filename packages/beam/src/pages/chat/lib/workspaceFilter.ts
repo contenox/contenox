@@ -1,19 +1,22 @@
 /**
  * The workspace panel's filter facility: a small, extensible registry of filter
- * *types* (extension, glob, name, agent-view access verdict) plus the pure helper
- * that turns the server's flat match stream into a `FileTree`. Deliberately not
- * hardwired to one kind of filter — adding a new type is one entry in
- * {@link WORKSPACE_FILTER_TYPES}.
+ * *types* (extension, glob, name, and the two agent-view access axes) plus the
+ * pure helper that turns the server's flat match stream into a `FileTree`.
+ * Deliberately not hardwired to one kind of filter — adding a new type is one
+ * entry in {@link WORKSPACE_FILTER_TYPES}.
  *
  * Matching itself runs SERVER-SIDE: each type compiles its value into a
  * {@link FindQuery} — the `glob` patterns sent to `GET /api/workspace/find` (which
  * walks the whole tree in one request) plus an optional client-side `refine` for
- * constraints a filename glob can't express (e.g. the agent-view verdict). No
+ * constraints a filename glob can't express. The access axes refine on the
+ * per-path verdict from `POST /workspace/access` (find is now a RAW listing;
+ * verdicts arrive out-of-band and are threaded into `refine` by the panel). No
  * React, no fetching — this is what the tests exercise, mirroring `workspaceTree.ts`.
  */
 import type { FileTreeNode } from '@contenox/ui';
+import type { PathVerdict } from '../../../lib/workspaceAccess';
 import type { WorkspaceFindMatch } from '../../../lib/workspaceFind';
-import { accessToStatus, accessTooltip, type AccessLabels } from './workspaceTree';
+import type { NodeDecorator } from './workspaceTree';
 
 /** The value affordance a filter type wants: a free-text box, or a fixed option set. */
 export type FilterInput =
@@ -22,14 +25,15 @@ export type FilterInput =
 
 /**
  * What a filter value compiles to: the server-side glob patterns to walk for, plus
- * an optional client-side predicate applied to each streamed match (for a
- * constraint no filename glob expresses, like an access verdict). An empty `globs`
- * means "match every file" (the server receives `*`), used when the real filter is
- * entirely a `refine`.
+ * an optional client-side predicate applied to each streamed match. The predicate
+ * receives the match's per-path access verdict (from the batch `/workspace/access`
+ * call, threaded in by the panel) so an axis filter can keep only the files whose
+ * read/write verdict matches. An empty `globs` means "match every file" (the
+ * server receives `*`), used when the real filter is entirely a `refine`.
  */
 export interface FindQuery {
   globs: string[];
-  refine?: (match: WorkspaceFindMatch) => boolean;
+  refine?: (match: WorkspaceFindMatch, verdict?: PathVerdict) => boolean;
 }
 
 export interface WorkspaceFilterType {
@@ -41,8 +45,8 @@ export interface WorkspaceFilterType {
   input: FilterInput;
   /**
    * Whether this type is offered in the current view. Absent = always offered. The
-   * `access` type only makes sense under the agent-view overlay (matches carry a
-   * verdict only when the find request is `filter=agent`).
+   * access axes only make sense under the agent-view overlay (the panel only
+   * fetches verdicts, which the `refine` needs, when agent view is on).
    */
   appliesTo?: (ctx: { agentView: boolean }) => boolean;
   /**
@@ -60,6 +64,26 @@ function tokens(value: string): string[] {
     .map(s => s.trim())
     .filter(Boolean);
 }
+
+/**
+ * Whether one access dimension of a path's verdict matches the selected value.
+ * `unreachable` matches paths outside the workspace boundary; the three actions
+ * (`allow`/`approve`/`deny`) match a reachable path whose read/write action
+ * equals the selection. A missing verdict (not yet evaluated) never matches.
+ */
+export function axisMatches(
+  verdict: PathVerdict | undefined,
+  dimension: 'read' | 'write',
+  value: string,
+): boolean {
+  if (!verdict) return false;
+  if (value === 'unreachable') return !verdict.reachable;
+  if (!verdict.reachable) return false;
+  return verdict[dimension]?.action === value;
+}
+
+/** The fixed option set shared by both access axes. */
+const ACCESS_AXIS_OPTIONS = ['allow', 'approve', 'deny', 'unreachable'];
 
 /**
  * The built-in filter types. Ordered as offered in the type picker; the first
@@ -106,20 +130,29 @@ export const WORKSPACE_FILTER_TYPES: WorkspaceFilterType[] = [
     },
   },
   {
-    id: 'access',
-    labelKey: 'workspace.filter_type_access',
-    input: { kind: 'options', options: ['approve', 'deny', 'unreachable', 'allow'] },
+    id: 'access_read',
+    labelKey: 'workspace.filter_type_access_read',
+    input: { kind: 'options', options: ACCESS_AXIS_OPTIONS },
     appliesTo: ({ agentView }) => agentView,
     toQuery: value => {
       const v = value.trim();
       if (!v) return null;
       // No filename glob expresses a verdict, so walk every file (`*`) and keep only
-      // those whose worst read/write verdict equals the selection. Requires the
-      // find request to carry filter=agent (the panel sends it under agent view).
-      return {
-        globs: ['*'],
-        refine: m => (m.access ? accessToStatus(m.access) === v : false),
-      };
+      // those whose READ verdict equals the selection. The panel supplies the
+      // per-path verdict to `refine` from the batch /workspace/access call.
+      return { globs: ['*'], refine: (_m, verdict) => axisMatches(verdict, 'read', v) };
+    },
+  },
+  {
+    id: 'access_write',
+    labelKey: 'workspace.filter_type_access_write',
+    input: { kind: 'options', options: ACCESS_AXIS_OPTIONS },
+    appliesTo: ({ agentView }) => agentView,
+    toQuery: value => {
+      const v = value.trim();
+      if (!v) return null;
+      // As `access_read`, but refines on the WRITE verdict.
+      return { globs: ['*'], refine: (_m, verdict) => axisMatches(verdict, 'write', v) };
     },
   },
 ];
@@ -154,13 +187,14 @@ function serializeDir(dir: DirBuild, prefix: string): FileTreeNode[] {
 /**
  * Builds a {@link FileTreeNode} tree from the flat list of matching FILE entries
  * the find stream returns, synthesizing the ancestor directory nodes each path
- * implies. File leaves carry the agent-view status dot + tooltip when the match
- * has an `access` verdict (and `labels` are given). Directories are structural
- * (no verdict — the find stream annotates files only). Pure; never mutates input.
+ * implies. When a {@link NodeDecorator} is given, file leaves carry the agent-view
+ * access overlay (indicators / dimmed / tooltip) merged by path. Directories are
+ * structural (the find stream returns files only, so they get no overlay). Pure;
+ * never mutates input.
  */
 export function buildTreeFromMatches(
   matches: readonly WorkspaceFindMatch[],
-  labels?: AccessLabels,
+  decorate?: NodeDecorator,
 ): FileTreeNode[] {
   const root: DirBuild = { dirs: new Map(), files: [] };
   for (const m of matches) {
@@ -175,15 +209,12 @@ export function buildTreeFromMatches(
       }
       cur = child;
     }
-    const status = m.access ? accessToStatus(m.access) : undefined;
-    const title = m.access && labels ? accessTooltip(m.access, labels) : undefined;
     cur.files.push({
       id: m.path,
       name: parts[parts.length - 1],
       path: m.path,
       isDirectory: false,
-      ...(status ? { status } : {}),
-      ...(title ? { title } : {}),
+      ...(decorate?.(m.path) ?? {}),
     });
   }
   return serializeDir(root, '');

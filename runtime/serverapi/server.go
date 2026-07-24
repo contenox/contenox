@@ -18,6 +18,7 @@ import (
 	"github.com/contenox/runtime/runtime/backendservice"
 	"github.com/contenox/runtime/runtime/fleetservice"
 	"github.com/contenox/runtime/runtime/hitlservice"
+	"github.com/contenox/runtime/runtime/internal/accessapi"
 	"github.com/contenox/runtime/runtime/internal/agentregistryapi"
 	"github.com/contenox/runtime/runtime/internal/approvalapi"
 	"github.com/contenox/runtime/runtime/internal/backendapi"
@@ -292,6 +293,13 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 		// data source for Beam's workspace filter box. Same allowlist authority, and
 		// the same agent-view annotation the browse API's filter=agent provides.
 		localfileapi.AddWorkspaceFindRoutes(mux, deps.WorkspaceRoots, workspaceHITLFactory(deps))
+		// POST /workspace/access batch-evaluates the HITL policy's read/write
+		// verdict for a client-supplied list of paths (runtime/accessview) — the
+		// structured-reason sibling of the browse/find APIs' filter=agent, for a
+		// caller (Beam's access-preview panel) that wants the full policy decision
+		// rather than a quiet UI verdict. Same Factory allowlist + policy-factory
+		// wiring as every other workspace route.
+		accessapi.AddRoutes(mux, deps.WorkspaceRoots, workspaceHITLFactory(deps))
 	} else if deps.ProjectRoot != "" {
 		projectFiles, err := localfileservice.New(deps.ProjectRoot)
 		if err != nil {

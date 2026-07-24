@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyAcpExecutionError, classifySetupIssueCode } from './acpFailureKind';
+import { acpFailureCopyKeys, classifyAcpExecutionError, classifySetupIssueCode } from './acpFailureKind';
 
 describe('classifyAcpExecutionError', () => {
   it('classifies the runtime-state-empty resolver error as backend_unreachable', () => {
@@ -28,6 +28,14 @@ describe('classifyAcpExecutionError', () => {
     ).toBe('model_unavailable');
   });
 
+  it('classifies the agent host\'s fail-closed sandbox refusal as workspace_required, even wrapped deep in the acpsvc/agentinstance/agenthost chain', () => {
+    expect(
+      classifyAcpExecutionError(
+        'acpsvc: start agent "claude" instance: agentinstance: start agent "claude": agenthost: sandbox external ACP agent "/home/naro/.contenox/claude-code-acp.sh": cwd is required to confine the agent (the wall needs a workspace; it will not default to the whole filesystem)',
+      ),
+    ).toBe('workspace_required');
+  });
+
   it('falls back to generic for an unrelated chain failure', () => {
     expect(classifyAcpExecutionError('hook "mailing-service" returned HTTP 500')).toBe('generic');
   });
@@ -36,6 +44,27 @@ describe('classifyAcpExecutionError', () => {
     expect(classifyAcpExecutionError(null)).toBe('generic');
     expect(classifyAcpExecutionError(undefined)).toBe('generic');
     expect(classifyAcpExecutionError('')).toBe('generic');
+  });
+});
+
+describe('acpFailureCopyKeys', () => {
+  it('maps each specific kind to its own title + description i18n keys', () => {
+    expect(acpFailureCopyKeys('backend_unreachable')).toEqual({
+      titleKey: 'acp_recovery.backend_unreachable_title',
+      descriptionKey: 'acp_recovery.backend_unreachable_description',
+    });
+    expect(acpFailureCopyKeys('model_unavailable')).toEqual({
+      titleKey: 'acp_recovery.model_unavailable_title',
+      descriptionKey: 'acp_recovery.model_unavailable_description',
+    });
+    expect(acpFailureCopyKeys('workspace_required')).toEqual({
+      titleKey: 'acp_recovery.workspace_required_title',
+      descriptionKey: 'acp_recovery.workspace_required_description',
+    });
+  });
+
+  it('returns null keys for generic — each caller keeps its own generic fallback copy', () => {
+    expect(acpFailureCopyKeys('generic')).toEqual({ titleKey: null, descriptionKey: null });
   });
 });
 

@@ -66,7 +66,7 @@ type fakeManager struct {
 	statuses map[string]agentinstance.InstanceStatus
 }
 
-func (m *fakeManager) Start(_ context.Context, agentName string) (string, error) {
+func (m *fakeManager) Start(_ context.Context, agentName, _ string) (string, error) {
 	m.mu.Lock()
 	m.startCalls = append(m.startCalls, agentName)
 	m.mu.Unlock()
@@ -80,7 +80,7 @@ func (m *fakeManager) Start(_ context.Context, agentName string) (string, error)
 // existing starts() assertion keeps reading the same way. Dispatch calls this one
 // — it already resolved the agent to make the Enabled decision, and re-resolving
 // by name in the kernel would reopen the TOCTOU window that check exists to close.
-func (m *fakeManager) StartResolved(_ context.Context, agent *runtimetypes.Agent) (string, error) {
+func (m *fakeManager) StartResolved(_ context.Context, agent *runtimetypes.Agent, _ string) (string, error) {
 	m.mu.Lock()
 	name := ""
 	if agent != nil {

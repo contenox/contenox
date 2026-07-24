@@ -2036,6 +2036,9 @@ const resources = {
         model_unavailable_description:
           'The default model is misconfigured for the currently running backend — this is a Settings fix, not a connectivity problem.',
         model_unavailable_action: 'Open Settings',
+        workspace_required_title: 'This agent needs a workspace',
+        workspace_required_description:
+          "It won't start without one — open a session that has a workspace, or add a project on the Projects page, then start a new session there.",
       },
       acp_sidebar: {
         title: 'Sessions',
@@ -2071,6 +2074,11 @@ const resources = {
         access_unreachable: 'Outside the workspace boundary',
         access_read: 'Read',
         access_write: 'Write',
+        access_reason_rule: 'policy rule',
+        access_reason_default: 'default policy',
+        access_tooltip: '{{dim}}: {{action}} — {{reason}}',
+        access_evaluating: 'Evaluating access…',
+        access_error: 'Could not evaluate access',
         mention_menu_label: 'Workspace files',
         mention_loading: 'Loading…',
         mention_preview_label: 'File preview',
@@ -2080,7 +2088,8 @@ const resources = {
         filter_type_ext: 'Extension',
         filter_type_glob: 'Glob',
         filter_type_name: 'Name / path',
-        filter_type_access: 'Access',
+        filter_type_access_read: 'Read access',
+        filter_type_access_write: 'Write access',
         filter_placeholder_ext: 'md, ts, go',
         filter_placeholder_glob: '*.md',
         filter_placeholder_name: 'name or path…',
@@ -3925,6 +3934,9 @@ const resources = {
         model_unavailable_description:
           'Das Standardmodell ist für das aktuell laufende Backend falsch konfiguriert — das ist ein Einstellungsproblem, kein Verbindungsproblem.',
         model_unavailable_action: 'Einstellungen öffnen',
+        workspace_required_title: 'Dieser Agent braucht einen Arbeitsbereich',
+        workspace_required_description:
+          'Ohne Arbeitsbereich startet er nicht — öffne eine Sitzung mit Arbeitsbereich, oder füge auf der Projekte-Seite ein Projekt hinzu und starte dort eine neue Sitzung.',
       },
       acp_sidebar: {
         title: 'Sitzungen',
@@ -3957,6 +3969,11 @@ const resources = {
         access_unreachable: 'Außerhalb der Arbeitsbereichsgrenze',
         access_read: 'Lesen',
         access_write: 'Schreiben',
+        access_reason_rule: 'Richtlinienregel',
+        access_reason_default: 'Standardrichtlinie',
+        access_tooltip: '{{dim}}: {{action}} — {{reason}}',
+        access_evaluating: 'Zugriff wird ausgewertet…',
+        access_error: 'Zugriff konnte nicht ausgewertet werden',
         mention_menu_label: 'Arbeitsbereich-Dateien',
         mention_loading: 'Wird geladen…',
         mention_preview_label: 'Dateivorschau',
@@ -3966,7 +3983,8 @@ const resources = {
         filter_type_ext: 'Endung',
         filter_type_glob: 'Glob',
         filter_type_name: 'Name / Pfad',
-        filter_type_access: 'Zugriff',
+        filter_type_access_read: 'Lesezugriff',
+        filter_type_access_write: 'Schreibzugriff',
         filter_placeholder_ext: 'md, ts, go',
         filter_placeholder_glob: '*.md',
         filter_placeholder_name: 'Name oder Pfad…',

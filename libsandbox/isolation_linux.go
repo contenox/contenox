@@ -74,23 +74,32 @@ func applyIsolation(ctx context.Context, cmd *exec.Cmd, spec Spec, tracker libtr
 	if err != nil {
 		return err
 	}
-	if err := preflightUserns(); err != nil {
-		return err
-	}
 
-	// Metered egress: when the spec names network carve-outs, wire the parent-side
-	// bridge and tell the shim (via the plan) to create the TUN and where to hand
-	// it over. With no carve-outs this is skipped and the netns keeps the
-	// deny-by-construction floor — the pre-slice-4 behaviour, unchanged. setupEgress
-	// launches a goroutine bound to ctx, so egress lives exactly as long as the
-	// assembly's context; a cancelled ctx tears the stack down.
-	if len(spec.Net) > 0 {
-		sockFD, eerr := setupEgress(ctx, cmd, spec, tracker)
-		if eerr != nil {
-			return eerr
+	// The namespaced network wall is the ONLY part of the wall that needs the
+	// unprivileged user namespace, so every userns/netns/egress step lives behind
+	// spec.NetworkWall. With it off (the default) the agent keeps the host network:
+	// no preflight, no netns, no egress bridge — and the fs/exec/env fence below is
+	// applied with zero namespace privilege, so it builds on hosts where
+	// unprivileged userns is disabled. See Spec.NetworkWall.
+	if spec.NetworkWall {
+		if err := preflightUserns(); err != nil {
+			return err
 		}
-		plan.Egress = true
-		plan.EgressSockFD = sockFD
+
+		// Metered egress: when the spec names network carve-outs, wire the parent-side
+		// bridge and tell the shim (via the plan) to create the TUN and where to hand
+		// it over. With no carve-outs this is skipped and the netns keeps the
+		// deny-by-construction floor. setupEgress launches a goroutine bound to ctx, so
+		// egress lives exactly as long as the assembly's context; a cancelled ctx tears
+		// the stack down.
+		if len(spec.Net) > 0 {
+			sockFD, eerr := setupEgress(ctx, cmd, spec, tracker)
+			if eerr != nil {
+				return eerr
+			}
+			plan.Egress = true
+			plan.EgressSockFD = sockFD
+		}
 	}
 
 	// The syscall telemetry tap (opt-in, independent of egress): wire the parent-side
@@ -135,20 +144,24 @@ func applyIsolation(ctx context.Context, cmd *exec.Cmd, spec Spec, tracker libtr
 	cmd.SysProcAttr.Setpgid = true
 	cmd.SysProcAttr.Pdeathsig = syscall.SIGKILL
 
-	// The network wall: clone the child into a fresh, empty network namespace.
-	// CLONE_NEWNET makes the network absent by construction; CLONE_NEWUSER is what
-	// lets an unprivileged process create that netns and own it. The current
-	// uid/gid map to 0 inside the userns so the shim, after the re-exec, is
-	// root-in-namespace and regains CAP_NET_ADMIN to raise "lo" — a same→same
-	// (non-root) mapping would leave the post-execve shim with no capabilities and
-	// the "lo"-up ioctl would fail EPERM. HostID is the real uid/gid, so the
-	// agent's workspace writes are still owned by contenox on disk, and the caps
-	// are scoped to this userns and cannot reach the host. GidMappingsEnableSet-
-	// groups must be false for an unprivileged gid mapping to be accepted.
-	cmd.SysProcAttr.Cloneflags |= unix.CLONE_NEWUSER | unix.CLONE_NEWNET
-	cmd.SysProcAttr.UidMappings = []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getuid(), Size: 1}}
-	cmd.SysProcAttr.GidMappings = []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getgid(), Size: 1}}
-	cmd.SysProcAttr.GidMappingsEnableSetgroups = false
+	// The network wall (NetworkWall only): clone the child into a fresh, empty
+	// network namespace. CLONE_NEWNET makes the network absent by construction;
+	// CLONE_NEWUSER is what lets an unprivileged process create that netns and own
+	// it. The current uid/gid map to 0 inside the userns so the shim, after the
+	// re-exec, is root-in-namespace and regains CAP_NET_ADMIN to raise "lo" — a
+	// same→same (non-root) mapping would leave the post-execve shim with no
+	// capabilities and the "lo"-up ioctl would fail EPERM. HostID is the real
+	// uid/gid, so the agent's workspace writes are still owned by contenox on disk,
+	// and the caps are scoped to this userns and cannot reach the host.
+	// GidMappingsEnableSetgroups must be false for an unprivileged gid mapping to
+	// be accepted. With NetworkWall off there are no namespaces: the child is an
+	// ordinary process (real uid/gid, host network) confined by Landlock alone.
+	if spec.NetworkWall {
+		cmd.SysProcAttr.Cloneflags |= unix.CLONE_NEWUSER | unix.CLONE_NEWNET
+		cmd.SysProcAttr.UidMappings = []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getuid(), Size: 1}}
+		cmd.SysProcAttr.GidMappings = []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getgid(), Size: 1}}
+		cmd.SysProcAttr.GidMappingsEnableSetgroups = false
+	}
 
 	// ACCEPTED LIMITATION — no PID namespace (CLONE_NEWPID is deliberately NOT set).
 	// The agent therefore shares the HOST pid namespace and, because its userns maps

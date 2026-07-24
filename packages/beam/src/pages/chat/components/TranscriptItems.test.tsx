@@ -84,3 +84,55 @@ describe('TranscriptItems: image parts', () => {
     expect(html).not.toContain('data:image/');
   });
 });
+
+describe('TranscriptItems: failed-turn cards', () => {
+  const CWD_REQUIRED_MESSAGE =
+    'acpsvc: start agent "claude" instance: agentinstance: start agent "claude": agenthost: sandbox external ACP agent "/home/naro/.contenox/claude-code-acp.sh": cwd is required to confine the agent (the wall needs a workspace; it will not default to the whole filesystem)';
+
+  it('skips the in-transcript card for the CURRENT session.error — it is already shown by the top ExecutionErrorBanner (ChatSessionTab), so rendering it here too would show the same failure twice', () => {
+    const session: AcpSessionState = {
+      ...initialAcpSessionState,
+      sessionId: 'sess-1',
+      items: [{ kind: 'error', id: 'error-0' }],
+      errorCards: { 'error-0': { id: 'error-0', message: CWD_REQUIRED_MESSAGE } },
+      error: CWD_REQUIRED_MESSAGE,
+    };
+    const html = render(session);
+    expect(html).not.toContain('This agent needs a workspace');
+    expect(html).not.toContain('cwd is required to confine the agent');
+  });
+
+  it('renders the card once session.error is cleared (next prompt_start/session_reset) — history is preserved, with a legible headline instead of the raw wrapped wire string', () => {
+    const session: AcpSessionState = {
+      ...initialAcpSessionState,
+      sessionId: 'sess-1',
+      items: [{ kind: 'error', id: 'error-0' }],
+      errorCards: { 'error-0': { id: 'error-0', message: CWD_REQUIRED_MESSAGE } },
+      error: null,
+    };
+    const html = render(session);
+    expect(html).toContain('This agent needs a workspace');
+    // The raw wire string stays available, just tucked behind the collapsed
+    // detail toggle rather than dumped as the headline.
+    expect(html).toContain('cwd is required to confine the agent');
+  });
+
+  it('keeps every OLDER failed turn visible even while the latest one is deduped against the top banner', () => {
+    const session: AcpSessionState = {
+      ...initialAcpSessionState,
+      sessionId: 'sess-1',
+      items: [
+        { kind: 'error', id: 'error-0' },
+        { kind: 'error', id: 'error-1' },
+      ],
+      errorCards: {
+        'error-0': { id: 'error-0', message: 'hook "mailing-service" returned HTTP 500' },
+        'error-1': { id: 'error-1', message: CWD_REQUIRED_MESSAGE },
+      },
+      error: CWD_REQUIRED_MESSAGE,
+    };
+    const html = render(session);
+    expect(html).toContain('This request failed'); // generic headline for error-0
+    expect(html).not.toContain('This agent needs a workspace'); // error-1 deduped against the banner
+  });
+});

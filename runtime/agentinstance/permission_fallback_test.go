@@ -188,7 +188,7 @@ func TestUnit_PermissionFallback_CarriesInstanceIdentity(t *testing.T) {
 	}))
 	t.Cleanup(func() { _ = mgr.Close() })
 
-	id, err := mgr.Start(ctx, "ext-agent")
+	id, err := mgr.Start(ctx, "ext-agent", t.TempDir())
 	require.NoError(t, err)
 	sid := openSession(t, mgr, id)
 

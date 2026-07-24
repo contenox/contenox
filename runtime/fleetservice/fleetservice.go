@@ -306,7 +306,7 @@ func (s *service) Dispatch(ctx context.Context, req DispatchRequest) (DispatchRe
 	// row, which is both a second query per dispatch and a TOCTOU window — an
 	// agent disabled between the two reads would still spawn, defeating the check
 	// immediately above it.
-	instanceID, err := s.instances.StartResolved(ctx, agent)
+	instanceID, err := s.instances.StartResolved(ctx, agent, cwd)
 	if err != nil {
 		return DispatchResult{}, err
 	}

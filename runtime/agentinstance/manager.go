@@ -160,7 +160,10 @@ type Manager interface {
 	// only a name and no policy to apply. A caller that ALREADY resolved the agent —
 	// because it had a policy decision to make about the record, as every spawn path
 	// with an Enabled check does — must call StartResolved instead; see there.
-	Start(ctx context.Context, agentName string) (instanceID string, err error)
+	//
+	// cwd is the sandbox workspace the spawned agent is confined to; it is passed
+	// through to StartResolved. See there.
+	Start(ctx context.Context, agentName, cwd string) (instanceID string, err error)
 
 	// StartResolved spawns an instance from an ALREADY-RESOLVED declared agent and
 	// performs NO registry read of its own. Start is implemented as resolve +
@@ -178,7 +181,15 @@ type Manager interface {
 	// This is also the correct shape for the layering: the kernel is policy-free and
 	// spawns what it is handed; it has no business re-deriving what the service layer
 	// already established. Returns an error for a nil agent or an unsupported kind.
-	StartResolved(ctx context.Context, agent *runtimetypes.Agent) (instanceID string, err error)
+	//
+	// cwd is the sandbox workspace root the agent is confined to (its one writable
+	// root — agenthost fail-closes on an empty one). It is the caller's already
+	// resolved session/mission cwd; an EXTERNAL agent's own declared Config.Cwd wins
+	// when set, and a CHAIN agent (which has no declared cwd) always takes this one.
+	// This mirrors the defaulting the one-shot DriveTurn path does (agenthost/drive.go),
+	// so both spawn shapes confine to the workspace the caller resolved rather than
+	// leaving the wall without one.
+	StartResolved(ctx context.Context, agent *runtimetypes.Agent, cwd string) (instanceID string, err error)
 
 	// Attach registers viewer against (instanceID, sessionID): it replays that
 	// session's journal to the viewer, then joins it to the live fan-out. The
@@ -403,7 +414,7 @@ func (m *manager) emit(ev Event) {
 	}
 }
 
-func (m *manager) Start(ctx context.Context, agentName string) (string, error) {
+func (m *manager) Start(ctx context.Context, agentName, cwd string) (string, error) {
 	if agentName == "" {
 		return "", fmt.Errorf("agentinstance: agentName is required")
 	}
@@ -413,10 +424,10 @@ func (m *manager) Start(ctx context.Context, agentName string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("agentinstance: resolve agent %q: %w", agentName, err)
 	}
-	return m.StartResolved(ctx, agent)
+	return m.StartResolved(ctx, agent, cwd)
 }
 
-func (m *manager) StartResolved(ctx context.Context, agent *runtimetypes.Agent) (string, error) {
+func (m *manager) StartResolved(ctx context.Context, agent *runtimetypes.Agent, cwd string) (string, error) {
 	_ = ctx // no registry read happens here; ctx is kept for interface uniformity.
 	if agent == nil {
 		return "", fmt.Errorf("agentinstance: agent is required")
@@ -427,6 +438,14 @@ func (m *manager) StartResolved(ctx context.Context, agent *runtimetypes.Agent) 
 		if err != nil {
 			return "", fmt.Errorf("agentinstance: agent %q: %w", agent.Name, err)
 		}
+		// Seed the sandbox workspace from the caller's resolved cwd when the agent
+		// declares none of its own — the same defaulting agenthost/drive.go does for
+		// the one-shot path, so a mission/session-launched agent is confined to the
+		// workspace the caller resolved instead of hitting the wall's fail-closed
+		// empty-cwd refusal. A declared cwd wins.
+		if cfg.Cwd == "" {
+			cfg.Cwd = cwd
+		}
 		spawner := &agenthost.ExternalACPAgent{
 			Config:    *cfg,
 			Stderr:    m.stderr,
@@ -434,7 +453,7 @@ func (m *manager) StartResolved(ctx context.Context, agent *runtimetypes.Agent) 
 		}
 		return m.bringUp(agent, spawner)
 	case runtimetypes.AgentKindChain:
-		spawner, err := m.chainSpawner(agent)
+		spawner, err := m.chainSpawner(agent, cwd)
 		if err != nil {
 			return "", err
 		}
@@ -467,7 +486,7 @@ func (m *manager) StartResolved(ctx context.Context, agent *runtimetypes.Agent) 
 // RequestPermission and routes to the session's controller viewer — the same
 // human-in-the-loop path an external agent's requests take, including the
 // unsupervised auto-deny when nobody is attached.
-func (m *manager) chainSpawner(agent *runtimetypes.Agent) (agenthost.Agent, error) {
+func (m *manager) chainSpawner(agent *runtimetypes.Agent, cwd string) (agenthost.Agent, error) {
 	cfg, err := agent.ChainConfig()
 	if err != nil {
 		return nil, fmt.Errorf("agentinstance: agent %q: %w", agent.Name, err)
@@ -487,7 +506,12 @@ func (m *manager) chainSpawner(agent *runtimetypes.Agent) (agenthost.Agent, erro
 			Transport: runtimetypes.ExternalACPTransportStdio,
 			Command:   self,
 			Args:      []string{ChainACPSubcommand},
-			Env:       map[string]string{ChainPathEnvVar: cfg.Path},
+			// A chain unit declares no cwd of its own, so its sandbox workspace is the
+			// caller's resolved cwd (the mission/session root). Without this the wall
+			// fail-closes on an empty cwd even though the chain shares this runtime's
+			// state — the exact break the mission path hit.
+			Cwd: cwd,
+			Env: map[string]string{ChainPathEnvVar: cfg.Path},
 		},
 		Stderr:    m.stderr,
 		KillGrace: m.killGrace,

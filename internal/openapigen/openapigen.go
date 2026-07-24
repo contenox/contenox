@@ -124,6 +124,7 @@ var routeScanGlobs = []string{
 // referenced by responses / openapi_include_type tags.
 var typeScanDirs = []string{
 	"apiframework",
+	"runtime/accessview",
 	"runtime/taskengine",
 	"runtime/taskengine/llmretry",
 	"runtime/agentinstance",

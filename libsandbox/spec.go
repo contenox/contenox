@@ -93,8 +93,31 @@ type Spec struct {
 	// legitimately run an internal registry on a private IP; set it only then, and
 	// only for the run whose carve-outs are trusted to be internal. It does not
 	// widen WHICH hosts are reachable (still only Net carve-outs) — only whether a
-	// carve-out is allowed to resolve inward.
+	// carve-out is allowed to resolve inward. It requires NetworkWall (it only
+	// governs how that wall resolves carve-outs).
 	AllowPrivateEgress bool
+
+	// NetworkWall opts into the namespaced network wall: a routeless network
+	// namespace that makes the network absent by construction, plus the metered
+	// per-host egress (the Net carve-outs) served over it. That namespace is
+	// created and owned through an UNPRIVILEGED USER NAMESPACE, so it needs a host
+	// where unprivileged user namespaces are permitted; where they are not (the
+	// kernel knob off, or an AppArmor restriction like Ubuntu 24.04's default) the
+	// wall cannot be built and Command fails closed rather than run the agent with
+	// the network open.
+	//
+	// Default OFF, and that default is load-bearing: confining a subprocess we
+	// launch ourselves must not hinge on a kernel capability the host may withhold.
+	// With it off, the wall still confines the surface that matters most — the
+	// filesystem and exec (Landlock) and the inherited environment (the scoped
+	// HOME) — so the agent still cannot read the operator's loot paths or act
+	// outside its workspace; only the network is left open, needing zero namespace
+	// privilege and running anywhere. Turn it on where unprivileged userns is
+	// available AND the network must be confined to a named host list. Because Net
+	// carve-outs and AllowPrivateEgress are meaningless without the netns that
+	// serves them, a spec that names either with NetworkWall off is rejected
+	// rather than silently leaving the network open while looking confined.
+	NetworkWall bool
 
 	// Tracker observes the wall: the Command assembly lifecycle now, and in
 	// later slices every blocked bypass attempt. Nil is treated as
@@ -160,6 +183,14 @@ func (s Spec) validate() error {
 	}
 	if strings.TrimSpace(s.Home) == "" {
 		return fmt.Errorf("%w: Home is required (the scoped HOME that keeps the real home out of reach)", ErrInvalidSpec)
+	}
+	if !s.NetworkWall {
+		if len(s.Net) > 0 {
+			return fmt.Errorf("%w: Net carve-outs require NetworkWall — the network wall that makes them reachable is namespaced and off by default; enable NetworkWall to confine the network, or drop the carve-outs", ErrInvalidSpec)
+		}
+		if s.AllowPrivateEgress {
+			return fmt.Errorf("%w: AllowPrivateEgress requires NetworkWall — it only governs how the namespaced network wall resolves carve-outs", ErrInvalidSpec)
+		}
 	}
 	for i, c := range s.FS {
 		if err := validateFSCarveout(c); err != nil {

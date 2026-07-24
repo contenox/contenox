@@ -104,25 +104,33 @@ export function workspaceNameForCwd(
 
 /**
  * Whether a server error message is the workspace-root refusal — the 422 the
- * per-request `root` check returns for a path outside the allowlist (see
- * localfileapi.wrap: `%w: workspace root %q is not permitted`). Matched on the
- * stable phrasing rather than the wrapped ErrUnprocessableEntity prefix, and
- * case-insensitively, so a legible localized notice can replace the raw wire
- * string.
+ * per-request `root`/`cwd` check returns for a path outside the allowlist.
+ * Matched on stable phrasing rather than the wrapped ErrUnprocessableEntity
+ * prefix, and case-insensitively, so a legible localized notice can replace the
+ * raw wire string. Two phrasings have shipped and BOTH must route to the notice:
+ *   - legacy: `workspace root %q is not permitted`
+ *   - current: `%q is not under any configured workspace root; roots: %s`
+ *     (localfileapi list/find/search + vfs cwd/root checks — the one an operator
+ *     actually hits when the file tree points outside the roots).
+ * Missing the second is why the raw wire string used to leak through untranslated.
  */
 export function isWorkspaceRootRefusal(message: string | undefined | null): boolean {
   if (!message) return false;
   const m = message.toLowerCase();
-  return m.includes('workspace root') && m.includes('not permitted');
+  return (
+    (m.includes('workspace root') && m.includes('not permitted')) ||
+    m.includes('not under any configured workspace root')
+  );
 }
 
 /**
  * The offending path pulled out of a workspace-root refusal message (the value
  * inside the `%q` double-quotes), or null when none is present. Lets the notice
- * name the exact folder that was rejected.
+ * name the exact folder that was rejected. Handles both server nouns — `workspace
+ * root %q` (list/find/search) and `workspace directory %q` (the cwd check).
  */
 export function extractRefusedRoot(message: string | undefined | null): string | null {
   if (!message) return null;
-  const match = message.match(/workspace root\s+"([^"]*)"/i);
+  const match = message.match(/workspace (?:root|directory)\s+"([^"]*)"/i);
   return match ? match[1] : null;
 }
