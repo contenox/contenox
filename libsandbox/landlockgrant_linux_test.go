@@ -61,3 +61,31 @@ func TestUnit_supportedFS_StillHandlesDeviceRights(t *testing.T) {
 		}
 	}
 }
+
+// TestUnit_DeviceFloor_Composition pins the /dev floor's split so a careless edit
+// cannot quietly break it: /dev/null must be in the writable half (a read-only
+// /dev/null breaks "cmd 2>/dev/null" for a confined Bash), and the two halves must
+// stay disjoint so each device's intended access is declared in exactly one place.
+func TestUnit_DeviceFloor_Composition(t *testing.T) {
+	if len(systemRuntimeWritableDevices) == 0 {
+		t.Fatal("systemRuntimeWritableDevices is empty: /dev/null must be granted writable")
+	}
+
+	ro := make(map[string]bool, len(systemRuntimePaths))
+	for _, p := range systemRuntimePaths {
+		ro[p] = true
+	}
+
+	haveNull := false
+	for _, d := range systemRuntimeWritableDevices {
+		if ro[d] {
+			t.Errorf("%s appears in BOTH systemRuntimePaths and systemRuntimeWritableDevices: declare each device's access in one place", d)
+		}
+		if d == "/dev/null" {
+			haveNull = true
+		}
+	}
+	if !haveNull {
+		t.Error("/dev/null must be in systemRuntimeWritableDevices (the load-bearing writable device)")
+	}
+}

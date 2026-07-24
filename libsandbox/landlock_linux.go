@@ -81,8 +81,9 @@ const (
 
 // systemRuntimePaths is the read-only system surface a real (dynamically linked)
 // agent must reach merely to start: the ELF interpreter and shared libraries, the
-// stock executables its Bash will run, and a MINIMAL set of /etc files the loader,
-// name resolution, and common tooling actually read. It is NOT a spec carve-out
+// stock executables its Bash will run, a MINIMAL set of /etc files the loader,
+// name resolution, and common tooling actually read, and the core read-only /dev
+// character devices (/dev/zero, /dev/random, /dev/urandom, /dev/tty). It is NOT a spec carve-out
 // and holds none of the loot paths the wall exists to deny — those all live under
 // the operator's real $HOME (~/.ssh, ~/.aws, ~/.npmrc, ~/.contenox), which is not
 // on this list and not under the scoped HOME. Granted read+execute, read-only.
@@ -131,6 +132,29 @@ var systemRuntimePaths = []string{
 	"/etc/ssl/certs",
 	"/etc/pki",
 	"/etc/ca-certificates",
+	// Minimal /dev character-device floor (skip-missing), read-only half — the
+	// stateless nodes every POSIX toolchain assumes exist merely to run, NOT loot
+	// paths. The writable half (/dev/null, /dev/full) is granted read-write
+	// separately (systemRuntimeWritableDevices), because this slice is granted
+	// llRead. An absent node is skipped, like any other system-runtime path.
+	"/dev/zero",
+	"/dev/random",
+	"/dev/urandom",
+	"/dev/tty",
+}
+
+// systemRuntimeWritableDevices is the WRITABLE half of the /dev floor: character
+// devices tooling opens for WRITING, not just reading. /dev/null is load-bearing —
+// a confined Bash sources init snapshots and runs "cmd 2>/dev/null" on nearly every
+// command, and countless tools open it at startup; /dev/full is the standard
+// ENOSPC-behaviour probe. They are granted llReadWrite, but on a char-device node
+// addPathRule strips the directory-only rights and llWrite never carried
+// MAKE_CHAR/MAKE_BLOCK/IOCTL_DEV (see TestUnit_llWrite_NoDeviceNodeCreation), so the
+// net grant is READ_FILE|WRITE_FILE|TRUNCATE — opening an EXISTING node, never
+// minting a new device. Skip-missing, like systemRuntimePaths.
+var systemRuntimeWritableDevices = []string{
+	"/dev/null",
+	"/dev/full",
 }
 
 // supportedFS returns the filesystem access rights the given Landlock ABI
@@ -200,10 +224,21 @@ func applyLandlock(plan isolationPlan) error {
 	if err := addPathRule(rulesetFD, plan.Exec, llExec&handled, false); err != nil {
 		return err
 	}
-	// The read-only system runtime (loader, libs, stock tools). Best-effort:
-	// entries absent on this layout are simply skipped.
+	// The read-only system runtime (loader, libs, stock tools, ro /dev nodes).
+	// Best-effort: entries absent on this layout are simply skipped.
 	for _, p := range systemRuntimePaths {
 		if err := addPathRule(rulesetFD, p, llRead&handled, true); err != nil {
+			return err
+		}
+	}
+	// The writable /dev character devices (/dev/null, /dev/full): granted
+	// read-write because tooling writes to them. On a char-device file the
+	// llReadWrite grant reduces to READ_FILE|WRITE_FILE|TRUNCATE (addPathRule masks
+	// the dir-only rights; llWrite never held MAKE_CHAR/MAKE_BLOCK/IOCTL_DEV), so an
+	// existing node is opened for writing without conferring device-node creation.
+	// Skip-missing, like the read-only runtime above.
+	for _, p := range systemRuntimeWritableDevices {
+		if err := addPathRule(rulesetFD, p, llReadWrite&handled, true); err != nil {
 			return err
 		}
 	}
