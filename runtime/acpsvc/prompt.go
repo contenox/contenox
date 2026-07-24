@@ -97,6 +97,15 @@ func (d *nativeDriver) Prompt(ctx context.Context, req libacp.PromptRequest, ses
 		return t.dispatchCommand(cmdCtx, req.SessionID, sess, name, args)
 	}
 
+	// Survival path: when serve wires a native-turn Registry, the turn runs OFF this
+	// connection (on the Registry's serve-rooted context) so a client drop no longer
+	// cancels it — this Transport is a thin viewer. See runtime/nativeturn and
+	// native_turn.go. The stdio `contenox acp` path leaves NativeTurns nil and keeps
+	// the connection-bound turn below, byte-for-byte the historical behavior.
+	if t.deps.NativeTurns != nil {
+		return d.promptViaRegistry(ctx, req, sess, input, droppedContentKinds)
+	}
+
 	promptCtx := libtracker.WithNewRequestID(ctx)
 	reqID, _ := promptCtx.Value(libtracker.ContextKeyRequestID).(string)
 

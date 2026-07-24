@@ -12,6 +12,7 @@ import (
 	"github.com/contenox/runtime/runtime/agentinstance"
 	"github.com/contenox/runtime/runtime/enginesvc"
 	"github.com/contenox/runtime/runtime/internal/clikv"
+	"github.com/contenox/runtime/runtime/nativeturn"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/shellsession"
 	"github.com/contenox/runtime/runtime/taskengine"
@@ -84,6 +85,18 @@ type Deps struct {
 	// back to today's connCtx-bound spawn — byte-for-byte the historical behavior —
 	// so nothing regresses where the Manager is not wired.
 	Instances agentinstance.Manager
+
+	// NativeTurns, when set, is the survival layer for NATIVE (task-chain) turns —
+	// the native counterpart of Instances. A native session/prompt runs its turn on
+	// this serve-rooted Registry instead of on the connection's context, so a client
+	// drop no longer cancels the running chain; the Transport attaches as a thin
+	// VIEWER that replays the turn journal on (re)connect and joins the live
+	// fan-out, and only session/cancel (or delete) actually cancels the turn. serve
+	// sets it (a process-owned Registry, Closed at shutdown). When nil (the stdio
+	// `contenox acp` path), the native path falls back to today's connection-bound
+	// turn — byte-for-byte the historical behavior — so nothing regresses where the
+	// Registry is not wired. See runtime/nativeturn and native_turn.go.
+	NativeTurns *nativeturn.Registry
 
 	// Fleet, when set, is what the `/mission` slash command fires through — the
 	// same fleetservice.Dispatch the REST path and `contenox mission fire` use, so
@@ -323,6 +336,20 @@ func (t *Transport) sendToolCallUpdateGuarded(ctx context.Context, sid libacp.Se
 		return
 	}
 	t.sendUpdate(ctx, notif)
+}
+
+// isPermissionPending reports whether a permission dialog is currently open on THIS
+// connection for (sid, toolCallID). It is the viewer-side half of the guard
+// sendToolCallUpdateGuarded applies inline on the connCtx path: on the survival
+// path the turn's event translation runs OFF the connection (in the nativeturn
+// Registry), so the per-connection suppression moves to the point of delivery — the
+// native-turn viewer consults this before writing a tool-call card, so the
+// permission request the client is answering is not shadowed by a duplicate card.
+func (t *Transport) isPermissionPending(sid libacp.SessionID, toolCallID string) bool {
+	t.permMu.Lock()
+	defer t.permMu.Unlock()
+	_, pending := t.permPending[permKey(sid, toolCallID)]
+	return pending
 }
 
 func New(deps Deps) libacp.AgentFactory {
@@ -643,6 +670,13 @@ func (t *Transport) Cancel(ctx context.Context, req libacp.CancelNotification) e
 	_, reportChange, end := t.tracker().Start(ctx, "cancel", "acp_session", "session_id", string(req.SessionID))
 	defer end()
 	cancelled := t.cancelInflightPrompt(req.SessionID)
+	// A native survival turn runs OFF this connection, so its canceller is not in
+	// promptCancels — session/cancel must reach it through the Registry. This is the
+	// ONLY real user cancel of a survival turn; a connection drop deliberately does
+	// not. A no-op for external sessions and the stdio path (nil Registry / no turn).
+	if t.deps.NativeTurns != nil && t.deps.NativeTurns.Cancel(req.SessionID) {
+		cancelled = true
+	}
 	reportChange(string(req.SessionID), map[string]any{"cancelled_inflight": cancelled})
 	return nil
 }
@@ -746,15 +780,6 @@ func (t *Transport) clearToolCallState(sid libacp.SessionID) {
 // invocation). The first invocation keeps the bare name, so single-run flows
 // are wire-identical to before.
 func (t *Transport) toolCallWireID(sid libacp.SessionID, ev taskengine.TaskEvent, closes bool) string {
-	if ev.ApprovalID != "" {
-		return ev.ApprovalID
-	}
-	base := fallbackToolCallID(ev)
-	if base == "" {
-		return ""
-	}
-	key := permKey(sid, ev.TaskID+"\x1f"+base)
-
 	t.toolCallMu.Lock()
 	defer t.toolCallMu.Unlock()
 	if t.toolCallSeq == nil {
@@ -763,18 +788,37 @@ func (t *Transport) toolCallWireID(sid libacp.SessionID, ev taskengine.TaskEvent
 	if t.toolCallOpen == nil {
 		t.toolCallOpen = make(map[string]int)
 	}
+	return resolveToolCallWireID(t.toolCallSeq, t.toolCallOpen, sid, ev, closes)
+}
 
+// resolveToolCallWireID is the pure invocation-counter logic behind
+// toolCallWireID, factored out so the connection-scoped Transport and the
+// turn-scoped native-turn translator (native_turn.go) can share one
+// implementation over their own seq/open maps. The caller owns any locking; the
+// maps must be non-nil. An event carrying an engine-minted ApprovalID uses it
+// verbatim (already per-invocation); otherwise the name-derived base gets an
+// invocation counter so repeated runs of one tool stay distinct cards, opening on
+// a pending event and closing on the matching result.
+func resolveToolCallWireID(seq, open map[string]int, sid libacp.SessionID, ev taskengine.TaskEvent, closes bool) string {
+	if ev.ApprovalID != "" {
+		return ev.ApprovalID
+	}
+	base := fallbackToolCallID(ev)
+	if base == "" {
+		return ""
+	}
+	key := permKey(sid, ev.TaskID+"\x1f"+base)
 	if closes {
-		if n, ok := t.toolCallOpen[key]; ok {
-			delete(t.toolCallOpen, key)
+		if n, ok := open[key]; ok {
+			delete(open, key)
 			return invocationToolCallID(base, n)
 		}
-		t.toolCallSeq[key]++
-		return invocationToolCallID(base, t.toolCallSeq[key])
+		seq[key]++
+		return invocationToolCallID(base, seq[key])
 	}
-	t.toolCallSeq[key]++
-	t.toolCallOpen[key] = t.toolCallSeq[key]
-	return invocationToolCallID(base, t.toolCallSeq[key])
+	seq[key]++
+	open[key] = seq[key]
+	return invocationToolCallID(base, seq[key])
 }
 
 func invocationToolCallID(base string, n int) string {

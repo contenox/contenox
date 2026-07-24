@@ -37,6 +37,7 @@ import (
 	"github.com/contenox/runtime/runtime/missionchanges"
 	"github.com/contenox/runtime/runtime/missionservice"
 	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/nativeturn"
 	"github.com/contenox/runtime/runtime/operatorinbox"
 	"github.com/contenox/runtime/runtime/presence"
 	"github.com/contenox/runtime/runtime/reportrouter"
@@ -560,6 +561,24 @@ func runServe(cmd *cobra.Command, args []string) error {
 	)
 	defer func() { _ = instances.Close() }()
 
+	// NATIVE task-chain turns get the same off-connection survival external agents
+	// already have: the Registry owns each session's in-flight turn on its own
+	// serve-rooted context, so a browser drop no longer cancels the running chain —
+	// the reconnecting client re-attaches and replays the turn journal. Owned by the
+	// serve process, Closed (every in-flight turn cancelled) at shutdown, and swept
+	// by a reaper that reclaims any turn past its grace/hard-deadline belts. The two
+	// belts are env-tunable (CONTENOX_TURN_MAX, CONTENOX_TURN_GRACE); an invalid
+	// value fails startup rather than silently degrading, like every other serve
+	// config here.
+	nativeTurnCfg, err := nativeturn.ParseEnv(config.TurnMax, config.TurnGrace)
+	if err != nil {
+		return err
+	}
+	nativeTurns := nativeturn.New(nativeTurnCfg)
+	defer func() { _ = nativeTurns.Close() }()
+	stopNativeTurnReaper := startNativeTurnReaper(ctx, nativeTurns, nativeTurnReapInterval(nativeTurnCfg.GraceWindow))
+	defer stopNativeTurnReaper()
+
 	// Seed the registry from the operator's own task chains, so the chains they
 	// already author are fireable as fleet units without a second registration
 	// step. It SEEDS ONLY: nothing in the spawn path learns a second lookup, so
@@ -630,6 +649,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 			// External-agent sessions attach to Manager-owned instances that survive
 			// client disconnect/reload (a reload re-attaches to the same instance).
 			Instances: instances,
+			// Native task-chain turns run on this survival Registry (off the
+			// connection), so a client drop no longer cancels the running chain — the
+			// native counterpart of Instances above.
+			NativeTurns: nativeTurns,
 			// The `/mission` slash command fires through the same fleetservice and
 			// resolves agent names through the same registry the REST/CLI paths use —
 			// one dispatch implementation, one source of "what can I fire".
@@ -859,6 +882,50 @@ func startTerminalReaper(ctx context.Context, svc terminalservice.Service, inter
 				return
 			case <-ticker.C:
 				_ = svc.ReapIdle(reaperCtx)
+			}
+		}
+	}()
+	return cancel
+}
+
+// nativeTurnReapInterval derives the native-turn reaper's tick from the grace
+// window, mirroring terminalReapInterval: sweep at half the grace so a turn past
+// its window is reclaimed promptly without a busy loop, floored at one second and
+// capped so a long grace still gets a periodic backstop sweep. It is only a
+// BACKSTOP — the per-session grace timer reclaims the common case directly — so the
+// exact cadence is not load-bearing.
+func nativeTurnReapInterval(grace time.Duration) time.Duration {
+	if grace <= 0 {
+		return time.Minute
+	}
+	interval := grace / 2
+	if interval > time.Minute {
+		interval = time.Minute
+	}
+	if interval < time.Second {
+		return time.Second
+	}
+	return interval
+}
+
+// startNativeTurnReaper runs the native-turn Registry's periodic ReapIdle sweep
+// (Belt 4) — the backstop that reclaims a turn past its grace or hard deadline, and
+// cleans up a finished turn nobody detached from. Mirrors startTerminalReaper's
+// ticker/shutdown shape exactly.
+func startNativeTurnReaper(ctx context.Context, reg *nativeturn.Registry, interval time.Duration) func() {
+	if reg == nil || interval <= 0 {
+		return func() {}
+	}
+	reaperCtx, cancel := context.WithCancel(ctx)
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-reaperCtx.Done():
+				return
+			case <-ticker.C:
+				_ = reg.ReapIdle(reaperCtx)
 			}
 		}
 	}()

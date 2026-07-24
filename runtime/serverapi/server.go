@@ -87,6 +87,18 @@ type Config struct {
 	// hour) — see runtime/contenoxcli/serve_cmd.go's
 	// parseHITLApprovalCeiling.
 	HITLApprovalTimeout string `json:"hitl_approval_timeout"`
+	// TurnMax (env CONTENOX_TURN_MAX) is the hard wall-clock ceiling on a single
+	// NATIVE task-chain turn (a Go duration string, e.g. "15m") — Belt 2 of the
+	// native-turn survival layer. A turn still running when it elapses is
+	// terminated. Empty keeps nativeturn.DefaultTurnDeadline. See
+	// nativeturn.ParseEnv.
+	TurnMax string `json:"contenox_turn_max"`
+	// TurnGrace (env CONTENOX_TURN_GRACE) is how long a native turn survives with
+	// no client attached before it is cancelled and reclaimed (a Go duration
+	// string, e.g. "60s") — Belt 1 of the survival layer. A reconnect inside the
+	// window keeps it alive. Empty keeps nativeturn.DefaultGraceWindow. See
+	// nativeturn.ParseEnv.
+	TurnGrace string `json:"contenox_turn_grace"`
 	// SandboxShellScrub selects how the environment handed to an agent-reachable
 	// shell (the local_shell tool and the ACP "!"/shell_session PTY) is scrubbed
 	// of the serve process's own credentials: "deny-secrets" (the default — pass

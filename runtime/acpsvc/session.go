@@ -152,6 +152,11 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 	t.clearToolCallState(req.SessionID)
 	t.subscribeTerminal(req.SessionID, contenoxSessionID)
 	t.replayMessages(ctx, req.SessionID, messages)
+	// Reconnect: if a native turn is still in flight for this session (a browser
+	// reloaded mid-turn), join it as a viewer so the client resumes the live stream
+	// from the turn journal. Ordered after the transcript replay above, which the
+	// journal never overlaps (persisted turns vs. the one still running).
+	t.reattachNativeTurn(ctx, req.SessionID)
 	// Emit the slash-command menu only after the session/load result is on the wire
 	// (see sendAvailableCommands) so the client can resolve the session. A native
 	// session emits its contenox menu (and banner). An external session has no native
@@ -597,6 +602,10 @@ func (t *Transport) ResumeSession(ctx context.Context, req libacp.ResumeSessionR
 	t.markExternalIfPersisted(ctx, store, req.SessionID, entry)
 	t.clearToolCallState(req.SessionID)
 	t.subscribeTerminal(req.SessionID, contenoxSessionID)
+	// Reconnect (transcript kept client-side): join an in-flight native turn so the
+	// resumed session picks the live stream back up. Same no-overlap reasoning as
+	// LoadSession; a no-op when no turn is in flight.
+	t.reattachNativeTurn(ctx, req.SessionID)
 
 	// Mirror LoadSession: a native session re-advertises its contenox menu; an
 	// external session re-emits its downstream agent's persisted menu (the live bridge
@@ -729,6 +738,14 @@ func (t *Transport) DeleteSession(ctx context.Context, req libacp.DeleteSessionR
 		if instanceID := t.readSessionInstance(ctx, store, req.SessionID); instanceID != "" {
 			_ = t.deps.Instances.Stop(instanceID)
 		}
+	}
+	// A delete destroys the session, so its in-flight NATIVE turn (running on the
+	// survival Registry, off any connection) must not outlive it. Unlike a plain
+	// close/disconnect — which keeps the turn alive for reconnect — a delete
+	// terminates it. A no-op on the nil-Registry path, for external sessions, and
+	// when no turn is in flight.
+	if t.deps.NativeTurns != nil {
+		t.deps.NativeTurns.Cancel(req.SessionID)
 	}
 	t.clearToolCallState(req.SessionID)
 	// The session's history is being deleted; its shell must not outlive it.
