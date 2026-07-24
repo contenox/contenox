@@ -151,7 +151,12 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 
 	t.clearToolCallState(req.SessionID)
 	t.subscribeTerminal(req.SessionID, contenoxSessionID)
-	t.replayMessages(ctx, req.SessionID, messages)
+	// markExternalIfPersisted (above) has already swapped the driver, so the flag
+	// reflects how this session's tool messages were persisted: an external
+	// session stored each tool call as a self-contained ACP record, a native one
+	// stored assistant CallTools + tool-result text.
+	_, isExternal := entry.driver.(*externalDriver)
+	t.replayMessages(ctx, req.SessionID, messages, isExternal)
 	// Reconnect: if a native turn is still in flight for this session (a browser
 	// reloaded mid-turn), join it as a viewer so the client resumes the live stream
 	// from the turn journal. Ordered after the transcript replay above, which the
@@ -185,7 +190,7 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 	return libacp.LoadSessionResponse{ConfigOptions: t.reloadedConfigOptions(ctx, store, req.SessionID, entry)}, nil
 }
 
-func (t *Transport) replayMessages(ctx context.Context, sessionID libacp.SessionID, messages []taskengine.Message) {
+func (t *Transport) replayMessages(ctx context.Context, sessionID libacp.SessionID, messages []taskengine.Message, external bool) {
 	_, reportChange, end := t.tracker().Start(ctx, "replay", "acp_session", "session_id", string(sessionID), "message_count", len(messages))
 	defer end()
 
@@ -233,9 +238,19 @@ func (t *Transport) replayMessages(ctx context.Context, sessionID libacp.Session
 				toolCalls++
 			}
 		case "tool":
+			// An external session's tool message carries a self-contained ACP tool
+			// record (title/kind/input/output/diffs the downstream produced); replay
+			// it as one complete tool_call update. A native session's tool message is
+			// raw result text paired with the assistant's CallTools above.
+			update := toolCallUpdateFromResult(m)
+			if external {
+				if u, ok := externalToolReplayUpdate(m); ok {
+					update = u
+				}
+			}
 			t.sendUpdate(ctx, libacp.SessionNotification{
 				SessionID: sessionID,
-				Update:    toolCallUpdateFromResult(m),
+				Update:    update,
 			})
 			toolResults++
 		}
@@ -270,6 +285,47 @@ func toolCallUpdateFromCall(tc taskengine.ToolCall) libacp.SessionUpdate {
 		update.RawInput = json.RawMessage(tc.Function.Arguments)
 	}
 	return update
+}
+
+// externalToolReplayUpdate decodes an external session's persisted tool message
+// (an externalToolRecord JSON written by persistExternalTurn) into the single
+// tool_call update that reconstructs its card — the downstream agent's own
+// title, kind, input, output, diffs, and locations, verbatim. Returns false when
+// the content is not an external record (so the caller falls back to the native
+// result mapping), keeping native replay untouched.
+func externalToolReplayUpdate(m taskengine.Message) (libacp.SessionUpdate, bool) {
+	var rec externalToolRecord
+	if err := json.Unmarshal([]byte(m.Content), &rec); err != nil {
+		return libacp.SessionUpdate{}, false
+	}
+	toolCallID := rec.ToolCallID
+	if toolCallID == "" {
+		toolCallID = m.ToolCallID
+	}
+	if toolCallID == "" {
+		return libacp.SessionUpdate{}, false
+	}
+	status := rec.Status
+	if status == "" {
+		status = libacp.ToolCallStatusCompleted
+	}
+	title := rec.Title
+	if title == "" {
+		// The spec requires a title on tool_call notifications; fall back to the id
+		// so strict clients still register the card.
+		title = toolCallID
+	}
+	return libacp.SessionUpdate{
+		SessionUpdate: libacp.SessionUpdateToolCall,
+		ToolCallID:    toolCallID,
+		Title:         title,
+		Kind:          rec.Kind,
+		Status:        status,
+		RawInput:      rec.RawInput,
+		RawOutput:     rec.RawOutput,
+		ToolContent:   rec.ToolContent,
+		Locations:     rec.Locations,
+	}, true
 }
 
 func toolCallUpdateFromResult(m taskengine.Message) libacp.SessionUpdate {

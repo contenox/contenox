@@ -169,7 +169,9 @@ func TestUnit_ParseEnvList(t *testing.T) {
 
 // End-to-end proof that the policy layer plugs into the existing mechanism: a
 // resolved EnvPolicy fed to scrubEnv yields a confined environment with only the
-// safe variables and the forced scoped HOME — no secret, no real home.
+// safe variables, the forced scoped HOME, and the emulated canonical PATH — no
+// secret, no real home, and NOT the operator's /usr/bin PATH (that value is
+// allow-copied by the policy but neutralized by scrubEnv's PATH emulation).
 func TestUnit_EnvPolicy_ResolveFeedsScrubEnv(t *testing.T) {
 	parent := []string{
 		"PATH=/usr/bin",
@@ -185,7 +187,7 @@ func TestUnit_EnvPolicy_ResolveFeedsScrubEnv(t *testing.T) {
 	require.Equal(t, []string{
 		"HOME=/scoped/home",
 		"LANG=C",
-		"PATH=/usr/bin",
+		"PATH=" + canonicalPATH(),
 	}, got)
 }
 

@@ -49,11 +49,81 @@ func TestUnit_Command_AssemblesMinimalValidSpec(t *testing.T) {
 	require.NotNil(t, cmd)
 	require.Equal(t, ws, cmd.Dir)
 	require.Equal(t, []string{"true", "arg1"}, cmd.Args)
+	// PATH is the operator's PATH filtered to the exec surface: /usr/bin is within
+	// SystemExecDirs, so it survives; a secret var never rides along.
 	require.Contains(t, cmd.Env, "PATH=/usr/bin")
 	require.Contains(t, cmd.Env, "HOME="+home)
 	for _, kv := range cmd.Env {
 		require.NotContains(t, kv, "AWS_SECRET_ACCESS_KEY")
 	}
+}
+
+// The regression scenario, fixed: the confined PATH is the operator's PATH filtered
+// to the exec surface. A toolchain dir UNDER a carve-out (node under a carved
+// ~/.nvm-style tree) survives so the agent can find node; an UNcarved profile dir is
+// dropped. This is what makes a `#!/usr/bin/env node` agent resolve its interpreter
+// under confinement. Gated to Linux, where Command assembles a runnable command.
+func TestUnit_Command_ConfinedPathKeepsCarvedToolchainDropsUncarved(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Command assembles a runnable command only on Linux")
+	}
+	// Operator PATH: a carved toolchain bin, a system dir, and an UNcarved profile dir.
+	t.Setenv("PATH", "/opt/toolchain/node/bin:/usr/bin:/home/dev/.cargo/bin")
+
+	cmd, err := libsandbox.Command(context.Background(), libsandbox.Spec{
+		WorkspaceRoot: t.TempDir(),
+		Home:          t.TempDir(),
+		FS:            []libsandbox.FSCarveout{{Path: "/opt/toolchain", Mode: "ro", Needs: "node runtime the agent execs"}},
+	}, "true")
+
+	require.NoError(t, err)
+	// The carved toolchain bin and the system dir survive; the uncarved cargo dir does not.
+	require.Contains(t, cmd.Env, "PATH=/opt/toolchain/node/bin:/usr/bin")
+}
+
+// An EnvSet PATH override that names a directory with no matching FS carve-out is
+// hard-rejected before the wall is built — fail-closed, with the offending entry
+// surfaced as ErrInvalidSpec rather than a run-time Landlock EACCES. This runs on
+// every platform because the rejection precedes applyIsolation.
+func TestUnit_Command_RejectsPathOutsideExecSurface(t *testing.T) {
+	_, err := libsandbox.Command(context.Background(), libsandbox.Spec{
+		WorkspaceRoot: "/ws",
+		Home:          "/h",
+		EnvSet:        map[string]string{"PATH": "/opt/rogue/bin"},
+	}, "true")
+
+	require.ErrorIs(t, err, libsandbox.ErrInvalidSpec)
+}
+
+// A relative EnvSet PATH entry — the implicit-current-directory exec hazard — is
+// rejected for the same reason, on every platform.
+func TestUnit_Command_RejectsRelativePathEntry(t *testing.T) {
+	_, err := libsandbox.Command(context.Background(), libsandbox.Spec{
+		WorkspaceRoot: "/ws",
+		Home:          "/h",
+		EnvSet:        map[string]string{"PATH": "/usr/bin:relative/bin"},
+	}, "true")
+
+	require.ErrorIs(t, err, libsandbox.ErrInvalidSpec)
+}
+
+// An EnvSet PATH override IS admitted when the directory is covered by a declared
+// FS carve-out: the coupling the design intends — a toolchain dir on PATH only if
+// it is also granted through the wall. Gated to Linux, where a valid spec
+// assembles a real command (off Linux Command fails closed regardless).
+func TestUnit_Command_AllowsPathWithinCarveout(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("a successful Command assembly is only reachable on Linux")
+	}
+	cmd, err := libsandbox.Command(context.Background(), libsandbox.Spec{
+		WorkspaceRoot: t.TempDir(),
+		Home:          t.TempDir(),
+		EnvSet:        map[string]string{"PATH": "/opt/tools/bin"},
+		FS:            []libsandbox.FSCarveout{{Path: "/opt/tools", Mode: "ro", Needs: "toolchain on PATH"}},
+	}, "true")
+
+	require.NoError(t, err)
+	require.Contains(t, cmd.Env, "PATH=/opt/tools/bin")
 }
 
 func TestUnit_Command_RejectsEmptyWorkspace(t *testing.T) {

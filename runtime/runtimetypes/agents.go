@@ -14,15 +14,19 @@ import (
 	"github.com/google/uuid"
 )
 
-// Agent kinds, both implemented.
+// Agent kinds.
 //
-//   - AgentKindExternalACP: a declared agent that the runtime spawns/drives as
-//     an external ACP peer (runtime/agenthost) — some other vendor's program.
 //   - AgentKindChain: one of the runtime's OWN task chains, addressable as an
-//     agent. It is spawned the same way an external one is, because the
-//     runtime's own ACP server (`contenox acp`) IS an ACP peer: the kernel
-//     re-executes this binary bound to the named chain file. See ChainConfig
-//     and runtime/agentinstance's chain branch.
+//     agent. The kernel re-executes this binary (`contenox acp`) bound to the
+//     named chain file, so a chain runs as an ACP peer over stdio. This is the
+//     only kind users declare; chain agents are seeded by discovery from chain
+//     files on disk (see runtime/chainagents). See ChainConfig and
+//     runtime/agentinstance's chain branch.
+//   - AgentKindExternalACP: INTERNAL only. Not user-registerable — there is no
+//     CLI, API, or UI path to create one, and discovery never emits one. It
+//     survives solely as the spawn-config shape the instance kernel and the
+//     agenthost one-shot driver build to run an ACP peer over stdio (see
+//     ExternalACPConfig), reused by the chain path and the host test harness.
 const (
 	AgentKindExternalACP = "external_acp"
 	AgentKindChain       = "chain"

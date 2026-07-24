@@ -140,6 +140,12 @@ func (a *ExternalACPAgent) connectStdio(ctx context.Context, harness libacp.Clie
 	return &Handle{Conn: conn, closeFn: closeFn}, nil
 }
 
+// sandboxDocsURL points an operator at the guide that explains what the agent
+// sandbox needs and why an external agent is refused when the wall cannot be built
+// on this host. Surfaced in the preflight error so a "your host can't confine"
+// failure is actionable, not cryptic.
+const sandboxDocsURL = "https://contenox.com/docs/guide/agent-sandbox/"
+
 // sandboxCarveoutFile is the control-plane necessity-list an operator may place
 // at ~/.contenox/sandbox-carveouts.json to widen the wall for a specific
 // deployment: extra filesystem holes and the registry hosts the agent's
@@ -174,6 +180,15 @@ const sandboxCarveoutFile = ".contenox/sandbox-carveouts.json"
 //     added in the carve-out file. Net comes only from that file — empty means
 //     offline. AllowPrivateEgress and SyscallTap are off.
 func buildAgentCmd(ctx context.Context, a *ExternalACPAgent) (*exec.Cmd, error) {
+	// Fail closed, early, and legibly: external agents run ONLY inside the wall, so
+	// if this host cannot build even the floor (Landlock), refuse before spawning
+	// anything and point the operator at the guide — rather than letting the wall's
+	// fail-closed contract surface later as an opaque child-side error. The default
+	// wall needs only Landlock (no userns/privilege), so on a capable Linux host
+	// this passes; where it does not, the agent is not run unconfined.
+	if err := libsandbox.Preflight(); err != nil {
+		return nil, fmt.Errorf("external agents run only inside the sandbox, which cannot be built on this host: %w — see %s", err, sandboxDocsURL)
+	}
 	if a.Config.Cwd == "" {
 		return nil, errors.New("cwd is required to confine the agent (the wall needs a workspace; it will not default to the whole filesystem)")
 	}

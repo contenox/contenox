@@ -1,6 +1,6 @@
 # Confining agents: the sandbox wall
 
-When contenox runs an external ACP agent (or a native chain), it spawns it as a
+When contenox runs an agent (one of its task chains), it spawns it as a
 subprocess and confines it behind "the wall": the agent can act on the world only
 through the tools it is given and the workspace it is handed. The wall governs the
 surface no tool gate can see — the code the agent runs *inside its own process*:

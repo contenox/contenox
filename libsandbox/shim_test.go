@@ -349,6 +349,7 @@ func TestIntegration_NetWall(t *testing.T) {
 		return libsandbox.Spec{
 			WorkspaceRoot: ws,
 			Home:          home,
+			NetworkWall:   true, // this is the network-FLOOR test; opt into the wall it asserts
 			EnvSet:        map[string]string{probeEnv: action},
 		}
 	}

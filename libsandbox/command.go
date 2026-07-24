@@ -13,8 +13,10 @@ import (
 // Command assembles the confined command for the agent named by name (with
 // args), pinned to the workspace and wrapped in the wall described by spec. It
 // validates the spec, pins the working directory to spec.WorkspaceRoot, sets a
-// scrubbed minimal environment (see scrubEnv) with HOME forced to spec.Home, and
-// applies the platform's isolation before returning the ready-to-run *exec.Cmd.
+// scrubbed minimal environment (see scrubEnv) with HOME forced to spec.Home and
+// PATH emulated to the confined exec dirs, hard-rejects a PATH that reaches
+// outside the wall (see validatePATH), and applies the platform's isolation before
+// returning the ready-to-run *exec.Cmd.
 //
 // It does not start the process, and — deliberately — does not bind its lifetime
 // to ctx: the returned command is handed to whatever runs and supervises it
@@ -54,6 +56,29 @@ func Command(ctx context.Context, spec Spec, name string, args ...string) (*exec
 	cmd := exec.Command(name, args...)
 	cmd.Dir = spec.WorkspaceRoot
 	cmd.Env = scrubEnv(os.Environ(), spec.EnvAllow, spec.EnvSet, spec.Home)
+
+	// Refine scrubEnv's canonical PATH floor into the wall-filtered PATH: the
+	// operator's real PATH kept only where it lies within the exec surface (see
+	// confinedPATH). This is what lets a confined agent find its actual toolchain — a
+	// node under a carved ~/.nvm, ripgrep under a carved dir — instead of a stripped
+	// canonical set that made claude-code-acp (a `#!/usr/bin/env node` script) die at
+	// startup. An explicit EnvSet["PATH"] is left untouched: it is the caller's
+	// deliberate override, validated below like any other.
+	if _, set := spec.EnvSet["PATH"]; !set {
+		cmd.Env = OverlayEnv(cmd.Env, map[string]string{
+			"PATH": confinedPATH(os.Getenv("PATH"), spec.Home, spec.FS),
+		})
+	}
+
+	// Hard-reject a confined PATH that reaches outside the wall before building it.
+	// confinedPATH keeps PATH ⊆ exec surface by construction, so this is a tautology
+	// on the default and a real check only for an explicit EnvSet["PATH"] override
+	// that names a dir with no matching carve-out — failing here, with the offending
+	// entry named, beats an opaque Landlock EACCES at run time.
+	if err := validatePATH(lookupEnv(cmd.Env, "PATH"), spec.Home, spec.FS); err != nil {
+		reportErr(err)
+		return nil, err
+	}
 
 	if err := applyIsolation(ctx, cmd, spec, tracker); err != nil {
 		err = fmt.Errorf("libsandbox: apply isolation for %q: %w", name, err)

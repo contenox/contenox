@@ -262,6 +262,9 @@ func TestIntegration_NetEgress(t *testing.T) {
 		return libsandbox.Spec{
 			WorkspaceRoot: ws,
 			Home:          home,
+			// Carve-outs only mean anything with the network wall on — the wall is
+			// what these tests poke a metered hole in; without it the spec is refused.
+			NetworkWall: true,
 			// The sole carve-out. "localhost" is what the parent resolves the
 			// forwarded connection to — the loopback backend — while the agent only
 			// ever sees the synthetic address the DNS server mints for it.
@@ -333,6 +336,8 @@ func TestIntegration_NetEgress_SSRFGuardRefusesLoopback(t *testing.T) {
 	spec := libsandbox.Spec{
 		WorkspaceRoot: ws,
 		Home:          home,
+		// A loopback carve-out requires the wall (it only means something with it on).
+		NetworkWall: true,
 		// A loopback carve-out, but AllowPrivateEgress is deliberately OFF (default).
 		Net: []libsandbox.NetCarveout{{Host: egressAllowedHost, Needs: "test egress backend"}},
 		// AllowPrivateEgress: false — the guard must refuse the inward connect.
@@ -378,6 +383,7 @@ func TestIntegration_EgressAndSyscallTap_Compose(t *testing.T) {
 	spec := libsandbox.Spec{
 		WorkspaceRoot:      ws,
 		Home:               home,
+		NetworkWall:        true, // carve-outs require the wall
 		Net:                []libsandbox.NetCarveout{{Host: egressAllowedHost, Needs: "test egress backend"}},
 		AllowPrivateEgress: true, // the backend is a loopback address
 		SyscallTap:         true,

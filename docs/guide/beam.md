@@ -166,11 +166,11 @@ play the list stays flat. These are the same sessions the CLI sees — see
 [step 3](#3-shared-with-the-cli).
 
 Next to **New session** is a chevron — **New chat with an agent**. It only
-appears once you have [registered an external ACP agent](/docs/integrations/agents/external-acp-agents/),
-and it opens the [agent picker](#chat-with-a-registered-agent) below. A session
-started against an external agent carries that agent's name (`Agent: {name}`) on
-its sidebar row, so you can tell at a glance which sessions ran on the native
-runtime and which drove a foreign agent.
+appears once at least one [declared agent](#chat-with-a-declared-agent) is
+enabled, and it opens the agent picker below. A session started against a named
+agent carries that agent's name (`Agent: {name}`) on its sidebar row, so you can
+tell at a glance which sessions ran on the default runtime and which ran a named
+agent.
 
 ### Per-session controls
 
@@ -190,34 +190,27 @@ local model with a strict policy and another on a hosted model — side by side.
 
 ![A new Beam session bound to a project workspace, with the per-session Model, HITL Policy, Think, Token Limit, and Workspace controls above an empty chat, and the sidebar's "New chat with an agent" chevron beside seeded sessions](/beam-new-chat.png)
 
-### Chat with a registered agent
+### Chat with a declared agent
 
-Beam is not only a face for the native runtime chain — it can also drive any
-[external ACP agent you have registered](/docs/integrations/agents/external-acp-agents/)
-(Claude Code, Goose, a home-grown one) from the same window, gated by the same
-approvals.
+Beam is not only a face for the default runtime chain — it can also drive any of
+the runtime's [declared agents](/docs/reference/contenox-cli/#contenox-agent)
+(the task chains discovered from your chain files) from the same window, gated by
+the same approvals.
 
-1. Register an agent from the CLI once — `contenox agent add <name> -- <command>`
-   (or seed one from the catalog with `contenox agent add <registry-id>`), then
-   `contenox agent check <name>` to confirm it answers. See the
-   [CLI reference](/docs/reference/contenox-cli/#contenox-agent).
-2. In the sidebar, click the **New chat with an agent** chevron. The picker lists
-   **Contenox (default)** — the native chain — at the top, then every enabled
-   registered agent.
-3. Pick an agent and the empty chat stages it: the greeting reads *"Say hello —
+1. In the sidebar, click the **New chat with an agent** chevron. The picker lists
+   **Contenox (default)** — the default chain — at the top, then every enabled
+   declared agent.
+2. Pick an agent and the empty chat stages it: the greeting reads *"Say hello —
    you are talking to {name}, live"*, and the session is bound to that agent the
    moment you send the first message. The binding is fixed for the life of the
    session — an agent is chosen at creation, never switched mid-conversation, so
    there is no in-chat agent switcher.
 
-![The agent picker open in the sidebar: Contenox (default) at the top, registered agents below, beside seeded sessions with per-session agent attribution](/agent-picker.png)
+![The agent picker open in the sidebar: Contenox (default) at the top, declared agents below, beside seeded sessions with per-session agent attribution](/agent-picker.png)
 
-An external-agent session's toolbar surfaces the config options that *agent*
-advertises for the session — for example a Claude Code session exposes its own
-**Mode** and **Model** pickers — alongside contenox's own **HITL Policy**
-control, so the contenox approval gate still applies to a foreign agent's gated
-actions. (The native runtime's per-session Model / Think / Token-Limit controls
-do not apply to an external agent and are not shown.)
+An agent session's toolbar surfaces the config options that agent advertises for
+the session, alongside contenox's own **HITL Policy** control, so the contenox
+approval gate still applies to its gated actions.
 
 The agent's turns stream into the transcript like any other, its tool calls
 render as cards, and any [permission request](#the-approval-gate) it raises

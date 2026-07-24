@@ -8,9 +8,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Only names in allow survive, and HOME is forced to the scoped dir. This is the
-// whole credential-leak fix in one assertion: the parent's secrets are gone, its
-// real HOME is replaced, and nothing rides along that was not named.
+// Only names in allow survive, HOME is forced to the scoped dir, and PATH is
+// forced to the emulated canonical value even though the parent's PATH was
+// allow-copied — the operator's profile-built PATH never rides through. This is
+// the whole credential-leak fix plus the PATH-emulation invariant in one assertion.
 func TestUnit_scrubEnv_OnlyAllowedNamesPass(t *testing.T) {
 	parent := []string{
 		"PATH=/usr/bin",
@@ -24,7 +25,7 @@ func TestUnit_scrubEnv_OnlyAllowedNamesPass(t *testing.T) {
 
 	require.Equal(t, []string{
 		"HOME=/scoped/home",
-		"PATH=/usr/bin",
+		"PATH=" + canonicalPATH(),
 		"TERM=xterm",
 	}, got)
 }
@@ -55,7 +56,8 @@ func TestUnit_scrubEnv_HomeForcedOverInheritedAndSet(t *testing.T) {
 }
 
 // set overrides an allow-copied value and can add variables not present in the
-// parent at all.
+// parent at all. PATH is not in set here, so it is forced to the emulated
+// canonical value rather than the allow-copied parent PATH.
 func TestUnit_scrubEnv_SetOverridesAllowCopiedAndAddsExtras(t *testing.T) {
 	parent := []string{"FOO=parent", "PATH=/usr/bin"}
 
@@ -64,17 +66,32 @@ func TestUnit_scrubEnv_SetOverridesAllowCopiedAndAddsExtras(t *testing.T) {
 	require.Contains(t, got, "FOO=explicit")
 	require.NotContains(t, got, "FOO=parent")
 	require.Contains(t, got, "EXTRA=x")
-	require.Contains(t, got, "PATH=/usr/bin")
+	require.Contains(t, got, "PATH="+canonicalPATH())
+	require.NotContains(t, got, "PATH=/usr/bin")
+}
+
+// An explicit EnvSet PATH is the one sanctioned override: unlike an allow-copied
+// PATH (which scrubEnv neutralizes), a value the caller sets in EnvSet survives,
+// because it is an opt-in extension Command validates against the carve-outs.
+func TestUnit_scrubEnv_EnvSetPathOverridesCanonical(t *testing.T) {
+	parent := []string{"PATH=/usr/bin"}
+
+	got := scrubEnv(parent, []string{"PATH"}, map[string]string{"PATH": "/opt/tools/bin"}, "/h")
+
+	require.Contains(t, got, "PATH=/opt/tools/bin")
+	require.NotContains(t, got, "PATH="+canonicalPATH())
 }
 
 // With nothing allowed and nothing set, the confined process still gets exactly
-// one variable: the forced scoped HOME.
-func TestUnit_scrubEnv_EmptyAllowYieldsOnlyHome(t *testing.T) {
+// two variables: the forced scoped HOME and the emulated canonical PATH. The
+// parent's PATH and secret are both absent — PATH because it is emulated, not
+// inherited.
+func TestUnit_scrubEnv_EmptyAllowYieldsHomeAndCanonicalPath(t *testing.T) {
 	parent := []string{"PATH=/usr/bin", "SECRET=x"}
 
 	got := scrubEnv(parent, nil, nil, "/scoped")
 
-	require.Equal(t, []string{"HOME=/scoped"}, got)
+	require.Equal(t, []string{"HOME=/scoped", "PATH=" + canonicalPATH()}, got)
 }
 
 // The output is sorted by name and stable across identical calls: a pure,
@@ -93,11 +110,12 @@ func TestUnit_scrubEnv_DeterministicSorted(t *testing.T) {
 	require.Equal(t, got, scrubEnv(parent, allow, nil, "/h"))
 }
 
-// A malformed parent entry (no "=") has no name to match and is dropped.
+// A malformed parent entry (no "=") has no name to match and is dropped. PATH is
+// the emulated canonical value, not the allow-copied parent one.
 func TestUnit_scrubEnv_SkipsMalformedParentEntry(t *testing.T) {
 	parent := []string{"NOTAKEYVALUE", "PATH=/usr/bin"}
 
 	got := scrubEnv(parent, []string{"PATH"}, nil, "/h")
 
-	require.Equal(t, []string{"HOME=/h", "PATH=/usr/bin"}, got)
+	require.Equal(t, []string{"HOME=/h", "PATH=" + canonicalPATH()}, got)
 }

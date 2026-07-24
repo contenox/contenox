@@ -51,6 +51,14 @@ type EnvPolicy struct {
 // inherited would defeat that. Toolchain and deployment specifics (GOCACHE,
 // CARGO_HOME, HTTP(S)_PROXY, …) are NOT defaulted: they are a per-deployment
 // passthrough an operator adds knowingly, because the default answer is no hole.
+//
+// PATH is listed but plays two roles by consumer. On the native-shell path
+// (EnvPolicy.Apply — the local_shell tool, the "!" PTY) it is inherited, because
+// those shells run in the operator's real environment. On the confined path
+// (scrubEnv) it is neutralized: scrubEnv forces the emulated canonicalPATH over
+// any inherited value, so a foreign agent never inherits the operator's
+// profile-built PATH. Keeping PATH here therefore serves the native path without
+// widening the confined one.
 func DefaultEnvAllow() []string {
 	return []string{
 		"PATH",      // find binaries — a shell without it can run almost nothing

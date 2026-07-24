@@ -478,14 +478,16 @@ type externalBridge struct {
 	// connCtx watcher (bare WS drop) and driver.Close (explicit close/teardown).
 	detachOnce sync.Once
 
-	// mu guards capture, bound, cachedCommands, and downstreamID. capture is the per-turn
-	// accumulator of the downstream agent's agent_message_chunk text:
-	// externalDriver.Prompt sets a fresh builder before the downstream
-	// session/prompt and reads it back after, so the reply can be persisted for
-	// session/load replay. SessionUpdate runs on the downstream read-loop
-	// goroutine; externalDriver.Prompt runs on the upstream request goroutine.
+	// mu guards capture, bound, cachedCommands, and downstreamID. capture is the
+	// per-turn accumulator of the downstream agent's transcript — its
+	// agent_message_chunk text, agent_thought_chunk reasoning, AND tool calls:
+	// externalDriver.Prompt sets a fresh capture before the downstream
+	// session/prompt and reads it back after, so the whole turn (not just the
+	// final text) can be persisted for session/load replay. SessionUpdate runs on
+	// the downstream read-loop goroutine; externalDriver.Prompt runs on the
+	// upstream request goroutine.
 	mu      sync.Mutex
-	capture *strings.Builder
+	capture *externalTurnCapture
 
 	// downstreamID is the downstream agent's own session id (from the downstream
 	// session/new). It is held HERE — on the Manager-owned, Transport-independent
@@ -823,16 +825,34 @@ func (b *externalBridge) SessionUpdate(ctx context.Context, n libacp.SessionNoti
 		return nil
 	}
 	b.relayUpstream(ctx, n.Update)
-	if n.Update.SessionUpdate == libacp.SessionUpdateAgentMessageChunk {
-		if c := n.Update.Content; c != nil && c.Type == string(libacp.ContentKindText) {
-			b.mu.Lock()
-			if b.capture != nil {
-				b.capture.WriteString(c.Text)
-			}
-			b.mu.Unlock()
-		}
-	}
+	b.captureForHistory(n.Update)
 	return nil
+}
+
+// captureForHistory records the transcript-bearing part of a downstream
+// session/update into the active per-turn capture (a no-op outside a turn). It
+// captures assistant text, assistant reasoning, and tool calls — everything the
+// upstream client rendered live — so a later session/load replay reconstructs
+// the same transcript instead of collapsing the turn to its final text. Tool
+// calls are merged by id across their tool_call/tool_call_update frames.
+func (b *externalBridge) captureForHistory(u libacp.SessionUpdate) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.capture == nil {
+		return
+	}
+	switch u.SessionUpdate {
+	case libacp.SessionUpdateAgentMessageChunk:
+		if c := u.Content; c != nil && c.Type == string(libacp.ContentKindText) {
+			b.capture.addText(c.Text)
+		}
+	case libacp.SessionUpdateAgentThoughtChunk:
+		if c := u.Content; c != nil && c.Type == string(libacp.ContentKindText) {
+			b.capture.addThinking(c.Text)
+		}
+	case libacp.SessionUpdateToolCall, libacp.SessionUpdateToolCallUpdate:
+		b.capture.addToolUpdate(u)
+	}
 }
 
 // markBound records that the upstream client can now resolve this session (its
@@ -1058,19 +1078,19 @@ func (b *externalBridge) RequestPermission(ctx context.Context, req libacp.Reque
 
 func (b *externalBridge) beginCapture() {
 	b.mu.Lock()
-	b.capture = &strings.Builder{}
+	b.capture = &externalTurnCapture{}
 	b.mu.Unlock()
 }
 
-func (b *externalBridge) finishCapture() string {
+func (b *externalBridge) finishCapture() []externalCaptureSegment {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.capture == nil {
-		return ""
+		return nil
 	}
-	s := b.capture.String()
+	segs := b.capture.segments
 	b.capture = nil
-	return s
+	return segs
 }
 
 // relayExternalUpdate forwards a downstream agent's session/update to the
@@ -1852,10 +1872,10 @@ func (d *externalDriver) Prompt(ctx context.Context, req libacp.PromptRequest, s
 
 	tgt.bridge.beginCapture()
 	stopReason, promptErr := d.promptDownstream(ctx, tgt, req.Prompt)
-	assistantText := tgt.bridge.finishCapture()
+	captured := tgt.bridge.finishCapture()
 
 	userText, _ := libacp.FlattenContent(req.Prompt)
-	t.persistExternalTurn(ctx, sess.InternalSessionID, userText, assistantText)
+	t.persistExternalTurn(ctx, sess.InternalSessionID, userText, captured)
 
 	if promptErr != nil {
 		// A genuine user cancellation resolves as stopReason "cancelled" with no
@@ -1888,24 +1908,176 @@ func (d *externalDriver) Prompt(ctx context.Context, req libacp.PromptRequest, s
 	return libacp.PromptResponse{StopReason: stopReason}, nil
 }
 
-// persistExternalTurn records the user prompt and the downstream agent's reply
-// into the same message store the native path uses (identity 'acp-client',
-// keyed by the internal contenox session id), so session/list titles and
-// session/load replay work for external sessions too. Fresh message IDs make
-// PersistDiff's ID-based dedupe append them. Uses a cancellation-immune context
-// so a cancelled turn still records what was said.
-func (t *Transport) persistExternalTurn(ctx context.Context, internalSessionID, userText, assistantText string) {
+// externalTurnCapture records a downstream agent's turn as an ORDERED stream of
+// display segments so the whole turn — prose, reasoning, and tool cards — can be
+// persisted and replayed faithfully on a later session/load, not collapsed to
+// its final assistant text. It is display-only state: an external session's
+// persisted history is never fed to a model (the downstream agent keeps its own
+// context), so it mirrors exactly what the transcript showed rather than a
+// model-valid message list. Guarded by externalBridge.mu.
+type externalTurnCapture struct {
+	segments  []externalCaptureSegment
+	toolIndex map[string]int // toolCallId -> index in segments, for cross-frame merge
+}
+
+// externalCaptureSegment is one ordered piece of a captured turn: a run of
+// assistant text, a run of assistant reasoning, or one tool call.
+type externalCaptureSegment struct {
+	kind string              // "text", "thinking", or "tool"
+	text string              // for "text"/"thinking"
+	tool *externalToolRecord // for "tool"
+}
+
+// externalToolRecord is the merged, display-complete state of one downstream
+// tool call, accumulated across its tool_call/tool_call_update frames. It is the
+// JSON persisted as a "tool"-role message's Content and re-emitted verbatim as a
+// tool_call update on replay (see externalToolReplayUpdate), preserving the
+// downstream's own title/kind/diffs that the native ToolCall model can't carry.
+type externalToolRecord struct {
+	ToolCallID  string                    `json:"toolCallId"`
+	Title       string                    `json:"title,omitempty"`
+	Kind        libacp.ToolKind           `json:"kind,omitempty"`
+	Status      libacp.ToolCallStatus     `json:"status,omitempty"`
+	RawInput    json.RawMessage           `json:"rawInput,omitempty"`
+	RawOutput   json.RawMessage           `json:"rawOutput,omitempty"`
+	ToolContent []libacp.ToolCallContent  `json:"toolContent,omitempty"`
+	Locations   []libacp.ToolCallLocation `json:"locations,omitempty"`
+}
+
+func (c *externalTurnCapture) addText(s string) {
+	if s == "" {
+		return
+	}
+	if n := len(c.segments); n > 0 && c.segments[n-1].kind == "text" {
+		c.segments[n-1].text += s
+		return
+	}
+	c.segments = append(c.segments, externalCaptureSegment{kind: "text", text: s})
+}
+
+func (c *externalTurnCapture) addThinking(s string) {
+	if s == "" {
+		return
+	}
+	if n := len(c.segments); n > 0 && c.segments[n-1].kind == "thinking" {
+		c.segments[n-1].text += s
+		return
+	}
+	c.segments = append(c.segments, externalCaptureSegment{kind: "thinking", text: s})
+}
+
+func (c *externalTurnCapture) addToolUpdate(u libacp.SessionUpdate) {
+	if u.ToolCallID == "" {
+		return
+	}
+	if c.toolIndex == nil {
+		c.toolIndex = make(map[string]int)
+	}
+	idx, ok := c.toolIndex[u.ToolCallID]
+	if !ok {
+		c.segments = append(c.segments, externalCaptureSegment{kind: "tool", tool: &externalToolRecord{ToolCallID: u.ToolCallID}})
+		idx = len(c.segments) - 1
+		c.toolIndex[u.ToolCallID] = idx
+	}
+	rec := c.segments[idx].tool
+	// Later frames win per field (last non-empty), mirroring the client reducer's
+	// merge so the persisted record matches the final rendered card.
+	if u.Title != "" {
+		rec.Title = u.Title
+	}
+	if u.Kind != "" {
+		rec.Kind = u.Kind
+	}
+	if u.Status != "" {
+		rec.Status = u.Status
+	}
+	if len(u.RawInput) > 0 {
+		rec.RawInput = u.RawInput
+	}
+	if len(u.RawOutput) > 0 {
+		rec.RawOutput = u.RawOutput
+	}
+	if len(u.ToolContent) > 0 {
+		rec.ToolContent = u.ToolContent
+	}
+	if len(u.Locations) > 0 {
+		rec.Locations = u.Locations
+	}
+}
+
+// externalTurnMessages converts a captured turn into the ordered []Message the
+// message store persists. Consecutive text/reasoning coalesces into one
+// assistant message, flushed at every tool boundary so the interleaving of prose
+// and tool cards survives replay. Monotonic timestamps (base + i ms) preserve
+// order through the store's added_at sort.
+func externalTurnMessages(userText string, segments []externalCaptureSegment, base time.Time) []taskengine.Message {
+	var msgs []taskengine.Message
+	seq := 0
+	stamp := func() time.Time {
+		ts := base.Add(time.Duration(seq) * time.Millisecond)
+		seq++
+		return ts
+	}
+	if strings.TrimSpace(userText) != "" {
+		msgs = append(msgs, taskengine.Message{ID: uuid.NewString(), Role: "user", Content: userText, Timestamp: stamp()})
+	}
+
+	var pendingText, pendingThinking strings.Builder
+	flushAssistant := func() {
+		if pendingText.Len() == 0 && pendingThinking.Len() == 0 {
+			return
+		}
+		msgs = append(msgs, taskengine.Message{
+			ID:        uuid.NewString(),
+			Role:      "assistant",
+			Content:   pendingText.String(),
+			Thinking:  pendingThinking.String(),
+			Timestamp: stamp(),
+		})
+		pendingText.Reset()
+		pendingThinking.Reset()
+	}
+
+	for _, seg := range segments {
+		switch seg.kind {
+		case "text":
+			pendingText.WriteString(seg.text)
+		case "thinking":
+			pendingThinking.WriteString(seg.text)
+		case "tool":
+			if seg.tool == nil {
+				continue
+			}
+			flushAssistant()
+			payload, err := json.Marshal(seg.tool)
+			if err != nil {
+				continue
+			}
+			msgs = append(msgs, taskengine.Message{
+				ID:         uuid.NewString(),
+				Role:       "tool",
+				ToolCallID: seg.tool.ToolCallID,
+				Content:    string(payload),
+				Timestamp:  stamp(),
+			})
+		}
+	}
+	flushAssistant()
+	return msgs
+}
+
+// persistExternalTurn records a downstream agent's turn — the user prompt plus
+// the captured assistant transcript (text, reasoning, and tool calls) — into the
+// same message store the native path uses (identity 'acp-client', keyed by the
+// internal contenox session id), so session/list titles and session/load replay
+// work for external sessions too. Fresh message IDs make PersistDiff's ID-based
+// dedupe append them. Uses a cancellation-immune context so a cancelled turn
+// still records what was said.
+func (t *Transport) persistExternalTurn(ctx context.Context, internalSessionID, userText string, segments []externalCaptureSegment) {
 	if t.deps.DB == nil || internalSessionID == "" {
 		return
 	}
-	now := time.Now().UTC()
-	var msgs []taskengine.Message
-	if strings.TrimSpace(userText) != "" {
-		msgs = append(msgs, taskengine.Message{ID: uuid.NewString(), Role: "user", Content: userText, Timestamp: now})
-	}
-	if strings.TrimSpace(assistantText) != "" {
-		msgs = append(msgs, taskengine.Message{ID: uuid.NewString(), Role: "assistant", Content: assistantText, Timestamp: now.Add(time.Millisecond)})
-	}
+	msgs := externalTurnMessages(userText, segments, time.Now().UTC())
 	if len(msgs) == 0 {
 		return
 	}
