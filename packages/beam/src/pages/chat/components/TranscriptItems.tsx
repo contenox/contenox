@@ -15,7 +15,7 @@ import {
   ToolCallCard,
   type ToolCallCardProps,
 } from '@contenox/ui';
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -166,7 +166,7 @@ function TranscriptMessage({
   );
 }
 
-function ToolCallDetail({ toolCall }: { toolCall: AcpToolCallState }) {
+function ToolCallDetail({ toolCall, onOpenFile }: { toolCall: AcpToolCallState; onOpenFile?: (path: string) => void }) {
   const { t } = useTranslation();
   const diffs = (toolCall.content ?? []).filter(c => c.type === 'diff');
   const other = (toolCall.content ?? []).filter(c => c.type !== 'diff');
@@ -203,8 +203,20 @@ function ToolCallDetail({ toolCall }: { toolCall: AcpToolCallState }) {
         <ul className="text-text-muted dark:text-dark-text-muted space-y-0.5">
           {toolCall.locations.map((loc, i) => (
             <li key={locationKey(loc.path, loc.line, i)} className="break-all">
-              {loc.path}
-              {loc.line ? `:${loc.line}` : ''}
+              {onOpenFile && loc.path ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenFile(loc.path!)}
+                  className="text-primary hover:text-primary-600 dark:text-dark-primary dark:hover:text-dark-primary-400 hover:underline cursor-pointer text-left">
+                  {loc.path}
+                  {loc.line ? `:${loc.line}` : ''}
+                </button>
+              ) : (
+                <>
+                  {loc.path}
+                  {loc.line ? `:${loc.line}` : ''}
+                </>
+              )}
             </li>
           ))}
         </ul>
@@ -224,7 +236,7 @@ function ToolCallDetail({ toolCall }: { toolCall: AcpToolCallState }) {
   );
 }
 
-function TranscriptToolCall({ toolCall }: { toolCall: AcpToolCallState }) {
+function TranscriptToolCall({ toolCall, onOpenFile }: { toolCall: AcpToolCallState; onOpenFile?: (path: string) => void }) {
   const { t } = useTranslation();
   const diffs = (toolCall.content ?? []).filter(c => c.type === 'diff');
   const other = (toolCall.content ?? []).filter(c => c.type !== 'diff');
@@ -234,6 +246,20 @@ function TranscriptToolCall({ toolCall }: { toolCall: AcpToolCallState }) {
     toolCall.rawInput != null ||
     toolCall.rawOutput != null ||
     (toolCall.locations?.length ?? 0) > 0;
+
+  // Force re-render every second for running tools to update elapsed time
+  const isRunning = toolCall.status === 'in_progress' || toolCall.status === 'pending';
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!isRunning) return;
+    const timer = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(timer);
+  }, [isRunning]);
+
+  // Calculate elapsed time for running/pending tools
+  const elapsedSeconds =
+    isRunning && toolCall.startTime ? Math.floor((Date.now() - toolCall.startTime) / 1000) : null;
+  const duration = elapsedSeconds !== null ? `${elapsedSeconds}s` : undefined;
 
   return (
     <ToolCallCard
@@ -247,7 +273,8 @@ function TranscriptToolCall({ toolCall }: { toolCall: AcpToolCallState }) {
         error: t('acp_chat.tool_status_error'),
       }}
       toggleDetailLabel={t('acp_chat.tool_toggle_detail')}
-      detail={hasDetail ? <ToolCallDetail toolCall={toolCall} /> : undefined}
+      detail={hasDetail ? <ToolCallDetail toolCall={toolCall} onOpenFile={onOpenFile} /> : undefined}
+      duration={duration}
     />
   );
 }
@@ -306,6 +333,8 @@ export interface TranscriptItemsProps {
   agentName: string | null;
   /** Answers this session's pending permission (see `PermissionCard`). The card is only rendered when `session.pendingPermission` is set. */
   onRespondPermission: (optionId: string) => void;
+  /** Opens a file path in the canvas side panel. */
+  onOpenFile?: (path: string) => void;
 }
 
 interface RenderItemContext {
@@ -315,11 +344,12 @@ interface RenderItemContext {
   pending: AcpSessionState['pendingPermission'];
   anchorId: string | null;
   onRespondPermission: (optionId: string) => void;
+  onOpenFile?: (path: string) => void;
 }
 
 /** Renders ONE timeline item (plus its anchored permission card, if any). Shared by the flat path and the turn-grouped path below so both stay in sync. */
 function renderItem(item: AcpTimelineItem, isLatest: boolean, ctx: RenderItemContext): ReactNode {
-  const { session, agentName, latestErrorItemId, pending, anchorId, onRespondPermission } = ctx;
+  const { session, agentName, latestErrorItemId, pending, anchorId, onRespondPermission, onOpenFile } = ctx;
   let rendered: ReactNode = null;
   if (item.kind === 'message') {
     const message = session.messages[item.id];
@@ -335,7 +365,7 @@ function renderItem(item: AcpTimelineItem, isLatest: boolean, ctx: RenderItemCon
       card && item.id !== latestErrorItemId ? <TranscriptError key={`e-${item.id}`} card={card} /> : null;
   } else {
     const toolCall = session.toolCalls[item.id];
-    rendered = toolCall ? <TranscriptToolCall key={`t-${item.id}`} toolCall={toolCall} /> : null;
+    rendered = toolCall ? <TranscriptToolCall key={`t-${item.id}`} toolCall={toolCall} onOpenFile={onOpenFile} /> : null;
   }
   const anchorHere = pending && anchorId != null && item.kind === 'tool_call' && item.id === anchorId;
   if (!anchorHere) return rendered;
@@ -388,7 +418,7 @@ function groupByTurn(items: AcpTimelineItem[]): TimelineGroup[] {
  * card answers ONLY via its explicit buttons — there is no dismiss/deny-on-
  * outside-click path anywhere in this flow.
  */
-export function TranscriptItems({ session, agentName, onRespondPermission }: TranscriptItemsProps) {
+export function TranscriptItems({ session, agentName, onRespondPermission, onOpenFile }: TranscriptItemsProps) {
   const { t } = useTranslation();
   const pending = session.pendingPermission;
   const pendingToolCallId = pending?.toolCall.toolCallId ?? null;
@@ -416,7 +446,7 @@ export function TranscriptItems({ session, agentName, onRespondPermission }: Tra
       ? ([...session.items].reverse().find(it => it.kind === 'error')?.id ?? null)
       : null;
 
-  const ctx: RenderItemContext = { session, agentName, latestErrorItemId, pending, anchorId, onRespondPermission };
+  const ctx: RenderItemContext = { session, agentName, latestErrorItemId, pending, anchorId, onRespondPermission, onOpenFile };
   const render = (entry: { item: AcpTimelineItem; index: number }) =>
     renderItem(entry.item, entry.index === session.items.length - 1, ctx);
 
@@ -432,14 +462,13 @@ export function TranscriptItems({ session, agentName, onRespondPermission }: Tra
         if (group.turnId === undefined || steps.length === 0 || rest.length === 0) {
           return group.entries.map(render);
         }
-        // Starts open while its own turn is still streaming (so the user can
-        // watch it work), stays as the user last left it afterwards — no
-        // forced auto-collapse animation, per the "emit, don't animate" rule.
-        const stillStreaming = session.isPrompting && group.turnId === session.currentTurnId;
+        // Keep steps visible by default so the work that just happened remains
+        // legible. User can manually collapse if desired. The Collapsible
+        // component maintains its own internal open/closed state from here on.
         return (
           <div key={`turn-${group.turnId}`} className="space-y-2">
             <Collapsible
-              defaultOpen={stillStreaming}
+              defaultOpen={true}
               title={t('acp_chat.turn_steps_toggle', { count: steps.length })}>
               <div className="space-y-2">{steps.map(render)}</div>
             </Collapsible>

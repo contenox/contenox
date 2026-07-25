@@ -42,8 +42,8 @@ export function PermissionCard({ permission, onRespond }: PermissionCardProps) {
     <div
       role="group"
       aria-label={t('acp_chat.permission_card_title')}
-      className="border-warning-300 bg-warning-50 dark:border-dark-surface-500 dark:bg-dark-surface-200 my-2 rounded-xl border p-4 shadow-sm">
-      <Span variant="status" className="text-warning-800 dark:text-dark-text-muted">
+      className="border-warning-500 bg-warning-100 dark:border-warning-600 dark:bg-dark-warning-900/20 -mx-2 my-4 rounded-xl border-2 p-6 shadow-lg ring-2 ring-warning-500/20 dark:ring-warning-600/30 sm:-mx-4">
+      <Span variant="status" className="text-warning-900 dark:text-warning-400 text-base font-semibold">
         {t('acp_chat.permission_card_title')}
       </Span>
 
@@ -85,13 +85,14 @@ export function PermissionCard({ permission, onRespond }: PermissionCardProps) {
         )}
       </div>
 
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+      <div className="border-warning-200 dark:border-warning-800/30 mt-5 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:flex-wrap sm:justify-end">
         {options.map(option => (
           <Button
             key={option.optionId}
             type="button"
             variant={optionVariant(option.kind)}
-            className="w-full sm:w-auto"
+            size="lg"
+            className="w-full font-semibold sm:w-auto sm:min-w-[120px]"
             onClick={() => onRespond(option.optionId)}>
             {option.name}
           </Button>

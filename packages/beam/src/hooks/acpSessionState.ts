@@ -87,6 +87,8 @@ export interface AcpToolCallState {
   locations?: ToolCallLocation[];
   rawInput?: unknown;
   rawOutput?: unknown;
+  /** Timestamp when this tool call started (pending or in_progress), for elapsed time display. */
+  startTime?: number;
 }
 
 export interface AcpUsageState {
@@ -442,15 +444,23 @@ export function acpSessionReducer(
     case 'tool_call': {
       const { event } = action;
       const existing = state.toolCalls[event.toolCallId];
+      const newStatus = event.status ?? existing?.status;
+      const statusChanged = newStatus !== existing?.status;
+      // Capture start time when a tool transitions to pending/in_progress for the first time
+      const shouldCaptureStartTime =
+        statusChanged &&
+        !existing?.startTime &&
+        (newStatus === 'pending' || newStatus === 'in_progress');
       const merged: AcpToolCallState = {
         toolCallId: event.toolCallId,
         title: event.title ?? existing?.title,
         kind: event.kind ?? existing?.kind,
-        status: event.status ?? existing?.status,
+        status: newStatus,
         content: event.content ?? existing?.content,
         locations: event.locations ?? existing?.locations,
         rawInput: event.rawInput ?? existing?.rawInput,
         rawOutput: event.rawOutput ?? existing?.rawOutput,
+        startTime: shouldCaptureStartTime ? Date.now() : existing?.startTime,
       };
       // A completed/failed `execute`-kind call (local_shell etc) also prints
       // into the shared terminal panel scrollback — best-effort, once per

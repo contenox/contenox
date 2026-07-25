@@ -27,7 +27,7 @@ function statusBadgeVariant(status: AcpWorkspaceStatus): 'success' | 'warning' |
  */
 export function ChatConnectionBadge() {
   const { t } = useTranslation();
-  const { workspace } = useAcpWorkspace();
+  const { workspace, sessions } = useAcpWorkspace();
   const { stagedAgent } = useStagedAgent();
 
   const activeSessionId = workspace.activeSessionId;
@@ -39,14 +39,32 @@ export function ChatConnectionBadge() {
     workspaceAgentName: workspace.agentName,
   });
 
+  // Find the currently running tool in the active session
+  const activeSession = activeSessionId ? sessions.slices[activeSessionId] : null;
+  const isPrompting = activeSession?.isPrompting ?? false;
+  const runningTool = isPrompting
+    ? Object.values(activeSession.toolCalls).find(
+        tc => tc.status === 'in_progress' || tc.status === 'pending'
+      )
+    : null;
+
+  // Show "Working…" during turns, otherwise show connection status
+  const badgeVariant = isPrompting ? 'primary' : statusBadgeVariant(workspace.status);
+  const badgeText = isPrompting ? t('acp_chat.status_working') : t(`acp_chat.status_${workspace.status}`);
+
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <Badge variant={statusBadgeVariant(workspace.status)} size="sm">
-        {t(`acp_chat.status_${workspace.status}`)}
+      <Badge variant={badgeVariant} size="sm">
+        {badgeText}
       </Badge>
       {agentName && (
         <Span variant="muted" className="truncate text-sm">
           {agentName}
+        </Span>
+      )}
+      {runningTool && (
+        <Span variant="muted" className="truncate text-xs font-mono">
+          → {runningTool.title ?? runningTool.kind ?? runningTool.toolCallId}
         </Span>
       )}
     </div>

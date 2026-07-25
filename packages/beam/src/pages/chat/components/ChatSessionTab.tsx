@@ -563,6 +563,7 @@ export function ChatSessionTab({ sessionId, onSessionCreated, onNewSession }: Ch
                   session={session}
                   agentName={attributionAgentName}
                   onRespondPermission={respondPermission}
+                  onOpenFile={openFile}
                 />
               </ChatThread>
               <ChatScrollToLatest
