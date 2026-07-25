@@ -71,6 +71,38 @@ A rule with `when` conditions gates a tool only for calls whose arguments match 
   "when": [{ "key": "command", "op": "command_ask_always", "value": "rm,sudo,dd,chmod" }] }
 ```
 
+## Who may answer a unit's question (`attention`)
+
+A mission unit that hits something it must not decide alone calls its
+`mission.mission_ask_attention` tool. That question lands in the [approvals
+queue](/docs/reference/contenox-cli/#contenox-approvals) **and** in the session
+that fired the mission, where you answer it in place — your words go straight
+back to the unit as the result of the call it is parked on, and it continues.
+
+By default only a **human** may answer, because that is what the unit escalated
+for. An envelope can hand routine questions to the **agent that fired the
+mission** instead — it often already knows the answer from the conversation the
+mission was fired in:
+
+```json
+{
+  "default_action": "approve",
+  "rules": [],
+  "attention": { "allowAgentAnswers": true, "maxAgentAnswers": 2 }
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `attention.allowAgentAnswers` | bool | Let the firing session's agent answer its own unit's questions. Omitted/`false` (the default) means a human must. You can always answer yourself either way — this only decides whether the agent is offered the question first. |
+| `attention.maxAgentAnswers` | int | How many of this mission's questions the agent may answer before the rest wait for a human. Omitted uses a small default (3); `0` is **not** unlimited. The count is durable and actor-aware, so a restart does not refill it and your own answers do not consume it. |
+
+The agent is also skipped when the firing session is busy with a turn you
+started, or is not currently open — a question is never silently swallowed by an
+agent-to-agent exchange you cannot see. When the agent does answer, it happens as
+a visible turn in your transcript, and the durable ask records that an agent (not
+a person) answered it.
+
 ## Built-in presets
 
 Contenox ships five policy presets, written to `~/.contenox/` by `contenox init`. (A workspace `.contenox/` file with the same name overrides the global one.) The first three are the general-purpose postures; the last two are the profiles the ACP editor transports load.

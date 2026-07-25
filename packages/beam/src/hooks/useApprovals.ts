@@ -70,6 +70,23 @@ export function useAnswerApproval(): UseMutationResult<
 }
 
 /**
+ * Replies to a unit's question with text (an ATTENTION ask). Invalidates the
+ * same three lists {@link useAnswerApproval} does: the ask leaves the pending
+ * queue, and the unit it unblocks moves on both the fleet board and its mission.
+ */
+export function useReplyToAsk(): UseMutationResult<string, Error, { id: string; answer: string }> {
+  const queryClient = useQueryClient();
+  return useMutation<string, Error, { id: string; answer: string }>({
+    mutationFn: ({ id, answer }) => api.replyToAsk(id, answer),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: approvalKeys.list() });
+      queryClient.invalidateQueries({ queryKey: fleetKeys.list() });
+      queryClient.invalidateQueries({ queryKey: missionKeys.list() });
+    },
+  });
+}
+
+/**
  * The inbox's second half: what units reported back, joined across every
  * mission and flattened newest-first. There is no dedicated inbox-reports
  * endpoint yet, so this is a CLIENT-SIDE JOIN — the mission list, plus one
@@ -123,8 +140,7 @@ export function useInboxReports(limit?: number): {
   // mission list's (the join's root); a single mission's report fetch failing
   // degrades to "that mission contributes no rows" rather than failing the feed.
   const isLoading =
-    missionsQuery.isLoading ||
-    (missions.length > 0 && reportQueries.some(q => q.isLoading));
+    missionsQuery.isLoading || (missions.length > 0 && reportQueries.some(q => q.isLoading));
   const error = missionsQuery.error ?? null;
 
   return { items, isLoading, error };

@@ -36,6 +36,7 @@ import (
 	"github.com/contenox/runtime/runtime/localtools"
 	"github.com/contenox/runtime/runtime/missionchanges"
 	"github.com/contenox/runtime/runtime/missionservice"
+	"github.com/contenox/runtime/runtime/missiontools"
 	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/nativeturn"
 	"github.com/contenox/runtime/runtime/operatorinbox"
@@ -361,6 +362,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 	defer stopWorkspaceReload()
 
+	// Hoisted above the tool map because the SUPERVISOR tools below need both: a
+	// session that fired missions reads them from missionservice and answers their
+	// questions through the durable ask store. Everything downstream keeps using
+	// these same two values, so there is exactly one of each in the process.
+	hitlSource := hitlPolicySource(contenoxDir)
+	hitlSvc := hitlservice.NewWithDefaultPolicy(hitlSource, runtimetypes.LocalTenantID, store, tracker, "")
+	missions := missionservice.New(db, missionservice.WithEventPublisher(bus))
+
 	localTools := map[string]taskengine.ToolsRepo{
 		"echo":     localtools.NewEchoTools(),
 		"print":    localtools.NewPrint(tracker),
@@ -375,6 +384,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 			"", db, nil, "local_fs",
 			acpsvc.NewServeCwdResolver(db, workspaceFactory),
 		),
+		// The SUPERVISOR surface, and only that: serve hosts the sessions that FIRE
+		// missions, never the units themselves (a unit is its own spawned process),
+		// so the unit's own report/ask/finish tools can never unlock here — they gate
+		// on a mission id this process's sessions do not carry. What a firing session
+		// gets is the pair it was missing: see what I dispatched, answer what it asks.
+		missiontools.ToolsProviderName: missiontools.New(missions, nil, missiontools.WithSupervision(
+			missionSupervision{missions: missions, hitl: hitlSvc},
+			missionSupervision{missions: missions, hitl: hitlSvc},
+		)),
 	}
 	if opts.EffectiveEnableLocalExec {
 		execOpts := []localtools.LocalExecOption{}
@@ -411,8 +429,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// approvals, tool calls) in addition to the live bus stream served by SSE.
 	taskEventSink := taskengine.NewKVJournalTaskEventSink(
 		taskengine.NewBusTaskEventSink(bus), kvMgr, tracker)
-	hitlSource := hitlPolicySource(contenoxDir)
-	hitlSvc := hitlservice.NewWithDefaultPolicy(hitlSource, runtimetypes.LocalTenantID, store, tracker, "")
 	approvalCeiling, err := parseHITLApprovalCeiling(config.HITLApprovalTimeout)
 	if err != nil {
 		return err
@@ -521,18 +537,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// second agentregistryservice.Service over the same db.
 	agentRegistry := agentregistryservice.New(db)
 
-	// Durable mission records — the manifest's other half. Backed by the same DB;
-	// missions outlive the sessions/instances they reference. Built BEFORE the
-	// Manager because the unattended-permission answerer wired into it below
-	// resolves a unit's envelope from its mission.
-	//
-	// The bus wiring is the supervision edge's producer half: AddReport publishes
-	// a ReportAddedEvent that the report router (below) consumes to deliver a
-	// report to whoever fired the mission — a live parent session, or the operator
-	// inbox. Best effort by contract: a publish failure never fails AddReport,
-	// because the report is already the durable fact.
-	missions := missionservice.New(db, missionservice.WithEventPublisher(bus))
-
+	// The durable mission records (missionservice) are built further up, with the
+	// tool map that needs them — see the hoist there. They outlive the
+	// sessions/instances they reference, exist BEFORE the Manager because the
+	// unattended-permission answerer resolves a unit's envelope from its mission,
+	// and are publisher-wired: AddReport emits a ReportAddedEvent the report router
+	// (below) turns into delivery to whoever fired the mission. Best effort by
+	// contract — a publish failure never fails AddReport, because the report is
+	// already the durable fact.
 	instances := agentinstance.New(
 		agentRegistry,
 		agentinstance.WithEventSink(newInstanceEventSink(tracker)),
@@ -622,6 +634,16 @@ func runServe(cmd *cobra.Command, args []string) error {
 		},
 		Inbox:   operatorInbox,
 		Tracker: tracker,
+		// The autonomous edge, off unless an envelope turns it on: after a unit's
+		// question is delivered to the session that fired it, offer it to that
+		// session's AGENT as well. It refuses by default, refuses past the cap, and
+		// refuses a busy session — see agentAnswerOffer.
+		AgentSupervisor: agentAnswerOffer{
+			hitl:     hitlSvc,
+			missions: missions,
+			prompter: sessionRouter,
+			tracker:  tracker,
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("build report router: %w", err)

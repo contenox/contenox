@@ -15,11 +15,12 @@ import {
   countNewReports,
   groupApprovalsByMission,
   groupReportsByMission,
+  isAttentionAsk,
   isNewReport,
   joinInboxReports,
   mergeOperatorInboxReports,
-  missionsByInstanceId,
   missionsById,
+  missionsByInstanceId,
   newestReportAt,
   runningSummary,
   stalledUnits,
@@ -110,9 +111,18 @@ describe('joinInboxReports', () => {
 
 describe('groupReportsByMission', () => {
   const items: InboxReportItem[] = [
-    { mission: mission({ id: 'm2' }), report: report({ id: 'r2', missionId: 'm2', createdAt: '2026-07-20T12:00:00Z' }) },
-    { mission: mission({ id: 'm1' }), report: report({ id: 'r1a', missionId: 'm1', createdAt: '2026-07-20T11:00:00Z' }) },
-    { mission: mission({ id: 'm1' }), report: report({ id: 'r1b', missionId: 'm1', createdAt: '2026-07-20T09:00:00Z' }) },
+    {
+      mission: mission({ id: 'm2' }),
+      report: report({ id: 'r2', missionId: 'm2', createdAt: '2026-07-20T12:00:00Z' }),
+    },
+    {
+      mission: mission({ id: 'm1' }),
+      report: report({ id: 'r1a', missionId: 'm1', createdAt: '2026-07-20T11:00:00Z' }),
+    },
+    {
+      mission: mission({ id: 'm1' }),
+      report: report({ id: 'r1b', missionId: 'm1', createdAt: '2026-07-20T09:00:00Z' }),
+    },
   ];
 
   it('clusters by mission and orders clusters by their newest report', () => {
@@ -135,7 +145,10 @@ describe('isNewReport / countNewReports', () => {
   it('treats a first visit (no lastSeen) as nothing-new', () => {
     expect(isNewReport('2026-07-20T12:00:00Z', undefined)).toBe(false);
     const items: InboxReportItem[] = [
-      { mission: mission({ id: 'm1' }), report: report({ id: 'r', missionId: 'm1', createdAt: '2026-07-20T12:00:00Z' }) },
+      {
+        mission: mission({ id: 'm1' }),
+        report: report({ id: 'r', missionId: 'm1', createdAt: '2026-07-20T12:00:00Z' }),
+      },
     ];
     expect(countNewReports(items, undefined)).toBe(0);
   });
@@ -148,8 +161,14 @@ describe('isNewReport / countNewReports', () => {
   it('newestReportAt returns the max, or undefined when empty', () => {
     expect(newestReportAt([])).toBeUndefined();
     const items: InboxReportItem[] = [
-      { mission: mission({ id: 'm1' }), report: report({ id: 'a', missionId: 'm1', createdAt: '2026-07-20T09:00:00Z' }) },
-      { mission: mission({ id: 'm1' }), report: report({ id: 'b', missionId: 'm1', createdAt: '2026-07-20T12:00:00Z' }) },
+      {
+        mission: mission({ id: 'm1' }),
+        report: report({ id: 'a', missionId: 'm1', createdAt: '2026-07-20T09:00:00Z' }),
+      },
+      {
+        mission: mission({ id: 'm1' }),
+        report: report({ id: 'b', missionId: 'm1', createdAt: '2026-07-20T12:00:00Z' }),
+      },
     ];
     expect(newestReportAt(items)).toBe('2026-07-20T12:00:00Z');
   });
@@ -164,7 +183,10 @@ function operatorItem(
 describe('mergeOperatorInboxReports', () => {
   it('passes items through unmarked when operatorItems is null/undefined/empty', () => {
     const items: InboxReportItem[] = [
-      { mission: mission({ id: 'm1' }), report: report({ id: 'r1', missionId: 'm1', createdAt: '2026-07-20T09:00:00Z' }) },
+      {
+        mission: mission({ id: 'm1' }),
+        report: report({ id: 'r1', missionId: 'm1', createdAt: '2026-07-20T09:00:00Z' }),
+      },
     ];
     expect(mergeOperatorInboxReports(items, null, new Map())).toBe(items);
     expect(mergeOperatorInboxReports(items, undefined, new Map())).toBe(items);
@@ -240,7 +262,10 @@ describe('mergeOperatorInboxReports', () => {
 
 describe('groupApprovalsByMission', () => {
   it('clusters asks by mission, orders by freshest ask, and trails the unattributed group last', () => {
-    const missionById = missionsById([mission({ id: 'm1', intent: 'One' }), mission({ id: 'm2', intent: 'Two' })]);
+    const missionById = missionsById([
+      mission({ id: 'm1', intent: 'One' }),
+      mission({ id: 'm2', intent: 'Two' }),
+    ]);
     const approvals = [
       approval({ id: 'a-m1', missionId: 'm1', createdAt: '2026-07-20T10:00:00Z' }),
       approval({ id: 'a-m2', missionId: 'm2', createdAt: '2026-07-20T12:00:00Z' }),
@@ -257,10 +282,7 @@ describe('groupApprovalsByMission', () => {
   });
 
   it('keeps a group even when the mission record is not loaded', () => {
-    const groups = groupApprovalsByMission(
-      [approval({ id: 'a1', missionId: 'ghost' })],
-      new Map(),
-    );
+    const groups = groupApprovalsByMission([approval({ id: 'a1', missionId: 'ghost' })], new Map());
     expect(groups).toHaveLength(1);
     expect(groups[0].missionId).toBe('ghost');
     expect(groups[0].mission).toBeUndefined();
@@ -333,7 +355,26 @@ describe('approvalAttribution', () => {
   it('omits absent/whitespace fields rather than rendering them blank', () => {
     expect(
       approvalAttribution(approval({ id: 'a1', agentName: 'reviewer', missionId: 'm1' })),
-    ).toEqual({ agentName: 'reviewer', missionId: 'm1', instanceId: undefined, sessionId: undefined });
+    ).toEqual({
+      agentName: 'reviewer',
+      missionId: 'm1',
+      instanceId: undefined,
+      sessionId: undefined,
+    });
     expect(approvalAttribution(approval({ id: 'a1', agentName: '  ' })).agentName).toBeUndefined();
+  });
+});
+
+describe('isAttentionAsk — which asks are questions', () => {
+  it('recognises a unit asking for a human', () => {
+    expect(isAttentionAsk({ toolsName: 'mission', toolName: 'mission_ask_attention' })).toBe(true);
+  });
+
+  it('leaves a gated tool call a permission ask', () => {
+    // Answering THIS with prose would resolve the gate with no verdict, so the
+    // card must keep offering allow/deny for it.
+    expect(isAttentionAsk({ toolsName: 'local_fs', toolName: 'write_file' })).toBe(false);
+    expect(isAttentionAsk({ toolsName: 'mission', toolName: 'mission_report' })).toBe(false);
+    expect(isAttentionAsk({ toolsName: '', toolName: '' })).toBe(false);
   });
 });

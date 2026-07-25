@@ -164,6 +164,17 @@ func (t *Transport) handleMission(ctx context.Context, sess *sessionEntry, args 
 	// making a misread visible in the transcript the instant it happens rather
 	// than letting a first intent word that happens to match an agent name change
 	// meaning silently.
+	// This session now supervises something, which is what unlocks its supervisor
+	// tools — in memory for the turns that follow on this connection, and durably
+	// so a reload keeps them.
+	sess.mu.Lock()
+	sess.FiredMissions = true
+	sid, hasSID := t.acpSessionForContenoxID(sess.InternalSessionID)
+	sess.mu.Unlock()
+	if hasSID {
+		t.persistSessionFiredMission(ctx, store, sid)
+	}
+
 	agentRole := "default mission agent"
 	if named {
 		agentRole = "named agent"
@@ -288,6 +299,41 @@ func splitFirstToken(args string) (first, rest string) {
 		return args[:i], strings.TrimSpace(args[i+1:])
 	}
 	return args, ""
+}
+
+// acpSessionFiredKVPrefix marks a session as one that has FIRED missions —
+// written the first time `/mission` succeeds there, keyed by the upstream ACP
+// session id.
+//
+// It is what unlocks the supervisor tools (mission_list / mission_answer) for
+// that session, and why they are absent everywhere else: an ordinary chat has
+// nothing to supervise, so offering it two mission tools would be surface it can
+// only misuse. Durable rather than in-memory because the tools must still be
+// there after a reload — the missions certainly are.
+const acpSessionFiredKVPrefix = "acp:session_fired_missions:"
+
+type sessionFiredRecord struct {
+	Fired bool `json:"fired"`
+}
+
+func (t *Transport) persistSessionFiredMission(ctx context.Context, store runtimetypes.Store, sid libacp.SessionID) {
+	raw, err := json.Marshal(sessionFiredRecord{Fired: true})
+	if err != nil {
+		return
+	}
+	if err := store.SetKV(ctx, acpSessionFiredKVPrefix+string(sid), raw); err != nil {
+		reportErr, _, end := t.tracker().Start(ctx, "persist_fired_mission", "acp_session", "session_id", string(sid))
+		reportErr(err)
+		end()
+	}
+}
+
+func (t *Transport) readSessionFiredMission(ctx context.Context, store runtimetypes.Store, sid libacp.SessionID) bool {
+	var rec sessionFiredRecord
+	if err := store.GetKV(ctx, acpSessionFiredKVPrefix+string(sid), &rec); err != nil {
+		return false
+	}
+	return rec.Fired
 }
 
 // acpSessionMissionKVPrefix stores the mission id a session is the UNIT of,

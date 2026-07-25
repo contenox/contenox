@@ -152,16 +152,43 @@ type MissionStore interface {
 // mechanism" invariant made concrete. When it is nil, mission_ask_attention
 // degrades to filing a durable blocker report (see New).
 type AttentionAsker interface {
-	// RaiseAttention records that missionID's unit needs an operator, with a
-	// one-line summary and optional detail. It returns when the ask has been
-	// durably recorded (or answered/expired, if the underlying machinery
-	// blocks); its error is surfaced to the calling unit.
-	RaiseAttention(ctx context.Context, missionID, summary, detail string) error
+	// RaiseAttention puts missionID's unit's question to a human and BLOCKS
+	// until it is answered, returning the operator's own words. An error means
+	// no answer is coming (nobody replied inside the deadline, the reply was a
+	// refusal, or the ask could not be recorded) — the caller's fallback, not a
+	// failure to surface.
+	//
+	// It returns the answer rather than just an error because that is the whole
+	// point of asking: a unit that learns "someone was notified" still cannot
+	// proceed, while a unit handed "the contenox runtime repo, /home/x/src/…"
+	// finishes its mission on the next turn.
+	RaiseAttention(ctx context.Context, missionID, summary, detail string) (string, error)
 }
 
 type provider struct {
 	missions MissionStore
 	asker    AttentionAsker
+	// The SUPERVISOR half (see supervisor.go), optional: a process that wires
+	// neither leaves a firing session exactly as it was — with no mission tools at
+	// all — rather than offering tools that cannot work.
+	supervisor SupervisorStore
+	resolver   AttentionResolver
+}
+
+// Option configures the provider at construction (the house's functional-option
+// idiom), so the supervisor surface could be added without changing New's
+// signature for the callers that only ever wanted the unit's own tools.
+type Option func(*provider)
+
+// WithSupervision wires the tools a session that FIRED missions gets: list your
+// missions, answer a unit's question. Both deps are required together — listing
+// without answering is a dead end, answering without listing gives the model no
+// way to learn an ask id.
+func WithSupervision(store SupervisorStore, resolver AttentionResolver) Option {
+	return func(p *provider) {
+		p.supervisor = store
+		p.resolver = resolver
+	}
 }
 
 // New returns the mission-tools provider. reporter is required (a mission tool
@@ -174,11 +201,15 @@ type provider struct {
 // slice (fleet-consolidation.md M5); until its wiring reaches this composition
 // point, "this unit needs attention" is still visible where an operator already
 // looks — the mission's own reports — rather than being silently dropped.
-func New(missions MissionStore, asker AttentionAsker) taskengine.ToolsRepo {
+func New(missions MissionStore, asker AttentionAsker, opts ...Option) taskengine.ToolsRepo {
 	if missions == nil {
 		panic("missiontools: mission store is required")
 	}
-	return &provider{missions: missions, asker: asker}
+	p := &provider{missions: missions, asker: asker}
+	for _, opt := range opts {
+		opt(p)
+	}
+	return p
 }
 
 // Supports always reports the single provider name. Exposure of the TOOLS is
@@ -205,15 +236,22 @@ func (p *provider) GetToolsForToolsByName(ctx context.Context, name string) ([]t
 	if name != ToolsProviderName {
 		return nil, fmt.Errorf("unknown tools: %s", name)
 	}
-	if MissionIDFromContext(ctx) == "" {
-		return []taskengine.Tool{}, nil
+	if MissionIDFromContext(ctx) != "" {
+		return []taskengine.Tool{
+			reportToolSchema(),
+			askAttentionToolSchema(),
+			planToolSchema(),
+			finishToolSchema(),
+		}, nil
 	}
-	return []taskengine.Tool{
-		reportToolSchema(),
-		askAttentionToolSchema(),
-		planToolSchema(),
-		finishToolSchema(),
-	}, nil
+	// Not a mission — but possibly a session that FIRED some. A supervisor gets a
+	// different, smaller surface: see what you dispatched, answer what it asks.
+	// Both gates are context facts, so neither set can leak into a session that is
+	// neither (an ordinary chat sees no mission tools at all).
+	if p.supervisor != nil && p.resolver != nil && ParentSessionIDFromContext(ctx) != "" {
+		return supervisorTools(), nil
+	}
+	return []taskengine.Tool{}, nil
 }
 
 // Exec runs one mission-tool call. It refuses off-mission (the backstop for the
@@ -223,12 +261,26 @@ func (p *provider) GetToolsForToolsByName(ctx context.Context, name string) ([]t
 // rather than requiring a separate cadence — the documented heartbeat trigger is
 // "meaningful unit activity", and a mission tool call is exactly that.
 func (p *provider) Exec(ctx context.Context, _ time.Time, input any, _ bool, call *taskengine.ToolsCall) (any, taskengine.DataType, error) {
+	if call == nil {
+		return nil, taskengine.DataTypeAny, fmt.Errorf("missiontools: missing tools call")
+	}
+	// The SUPERVISOR tools are authorized by the calling session having fired
+	// missions, not by it being one — checked first so a firing session's call is
+	// never rejected by the unit-only gate below.
+	switch call.ToolName {
+	case ToolNameListMissions, ToolNameAnswer:
+		parentSessionID := ParentSessionIDFromContext(ctx)
+		if parentSessionID == "" {
+			return nil, taskengine.DataTypeAny, fmt.Errorf("missiontools: %s is only available to a session that fired missions", call.ToolName)
+		}
+		if call.ToolName == ToolNameListMissions {
+			return p.execListMissions(ctx, parentSessionID)
+		}
+		return p.execAnswer(ctx, parentSessionID, input, call)
+	}
 	missionID := MissionIDFromContext(ctx)
 	if missionID == "" {
 		return nil, taskengine.DataTypeAny, fmt.Errorf("mission tools are only available to a unit dispatched on a mission")
-	}
-	if call == nil {
-		return nil, taskengine.DataTypeAny, fmt.Errorf("missiontools: missing tools call")
 	}
 	switch call.ToolName {
 	case ToolNameReport:
@@ -278,21 +330,43 @@ func (p *provider) execAskAttention(ctx context.Context, missionID string, input
 		return nil, taskengine.DataTypeAny, fmt.Errorf("missiontools: mission_ask_attention requires a summary")
 	}
 	if p.asker != nil {
-		if err := p.asker.RaiseAttention(ctx, missionID, summary, detail); err != nil {
-			return nil, taskengine.DataTypeAny, fmt.Errorf("missiontools: raise attention: %w", err)
-		}
+		// The unit parks here while a human reads the question. Its heartbeat is
+		// stamped BEFORE the wait, not after: asking is proof of life, and a unit
+		// blocked on an operator for ten minutes must not look dead for ten
+		// minutes.
 		p.heartbeat(ctx, missionID)
-		return "attention requested", taskengine.DataTypeString, nil
+		answer, err := p.asker.RaiseAttention(ctx, missionID, summary, detail)
+		if err == nil {
+			p.heartbeat(ctx, missionID)
+			// The answer IS the tool result: the model reads it as the reply to
+			// the question it just asked and continues in the same turn.
+			return answer, taskengine.DataTypeString, nil
+		}
+		// No answer is coming. Fall through to the blocker below rather than
+		// failing the call: the question is worth more durably recorded than
+		// returned as an error the model will paraphrase into prose.
+		detail = withUnansweredNote(detail, err)
 	}
-	// Fallback (no durable-ask machinery wired here yet — see New): record the
-	// need for attention as a durable blocker report so it is not silently
-	// dropped. Same store, no parallel mechanism.
+	// Fallback: no answer channel is wired here, or nobody answered. Record the
+	// need for attention as a durable blocker report so the question is not lost.
+	// Same store, no parallel mechanism.
 	report := &missionservice.Report{Kind: missionservice.ReportKindBlocker, Summary: summary, Detail: detail}
 	if err := p.missions.AddReport(ctx, missionID, report); err != nil {
 		return nil, taskengine.DataTypeAny, fmt.Errorf("missiontools: record attention request: %w", err)
 	}
 	p.heartbeat(ctx, missionID)
-	return "attention requested (recorded as blocker)", taskengine.DataTypeString, nil
+	return "attention requested (recorded as blocker — no operator answered)", taskengine.DataTypeString, nil
+}
+
+// withUnansweredNote appends WHY the question fell back to a blocker, so the
+// operator reading the report knows an answer was actually solicited and missed
+// rather than never asked for.
+func withUnansweredNote(detail string, err error) string {
+	note := fmt.Sprintf("(the unit asked for an operator and got no answer: %v)", err)
+	if strings.TrimSpace(detail) == "" {
+		return note
+	}
+	return detail + "\n\n" + note
 }
 
 // execPlan replaces the caller's mission plan with a FULL SNAPSHOT and echoes
@@ -421,7 +495,7 @@ func askAttentionToolSchema() taskengine.Tool {
 		Type: "function",
 		Function: taskengine.FunctionTool{
 			Name:        ToolNameAskAttention,
-			Description: "Flag that your CURRENT mission needs a human operator — you have hit something you may not decide unattended. Use it sparingly; it costs the operator's attention.",
+			Description: "ASK your operator a question and WAIT for their reply — use it when you cannot proceed without a human: a decision you may not make unattended, a missing fact, an ambiguous instruction. The call BLOCKS until a person answers, and their answer comes back to you as this tool's result, so you continue with it on the same turn. If nobody answers in time your question is recorded as a blocker instead. Use it sparingly — it costs a human's attention and their time to reply — but prefer it over guessing or giving up.",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{

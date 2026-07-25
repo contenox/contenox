@@ -260,6 +260,13 @@ func (d *nativeDriver) runNativeTurn(turnCtx context.Context, req libacp.PromptR
 	if sess.MissionID != "" {
 		turnCtx = missiontools.WithMissionID(turnCtx, sess.MissionID)
 	}
+	// The other end of the same relationship: a session that FIRED missions carries
+	// its own id in, unlocking the supervisor tools (see missiontools.WithParentSessionID)
+	// so this turn can look at what it dispatched and answer what a unit asks. A
+	// session that fired nothing injects nothing and is offered no mission tools.
+	if sess.FiredMissions && sess.InternalSessionID != "" {
+		turnCtx = missiontools.WithParentSessionID(turnCtx, sess.InternalSessionID)
+	}
 
 	// Subscribe to the engine's per-request event stream and translate each event
 	// into a session/update emitted through the turn (journal + viewers). Unlike the

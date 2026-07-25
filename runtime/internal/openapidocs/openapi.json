@@ -156,6 +156,9 @@
       },
       "approvalapi_AnswerRequest": {
         "properties": {
+          "answer": {
+            "type": "string"
+          },
           "approved": {
             "type": "boolean"
           }
@@ -518,6 +521,17 @@
         },
         "type": "object"
       },
+      "hitlservice_AttentionBounds": {
+        "properties": {
+          "allowAgentAnswers": {
+            "type": "boolean"
+          },
+          "maxAgentAnswers": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "hitlservice_ComputeBounds": {
         "properties": {
           "backendAllowlist": {
@@ -563,6 +577,9 @@
       },
       "hitlservice_Policy": {
         "properties": {
+          "attention": {
+            "$ref": "#/components/schemas/hitlservice_AttentionBounds"
+          },
           "compute": {
             "$ref": "#/components/schemas/hitlservice_ComputeBounds"
           },

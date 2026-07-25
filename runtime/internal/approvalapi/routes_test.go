@@ -33,11 +33,19 @@ type fakeApprovals struct {
 
 	respondErr   error
 	respondCalls []respondArgs
+	answerCalls  []answerArgs
+	answerErr    error
 }
 
 type respondArgs struct {
 	id       string
 	approved bool
+}
+
+// answerArgs records one Answer call — an attention ask resolved with text.
+type answerArgs struct {
+	id   string
+	text string
 }
 
 func (f *fakeApprovals) Evaluate(context.Context, string, string, map[string]any) (hitlservice.EvaluationResult, error) {
@@ -50,6 +58,30 @@ func (f *fakeApprovals) RequestApproval(context.Context, hitlservice.ApprovalReq
 
 func (f *fakeApprovals) SweepExpired(context.Context) (int, error) {
 	return 0, nil
+}
+
+func (f *fakeApprovals) RequestAttention(context.Context, hitlservice.AttentionRequest, taskengine.TaskEventSink) (string, error) {
+	return "", nil
+}
+
+// The supervisor-facing reads/writes: this double covers the ROUTE's branch, so
+// they are inert here.
+func (f *fakeApprovals) AnswerAsAgent(context.Context, string, string) error { return nil }
+func (f *fakeApprovals) PendingAttentionAsks(context.Context, string) ([]*runtimetypes.HITLApproval, error) {
+	return nil, nil
+}
+func (f *fakeApprovals) AttentionBoundsFor(context.Context, string) (hitlservice.AttentionBounds, error) {
+	return hitlservice.AttentionBounds{}, nil
+}
+func (f *fakeApprovals) AgentAnswerCount(context.Context, string) (int, error) { return 0, nil }
+
+// Answer records the operator's reply to an attention ask, so the route's
+// text-vs-verdict branch can be asserted.
+func (f *fakeApprovals) Answer(_ context.Context, id, text string) error {
+	f.mu.Lock()
+	f.answerCalls = append(f.answerCalls, answerArgs{id: id, text: text})
+	f.mu.Unlock()
+	return f.answerErr
 }
 
 func (f *fakeApprovals) Respond(_ context.Context, id string, approved bool) error {
@@ -322,4 +354,40 @@ func TestUnit_ApprovalAPI_AnswerAlreadyResolvedAndExpiredAreDistinguishable(t *t
 	b2, err := io.ReadAll(r2.Body)
 	require.NoError(t, err)
 	require.NotEqual(t, string(b1), string(b2), "an already-resolved ask and an expired one must not read as the same conflict")
+}
+
+// TestUnit_Answer_WithTextRepliesToAnAttentionAsk pins the route's one branch:
+// a body carrying `answer` is a REPLY to a unit's question and must reach
+// hitlservice.Answer with the operator's words intact — not Respond, which would
+// resolve the ask with a verdict the unit cannot act on.
+func TestUnit_Answer_WithTextRepliesToAnAttentionAsk(t *testing.T) {
+	f := &fakeApprovals{}
+	srv := setupApprovalAPI(t, f)
+
+	resp, err := http.Post(srv.URL+"/approvals/ask-1", "application/json",
+		strings.NewReader(`{"answer":"the runtime repo at /home/x/src/contenox"}`))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Len(t, f.answerCalls, 1, "a text answer must route to Answer")
+	require.Equal(t, "ask-1", f.answerCalls[0].id)
+	require.Equal(t, "the runtime repo at /home/x/src/contenox", f.answerCalls[0].text)
+	require.Empty(t, f.respondCalls, "…and must not also resolve it as a verdict")
+}
+
+// TestUnit_Answer_WithoutTextStaysAVerdict guards the other side of the branch:
+// the permission path is byte-for-byte what it was before replies existed.
+func TestUnit_Answer_WithoutTextStaysAVerdict(t *testing.T) {
+	f := &fakeApprovals{}
+	srv := setupApprovalAPI(t, f)
+
+	resp, err := http.Post(srv.URL+"/approvals/perm-1", "application/json", strings.NewReader(`{"approved":true}`))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Len(t, f.respondCalls, 1)
+	require.True(t, f.respondCalls[0].approved)
+	require.Empty(t, f.answerCalls)
 }

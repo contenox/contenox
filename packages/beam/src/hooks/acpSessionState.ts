@@ -1,16 +1,19 @@
 import type {
   AvailableCommand,
   ImagePart,
+  MissionAsk,
   PlanEntry,
   RequestPermissionRequest,
   SessionConfigOption,
   StopReason,
+  TerminalOutputPayload,
   ToolCallContent,
+  ToolCallEvent,
   ToolCallLocation,
   ToolCallStatus,
   ToolKind,
+  UsageEvent,
 } from '../lib/acp';
-import type { ToolCallEvent, TerminalOutputPayload, UsageEvent } from '../lib/acp';
 
 /**
  * Pure, framework-free state for the ACP workspace's currently-open session:
@@ -55,6 +58,13 @@ export interface AcpChatMessage {
   thinking?: string;
   /** True while more `agent_thought_chunk`s are still expected for this message. */
   thinkingStreaming?: boolean;
+  /**
+   * Set when this message IS a mission unit's question, delivered into the
+   * session that fired it. It is not decoration: the unit is parked on the tool
+   * call that asked, so the transcript renders an answer box here and the reply
+   * unblocks it (see `missionAskFromMeta`).
+   */
+  missionAsk?: MissionAsk;
 }
 
 export interface AcpToolCallState {
@@ -188,7 +198,7 @@ export type AcpSessionAction =
   /** Clears all timeline/turn state and points it at a (possibly null) session — dispatched whenever the workspace opens/creates/deletes-the-active session. */
   | { type: 'session_reset'; sessionId: string | null }
   | { type: 'user_message_chunk'; id: string; text: string; image?: ImagePart }
-  | { type: 'message_chunk'; id: string; text: string; image?: ImagePart }
+  | { type: 'message_chunk'; id: string; text: string; image?: ImagePart; missionAsk?: MissionAsk }
   | { type: 'thought_chunk'; id: string; text: string }
   | { type: 'tool_call'; event: ToolCallEvent }
   /** Live shell output batch (append, or replace when `payload.reset`). */
@@ -209,7 +219,11 @@ export type AcpSessionAction =
   /** The workspace controller re-bound this session after a drop (resume or reload fallback). */
   | { type: 'connection_resumed' };
 
-function ensureItem(items: AcpTimelineItem[], kind: AcpTimelineItemKind, id: string): AcpTimelineItem[] {
+function ensureItem(
+  items: AcpTimelineItem[],
+  kind: AcpTimelineItemKind,
+  id: string,
+): AcpTimelineItem[] {
   if (items.some(it => it.kind === kind && it.id === id)) return items;
   return [...items, { kind, id }];
 }
@@ -230,7 +244,7 @@ function upsertMessage(
   messages: Record<string, AcpChatMessage>,
   id: string,
   role: 'user' | 'assistant',
-  patch: { text?: string; thinking?: string; image?: ImagePart },
+  patch: { text?: string; thinking?: string; image?: ImagePart; missionAsk?: MissionAsk },
   activeTurn: boolean,
 ): Record<string, AcpChatMessage> {
   const existing = messages[id];
@@ -245,6 +259,11 @@ function upsertMessage(
     // exactly the same reason a text chunk does.
     next.images = [...(next.images ?? []), patch.image];
     next.streaming = activeTurn;
+  }
+  if (patch.missionAsk !== undefined) {
+    // A question is a property OF the message that delivered it, so it survives
+    // the chunk-by-chunk accumulation the text goes through.
+    next.missionAsk = patch.missionAsk;
   }
   if (patch.thinking !== undefined) {
     next.thinking = (next.thinking ?? '') + patch.thinking;
@@ -268,7 +287,10 @@ function endStreaming(messages: Record<string, AcpChatMessage>): Record<string, 
   return changed ? next : messages;
 }
 
-export function acpSessionReducer(state: AcpSessionState, action: AcpSessionAction): AcpSessionState {
+export function acpSessionReducer(
+  state: AcpSessionState,
+  action: AcpSessionAction,
+): AcpSessionState {
   switch (action.type) {
     case 'session_reset':
       return { ...initialAcpSessionState, sessionId: action.sessionId };
@@ -299,7 +321,7 @@ export function acpSessionReducer(state: AcpSessionState, action: AcpSessionActi
           state.messages,
           id,
           'assistant',
-          { text: action.text, image: action.image },
+          { text: action.text, image: action.image, missionAsk: action.missionAsk },
           state.isPrompting,
         ),
         activeTurnMessageId: state.isPrompting ? id : state.activeTurnMessageId,
@@ -311,7 +333,13 @@ export function acpSessionReducer(state: AcpSessionState, action: AcpSessionActi
       return {
         ...state,
         items: ensureItem(state.items, 'message', id),
-        messages: upsertMessage(state.messages, id, 'assistant', { thinking: action.text }, state.isPrompting),
+        messages: upsertMessage(
+          state.messages,
+          id,
+          'assistant',
+          { thinking: action.text },
+          state.isPrompting,
+        ),
         activeTurnMessageId: state.isPrompting ? id : state.activeTurnMessageId,
       };
     }
@@ -346,7 +374,10 @@ export function acpSessionReducer(state: AcpSessionState, action: AcpSessionActi
       return {
         ...state,
         items: ensureItem(state.items, 'terminal', action.id),
-        terminals: { ...state.terminals, [action.id]: { id: action.id, command: action.command, output: action.output } },
+        terminals: {
+          ...state.terminals,
+          [action.id]: { id: action.id, command: action.command, output: action.output },
+        },
       };
 
     case 'plan':
@@ -375,7 +406,12 @@ export function acpSessionReducer(state: AcpSessionState, action: AcpSessionActi
       return { ...state, isPrompting: true, error: null, activeTurnMessageId: null };
 
     case 'prompt_end':
-      return { ...state, isPrompting: false, stopReason: action.stopReason, messages: endStreaming(state.messages) };
+      return {
+        ...state,
+        isPrompting: false,
+        stopReason: action.stopReason,
+        messages: endStreaming(state.messages),
+      };
 
     case 'prompt_error': {
       // Anchor the failure in the transcript as its own item (in arrival

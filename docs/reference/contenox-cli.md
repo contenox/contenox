@@ -534,7 +534,12 @@ In a standalone `contenox acp` editor session the dispatch runs **in-process** b
 
 ### `contenox approvals`
 
-List and answer the pending human-in-the-loop approvals a running `contenox serve` is holding — the inbox for asks raised by an agent working with no attached session (dispatched fleet work, a headless API caller). A permission request that would otherwise hang until its policy-rule timeout, or the serve-level ceiling, is answerable here as soon as it lands.
+List and answer everything a running `contenox serve` is holding for you — the inbox for asks raised by an agent working with no attached session (dispatched fleet work, a headless API caller). A permission request that would otherwise hang until its policy-rule timeout, or the serve-level ceiling, is answerable here as soon as it lands.
+
+Two kinds of ask arrive in this one queue, and they are answered differently:
+
+- a **permission ask** — a gated tool call waiting on a verdict. Answer it with `--approve` or `--deny`.
+- an **attention ask** — a running mission unit's *question* (`mission / mission_ask_attention` in the list). Answer it with `--reply "<text>"`: your words are handed straight back to the unit as the result of the tool call it is parked on, and it continues with them on the same turn.
 
 A pending approval is a goroutine parked inside the running serve process — answering it has to reach that process, not just its database — so, unlike `contenox state`/`session`, this command talks to serve's REST API (default `http://127.0.0.1:32123`; override with `--server`/`--token` or `CONTENOX_SERVER_URL`/`CONTENOX_SERVER_TOKEN`).
 
@@ -543,14 +548,18 @@ contenox approvals list                     # pending asks, newest first
 contenox approvals list --json              # raw records, including full diff content
 contenox approvals answer <id> --approve
 contenox approvals answer <id> --deny
+contenox approvals answer <id> --reply "the contenox runtime repo, docs/ only"
 ```
 
-`list` prints each ask's id, tool, args summary, policy and matched rule, diff presence, the agent/mission/instance/session attribution (with several units running, the row has to say **whose** action is gated; `-` for an ask raised outside the fleet), and the created/expires timestamps. `answer` requires exactly one of `--approve`/`--deny`; an id that is unknown, already answered, or expired (auto-resolved by serve's sweeper) fails with a non-zero exit status saying which — answering twice is never silently a no-op.
+`list` prints each ask's id, tool, args summary, policy and matched rule, diff presence, the agent/mission/instance/session attribution (with several units running, the row has to say **whose** action is gated; `-` for an ask raised outside the fleet), and the created/expires timestamps. For an attention ask the args summary *is* the question, and the mission column names who is waiting on you.
+
+`answer` requires exactly one of `--approve`/`--deny`/`--reply`. `--reply` is refused on a permission ask (prose is not a verdict); `--approve`/`--deny` on an attention ask leaves the unit with no answer, so it falls back to filing its question as a blocker. An id that is unknown, already answered, or expired (auto-resolved by serve's sweeper) fails with a non-zero exit status saying which — answering twice is never silently a no-op.
 
 | Flag | Description |
 | ---- | ----------- |
 | `--server <url>` / `--token <token>` | Reach a running `contenox serve` (as `contenox fleet`). |
 | `--limit <n>` | Cap the pending list (`list`; 0 = server default cap). |
+| `--reply <text>` | Answer a unit's question with text (`answer`, attention asks) — the unit receives it as its tool result. |
 | `--json` | Emit raw records (`list`) or the answer result (`answer`). |
 
 ### `contenox workspace`

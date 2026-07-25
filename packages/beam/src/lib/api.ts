@@ -238,11 +238,17 @@ export const api = {
    * distinguished by message). The response body is the plain string
    * "approved" / "denied".
    */
+  /**
+   * Replies to an ATTENTION ask — a running unit's question — with text. The
+   * unit is parked on the tool call that asked it and receives this as the
+   * call's result, so it continues on the same turn. Refused by the runtime on
+   * a permission ask, where prose is not a verdict.
+   */
+  replyToAsk: (id: string, answer: string) =>
+    apiFetch<string>(`/api/approvals/${encodeURIComponent(id)}`, options('POST', { answer })),
+
   answerApproval: (id: string, approved: boolean) =>
-    apiFetch<string>(
-      `/api/approvals/${encodeURIComponent(id)}`,
-      options('POST', { approved }),
-    ),
+    apiFetch<string>(`/api/approvals/${encodeURIComponent(id)}`, options('POST', { approved })),
 
   // Operator inbox (runtime/operatorinbox) — mission reports that reached NO
   // live supervising session: an operator-fired mission's reports, or reports

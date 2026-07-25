@@ -2,6 +2,7 @@ package missiontools_test
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -276,21 +277,24 @@ type fakeAsker struct {
 	summary   string
 	detail    string
 	calls     int
+	// answer is what the operator replies; err makes the ask go unanswered.
+	answer string
+	err    error
 }
 
-func (f *fakeAsker) RaiseAttention(_ context.Context, missionID, summary, detail string) error {
+func (f *fakeAsker) RaiseAttention(_ context.Context, missionID, summary, detail string) (string, error) {
 	f.calls++
 	f.missionID = missionID
 	f.summary = summary
 	f.detail = detail
-	return nil
+	return f.answer, f.err
 }
 
 // TestUnit_MissionTools_AskAttentionUsesAskerWhenWired proves mission_ask_attention
 // routes to the injected durable-ask machinery, scoped to the caller's mission.
 func TestUnit_MissionTools_AskAttentionUsesAskerWhenWired(t *testing.T) {
 	ctx, svc, missionID := setup(t)
-	asker := &fakeAsker{}
+	asker := &fakeAsker{answer: "staging, and use the seeded fixtures"}
 	tools := missiontools.New(svc, asker)
 
 	call := &taskengine.ToolsCall{
@@ -298,8 +302,12 @@ func TestUnit_MissionTools_AskAttentionUsesAskerWhenWired(t *testing.T) {
 		ToolName: missiontools.ToolNameAskAttention,
 		Args:     map[string]string{"summary": "need a decision", "detail": "prod or staging?"},
 	}
-	_, _, err := tools.Exec(missiontools.WithMissionID(ctx, missionID), time.Now(), nil, false, call)
+	out, _, err := tools.Exec(missiontools.WithMissionID(ctx, missionID), time.Now(), nil, false, call)
 	require.NoError(t, err)
+	// THE POINT of asking: the operator's words come back as the tool result, so
+	// the unit can act on them in the same turn instead of merely learning that
+	// somebody was notified.
+	require.Equal(t, "staging, and use the seeded fixtures", out)
 	require.Equal(t, 1, asker.calls)
 	require.Equal(t, missionID, asker.missionID)
 	require.Equal(t, "need a decision", asker.summary)
@@ -652,4 +660,32 @@ func TestUnit_MissionTools_FinishAbsentOffMission(t *testing.T) {
 	_, _, err := tools.Exec(ctx, time.Now(), nil, false, finishCall("landed", "should not run"))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "only available to a unit dispatched on a mission")
+}
+
+// TestUnit_MissionTools_AskAttentionFallsBackWhenUnanswered pins the degradation
+// that keeps a question from being lost: an asker that reports no answer (nobody
+// replied inside the deadline, or the reply was a refusal) must still leave the
+// question durably recorded as a blocker — and say WHY it is one, so the operator
+// reading it knows an answer was solicited and missed, not never asked for.
+func TestUnit_MissionTools_AskAttentionFallsBackWhenUnanswered(t *testing.T) {
+	ctx, svc, missionID := setup(t)
+	asker := &fakeAsker{err: errors.New("attention ask went unanswered")}
+	tools := missiontools.New(svc, asker)
+
+	call := &taskengine.ToolsCall{
+		Name:     missiontools.ToolsProviderName,
+		ToolName: missiontools.ToolNameAskAttention,
+		Args:     map[string]string{"summary": "which project?", "detail": "the intent named none"},
+	}
+	out, _, err := tools.Exec(missiontools.WithMissionID(ctx, missionID), time.Now(), nil, false, call)
+	require.NoError(t, err, "an unanswered ask is a fallback, never a tool failure")
+	require.Contains(t, out, "no operator answered")
+
+	reports, err := svc.ListReports(ctx, missionID, 10)
+	require.NoError(t, err)
+	require.Len(t, reports, 1, "the question survives as a durable blocker")
+	require.Equal(t, missionservice.ReportKindBlocker, reports[0].Kind)
+	require.Equal(t, "which project?", reports[0].Summary)
+	require.Contains(t, reports[0].Detail, "the intent named none", "the original detail is kept")
+	require.Contains(t, reports[0].Detail, "got no answer", "…and says an answer was solicited and missed")
 }

@@ -78,12 +78,14 @@ import type { AcpCapabilityProvider } from './clientFactory';
 import type { Transport } from './transport';
 import {
   ACP_PROTOCOL_VERSION,
+  imagePartFromBlock,
   JSON_RPC_ERROR_CODES,
+  TERMINAL_OUTPUT_UPDATE_KIND,
+  terminalOutputFromUpdate,
   type AvailableCommand,
   type ClientCapabilities,
   type ContentBlock,
   type ImagePart,
-  imagePartFromBlock,
   type Implementation,
   type InitializeResponse,
   type ListSessionsResponse,
@@ -99,10 +101,8 @@ import {
   type SessionNotification,
   type SessionUpdate,
   type SetSessionConfigOptionResponse,
-  TERMINAL_OUTPUT_UPDATE_KIND,
-  type TerminalOutputPayload,
-  terminalOutputFromUpdate,
   type StopReason,
+  type TerminalOutputPayload,
   type ToolCallContent,
   type ToolCallLocation,
   type ToolCallStatus,
@@ -194,7 +194,12 @@ export interface SessionInfoEvent {
  */
 export interface SessionEventHandlers {
   /** `image` is set when the chunk's content block is an image instead of text (`text` is then `''`) — see `imagePartFromBlock`. */
-  onMessageChunk?: (text: string, messageId?: string, image?: ImagePart) => void;
+  onMessageChunk?: (
+    text: string,
+    messageId?: string,
+    image?: ImagePart,
+    meta?: Record<string, unknown>,
+  ) => void;
   onThoughtChunk?: (text: string, messageId?: string) => void;
   /** `user_message_chunk` — mainly seen during `session/load` history replay. `image` as on `onMessageChunk`. */
   onUserMessageChunk?: (text: string, messageId?: string, image?: ImagePart) => void;
@@ -270,8 +275,8 @@ export class AcpClient {
   constructor(transport: Transport, opts: AcpClientOptions = {}) {
     this.transport = transport;
     this.capabilityProvider = opts.capabilities;
-    this.transport.onMessage((text) => this.handleMessage(text));
-    this.transport.onClose((err) => this.handleClose(err));
+    this.transport.onMessage(text => this.handleMessage(text));
+    this.transport.onClose(err => this.handleClose(err));
   }
 
   // -------------------------------------------------------------------------
@@ -387,7 +392,11 @@ export class AcpClient {
       );
       return;
     }
-    this.respondError(req.id, JSON_RPC_ERROR_CODES.methodNotFound, `method not found: ${req.method}`);
+    this.respondError(
+      req.id,
+      JSON_RPC_ERROR_CODES.methodNotFound,
+      `method not found: ${req.method}`,
+    );
   }
 
   private async handlePermissionRequest(req: JsonRpcRequestFrame): Promise<void> {
@@ -461,10 +470,14 @@ export class AcpClient {
         );
         return;
       case 'agent_message_chunk':
+        // `_meta` rides along because some agent messages are not just text: a
+        // delivered mission QUESTION arrives this way and carries the handle to
+        // answer it (see MISSION_ASK_META_KEY).
         handlers.onMessageChunk?.(
           update.content.text ?? '',
           update.messageId,
           imagePartFromBlock(update.content) ?? undefined,
+          update._meta as Record<string, unknown> | undefined,
         );
         return;
       case 'agent_thought_chunk':
@@ -600,7 +613,10 @@ export class AcpClient {
    * short initial capture. User lines are not HITL-gated. A non-contenox agent
    * answers method-not-found, which surfaces as a rejected promise.
    */
-  async runTerminal(sessionId: SessionId, command: string): Promise<{ offset: number; output?: string }> {
+  async runTerminal(
+    sessionId: SessionId,
+    command: string,
+  ): Promise<{ offset: number; output?: string }> {
     return this.call<{ offset: number; output?: string }>('_contenox/terminal/run', {
       sessionId,
       command,

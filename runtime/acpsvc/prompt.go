@@ -145,6 +145,13 @@ func (d *nativeDriver) Prompt(ctx context.Context, req libacp.PromptRequest, ses
 	if sess.MissionID != "" {
 		promptCtx = missiontools.WithMissionID(promptCtx, sess.MissionID)
 	}
+	// The other end of the same relationship: a session that FIRED missions carries
+	// its own id in, unlocking the supervisor tools (see missiontools.WithParentSessionID)
+	// so this turn can look at what it dispatched and answer what a unit asks. A
+	// session that fired nothing injects nothing and is offered no mission tools.
+	if sess.FiredMissions && sess.InternalSessionID != "" {
+		promptCtx = missiontools.WithParentSessionID(promptCtx, sess.InternalSessionID)
+	}
 
 	rawCh := make(chan []byte, 64)
 	bus := t.deps.Engine.Bus

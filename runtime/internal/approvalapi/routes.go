@@ -13,6 +13,7 @@ package approvalapi
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	apiframework "github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/runtime/hitlservice"
@@ -22,6 +23,13 @@ import (
 // to a pending ask.
 type AnswerRequest struct {
 	Approved bool `json:"approved"`
+	// Answer is the operator's reply to an ATTENTION ask — a unit's question
+	// ("which project did you mean?"), which is answered with data rather than
+	// yes/no. When it is set, the ask is resolved with this text and the waiting
+	// unit receives it as its tool result; Approved is then irrelevant. Setting
+	// it on a permission ask is refused (see hitlservice.Answer), because prose
+	// is not a verdict.
+	Answer string `json:"answer,omitempty"`
 }
 
 // AddRoutes registers the approval-inbox routes on mux.
@@ -69,6 +77,20 @@ func (h *approvalHandler) answer(w http.ResponseWriter, r *http.Request) {
 	req, err := apiframework.Decode[AnswerRequest](r) // @request approvalapi.AnswerRequest
 	if err != nil {
 		_ = apiframework.Error(w, r, err, apiframework.UpdateOperation)
+		return
+	}
+
+	// An answer with TEXT is a reply to a unit's question; without it, an
+	// approve/deny verdict on a gated tool call. One route serves both because
+	// they are one queue to the operator — "something is waiting on you" — and
+	// splitting them would make a client discover which endpoint to call from a
+	// row it already has.
+	if strings.TrimSpace(req.Answer) != "" {
+		if err := h.svc.Answer(ctx, id, req.Answer); err != nil {
+			_ = apiframework.Error(w, r, mapRespondError(err), apiframework.UpdateOperation)
+			return
+		}
+		_ = apiframework.Encode(w, r, http.StatusOK, "answered") // @response string
 		return
 	}
 

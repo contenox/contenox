@@ -74,7 +74,22 @@ func (f *fakeHITL) RequestApproval(_ context.Context, req hitlservice.ApprovalRe
 }
 
 func (f *fakeHITL) Respond(context.Context, string, bool) error { return nil }
-func (f *fakeHITL) SweepExpired(context.Context) (int, error)   { return 0, nil }
+
+// The attention-ask half of the Service: this double covers the PERMISSION path
+// only, so both are inert here.
+func (f *fakeHITL) RequestAttention(context.Context, hitlservice.AttentionRequest, taskengine.TaskEventSink) (string, error) {
+	return "", nil
+}
+func (f *fakeHITL) Answer(context.Context, string, string) error        { return nil }
+func (f *fakeHITL) AnswerAsAgent(context.Context, string, string) error { return nil }
+func (f *fakeHITL) PendingAttentionAsks(context.Context, string) ([]*runtimetypes.HITLApproval, error) {
+	return nil, nil
+}
+func (f *fakeHITL) AttentionBoundsFor(context.Context, string) (hitlservice.AttentionBounds, error) {
+	return hitlservice.AttentionBounds{}, nil
+}
+func (f *fakeHITL) AgentAnswerCount(context.Context, string) (int, error) { return 0, nil }
+func (f *fakeHITL) SweepExpired(context.Context) (int, error)             { return 0, nil }
 func (f *fakeHITL) ListPending(context.Context, int) ([]*runtimetypes.HITLApproval, error) {
 	return nil, nil
 }

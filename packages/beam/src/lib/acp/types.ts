@@ -195,6 +195,49 @@ export function missionFromMeta(meta: Record<string, unknown> | undefined | null
   return typeof id === 'string' && id.trim() !== '' ? id.trim() : null;
 }
 
+/**
+ * The `_meta` key a DELIVERED QUESTION carries — a mission unit asking the
+ * session that fired it for something it cannot decide alone (mirrored from
+ * reportrouter's `contenox.missionAsk`). The unit is parked on the tool call
+ * that asked, so this is not a notification: the answer given here is what
+ * unblocks it.
+ */
+export const MISSION_ASK_META_KEY = 'contenox.missionAsk';
+
+/** A unit's pending question, as delivered into the firing session's stream. */
+export interface MissionAsk {
+  askId: string;
+  missionId: string;
+  agentName?: string;
+  intent?: string;
+  summary: string;
+  detail?: string;
+}
+
+/**
+ * Reads a delivered question out of a session update's `_meta`, or `null` for an
+ * ordinary message (the common case). Tolerant of shape: `_meta` is an open
+ * envelope, and a malformed one must render as plain text rather than break the
+ * transcript.
+ */
+export function missionAskFromMeta(
+  meta: Record<string, unknown> | undefined | null,
+): MissionAsk | null {
+  const raw = meta?.[MISSION_ASK_META_KEY];
+  if (typeof raw !== 'object' || raw === null) return null;
+  const ask = raw as Partial<MissionAsk>;
+  if (typeof ask.askId !== 'string' || ask.askId.trim() === '') return null;
+  if (typeof ask.summary !== 'string' || ask.summary.trim() === '') return null;
+  return {
+    askId: ask.askId.trim(),
+    missionId: typeof ask.missionId === 'string' ? ask.missionId : '',
+    agentName: typeof ask.agentName === 'string' ? ask.agentName : undefined,
+    intent: typeof ask.intent === 'string' ? ask.intent : undefined,
+    summary: ask.summary,
+    detail: typeof ask.detail === 'string' ? ask.detail : undefined,
+  };
+}
+
 /** Builds the `session/new` request `_meta` that drives external agent `name` (see {@link AGENT_META_KEY}). */
 export function agentMeta(name: string): Record<string, unknown> {
   return { [AGENT_META_KEY]: name };
@@ -531,7 +574,12 @@ interface ToolCallFields {
  */
 export type SessionUpdate =
   | { sessionUpdate: 'user_message_chunk'; content: ContentBlock; messageId?: string }
-  | { sessionUpdate: 'agent_message_chunk'; content: ContentBlock; messageId?: string }
+  | {
+      sessionUpdate: 'agent_message_chunk';
+      content: ContentBlock;
+      messageId?: string;
+      _meta?: Record<string, unknown>;
+    }
   | { sessionUpdate: 'agent_thought_chunk'; content: ContentBlock; messageId?: string }
   | ({ sessionUpdate: 'tool_call' } & ToolCallFields)
   | ({ sessionUpdate: 'tool_call_update' } & ToolCallFields)

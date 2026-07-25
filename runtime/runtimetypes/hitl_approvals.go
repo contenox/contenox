@@ -213,6 +213,34 @@ func (s *store) ListHITLApprovals(ctx context.Context, state HITLApprovalState, 
 	return scanHITLApprovalRows(rows)
 }
 
+// ListHITLApprovalsForMission returns every ask raised by missionID's unit,
+// newest first, in ANY state. It is how a supervisor answers "what has this
+// mission asked me, and what did those asks come to" — the pending ones to
+// answer, the resolved ones to count (see hitlservice's agent-answer cap).
+//
+// Deliberately no state filter and no JSON predicate: a mission raises few asks,
+// so the caller filters in Go rather than pushing a resolution-shape query into
+// SQL that would have to be written twice for the two dialects this store
+// supports.
+func (s *store) ListHITLApprovalsForMission(ctx context.Context, missionID string, limit int) ([]*HITLApproval, error) {
+	if limit > MAXLIMIT {
+		return nil, ErrLimitParamExceeded
+	}
+	if limit <= 0 {
+		limit = MAXLIMIT
+	}
+	rows, err := s.Exec.QueryContext(ctx, `
+		SELECT `+hitlApprovalColumns+`
+		FROM hitl_approvals
+		WHERE mission_id = $1
+		ORDER BY created_at DESC
+		LIMIT $2`, missionID, limit)
+	if err != nil {
+		return nil, err
+	}
+	return scanHITLApprovalRows(rows)
+}
+
 func scanHITLApprovalRows(rows *sql.Rows) ([]*HITLApproval, error) {
 	out := []*HITLApproval{}
 	for rows.Next() {

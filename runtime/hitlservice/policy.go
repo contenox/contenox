@@ -134,6 +134,10 @@ type Policy struct {
 	DefaultAction Action         `json:"default_action,omitempty"`
 	Rules         []Rule         `json:"rules"`
 	Compute       *ComputeBounds `json:"compute,omitempty"`
+	// Attention is the OPTIONAL attention half of the envelope: who may answer a
+	// unit's question (see AttentionBounds). Nil — the default — means a HUMAN
+	// must, which is what the escalation was for.
+	Attention *AttentionBounds `json:"attention,omitempty"`
 }
 
 // OnExhausted names what a mission does when it crosses one of its envelope's
@@ -679,6 +683,11 @@ func validatePolicy(p *Policy) error {
 			default:
 				return fmt.Errorf("rule %d, condition %d: unknown op %q", i, j, c.Op)
 			}
+		}
+	}
+	if p.Attention != nil {
+		if err := validateAttentionBounds(p.Attention); err != nil {
+			return err
 		}
 	}
 	if p.Compute != nil {

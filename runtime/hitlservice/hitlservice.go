@@ -101,6 +101,7 @@ type approvalStore interface {
 	ResolveHITLApproval(ctx context.Context, id string, state runtimetypes.HITLApprovalState, resolution json.RawMessage, resolvedAt time.Time) error
 	ListExpiredHITLApprovals(ctx context.Context, asOf time.Time, limit int) ([]*runtimetypes.HITLApproval, error)
 	ListHITLApprovals(ctx context.Context, state runtimetypes.HITLApprovalState, createdAtCursor *time.Time, limit int) ([]*runtimetypes.HITLApproval, error)
+	ListHITLApprovalsForMission(ctx context.Context, missionID string, limit int) ([]*runtimetypes.HITLApproval, error)
 }
 
 type Service interface {
@@ -119,6 +120,36 @@ type Service interface {
 	// ErrApprovalAlreadyResolved, or ErrApprovalExpired instead of a bare
 	// false when approvalID cannot be answered — never a silent no-op.
 	Respond(ctx context.Context, approvalID string, approved bool) error
+
+	// RequestAttention durably records a unit's QUESTION for a human and blocks
+	// until Answer replies with text, the ceiling expires it, or ctx ends. It is
+	// the second ask kind this store carries: a permission ask is answered
+	// yes/no, an attention ask is answered with data ("which project did you
+	// mean?"), and the asking unit receives that data as its tool result. See
+	// attention.go.
+	RequestAttention(ctx context.Context, req AttentionRequest, sink taskengine.TaskEventSink) (string, error)
+
+	// Answer resolves a pending ATTENTION ask with the operator's own words and
+	// wakes the unit parked on it. It rejects a permission ask (answered
+	// approve/deny) and returns the same sentinels Respond does.
+	Answer(ctx context.Context, askID, text string) error
+
+	// AnswerAsAgent is Answer, recorded as answered by a supervising AGENT rather
+	// than a human — the actor an envelope's agent-answer cap is counted on.
+	AnswerAsAgent(ctx context.Context, askID, text string) error
+
+	// PendingAttentionAsks returns a mission's unanswered questions, newest first.
+	PendingAttentionAsks(ctx context.Context, missionID string) ([]*runtimetypes.HITLApproval, error)
+
+	// AttentionBoundsFor reads an envelope's say over who may answer a unit's
+	// question: whether the supervising agent may at all, and how often. The zero
+	// bounds — human-only — are what an envelope that declares none, or one that
+	// fails to load, both yield.
+	AttentionBoundsFor(ctx context.Context, policyName string) (AttentionBounds, error)
+
+	// AgentAnswerCount reports how many of a mission's questions an agent (not a
+	// human) has answered — the durable counter behind the envelope's cap.
+	AgentAnswerCount(ctx context.Context, missionID string) (int, error)
 
 	// SweepExpired resolves every pending approval whose deadline has
 	// passed, applying its stored OnTimeout (default deny) exactly as
@@ -174,7 +205,7 @@ type service struct {
 	approvals      approvalStore
 
 	mu              sync.Mutex
-	pending         map[string]chan bool
+	pending         map[string]chan answer
 	approvalCeiling time.Duration
 }
 
@@ -197,7 +228,7 @@ func NewWithDefaultPolicy(src PolicySource, tenantID string, store KVReader, tra
 		store:          store,
 		tracker:        tracker,
 		fallbackPolicy: fallbackPolicy,
-		pending:        make(map[string]chan bool),
+		pending:        make(map[string]chan answer),
 	}
 	if as, ok := store.(approvalStore); ok {
 		svc.approvals = as
@@ -394,7 +425,7 @@ func (s *service) RequestApproval(ctx context.Context, req ApprovalRequest, sink
 	// `default:` arm — that unconditional discard was defect D2 (the old
 	// unbuffered send-with-default Respond had zero callers repo-wide and
 	// would have dropped answers if wired).
-	ch := make(chan bool, 1)
+	ch := make(chan answer, 1)
 	s.mu.Lock()
 	s.pending[approvalID] = ch
 	s.mu.Unlock()
@@ -426,8 +457,8 @@ func (s *service) RequestApproval(ctx context.Context, req ApprovalRequest, sink
 	}
 
 	select {
-	case approved := <-ch:
-		return approved, nil
+	case ans := <-ch:
+		return ans.approved, nil
 	case <-waitCtx.Done():
 		if ctx.Err() != nil {
 			// The caller's own context ended: process shutdown, client
@@ -493,7 +524,7 @@ func (s *service) Respond(ctx context.Context, approvalID string, approved bool)
 	s.mu.Unlock()
 	if ok {
 		select {
-		case ch <- approved:
+		case ch <- answer{approved: approved}:
 		default:
 			// Should not happen (the CAS above guarantees at most one winning
 			// Respond per row, and the channel is fresh per RequestApproval
@@ -537,7 +568,7 @@ func (s *service) SweepExpired(ctx context.Context) (int, error) {
 		s.mu.Unlock()
 		if ok {
 			select {
-			case ch <- approved:
+			case ch <- answer{approved: approved}:
 			default:
 			}
 		}
@@ -589,12 +620,49 @@ func onTimeoutOutcome(onTimeout Action) bool {
 // representation is forward-looking.
 type approvalResolution struct {
 	Approved *bool `json:"approved,omitempty"`
+	// Answer carries an ATTENTION ask's reply — the operator's own words, which
+	// is the whole difference between the two ask kinds. A permission ask is
+	// answered yes/no; an attention ask ("which project did you mean?") is
+	// answered with data, and that data is what the asking unit receives back as
+	// its tool result. The forward-looking shape this column was given (see
+	// runtimetypes.HITLApproval.Resolution) is what let this land without a
+	// migration.
+	Answer *string `json:"answer,omitempty"`
+	// AnsweredBy records WHO answered an attention ask when it was not a human —
+	// today only "agent" (a supervising session's model answering its own
+	// subagent). Absent means a human answered, which is the norm and needs no
+	// marker. See AnswerAsAgent.
+	AnsweredBy *string `json:"answeredBy,omitempty"`
+}
+
+// answer is what a parked requester is woken with. RequestApproval reads only
+// Approved; RequestAttention reads Text. One channel type serves both because
+// both kinds resolve through the same durable row and the same Respond/Answer
+// compare-and-swap — a second waiter mechanism for the second ask kind would be
+// the "no second mechanism" invariant broken for no gain.
+type answer struct {
+	approved bool
+	text     string
 }
 
 // marshalApprovalResolution encodes approved as the current resolution
 // payload shape. Marshaling a fixed, trivially-encodable struct cannot fail
 // in practice; the fallback exists only so a caller never has to handle an
 // error from what is conceptually an infallible encode.
+// marshalAttentionResolution encodes an attention ask's answer text as the
+// stored resolution payload.
+func marshalAttentionResolution(text, by string) json.RawMessage {
+	res := approvalResolution{Answer: &text}
+	if by != "" {
+		res.AnsweredBy = &by
+	}
+	raw, err := json.Marshal(res)
+	if err != nil {
+		return json.RawMessage(`{}`)
+	}
+	return raw
+}
+
 func marshalApprovalResolution(approved bool) json.RawMessage {
 	raw, err := json.Marshal(approvalResolution{Approved: &approved})
 	if err != nil {

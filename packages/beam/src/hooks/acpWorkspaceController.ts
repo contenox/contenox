@@ -4,6 +4,7 @@ import {
   agentMeta,
   createAcpClient,
   JSON_RPC_ERROR_CODES,
+  missionAskFromMeta,
   workspaceConfigOptionsFromInit,
   type PromptCapabilities,
   type SessionConfigOption,
@@ -17,7 +18,11 @@ import { adoptMeta, type AdoptRef } from '../lib/adoptMeta';
 import type { PendingImageAttachment } from '../pages/chat/lib/imageAttachments';
 import { promptBlocksFromDraft, type WorkspaceFileRef } from '../pages/chat/lib/mentions';
 import type { AcpSessionAction } from './acpSessionState';
-import { EMPTY_SESSION_KEY, type AcpSessionsAction, type AcpWorkspaceAction } from './acpWorkspaceState';
+import {
+  EMPTY_SESSION_KEY,
+  type AcpSessionsAction,
+  type AcpWorkspaceAction,
+} from './acpWorkspaceState';
 
 /**
  * Orchestration for a multi-session ACP workspace: one long-lived connection
@@ -168,7 +173,9 @@ export interface AcpWorkspaceController {
    * session. On failure it surfaces the error via the session error banner
    * (like a failed prompt) and rejects, so the caller can hold the turn back.
    */
-  applyConfigOptions(options: Array<{ configId: string; value: SessionConfigOptionValue }>): Promise<void>;
+  applyConfigOptions(
+    options: Array<{ configId: string; value: SessionConfigOptionValue }>,
+  ): Promise<void>;
   /**
    * Manual reconnect: cancels any pending automatic backoff timer and
    * immediately runs the same fresh-transport+initialize+resume path the
@@ -203,7 +210,8 @@ export const PROMPT_STALL_TIMEOUT_MS = 120_000;
  * recovery banner) when the stall watchdog trips. English like every other raw
  * runtime error string — the UI localizes only the wrapper/headline.
  */
-const STALLED_TURN_MESSAGE = 'The agent stopped responding before the turn completed (no result received).';
+const STALLED_TURN_MESSAGE =
+  'The agent stopped responding before the turn completed (no result received).';
 
 let idCounter = 0;
 /** Monotonic id local to this module — unique per browser tab, which is all a client-side message/turn id needs to be. */
@@ -235,7 +243,8 @@ function isAuthRequired(err: unknown): boolean {
 function classifySessionOpenFailure(err: unknown): 'not_found' | 'error' {
   if (
     err instanceof AcpError &&
-    (err.code === JSON_RPC_ERROR_CODES.resourceNotFound || err.code === JSON_RPC_ERROR_CODES.invalidParams)
+    (err.code === JSON_RPC_ERROR_CODES.resourceNotFound ||
+      err.code === JSON_RPC_ERROR_CODES.invalidParams)
   ) {
     return 'not_found';
   }
@@ -439,16 +448,37 @@ export function createAcpWorkspaceController(
     };
     return {
       onUserMessageChunk: (text, id, image) =>
-        active(() => sessionDispatch(sid, { type: 'user_message_chunk', id: id ?? nextId('user'), text, image })),
-      onMessageChunk: (text, id, image) =>
-        active(() => sessionDispatch(sid, { type: 'message_chunk', id: id ?? turnId(), text, image })),
-      onThoughtChunk: (text, id) => active(() => sessionDispatch(sid, { type: 'thought_chunk', id: id ?? turnId(), text })),
+        active(() =>
+          sessionDispatch(sid, {
+            type: 'user_message_chunk',
+            id: id ?? nextId('user'),
+            text,
+            image,
+          }),
+        ),
+      onMessageChunk: (text, id, image, meta) =>
+        active(() =>
+          sessionDispatch(sid, {
+            type: 'message_chunk',
+            id: id ?? turnId(),
+            text,
+            image,
+            // A delivered mission question arrives as an ordinary agent message
+            // whose `_meta` carries the handle to answer it.
+            missionAsk: missionAskFromMeta(meta) ?? undefined,
+          }),
+        ),
+      onThoughtChunk: (text, id) =>
+        active(() => sessionDispatch(sid, { type: 'thought_chunk', id: id ?? turnId(), text })),
       onToolCall: event => active(() => sessionDispatch(sid, { type: 'tool_call', event })),
       onPlan: entries => active(() => sessionDispatch(sid, { type: 'plan', entries })),
       onUsage: usage => active(() => sessionDispatch(sid, { type: 'usage', usage })),
-      onTerminalOutput: payload => active(() => sessionDispatch(sid, { type: 'terminal_output', payload })),
-      onAvailableCommands: commands => sessionDispatch(sid, { type: 'available_commands', commands }),
-      onConfigOptions: configOptions => sessionDispatch(sid, { type: 'config_options', configOptions }),
+      onTerminalOutput: payload =>
+        active(() => sessionDispatch(sid, { type: 'terminal_output', payload })),
+      onAvailableCommands: commands =>
+        sessionDispatch(sid, { type: 'available_commands', commands }),
+      onConfigOptions: configOptions =>
+        sessionDispatch(sid, { type: 'config_options', configOptions }),
       onSessionInfo: info =>
         workspaceDispatch({
           type: 'session_upserted',
@@ -567,7 +597,8 @@ export function createAcpWorkspaceController(
       trackSubscription(sid, c);
       // See the equivalent comment in newSession() — session/resume's
       // response carries this session's config options inline too.
-      if (result.configOptions) sessionDispatch(sid, { type: 'config_options', configOptions: result.configOptions });
+      if (result.configOptions)
+        sessionDispatch(sid, { type: 'config_options', configOptions: result.configOptions });
       sessionDispatch(sid, { type: 'connection_resumed' });
       return;
     } catch {
@@ -580,10 +611,14 @@ export function createAcpWorkspaceController(
     trackSubscription(sid, c);
     try {
       const result = await c.loadSession(sid, cwd);
-      if (result.configOptions) sessionDispatch(sid, { type: 'config_options', configOptions: result.configOptions });
+      if (result.configOptions)
+        sessionDispatch(sid, { type: 'config_options', configOptions: result.configOptions });
       sessionDispatch(sid, { type: 'connection_resumed' });
     } catch (err) {
-      sessionDispatch(sid, { type: 'prompt_error', message: `failed to restore session after reconnect: ${errMessage(err)}` });
+      sessionDispatch(sid, {
+        type: 'prompt_error',
+        message: `failed to restore session after reconnect: ${errMessage(err)}`,
+      });
     }
   }
 
@@ -725,12 +760,16 @@ export function createAcpWorkspaceController(
     // in buildSessionHandlers(), this never arrives as a session/update
     // notification on a fresh session, so it has to be applied here rather
     // than relying on onConfigOptions.
-    if (result.configOptions) sessionDispatch(sid, { type: 'config_options', configOptions: result.configOptions });
+    if (result.configOptions)
+      sessionDispatch(sid, { type: 'config_options', configOptions: result.configOptions });
 
     // Thread the response `_meta` echo (external agent attribution — see
     // AGENT_META_KEY) into the roster so the sidebar row + transcript label can
     // read it right away, matching what a later session/list would carry.
-    workspaceDispatch({ type: 'session_upserted', session: { sessionId: sid, cwd: sessionCwd, _meta: result._meta } });
+    workspaceDispatch({
+      type: 'session_upserted',
+      session: { sessionId: sid, cwd: sessionCwd, _meta: result._meta },
+    });
     setFocus(sid);
     // A brand-new session is trivially "open" — clears any stale
     // not_found/error left by a previous failed openSession() (e.g. the
@@ -777,10 +816,14 @@ export function createAcpWorkspaceController(
 
     sessionDispatch(sid, { type: 'session_reset', sessionId: sid });
     trackSubscription(sid, c);
-    if (result.configOptions) sessionDispatch(sid, { type: 'config_options', configOptions: result.configOptions });
+    if (result.configOptions)
+      sessionDispatch(sid, { type: 'config_options', configOptions: result.configOptions });
     // Thread the response `_meta` echo (contenox.agent + contenox.adopt outcome)
     // into the roster so the header can read the controller verdict + agent name.
-    workspaceDispatch({ type: 'session_upserted', session: { sessionId: sid, cwd: sessionCwd, _meta: result._meta } });
+    workspaceDispatch({
+      type: 'session_upserted',
+      session: { sessionId: sid, cwd: sessionCwd, _meta: result._meta },
+    });
     setFocus(sid);
     workspaceDispatch({ type: 'session_load_succeeded' });
     // Additive: leave every previously-open session untouched (no teardown).
@@ -816,7 +859,8 @@ export function createAcpWorkspaceController(
       const result = await runGuarded(() => c.loadSession(id, cwd));
       // See the equivalent comment in newSession() — session/load's response
       // carries this session's config options inline, same as session/new's.
-      if (result.configOptions) sessionDispatch(id, { type: 'config_options', configOptions: result.configOptions });
+      if (result.configOptions)
+        sessionDispatch(id, { type: 'config_options', configOptions: result.configOptions });
     } catch (err) {
       // Roll this tab back — leave every OTHER open session untouched. If it
       // was focused (it is, we just focused it), fall back to the empty view
@@ -902,7 +946,11 @@ export function createAcpWorkspaceController(
   // Turn + permission + config actions on the open session
   // ---------------------------------------------------------------------
 
-  function sendPrompt(text: string, mentions: WorkspaceFileRef[] = [], images: PendingImageAttachment[] = []): void {
+  function sendPrompt(
+    text: string,
+    mentions: WorkspaceFileRef[] = [],
+    images: PendingImageAttachment[] = [],
+  ): void {
     if (disposed || !client || !focusedSessionId || !text.trim()) return;
     const sid = focusedSessionId;
     const entry = openSessions.get(sid);
@@ -986,7 +1034,12 @@ export function createAcpWorkspaceController(
     // call was in flight — the live stream already reached the panel via the
     // standing subscription.
     if (openSessions.has(sid)) {
-      sessionDispatch(sid, { type: 'terminal_card', id: nextId('term'), command, output: res.output ?? '' });
+      sessionDispatch(sid, {
+        type: 'terminal_card',
+        id: nextId('term'),
+        command,
+        output: res.output ?? '',
+      });
     }
   }
 
@@ -1037,7 +1090,8 @@ export function createAcpWorkspaceController(
       // guardAuthRequired inside setConfigOption) surface on the same inline
       // banner a failed prompt uses — the session exists by now, so there's a
       // surface to attach it to. Rethrow so the caller holds the prompt back.
-      if (openSessions.has(sid)) sessionDispatch(sid, { type: 'prompt_error', message: errMessage(err) });
+      if (openSessions.has(sid))
+        sessionDispatch(sid, { type: 'prompt_error', message: errMessage(err) });
       throw err;
     }
   }

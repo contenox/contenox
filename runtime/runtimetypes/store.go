@@ -242,6 +242,7 @@ type Store interface {
 	ResolveHITLApproval(ctx context.Context, id string, state HITLApprovalState, resolution json.RawMessage, resolvedAt time.Time) error
 	ListExpiredHITLApprovals(ctx context.Context, asOf time.Time, limit int) ([]*HITLApproval, error)
 	ListHITLApprovals(ctx context.Context, state HITLApprovalState, createdAtCursor *time.Time, limit int) ([]*HITLApproval, error)
+	ListHITLApprovalsForMission(ctx context.Context, missionID string, limit int) ([]*HITLApproval, error)
 	EstimateHITLApprovalCount(ctx context.Context) (int64, error)
 
 	EnforceMaxRowCount(ctx context.Context, count int64) error

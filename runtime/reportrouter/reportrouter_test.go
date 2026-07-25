@@ -10,6 +10,7 @@ import (
 
 	"github.com/contenox/runtime/libacp"
 	libbus "github.com/contenox/runtime/libbus"
+	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/missionservice"
 	"github.com/contenox/runtime/runtime/operatorinbox"
 	"github.com/stretchr/testify/require"
@@ -186,4 +187,67 @@ func TestUnit_StartConsumesBusEvents(t *testing.T) {
 	require.Eventually(t, func() bool { return del.count() == 1 }, 2*time.Second, 10*time.Millisecond,
 		"the router consumes the published event and delivers it")
 	require.Equal(t, libacp.SessionID("parent-42"), del.sessions[0])
+}
+
+// TestUnit_RouteAsk_DeliversTheQuestionToTheFiringSession is the ask half of the
+// supervision edge: a unit's QUESTION must reach the session that fired the
+// mission, carrying the handle an answer is given against, so the operator can
+// answer where they already are instead of hunting through a separate queue.
+func TestUnit_RouteAsk_DeliversTheQuestionToTheFiringSession(t *testing.T) {
+	sessions := &fakeDeliverer{}
+	inbox := &fakeInbox{}
+	r, err := New(Deps{Bus: libbus.NewInMem(), Sessions: sessions, Inbox: inbox})
+	require.NoError(t, err)
+
+	r.routeAsk(context.Background(), missionservice.AttentionAskedEvent{
+		MissionID:       "m-1",
+		AskID:           "ask-9",
+		ParentSessionID: "cnx-parent",
+		AgentName:       "chain-acp",
+		Summary:         "which project did you mean?",
+	})
+
+	require.Equal(t, 1, sessions.count(), "the firing session must be told")
+	got := sessions.notes[0]
+	require.Equal(t, libacp.SessionID("cnx-parent"), got.SessionID)
+	require.Contains(t, got.Update.Content.Text, "which project did you mean?")
+	require.Contains(t, got.Update.Content.Text, "waiting on you")
+	require.Contains(t, string(got.Update.Meta), "contenox.missionAsk")
+	require.Contains(t, string(got.Update.Meta), "ask-9", "the answer handle must ride along")
+
+	require.Empty(t, inbox.items,
+		"an ask is already durable in its own queue — the report inbox must not be double-written")
+}
+
+// TestUnit_RouteAsk_OperatorFiredStaysInTheQueue pins the no-parent case: nothing
+// is delivered and nothing is inboxed, because the ask queue IS where an operator
+// who fired directly answers.
+func TestUnit_RouteAsk_OperatorFiredStaysInTheQueue(t *testing.T) {
+	sessions := &fakeDeliverer{}
+	inbox := &fakeInbox{}
+	r, err := New(Deps{Bus: libbus.NewInMem(), Sessions: sessions, Inbox: inbox})
+	require.NoError(t, err)
+
+	r.routeAsk(context.Background(), missionservice.AttentionAskedEvent{
+		MissionID: "m-2", AskID: "ask-1", Summary: "anyone?",
+	})
+
+	require.Zero(t, sessions.count())
+	require.Empty(t, inbox.items)
+}
+
+// TestUnit_RouteAsk_ParentNotLiveIsNotAFault covers the reconnect gap: a firing
+// session that is not currently held by a connection cannot be told, and that is
+// a missed notification — the question stays answerable in the queue.
+func TestUnit_RouteAsk_ParentNotLiveIsNotAFault(t *testing.T) {
+	sessions := &fakeDeliverer{err: libdb.ErrNotFound}
+	inbox := &fakeInbox{}
+	r, err := New(Deps{Bus: libbus.NewInMem(), Sessions: sessions, Inbox: inbox})
+	require.NoError(t, err)
+
+	r.routeAsk(context.Background(), missionservice.AttentionAskedEvent{
+		MissionID: "m-3", AskID: "ask-2", ParentSessionID: "gone", Summary: "still there?",
+	})
+
+	require.Empty(t, inbox.items, "a missed ask notification is not an inbox report")
 }

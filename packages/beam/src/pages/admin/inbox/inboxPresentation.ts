@@ -80,10 +80,7 @@ export function joinInboxReports(
  * visit) drives the per-group `newCount` used to mark what arrived since the
  * previous skim.
  */
-export function groupReportsByMission(
-  items: InboxReportItem[],
-  lastSeen?: string,
-): ReportGroup[] {
+export function groupReportsByMission(items: InboxReportItem[], lastSeen?: string): ReportGroup[] {
   const byMission = new Map<string, ReportGroup>();
   for (const item of items) {
     const id = item.mission.id;
@@ -332,6 +329,21 @@ export function approvalToolLabel(approval: Pick<HITLApproval, 'toolsName' | 'to
 }
 
 /**
+ * The two ask kinds arrive in one queue and are answered differently: a
+ * PERMISSION ask is a gated tool call waiting on a verdict (allow/deny), while
+ * an ATTENTION ask is a running unit's QUESTION, answered with text that the
+ * unit receives as its tool result. Mirrors `hitlservice.IsAttentionAsk` — the
+ * discriminator is the tool the unit actually called, so no flag had to be
+ * invented for it.
+ *
+ * Answering a question with a bare allow leaves the unit with nothing to act
+ * on, which is exactly what the card must not let an operator do by accident.
+ */
+export function isAttentionAsk(approval: Pick<HITLApproval, 'toolsName' | 'toolName'>): boolean {
+  return approval.toolsName === 'mission' && approval.toolName === 'mission_ask_attention';
+}
+
+/**
  * Present-only attribution for an ask: an absent field is omitted, never shown
  * blank (the attribution set is best-effort — an ask from a native chain turn
  * carries none of it).
@@ -379,10 +391,7 @@ function sortableTime(iso: string): number {
 
 // The report-kind badge variants and labels are shared with the mission detail
 // page — one source of truth for how a blocker reads versus a progress note.
-export {
-  REPORT_KIND_BADGE_VARIANT,
-  REPORT_KIND_LABEL_KEY,
-} from '../missions/missionPresentation';
+export { REPORT_KIND_BADGE_VARIANT, REPORT_KIND_LABEL_KEY } from '../missions/missionPresentation';
 
 /** Which answer a button sends. Mirrors PermissionCard's option styling. */
 export const APPROVAL_ANSWER_VARIANT: Record<'allow' | 'deny', 'primary' | 'danger'> = {

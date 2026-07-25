@@ -2,12 +2,12 @@ import {
   ChatMessage,
   ChatStreamingCaret,
   ChatStreamThinkingBox,
-  ChatTranscriptStreamingPlaceholder,
   chatTranscriptMarkdownComponents,
+  ChatTranscriptStreamingPlaceholder,
   cn,
   Collapsible,
-  DiffView,
   diffLinesFromTexts,
+  DiffView,
   InlineAttachments,
   InlineNotice,
   Span,
@@ -15,18 +15,30 @@ import {
   type ToolCallCardProps,
 } from '@contenox/ui';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { useTranslation } from 'react-i18next';
-import logoMarkDarkUrl from '../../../assets/logo-mark.svg?url';
 import logoMarkLightUrl from '../../../assets/logo-mark-light.svg?url';
-import type { AcpChatMessage, AcpErrorCard, AcpSessionState, AcpTerminalCard, AcpToolCallState } from '../../../hooks/acpSessionState';
+import logoMarkDarkUrl from '../../../assets/logo-mark.svg?url';
+import type {
+  AcpChatMessage,
+  AcpErrorCard,
+  AcpSessionState,
+  AcpTerminalCard,
+  AcpToolCallState,
+} from '../../../hooks/acpSessionState';
 import { acpFailureCopyKeys, classifyAcpExecutionError } from '../../../lib/acpFailureKind';
 import { useTheme } from '../../../lib/ThemeProvider';
-import { shouldShowStreamingCaret, shouldShowStreamingPlaceholder } from '../lib/streamingPresentation';
+import {
+  shouldShowStreamingCaret,
+  shouldShowStreamingPlaceholder,
+} from '../lib/streamingPresentation';
+import { MissionAskCard } from './MissionAskCard';
 import { PermissionCard } from './PermissionCard';
 
-function toolCallCardStatus(status?: AcpToolCallState['status']): NonNullable<ToolCallCardProps['status']> {
+function toolCallCardStatus(
+  status?: AcpToolCallState['status'],
+): NonNullable<ToolCallCardProps['status']> {
   switch (status) {
     case 'in_progress':
       return 'running';
@@ -45,7 +57,11 @@ function diffKey(path: string | undefined, indexOfKind: number): string {
   return `diff-${path ?? 'unnamed'}-${indexOfKind}`;
 }
 
-function locationKey(path: string | undefined, line: number | undefined, indexOfKind: number): string {
+function locationKey(
+  path: string | undefined,
+  line: number | undefined,
+  indexOfKind: number,
+): string {
   return `loc-${path ?? 'unnamed'}-${line ?? ''}-${indexOfKind}`;
 }
 
@@ -66,7 +82,9 @@ function ThinkingHeader({ streaming }: { streaming: boolean | undefined }) {
   const { t } = useTranslation();
   return (
     <span className={cn('inline-flex items-center gap-1.5', streaming && 'animate-pulse')}>
-      <span>{streaming ? t('acp_chat.thinking_streaming_label') : t('acp_chat.thinking_done_label')}</span>
+      <span>
+        {streaming ? t('acp_chat.thinking_streaming_label') : t('acp_chat.thinking_done_label')}
+      </span>
     </span>
   );
 }
@@ -98,10 +116,12 @@ function TranscriptMessage({
       collapsible={false}
       copyText={message.text || undefined}
       copyLabel={t('acp_chat.copy')}
-      copiedLabel={t('acp_chat.copied')}
-    >
+      copiedLabel={t('acp_chat.copied')}>
       {message.thinking && (
-        <Collapsible defaultOpen={false} title={<ThinkingHeader streaming={message.thinkingStreaming} />} className="mb-2">
+        <Collapsible
+          defaultOpen={false}
+          title={<ThinkingHeader streaming={message.thinkingStreaming} />}
+          className="mb-2">
           <ChatStreamThinkingBox className="mt-1">{message.thinking}</ChatStreamThinkingBox>
         </Collapsible>
       )}
@@ -113,14 +133,23 @@ function TranscriptMessage({
           {shouldShowStreamingCaret(message) && <ChatStreamingCaret />}
         </>
       ) : shouldShowStreamingPlaceholder(message) ? (
-        <ChatTranscriptStreamingPlaceholder>{t('acp_chat.typing_label')}</ChatTranscriptStreamingPlaceholder>
+        <ChatTranscriptStreamingPlaceholder>
+          {t('acp_chat.typing_label')}
+        </ChatTranscriptStreamingPlaceholder>
       ) : null}
+      {/* A message that IS a unit's question gets its answer box here: the unit is
+          parked on the call that asked, so replying in place unblocks it. */}
+      {message.missionAsk && <MissionAskCard ask={message.missionAsk} />}
       {message.images && message.images.length > 0 && (
         // Image parts render after the flattened text (see AcpChatMessage.images),
         // via the shared inline-attachment image kind: constrained thumbnail,
         // click-to-expand dialog.
         <InlineAttachments
-          attachments={message.images.map(img => ({ kind: 'image' as const, data: img.data, mimeType: img.mimeType }))}
+          attachments={message.images.map(img => ({
+            kind: 'image' as const,
+            data: img.data,
+            mimeType: img.mimeType,
+          }))}
           labels={{
             imageAttachment: t('acp_chat.image_attachment_alt'),
             expandImage: t('acp_chat.image_expand'),
@@ -141,7 +170,11 @@ function ToolCallDetail({ toolCall }: { toolCall: AcpToolCallState }) {
   return (
     <div className="space-y-3">
       {diffs.map((d, i) => (
-        <DiffView key={diffKey(d.path, i)} filePath={d.path ?? ''} lines={diffLinesFromTexts(d.oldText ?? '', d.newText ?? '')} />
+        <DiffView
+          key={diffKey(d.path, i)}
+          filePath={d.path ?? ''}
+          lines={diffLinesFromTexts(d.oldText ?? '', d.newText ?? '')}
+        />
       ))}
       {toolCall.locations && toolCall.locations.length > 0 && (
         <ul className="text-text-muted dark:text-dark-text-muted space-y-0.5">
@@ -155,8 +188,12 @@ function ToolCallDetail({ toolCall }: { toolCall: AcpToolCallState }) {
       )}
       {hasRaw && (
         <Collapsible title={t('acp_chat.tool_raw_output')}>
-          <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap break-all">
-            {JSON.stringify({ input: toolCall.rawInput, output: toolCall.rawOutput, content: other }, null, 2)}
+          <pre className="mt-2 max-h-60 overflow-auto break-all whitespace-pre-wrap">
+            {JSON.stringify(
+              { input: toolCall.rawInput, output: toolCall.rawOutput, content: other },
+              null,
+              2,
+            )}
           </pre>
         </Collapsible>
       )}
@@ -231,7 +268,7 @@ function TranscriptError({ card }: { card: AcpErrorCard }) {
         {hint && <Span className="text-sm">{hint}</Span>}
         {card.message && (
           <Collapsible defaultOpen={false} title={t('acp_chat.error_details_toggle')}>
-            <p className="mt-1 max-h-40 overflow-y-auto text-xs break-words whitespace-pre-wrap [overflow-wrap:anywhere]">
+            <p className="mt-1 max-h-40 overflow-y-auto text-xs [overflow-wrap:anywhere] break-words whitespace-pre-wrap">
               {card.message}
             </p>
           </Collapsible>
@@ -268,7 +305,8 @@ export function TranscriptItems({ session, agentName, onRespondPermission }: Tra
   // Anchor the card after a real tool-call item only when one matches; otherwise
   // it renders once at the end (see the fallback below).
   const anchorId =
-    pendingToolCallId != null && session.items.some(it => it.kind === 'tool_call' && it.id === pendingToolCallId)
+    pendingToolCallId != null &&
+    session.items.some(it => it.kind === 'tool_call' && it.id === pendingToolCallId)
       ? pendingToolCallId
       : null;
 
@@ -296,24 +334,42 @@ export function TranscriptItems({ session, agentName, onRespondPermission }: Tra
         if (item.kind === 'message') {
           const message = session.messages[item.id];
           rendered = message ? (
-            <TranscriptMessage key={`m-${item.id}`} message={message} agentName={agentName} isLatest={isLatest} />
+            <TranscriptMessage
+              key={`m-${item.id}`}
+              message={message}
+              agentName={agentName}
+              isLatest={isLatest}
+            />
           ) : null;
         } else if (item.kind === 'terminal') {
           const card = session.terminals[item.id];
           rendered = card ? <TranscriptTerminal key={`x-${item.id}`} card={card} /> : null;
         } else if (item.kind === 'error') {
           const card = session.errorCards[item.id];
-          rendered = card && item.id !== latestErrorItemId ? <TranscriptError key={`e-${item.id}`} card={card} /> : null;
+          rendered =
+            card && item.id !== latestErrorItemId ? (
+              <TranscriptError key={`e-${item.id}`} card={card} />
+            ) : null;
         } else {
           const toolCall = session.toolCalls[item.id];
-          rendered = toolCall ? <TranscriptToolCall key={`t-${item.id}`} toolCall={toolCall} /> : null;
+          rendered = toolCall ? (
+            <TranscriptToolCall key={`t-${item.id}`} toolCall={toolCall} />
+          ) : null;
         }
-        const anchorHere = pending && anchorId != null && item.kind === 'tool_call' && item.id === anchorId;
+        const anchorHere =
+          pending && anchorId != null && item.kind === 'tool_call' && item.id === anchorId;
         if (!anchorHere) return rendered;
         // Return a keyed array (not a wrapper element) so the tool-call card keeps
         // its own stable key and is NOT remounted when the permission arrives or
         // resolves; the card is anchored as its immediate sibling.
-        return [rendered, <PermissionCard key={`perm-${item.id}`} permission={pending} onRespond={onRespondPermission} />];
+        return [
+          rendered,
+          <PermissionCard
+            key={`perm-${item.id}`}
+            permission={pending}
+            onRespond={onRespondPermission}
+          />,
+        ];
       })}
       {pending && anchorId == null && (
         <PermissionCard key="perm-fallback" permission={pending} onRespond={onRespondPermission} />

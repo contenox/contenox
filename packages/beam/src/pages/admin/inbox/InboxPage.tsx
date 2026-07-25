@@ -13,14 +13,20 @@ import {
   Page,
   Section,
   Span,
+  Textarea,
 } from '@contenox/ui';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
-import { PlanProgress } from '../../../components/PlanProgress';
 import { PlanRevisionLine } from '../../../components/MissionRevisionFeed';
+import { PlanProgress } from '../../../components/PlanProgress';
 import { UnitStatus } from '../../../components/UnitStatus';
-import { useApprovals, useAnswerApproval, useInboxReports } from '../../../hooks/useApprovals';
+import {
+  useAnswerApproval,
+  useApprovals,
+  useInboxReports,
+  useReplyToAsk,
+} from '../../../hooks/useApprovals';
 import { useFleet } from '../../../hooks/useFleet';
 import { useMissions } from '../../../hooks/useMissions';
 import { relativeTime } from '../../../lib/relativeTime';
@@ -30,23 +36,24 @@ import { cn } from '../../../lib/utils';
 import {
   APPROVAL_ANSWER_LABEL_KEY,
   APPROVAL_ANSWER_VARIANT,
-  REPORT_KIND_BADGE_VARIANT,
-  REPORT_KIND_LABEL_KEY,
-  type ApprovalGroup,
-  type ReportGroup,
-  type StalledUnit,
   approvalAttribution,
   approvalPolicyLabel,
   approvalToolLabel,
   countNewReports,
   groupApprovalsByMission,
   groupReportsByMission,
+  isAttentionAsk,
   isNewReport,
   missionsById,
   missionsByInstanceId,
   newestReportAt,
+  REPORT_KIND_BADGE_VARIANT,
+  REPORT_KIND_LABEL_KEY,
   runningSummary,
   stalledUnits,
+  type ApprovalGroup,
+  type ReportGroup,
+  type StalledUnit,
 } from './inboxPresentation';
 
 // The newest report time the operator has already seen, persisted so a return
@@ -98,6 +105,7 @@ export default function InboxPage() {
   const fleetQuery = useFleet();
   const reports = useInboxReports();
   const answer = useAnswerApproval();
+  const reply = useReplyToAsk();
 
   // Captured once at mount; the report feed keeps polling, so anything newer
   // than this is "new" for the whole visit. Persisted on unmount.
@@ -108,8 +116,12 @@ export default function InboxPage() {
 
   // One mutation serves every ask, so pending/error is scoped back to a row by
   // comparing the in-flight `variables.id` — the FleetPage idiom.
-  const answerPending = (id: string) => answer.isPending && answer.variables?.id === id;
-  const answerFailed = (id: string) => answer.error !== null && answer.variables?.id === id;
+  const answerPending = (id: string) =>
+    (answer.isPending && answer.variables?.id === id) ||
+    (reply.isPending && reply.variables?.id === id);
+  const answerFailed = (id: string) =>
+    (answer.error !== null && answer.variables?.id === id) ||
+    (reply.error !== null && reply.variables?.id === id);
 
   const absoluteTime = (iso: string) => {
     const parsed = Date.parse(iso);
@@ -195,6 +207,7 @@ export default function InboxPage() {
                   absoluteTime={absoluteTime}
                   relative={relative}
                   onAnswer={(id, approved) => answer.mutate({ id, approved })}
+                  onReply={(id, text) => reply.mutate({ id, answer: text })}
                 />
               ))}
             </div>
@@ -273,6 +286,7 @@ function ApprovalMissionGroup({
   absoluteTime,
   relative,
   onAnswer,
+  onReply,
 }: {
   group: ApprovalGroup;
   answerPending: (id: string) => boolean;
@@ -281,6 +295,7 @@ function ApprovalMissionGroup({
   absoluteTime: (iso: string) => string;
   relative: (iso: string) => string;
   onAnswer: (id: string, approved: boolean) => void;
+  onReply: (id: string, answer: string) => void;
 }) {
   return (
     <div>
@@ -300,6 +315,7 @@ function ApprovalMissionGroup({
             absoluteTime={absoluteTime}
             relative={relative}
             onAnswer={approved => onAnswer(approval.id, approved)}
+            onReply={text => onReply(approval.id, text)}
           />
         ))}
       </div>
@@ -309,13 +325,7 @@ function ApprovalMissionGroup({
 
 /** The header above a mission's grouped asks: its intent linked to the mission,
  *  the raw id when the record was not loaded, or the unattributed label. */
-function MissionGroupHeader({
-  mission,
-  missionId,
-}: {
-  mission?: Mission;
-  missionId?: string;
-}) {
+function MissionGroupHeader({ mission, missionId }: { mission?: Mission; missionId?: string }) {
   const { t } = useTranslation();
   if (mission) {
     return (
@@ -359,6 +369,7 @@ function ApprovalCard({
   absoluteTime,
   relative,
   onAnswer,
+  onReply,
 }: {
   approval: HITLApproval;
   pending: boolean;
@@ -367,17 +378,20 @@ function ApprovalCard({
   absoluteTime: (iso: string) => string;
   relative: (iso: string) => string;
   onAnswer: (approved: boolean) => void;
+  onReply: (answer: string) => void;
 }) {
   const { t } = useTranslation();
   const policy = approvalPolicyLabel(approval);
   const attribution = approvalAttribution(approval);
   const tool = approvalToolLabel(approval);
+  const attention = isAttentionAsk(approval);
+  const [replyText, setReplyText] = useState('');
 
   return (
     <Card variant="surface" statusBorder="warning">
       <div className="flex items-center justify-between gap-3">
         <Span variant="status" className="text-warning-800 dark:text-dark-text-muted">
-          {t('inbox.approval_card_title')}
+          {t(attention ? 'inbox.attention_card_title' : 'inbox.approval_card_title')}
         </Span>
         {policy && (
           <Badge variant="outline" size="sm" title={t('inbox.approval_policy_label')}>
@@ -386,10 +400,14 @@ function ApprovalCard({
         )}
       </div>
 
-      <H3 className="mt-2 font-mono text-sm break-all">{tool}</H3>
+      {attention ? (
+        <H3 className="mt-2 text-sm">{approval.argsSummary}</H3>
+      ) : (
+        <H3 className="mt-2 font-mono text-sm break-all">{tool}</H3>
+      )}
 
       <div className="mt-2 space-y-1">
-        {approval.argsSummary && (
+        {!attention && approval.argsSummary && (
           <KeyValue
             label={t('inbox.approval_args_label')}
             value={<span className="font-mono text-xs break-all">{approval.argsSummary}</span>}
@@ -406,7 +424,9 @@ function ApprovalCard({
         )}
         <KeyValue
           label={t('inbox.approval_requested_label')}
-          value={<span title={absoluteTime(approval.createdAt)}>{relative(approval.createdAt)}</span>}
+          value={
+            <span title={absoluteTime(approval.createdAt)}>{relative(approval.createdAt)}</span>
+          }
         />
       </div>
 
@@ -424,30 +444,66 @@ function ApprovalCard({
         </InlineNotice>
       )}
 
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
-        <Button
-          type="button"
-          variant={APPROVAL_ANSWER_VARIANT.deny}
-          size="sm"
-          className="w-full sm:w-auto"
-          aria-label={t('inbox.answer_deny_aria', { tool })}
-          isLoading={pending}
-          disabled={pending}
-          onClick={() => onAnswer(false)}>
-          {t(APPROVAL_ANSWER_LABEL_KEY.deny)}
-        </Button>
-        <Button
-          type="button"
-          variant={APPROVAL_ANSWER_VARIANT.allow}
-          size="sm"
-          className="w-full sm:w-auto"
-          aria-label={t('inbox.answer_allow_aria', { tool })}
-          isLoading={pending}
-          disabled={pending}
-          onClick={() => onAnswer(true)}>
-          {t(APPROVAL_ANSWER_LABEL_KEY.allow)}
-        </Button>
-      </div>
+      {/* A QUESTION is answered with words, not a verdict: the unit is parked on
+          the tool call that asked it and takes this text as the call's result,
+          continuing on the same turn. Allow/deny would resolve the ask with
+          nothing it can act on, so the two are never offered together. */}
+      {attention ? (
+        <form
+          className="mt-4 flex flex-col gap-2"
+          onSubmit={e => {
+            e.preventDefault();
+            const text = replyText.trim();
+            if (!text) return;
+            onReply(text);
+            setReplyText('');
+          }}>
+          <Textarea
+            value={replyText}
+            onChange={e => setReplyText(e.target.value)}
+            rows={3}
+            placeholder={t('inbox.reply_placeholder')}
+            aria-label={t('inbox.reply_aria', { question: approval.argsSummary ?? tool })}
+            disabled={pending}
+          />
+          <div className="flex justify-end">
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              className="w-full sm:w-auto"
+              isLoading={pending}
+              disabled={pending || replyText.trim() === ''}>
+              {t('inbox.reply_action')}
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <Button
+            type="button"
+            variant={APPROVAL_ANSWER_VARIANT.deny}
+            size="sm"
+            className="w-full sm:w-auto"
+            aria-label={t('inbox.answer_deny_aria', { tool })}
+            isLoading={pending}
+            disabled={pending}
+            onClick={() => onAnswer(false)}>
+            {t(APPROVAL_ANSWER_LABEL_KEY.deny)}
+          </Button>
+          <Button
+            type="button"
+            variant={APPROVAL_ANSWER_VARIANT.allow}
+            size="sm"
+            className="w-full sm:w-auto"
+            aria-label={t('inbox.answer_allow_aria', { tool })}
+            isLoading={pending}
+            disabled={pending}
+            onClick={() => onAnswer(true)}>
+            {t(APPROVAL_ANSWER_LABEL_KEY.allow)}
+          </Button>
+        </div>
+      )}
     </Card>
   );
 }

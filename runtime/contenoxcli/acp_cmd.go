@@ -2,6 +2,7 @@ package contenoxcli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -273,6 +274,10 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	// embedded below, exactly as serve shares one missionservice.
 	missions := missionservice.New(db, missionservice.WithEventPublisher(bus))
 
+	// One durable-ask service for this process: the unit half raises questions
+	// through it, the supervisor half answers them through it.
+	acpHITL := hitlservice.NewWithDefaultPolicy(acpPolicySource(), runtimetypes.LocalTenantID, runtimetypes.New(db.WithoutTransaction()), tracker, profile.hitlPolicy)
+
 	tools := map[string]taskengine.ToolsRepo{
 		"echo":     localtools.NewEchoTools(),
 		"print":    localtools.NewPrint(tracker),
@@ -306,7 +311,24 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 		// publisher-less service here would store a unit's report durably but never
 		// publish, so the supervision edge would silently go nowhere — the exact
 		// cross-process seam the composed round-trip e2e keeps closed.
-		missiontools.ToolsProviderName: missiontools.New(missions, nil),
+		// The asker is what turns mission_ask_attention from a one-way flare into a
+		// question: it raises the unit's question as a durable ask an operator can
+		// see and ANSWER, and hands the answer back as the tool's result. Wired over
+		// the same store the approvals API and `contenox approvals` already read —
+		// no second mechanism — and cross-process by construction: the unit raises
+		// the ask here, the operator answers it in the serve process, and both meet
+		// on the one shared database (see hitlservice.RequestAttention).
+		missiontools.ToolsProviderName: missiontools.New(missions, missionAttentionAsker{
+			hitl:     acpHITL,
+			missions: missions,
+			bus:      bus,
+		}, missiontools.WithSupervision(
+			// The other direction: a session in THIS process that fires missions can
+			// see its units and answer what they ask. Both surfaces come from one
+			// provider because they are one relationship seen from its two ends.
+			missionSupervision{missions: missions, hitl: acpHITL},
+			missionSupervision{missions: missions, hitl: acpHITL},
+		)),
 	}
 
 	var askApproval localtools.AskApproval
@@ -618,6 +640,74 @@ func (d missionReportDeliverer) DeliverToSession(ctx context.Context, sessionID 
 		return d.kernel.DeliverToSession(ctx, sessionID, n)
 	}
 	return acpsvc.ErrSessionNotLive
+}
+
+// missionAttentionAsker adapts the durable-ask machinery to
+// missiontools.AttentionAsker: a unit's question becomes a pending ask, the wait
+// blocks until an operator answers it (or the ceiling expires it), and the
+// operator's own words are returned to the asking unit as its tool result.
+//
+// It lives at the composition root, like missionReportDeliverer above, because
+// it is the one place that holds both halves — the tool package deliberately
+// depends on nothing but its one-method seam, and hitlservice knows nothing
+// about missions' tools.
+type missionAttentionAsker struct {
+	hitl     hitlservice.Service
+	missions missionservice.Service
+	bus      libbus.Messenger
+}
+
+var _ missiontools.AttentionAsker = missionAttentionAsker{}
+
+func (a missionAttentionAsker) RaiseAttention(ctx context.Context, missionID, summary, detail string) (string, error) {
+	// The mission is read for ATTRIBUTION, not permission: who is asking, on whose
+	// behalf, and — the field that matters — which session fired it, so the
+	// question can be announced where the operator is actually looking. A mission
+	// that cannot be read still asks; the question simply travels with less
+	// context.
+	var parentSessionID, agentName, intent string
+	if a.missions != nil {
+		if m, err := a.missions.Get(ctx, missionID); err == nil && m != nil {
+			parentSessionID, agentName, intent = m.ParentSessionID, m.AgentName, m.Intent
+		}
+	}
+	return a.hitl.RequestAttention(ctx, hitlservice.AttentionRequest{
+		Summary:   summary,
+		Detail:    detail,
+		MissionID: missionID,
+		AgentName: agentName,
+		OnRaised: func(askID string) {
+			// Announce the question the same way a report is announced — on the bus,
+			// self-contained, for whoever is listening. serve's router turns this into
+			// the card that appears in the session that fired the mission; with no
+			// listener it changes nothing, because the ask is already durable and
+			// answerable from the queue.
+			a.publishAsked(ctx, missionservice.AttentionAskedEvent{
+				MissionID:       missionID,
+				AskID:           askID,
+				ParentSessionID: parentSessionID,
+				AgentName:       agentName,
+				Intent:          intent,
+				Summary:         summary,
+				Detail:          detail,
+			})
+		},
+	}, taskengine.NoopTaskEventSink{})
+}
+
+// publishAsked emits the attention-asked event, best-effort: a question that was
+// recorded but not announced is still answerable from the ask queue, so a publish
+// failure must never fail the ask (the same rule missionservice applies to
+// ReportAddedEvent).
+func (a missionAttentionAsker) publishAsked(ctx context.Context, ev missionservice.AttentionAskedEvent) {
+	if a.bus == nil {
+		return
+	}
+	raw, err := json.Marshal(ev)
+	if err != nil {
+		return
+	}
+	_ = a.bus.Publish(ctx, missionservice.AttentionAskedSubject, raw)
 }
 
 func acpPolicySource() hitlservice.PolicySource {

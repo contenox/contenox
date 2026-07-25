@@ -195,6 +195,14 @@ type sessionEntry struct {
 	// whose mission tools resolve to nothing (the envelope enforced at construction).
 	MissionID string
 
+	// FiredMissions marks the OTHER side of the relationship: this session has
+	// dispatched missions of its own, which is what unlocks the supervisor tools
+	// (mission_list / mission_answer) for its turns. Set when `/mission` succeeds
+	// here and restored from the durable marker on load, so a reloaded session can
+	// still see and answer its units. An ordinary chat leaves it false and is
+	// offered no mission tools at all.
+	FiredMissions bool
+
 	// driver is this session's execution backend: a nativeDriver for the
 	// contenox task-chain engine, or an externalDriver for a REGISTERED downstream
 	// ACP agent. It is chosen once at construction — NewSession/LoadSession/

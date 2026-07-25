@@ -54,10 +54,24 @@ that is not on a mission.`,
 }
 
 var approvalsAnswerCmd = &cobra.Command{
-	Use:   "answer <id> --approve|--deny",
-	Short: "Approve or deny a pending approval.",
-	Long: `Answer one pending approval by id (see 'contenox approvals list'). Exactly one
-of --approve/--deny is required.
+	Use:   "answer <id> --approve|--deny|--reply <text>",
+	Short: "Approve or deny a pending approval, or reply to a unit's question.",
+	Long: `Answer one pending ask by id (see 'contenox approvals list').
+
+Two kinds of ask arrive in this queue, and they are answered differently:
+
+  a PERMISSION ask  — a gated tool call waiting on a verdict. Answer it with
+                      exactly one of --approve/--deny.
+  an ATTENTION ask  — a running mission unit's QUESTION ("which project did
+                      you mean?"), listed as mission.mission_ask_attention.
+                      Answer it with --reply "<your answer>": the text is
+                      handed straight back to the unit as the result of the
+                      tool call it is parked on, and it continues with it on
+                      the same turn.
+
+--reply is refused on a permission ask (prose is not a verdict), and
+--approve/--deny on an attention ask leaves the unit with no answer, so it
+falls back to filing your question as a blocker.
 
 An id that is unknown, already answered, or expired (past its policy's
 timeout and auto-resolved by serve's sweeper) fails with a non-zero exit
@@ -73,11 +87,14 @@ func init() {
 	approvalsListCmd.Flags().Int("limit", 100, "Maximum number of pending approvals to list (0 = server default cap)")
 	approvalsListCmd.Flags().Bool("json", false, "Print the raw records as JSON instead of a table")
 
-	approvalsAnswerCmd.Flags().Bool("approve", false, "Approve the pending ask")
-	approvalsAnswerCmd.Flags().Bool("deny", false, "Deny the pending ask")
+	approvalsAnswerCmd.Flags().Bool("approve", false, "Approve the pending ask (permission asks)")
+	approvalsAnswerCmd.Flags().Bool("deny", false, "Deny the pending ask (permission asks)")
+	approvalsAnswerCmd.Flags().String("reply", "", "Reply to a unit's question with this text (attention asks) — the unit receives it as its tool result")
 	approvalsAnswerCmd.Flags().Bool("json", false, "Print the result as JSON")
 	approvalsAnswerCmd.MarkFlagsMutuallyExclusive("approve", "deny")
-	approvalsAnswerCmd.MarkFlagsOneRequired("approve", "deny")
+	approvalsAnswerCmd.MarkFlagsMutuallyExclusive("approve", "reply")
+	approvalsAnswerCmd.MarkFlagsMutuallyExclusive("deny", "reply")
+	approvalsAnswerCmd.MarkFlagsOneRequired("approve", "deny", "reply")
 
 	approvalsCmd.AddCommand(approvalsListCmd)
 	approvalsCmd.AddCommand(approvalsAnswerCmd)
@@ -108,6 +125,9 @@ func (c *serveClient) listPendingApprovals(ctx context.Context, limit int) ([]*r
 // would encode the wire contract without depending on the server's Go types.
 type answerApprovalRequest struct {
 	Approved bool `json:"approved"`
+	// Answer carries an attention ask's reply; empty for a permission verdict
+	// (omitempty keeps the permission request byte-identical to before).
+	Answer string `json:"answer,omitempty"`
 }
 
 // answerApproval posts an answer for id. A non-2xx response comes back as a
@@ -116,6 +136,12 @@ type answerApprovalRequest struct {
 // the caller without re-parsing anything.
 func (c *serveClient) answerApproval(ctx context.Context, id string, approved bool) error {
 	return c.post(ctx, "/approvals/"+url.PathEscape(id), answerApprovalRequest{Approved: approved}, nil)
+}
+
+// replyToAsk answers an ATTENTION ask with text — a unit's question, resolved
+// with the operator's own words (see approvalapi.AnswerRequest.Answer).
+func (c *serveClient) replyToAsk(ctx context.Context, id, text string) error {
+	return c.post(ctx, "/approvals/"+url.PathEscape(id), answerApprovalRequest{Answer: text}, nil)
 }
 
 // ─── list ───────────────────────────────────────────────────────────────
@@ -177,15 +203,32 @@ func runApprovalsAnswer(cmd *cobra.Command, args []string) error {
 	ctx := libtracker.WithNewRequestID(context.Background())
 	id := args[0]
 
-	// --approve/--deny are enforced mutually exclusive and one-required by
-	// cobra (MarkFlagsMutuallyExclusive/MarkFlagsOneRequired in init) before
-	// RunE ever runs, so reading --approve alone is enough to know which was
-	// given.
+	// --approve/--deny/--reply are enforced mutually exclusive and one-required
+	// by cobra (MarkFlags* in init) before RunE ever runs, so reading them
+	// directly is enough to know which was given.
 	approved, _ := cmd.Flags().GetBool("approve")
+	reply, _ := cmd.Flags().GetString("reply")
+	asJSON, _ := cmd.Flags().GetBool("json")
 
 	client, err := newServeClient(cmd)
 	if err != nil {
 		return err
+	}
+
+	// A reply answers a unit's QUESTION: the text goes back to the unit as its
+	// tool result, so it continues on the same turn rather than merely learning
+	// it was heard.
+	if strings.TrimSpace(reply) != "" {
+		if err := client.replyToAsk(ctx, id, reply); err != nil {
+			return fmt.Errorf("reply to ask %q: %w", id, err)
+		}
+		if asJSON {
+			enc := json.NewEncoder(cmd.OutOrStdout())
+			enc.SetIndent("", "  ")
+			return enc.Encode(map[string]any{"id": id, "answer": reply})
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Replied to ask %s. The unit has your answer.\n", id)
+		return nil
 	}
 
 	if err := client.answerApproval(ctx, id, approved); err != nil {
@@ -197,7 +240,6 @@ func runApprovalsAnswer(cmd *cobra.Command, args []string) error {
 		verb = "approved"
 	}
 
-	asJSON, _ := cmd.Flags().GetBool("json")
 	if asJSON {
 		enc := json.NewEncoder(cmd.OutOrStdout())
 		enc.SetIndent("", "  ")

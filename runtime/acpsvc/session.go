@@ -148,6 +148,10 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 	// agent (lazily respawned). The transcript is replayed below either way; the
 	// downstream process is deliberately NOT resurrected during load.
 	t.markExternalIfPersisted(ctx, store, req.SessionID, entry)
+	// A reloaded session that fired missions is still their supervisor: restore the
+	// flag so its next turn is offered the supervisor tools it had before the
+	// reload. The missions certainly outlived the connection.
+	entry.FiredMissions = t.readSessionFiredMission(ctx, store, req.SessionID)
 
 	t.clearToolCallState(req.SessionID)
 	t.subscribeTerminal(req.SessionID, contenoxSessionID)

@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AcpClient, type PromptHandlers, type SessionEventHandlers, type ToolCallEvent } from './client';
+import {
+  AcpClient,
+  type PromptHandlers,
+  type SessionEventHandlers,
+  type ToolCallEvent,
+} from './client';
 import { createAcpClient, type AcpCapabilityProvider } from './clientFactory';
 import type { Transport } from './transport';
 
@@ -42,7 +47,7 @@ class MockTransport implements Transport {
   }
 
   get sent(): unknown[] {
-    return this.sentRaw.map((t) => JSON.parse(t));
+    return this.sentRaw.map(t => JSON.parse(t));
   }
 
   lastSent(): Record<string, unknown> {
@@ -54,7 +59,7 @@ class MockTransport implements Transport {
 
 /** Flush pending microtasks (promise chains inside the client's async handlers). */
 async function flushMicrotasks(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise(resolve => setTimeout(resolve, 0));
 }
 
 describe('AcpClient: session/new _meta (external-agent binding)', () => {
@@ -148,7 +153,11 @@ describe('AcpClient: request/response id correlation', () => {
       error: { code: -32602, message: 'invalid params' },
     });
 
-    await expect(promise).rejects.toMatchObject({ name: 'AcpError', code: -32602, message: 'invalid params' });
+    await expect(promise).rejects.toMatchObject({
+      name: 'AcpError',
+      code: -32602,
+      message: 'invalid params',
+    });
   });
 });
 
@@ -159,12 +168,14 @@ describe('AcpClient: prompt turn update routing', () => {
 
     const events: string[] = [];
     const handlers: PromptHandlers = {
-      onMessageChunk: (text) => events.push(`message:${text}`),
-      onThoughtChunk: (text) => events.push(`thought:${text}`),
-      onPlan: (entries) => events.push(`plan:${entries.map((e) => e.content).join(',')}`),
-      onUsage: (usage) => events.push(`usage:${usage.used}/${usage.size}`),
-      onToolCall: (event) => events.push(`tool:${event.updateKind}:${event.toolCallId}:${event.status}`),
-      onAvailableCommands: (commands) => events.push(`commands:${commands.map((c) => c.name).join(',')}`),
+      onMessageChunk: text => events.push(`message:${text}`),
+      onThoughtChunk: text => events.push(`thought:${text}`),
+      onPlan: entries => events.push(`plan:${entries.map(e => e.content).join(',')}`),
+      onUsage: usage => events.push(`usage:${usage.used}/${usage.size}`),
+      onToolCall: event =>
+        events.push(`tool:${event.updateKind}:${event.toolCallId}:${event.status}`),
+      onAvailableCommands: commands =>
+        events.push(`commands:${commands.map(c => c.name).join(',')}`),
     };
 
     const promptPromise = client.prompt(
@@ -182,7 +193,10 @@ describe('AcpClient: prompt turn update routing', () => {
       method: 'session/update',
       params: {
         sessionId: 'sess-1',
-        update: { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'thinking...' } },
+        update: {
+          sessionUpdate: 'agent_thought_chunk',
+          content: { type: 'text', text: 'thinking...' },
+        },
       },
     });
     transport.feed({
@@ -230,7 +244,10 @@ describe('AcpClient: prompt turn update routing', () => {
       method: 'session/update',
       params: {
         sessionId: 'sess-other',
-        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'ignore me' } },
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'ignore me' },
+        },
       },
     });
 
@@ -253,7 +270,7 @@ describe('AcpClient: prompt turn update routing', () => {
 
     const toolEvents: ToolCallEvent[] = [];
     const promptPromise = client.prompt('sess-2', [{ type: 'text', text: 'run it' }], {
-      onToolCall: (event) => toolEvents.push(event),
+      onToolCall: event => toolEvents.push(event),
     });
     const req = transport.lastSent();
 
@@ -277,8 +294,16 @@ describe('AcpClient: prompt turn update routing', () => {
     await promptPromise;
 
     expect(toolEvents).toHaveLength(2);
-    expect(toolEvents[0]).toMatchObject({ updateKind: 'tool_call', toolCallId: 'tc-9', status: 'pending' });
-    expect(toolEvents[1]).toMatchObject({ updateKind: 'tool_call_update', toolCallId: 'tc-9', status: 'completed' });
+    expect(toolEvents[0]).toMatchObject({
+      updateKind: 'tool_call',
+      toolCallId: 'tc-9',
+      status: 'pending',
+    });
+    expect(toolEvents[1]).toMatchObject({
+      updateKind: 'tool_call_update',
+      toolCallId: 'tc-9',
+      status: 'completed',
+    });
   });
 
   it('stops routing updates for a session once its prompt turn has resolved', async () => {
@@ -286,7 +311,9 @@ describe('AcpClient: prompt turn update routing', () => {
     const client = new AcpClient(transport);
     const onMessageChunk = vi.fn();
 
-    const promptPromise = client.prompt('sess-3', [{ type: 'text', text: 'hi' }], { onMessageChunk });
+    const promptPromise = client.prompt('sess-3', [{ type: 'text', text: 'hi' }], {
+      onMessageChunk,
+    });
     const req = transport.lastSent();
     transport.feed({ jsonrpc: '2.0', id: req.id, result: { stopReason: 'end_turn' } });
     await promptPromise;
@@ -323,7 +350,12 @@ describe('AcpClient: session/request_permission', () => {
       method: 'session/request_permission',
       params: {
         sessionId: 'sess-4',
-        toolCall: { toolCallId: 'tc-1', title: 'rm -rf /tmp/x', kind: 'execute', status: 'pending' },
+        toolCall: {
+          toolCallId: 'tc-1',
+          title: 'rm -rf /tmp/x',
+          kind: 'execute',
+          status: 'pending',
+        },
         options: [
           { optionId: 'opt-allow-once', name: 'Allow once', kind: 'allow_once' },
           { optionId: 'opt-reject-once', name: 'Reject', kind: 'reject_once' },
@@ -340,7 +372,7 @@ describe('AcpClient: session/request_permission', () => {
     });
 
     const permissionResponseFrame = transport.sent.find(
-      (m) => (m as Record<string, unknown>).id === 99,
+      m => (m as Record<string, unknown>).id === 99,
     ) as Record<string, unknown>;
     expect(permissionResponseFrame).toEqual({
       jsonrpc: '2.0',
@@ -375,10 +407,9 @@ describe('AcpClient: session/request_permission', () => {
 
     await flushMicrotasks();
 
-    const responseFrame = transport.sent.find((m) => (m as Record<string, unknown>).id === 7) as Record<
-      string,
-      unknown
-    >;
+    const responseFrame = transport.sent.find(
+      m => (m as Record<string, unknown>).id === 7,
+    ) as Record<string, unknown>;
     expect(responseFrame).toEqual({
       jsonrpc: '2.0',
       id: 7,
@@ -409,10 +440,9 @@ describe('AcpClient: session/request_permission', () => {
 
     await flushMicrotasks();
 
-    const responseFrame = transport.sent.find((m) => (m as Record<string, unknown>).id === 5) as Record<
-      string,
-      unknown
-    >;
+    const responseFrame = transport.sent.find(
+      m => (m as Record<string, unknown>).id === 5,
+    ) as Record<string, unknown>;
     expect(responseFrame.error).toMatchObject({ code: -32603 });
 
     transport.feed({ jsonrpc: '2.0', id: promptReq.id, result: { stopReason: 'end_turn' } });
@@ -488,7 +518,7 @@ describe('AcpClient: subscribe() out-of-turn routing', () => {
     const events: string[] = [];
 
     client.subscribe('sess-sub-none', {
-      onMessageChunk: (text) => events.push(`message:${text}`),
+      onMessageChunk: text => events.push(`message:${text}`),
     });
 
     transport.feed({
@@ -509,7 +539,7 @@ describe('AcpClient: subscribe() out-of-turn routing', () => {
     const events: string[] = [];
 
     client.subscribe('sess-sub-before', {
-      onMessageChunk: (text) => events.push(`message:${text}`),
+      onMessageChunk: text => events.push(`message:${text}`),
     });
 
     // Arrives before any prompt() call for this session exists.
@@ -518,7 +548,10 @@ describe('AcpClient: subscribe() out-of-turn routing', () => {
       method: 'session/update',
       params: {
         sessionId: 'sess-sub-before',
-        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'pre-turn' } },
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'pre-turn' },
+        },
       },
     });
 
@@ -537,11 +570,11 @@ describe('AcpClient: subscribe() out-of-turn routing', () => {
     const promptEvents: string[] = [];
 
     client.subscribe('sess-sub-during', {
-      onMessageChunk: (text) => subEvents.push(text),
+      onMessageChunk: text => subEvents.push(text),
     });
 
     const promptPromise = client.prompt('sess-sub-during', [{ type: 'text', text: 'hi' }], {
-      onMessageChunk: (text) => promptEvents.push(text),
+      onMessageChunk: text => promptEvents.push(text),
     });
     const req = transport.lastSent();
 
@@ -550,7 +583,10 @@ describe('AcpClient: subscribe() out-of-turn routing', () => {
       method: 'session/update',
       params: {
         sessionId: 'sess-sub-during',
-        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'during turn' } },
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'during turn' },
+        },
       },
     });
 
@@ -578,7 +614,10 @@ describe('AcpClient: subscribe() out-of-turn routing', () => {
       method: 'session/update',
       params: {
         sessionId: 'sess-sub-nodouble',
-        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'only once' } },
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'only once' },
+        },
       },
     });
 
@@ -586,8 +625,9 @@ describe('AcpClient: subscribe() out-of-turn routing', () => {
     await promptPromise;
 
     expect(subCall).toHaveBeenCalledTimes(1);
-    // (text, messageId, image) — a plain text chunk carries no image payload.
-    expect(subCall).toHaveBeenCalledWith('only once', undefined, undefined);
+    // (text, messageId, image, meta) — a plain text chunk carries no image payload
+    // and no `_meta` (a delivered mission question is the one that does).
+    expect(subCall).toHaveBeenCalledWith('only once', undefined, undefined, undefined);
     expect(promptCall).not.toHaveBeenCalled();
   });
 
@@ -596,7 +636,7 @@ describe('AcpClient: subscribe() out-of-turn routing', () => {
     const client = new AcpClient(transport);
     const infos: Array<{ title?: string; updatedAt?: string }> = [];
 
-    client.subscribe('sess-sub-after', { onSessionInfo: (info) => infos.push(info) });
+    client.subscribe('sess-sub-after', { onSessionInfo: info => infos.push(info) });
 
     const promptPromise = client.prompt('sess-sub-after', [{ type: 'text', text: 'hi' }]);
     const req = transport.lastSent();
@@ -624,11 +664,11 @@ describe('AcpClient: subscribe() out-of-turn routing', () => {
     const promptEvents: string[] = [];
 
     const unsubscribe = client.subscribe('sess-unsub', {
-      onMessageChunk: (text) => subEvents.push(text),
+      onMessageChunk: text => subEvents.push(text),
     });
 
     const promptPromise = client.prompt('sess-unsub', [{ type: 'text', text: 'hi' }], {
-      onMessageChunk: (text) => promptEvents.push(text),
+      onMessageChunk: text => promptEvents.push(text),
     });
     const req = transport.lastSent();
 
@@ -638,7 +678,10 @@ describe('AcpClient: subscribe() out-of-turn routing', () => {
       method: 'session/update',
       params: {
         sessionId: 'sess-unsub',
-        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'via-sub' } },
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'via-sub' },
+        },
       },
     });
 
@@ -651,7 +694,10 @@ describe('AcpClient: subscribe() out-of-turn routing', () => {
       method: 'session/update',
       params: {
         sessionId: 'sess-unsub',
-        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'via-prompt' } },
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'via-prompt' },
+        },
       },
     });
 
@@ -693,10 +739,9 @@ describe('AcpClient: subscribe() out-of-turn routing', () => {
     expect(subPermission).toHaveBeenCalledTimes(1);
     expect(promptPermission).not.toHaveBeenCalled();
 
-    const responseFrame = transport.sent.find((m) => (m as Record<string, unknown>).id === 42) as Record<
-      string,
-      unknown
-    >;
+    const responseFrame = transport.sent.find(
+      m => (m as Record<string, unknown>).id === 42,
+    ) as Record<string, unknown>;
     expect(responseFrame).toEqual({
       jsonrpc: '2.0',
       id: 42,
@@ -719,11 +764,12 @@ describe('AcpClient: session/load replay routing (matches acpsvc/session.go)', (
       onUserMessageChunk: (text, messageId) => events.push(`user:${messageId}:${text}`),
       onMessageChunk: (text, messageId) => events.push(`message:${messageId}:${text}`),
       onThoughtChunk: (text, messageId) => events.push(`thought:${messageId}:${text}`),
-      onToolCall: (event) => events.push(`tool:${event.updateKind}:${event.toolCallId}:${event.status}`),
-      onUsage: (usage) => events.push(`usage:${usage.used}/${usage.size}`),
-      onAvailableCommands: (commands) => {
+      onToolCall: event =>
+        events.push(`tool:${event.updateKind}:${event.toolCallId}:${event.status}`),
+      onUsage: usage => events.push(`usage:${usage.used}/${usage.size}`),
+      onAvailableCommands: commands => {
         capturedCommands = commands;
-        events.push(`commands:${commands.map((c) => c.name).join(',')}`);
+        events.push(`commands:${commands.map(c => c.name).join(',')}`);
       },
     };
     // The caller already knows the sessionId for session/load (unlike session/new,
@@ -824,7 +870,9 @@ describe('AcpClient: session/load replay routing (matches acpsvc/session.go)', (
       jsonrpc: '2.0',
       id: req.id,
       result: {
-        configOptions: [{ id: 'model', name: 'Model', type: 'string', currentValue: 'demo-model', options: [] }],
+        configOptions: [
+          { id: 'model', name: 'Model', type: 'string', currentValue: 'demo-model', options: [] },
+        ],
       },
     });
     const loadResult = await loadPromise;
@@ -929,7 +977,11 @@ describe('AcpClient: capability provider (clientFactory.ts)', () => {
     await flushMicrotasks();
 
     expect(handleRequest).toHaveBeenCalledTimes(1);
-    expect(transport.lastSent()).toEqual({ jsonrpc: '2.0', id: 1, result: { terminalId: 'term-1' } });
+    expect(transport.lastSent()).toEqual({
+      jsonrpc: '2.0',
+      id: 1,
+      result: { terminalId: 'term-1' },
+    });
   });
 
   it('still refuses terminal/create exactly as today when no provider is registered', async () => {
@@ -949,7 +1001,9 @@ describe('AcpClient: capability provider (clientFactory.ts)', () => {
     const resp = transport.lastSent();
     expect(resp.result).toBeUndefined();
     expect((resp.error as Record<string, unknown>).code).toBe(-32601);
-    expect((resp.error as Record<string, unknown>).message).toBe('not supported by this client: terminal/create');
+    expect((resp.error as Record<string, unknown>).message).toBe(
+      'not supported by this client: terminal/create',
+    );
   });
 
   it('falls back to the standard refusal when the provider declines the method', async () => {
@@ -979,7 +1033,11 @@ describe('AcpClient: image content blocks in message chunks', () => {
   it('delivers a user_message_chunk image block as the handler image payload instead of flattening it to ""', () => {
     const transport = new MockTransport();
     const client = new AcpClient(transport);
-    const events: Array<{ text: string; messageId?: string; image?: { data: string; mimeType: string } }> = [];
+    const events: Array<{
+      text: string;
+      messageId?: string;
+      image?: { data: string; mimeType: string };
+    }> = [];
     client.subscribe('sess-img', {
       onUserMessageChunk: (text, messageId, image) => events.push({ text, messageId, image }),
     });
@@ -999,7 +1057,9 @@ describe('AcpClient: image content blocks in message chunks', () => {
       },
     });
 
-    expect(events).toEqual([{ text: '', messageId: 'u1', image: { data: 'aGVsbG8=', mimeType: 'image/png' } }]);
+    expect(events).toEqual([
+      { text: '', messageId: 'u1', image: { data: 'aGVsbG8=', mimeType: 'image/png' } },
+    ]);
   });
 
   it('delivers an agent_message_chunk image block the same way', () => {
@@ -1015,7 +1075,10 @@ describe('AcpClient: image content blocks in message chunks', () => {
       method: 'session/update',
       params: {
         sessionId: 'sess-img',
-        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'image', data: 'aW1n', mimeType: 'image/jpeg' } },
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'image', data: 'aW1n', mimeType: 'image/jpeg' },
+        },
       },
     });
 
