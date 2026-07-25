@@ -136,3 +136,52 @@ describe('TranscriptItems: failed-turn cards', () => {
     expect(html).not.toContain('This agent needs a workspace'); // error-1 deduped against the banner
   });
 });
+
+describe('TranscriptItems: turn-grouped step trail', () => {
+  it("groups a turn's tool calls into a collapsible ABOVE the answer, instead of interleaving them as flat siblings below the streaming text", () => {
+    const session: AcpSessionState = {
+      ...initialAcpSessionState,
+      sessionId: 'sess-1',
+      items: [
+        { kind: 'tool_call', id: 'tc-1', turnId: 'turn-0' },
+        { kind: 'tool_call', id: 'tc-2', turnId: 'turn-0' },
+        { kind: 'message', id: 'a1', turnId: 'turn-0' },
+      ],
+      toolCalls: {
+        'tc-1': { toolCallId: 'tc-1', title: 'ls', status: 'completed' },
+        'tc-2': { toolCallId: 'tc-2', title: 'cat file', status: 'completed' },
+      },
+      messages: { a1: { id: 'a1', role: 'assistant', text: 'Here is the answer.' } },
+    };
+    const html = render(session);
+    expect(html).toContain('2 steps'); // turn_steps_toggle
+    expect(html.indexOf('2 steps')).toBeLessThan(html.indexOf('Here is the answer.'));
+    expect(html.indexOf('ls')).toBeLessThan(html.indexOf('Here is the answer.'));
+  });
+
+  it('renders a turn with no tool calls exactly like before (no collapsible wrapper)', () => {
+    const session: AcpSessionState = {
+      ...initialAcpSessionState,
+      sessionId: 'sess-1',
+      items: [{ kind: 'message', id: 'a1', turnId: 'turn-0' }],
+      messages: { a1: { id: 'a1', role: 'assistant', text: 'plain answer, no tools' } },
+    };
+    const html = render(session);
+    expect(html).toContain('plain answer, no tools');
+    expect(html).not.toContain('acp_chat.turn_steps_toggle');
+  });
+
+  it('a mid-stream turn (tool calls only, no answer text yet) renders the steps flat, not wrapped', () => {
+    const session: AcpSessionState = {
+      ...initialAcpSessionState,
+      sessionId: 'sess-1',
+      isPrompting: true,
+      currentTurnId: 'turn-0',
+      items: [{ kind: 'tool_call', id: 'tc-1', turnId: 'turn-0' }],
+      toolCalls: { 'tc-1': { toolCallId: 'tc-1', title: 'ls', status: 'in_progress' } },
+    };
+    const html = render(session);
+    expect(html).toContain('ls');
+    expect(html).not.toContain('turn_steps_toggle');
+  });
+});

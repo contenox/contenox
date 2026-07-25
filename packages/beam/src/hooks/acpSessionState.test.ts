@@ -27,8 +27,8 @@ describe('acpSessionReducer: unified timeline (D4)', () => {
 
     expect(state.items).toEqual([
       { kind: 'message', id: 'u1' },
-      { kind: 'tool_call', id: 'tc-1' },
-      { kind: 'message', id: 'a1' },
+      { kind: 'tool_call', id: 'tc-1', turnId: 'turn-0' },
+      { kind: 'message', id: 'a1', turnId: 'turn-0' },
     ]);
     expect(state.messages['u1']).toMatchObject({ role: 'user', text: 'run ls' });
     expect(state.messages['a1']).toMatchObject({
@@ -39,6 +39,35 @@ describe('acpSessionReducer: unified timeline (D4)', () => {
     expect(state.toolCalls['tc-1']).toMatchObject({ title: 'ls', status: 'completed' });
     // tool_call_update merges into the existing card, not a second timeline item.
     expect(state.items.filter(it => it.id === 'tc-1')).toHaveLength(1);
+  });
+
+  it('tags a turn\'s tool_call and message items with the same turnId, for grouping the steps trail above the answer', () => {
+    const state = run(
+      { type: 'session_reset', sessionId: 'sess-1' },
+      { type: 'prompt_start' },
+      {
+        type: 'tool_call',
+        event: { updateKind: 'tool_call', toolCallId: 'tc-1', title: 'ls', status: 'pending' },
+      },
+      {
+        type: 'tool_call',
+        event: { updateKind: 'tool_call', toolCallId: 'tc-2', title: 'cat', status: 'pending' },
+      },
+      { type: 'message_chunk', id: 'a1', text: 'done' },
+      { type: 'prompt_end', stopReason: 'end_turn' },
+    );
+    const turnId = state.items[0]?.turnId;
+    expect(turnId).toBeDefined();
+    expect(state.items.map(it => it.turnId)).toEqual([turnId, turnId, turnId]);
+
+    // A user's echoed prompt and a session/load replay are NOT part of a
+    // turn's step trail — they stay untagged.
+    const untagged = run(
+      { type: 'session_reset', sessionId: 'sess-1' },
+      { type: 'user_message_chunk', id: 'u1', text: 'hi' },
+      { type: 'message_chunk', id: 'replay-1', text: 'reply' },
+    );
+    expect(untagged.items.every(it => it.turnId === undefined)).toBe(true);
   });
 
   it('attaches thought chunks to their message by messageId as collapsible data, not a separate timeline item', () => {
@@ -52,7 +81,7 @@ describe('acpSessionReducer: unified timeline (D4)', () => {
 
     // Thinking arrived first — the message item is created on the thought
     // chunk, not duplicated when the text chunk for the same id follows.
-    expect(state.items).toEqual([{ kind: 'message', id: 'a1' }]);
+    expect(state.items).toEqual([{ kind: 'message', id: 'a1', turnId: 'turn-0' }]);
     expect(state.messages['a1']).toMatchObject({
       role: 'assistant',
       text: 'Sure, here you go.',
@@ -144,7 +173,7 @@ describe('acpSessionReducer: stable message identity within one turn', () => {
       { type: 'message_chunk', id: 'msg-42', text: ' world' },
     );
 
-    expect(state.items).toEqual([{ kind: 'message', id: 'assistant-1' }]);
+    expect(state.items).toEqual([{ kind: 'message', id: 'assistant-1', turnId: 'turn-0' }]);
     expect(Object.keys(state.messages)).toEqual(['assistant-1']);
     expect(state.messages['assistant-1']).toMatchObject({
       role: 'assistant',
@@ -162,7 +191,7 @@ describe('acpSessionReducer: stable message identity within one turn', () => {
       { type: 'message_chunk', id: 'assistant-1', text: ' world' },
     );
 
-    expect(state.items).toEqual([{ kind: 'message', id: 'msg-42' }]);
+    expect(state.items).toEqual([{ kind: 'message', id: 'msg-42', turnId: 'turn-0' }]);
     expect(Object.keys(state.messages)).toEqual(['msg-42']);
     expect(state.messages['msg-42']).toMatchObject({
       role: 'assistant',
@@ -179,7 +208,7 @@ describe('acpSessionReducer: stable message identity within one turn', () => {
       { type: 'message_chunk', id: 'msg-42', text: 'Here you go.' },
     );
 
-    expect(state.items).toEqual([{ kind: 'message', id: 'assistant-1' }]);
+    expect(state.items).toEqual([{ kind: 'message', id: 'assistant-1', turnId: 'turn-0' }]);
     expect(Object.keys(state.messages)).toEqual(['assistant-1']);
     expect(state.messages['assistant-1']).toMatchObject({
       role: 'assistant',
@@ -204,11 +233,59 @@ describe('acpSessionReducer: stable message identity within one turn', () => {
     });
 
     expect(second.items).toEqual([
-      { kind: 'message', id: 'assistant-1' },
-      { kind: 'message', id: 'assistant-2' },
+      { kind: 'message', id: 'assistant-1', turnId: 'turn-0' },
+      { kind: 'message', id: 'assistant-2', turnId: 'turn-1' },
     ]);
     expect(second.messages['assistant-1']).toMatchObject({ text: 'first turn' });
     expect(second.messages['assistant-2']).toMatchObject({ text: 'second turn' });
+  });
+
+  it('a NEW turn whose first chunk REUSES a prior closed turn id is disambiguated, not merged into the old message (thought_chunk)', () => {
+    // Reproduces the bug where a backend that reuses (or omits, falling back
+    // to the same value) a message id across turns made turn 2's thinking
+    // silently vanish into turn 1's already-rendered, already-collapsed box.
+    const first = run(
+      { type: 'session_reset', sessionId: 's1' },
+      { type: 'prompt_start' },
+      { type: 'thought_chunk', id: 'assistant-1', text: 'first turn thinking' },
+      { type: 'message_chunk', id: 'assistant-1', text: 'first turn answer' },
+      { type: 'prompt_end', stopReason: 'end_turn' },
+    );
+    const second = acpSessionReducer(
+      acpSessionReducer(first, { type: 'prompt_start' }),
+      { type: 'thought_chunk', id: 'assistant-1', text: 'second turn thinking' },
+    );
+
+    // The stale id must NOT gain a second turn's content...
+    expect(second.messages['assistant-1']).toMatchObject({
+      thinking: 'first turn thinking',
+      text: 'first turn answer',
+    });
+    // ...it must land on a fresh, distinct message instead.
+    const secondTurnId = second.items[second.items.length - 1]?.id;
+    expect(secondTurnId).toBeDefined();
+    expect(secondTurnId).not.toBe('assistant-1');
+    expect(second.messages[secondTurnId!]).toMatchObject({ thinking: 'second turn thinking' });
+    expect(second.items).toHaveLength(2);
+  });
+
+  it('a REPEATED message_chunk id across turns is likewise disambiguated', () => {
+    const first = run(
+      { type: 'session_reset', sessionId: 's1' },
+      { type: 'prompt_start' },
+      { type: 'message_chunk', id: 'assistant-1', text: 'first turn' },
+      { type: 'prompt_end', stopReason: 'end_turn' },
+    );
+    const second = acpSessionReducer(acpSessionReducer(first, { type: 'prompt_start' }), {
+      type: 'message_chunk',
+      id: 'assistant-1',
+      text: 'second turn',
+    });
+
+    expect(second.messages['assistant-1']).toMatchObject({ text: 'first turn' });
+    const secondTurnId = second.items[second.items.length - 1]?.id;
+    expect(secondTurnId).not.toBe('assistant-1');
+    expect(second.messages[secondTurnId!]).toMatchObject({ text: 'second turn' });
   });
 
   it('out-of-turn (no active prompt) chunks are never merged, even with differing ids', () => {
@@ -597,7 +674,7 @@ describe('acpSessionReducer: image parts on messages', () => {
         image: { data: 'aW1n', mimeType: 'image/png' },
       },
     );
-    expect(state.items).toEqual([{ kind: 'message', id: 'a1' }]);
+    expect(state.items).toEqual([{ kind: 'message', id: 'a1', turnId: 'turn-0' }]);
     expect(state.messages['a1']).toMatchObject({
       role: 'assistant',
       text: 'here you go',

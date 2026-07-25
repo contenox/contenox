@@ -1,5 +1,61 @@
 # TODO — UX/design issues from live testing
 
+## Feedback / liveness diagnosis (2026-07-25)
+
+Root cause of "I don't use Beam, I wrap it in Zed / use Claude / Codex instead":
+Beam is not calm-by-design, it's mute-by-default. It renders terminal states
+(`Fertig`) and skips every transitional one, so a 90s turn on a slow backend
+looks identical to a hang. This is the inverse failure of the "labor
+illusion" (Buell & Norton) — other tools fake motion to feel responsive;
+Beam has real signal (token usage, step name, tool dispatch, HITL decisions)
+and just doesn't render it. The fix is plumbing (emit what's already in the
+event stream), not animation — a backend engineer adding decorative motion
+would produce jank, which reads worse than silence. Concrete gaps already
+tracked below: live token counter during a turn, tool cards with an
+in-progress/elapsed state (see "Waiting/elapsed feedback" above), current
+step name visible, and the three rendering bugs below found while digging
+into this.
+
+- [x] **`local_shell` tool calls don't reach the integrated shell panel.**
+      INVESTIGATED and resolved differently than first framed: `local_shell`
+      is a stateless one-shot exec (`runtime/acpsvc/commandrunner.go:43`),
+      architecturally distinct from the PTY-backed `shell_session`/`!`-passthrough
+      stream `TerminalTab.tsx` observes — it has no live session to attach to,
+      so routing it INTO that panel isn't the right fix. Instead its
+      `ToolCallDetail` (`TranscriptItems.tsx`) now renders `execute`-kind
+      output through the same `TerminalOutput` component `TerminalTab` uses
+      (`$ command args` + output, monospace terminal chrome) instead of a
+      JSON dump of `{input, output, content}` — it *looks* like the shell it
+      ran in, without pretending it's the same live surface.
+- [x] **Gemini/Vertex "thoughts" stop rendering after turn 1.** Repo-only
+      investigation could NOT conclusively pin a backend-side "first-turn-only"
+      gate — Gemini's `ThinkingConfig` request-building
+      (`runtime/modelrepo/gemini/client.go`) is turn-invariant, and the native
+      relay never sets `MessageID` at all (`libacp.NewAgentThoughtChunk`,
+      `libacp/prompt.go:252`), so the frontend's per-turn fallback id
+      (`turn-N`, unique via `nextId('assistant')`) should already avoid
+      collisions on that path. What WAS confirmed and fixed: the reducer had
+      zero guard against a server/relay reusing (or coincidentally repeating)
+      a message id from an ALREADY-CLOSED turn — doing so would silently fold
+      the new turn's thinking into the old, already-rendered/collapsed
+      message instead of starting a new one, exactly matching the symptom.
+      Added `usedTurnMessageIds` tracking + `resolveTurnMessageId` disambiguation
+      in `acpSessionState.ts` (covered by two new reducer tests). If the bug
+      persists after this, it's confirmed to be a genuine backend/Gemini-API
+      behavior and needs a live two-turn repro to chase further — this fix is
+      a real hardening either way, not a guess dressed up as a root cause.
+- [x] **Tool calls render below the streaming answer instead of above it,
+      grouped per turn.** Added `turnId` to `AcpTimelineItem`
+      (`acpSessionState.ts`), tagged onto `message`/`tool_call` items created
+      while a turn (`session/prompt` call) is in flight. `TranscriptItems.tsx`
+      now groups consecutive same-`turnId` items: when a turn produced both
+      steps and an answer, the `tool_call`/`terminal` items render inside a
+      collapsible **turn-scoped step trail** (open while that turn is still
+      streaming, left as the user leaves it after — no forced auto-collapse
+      animation) ABOVE the turn's message, instead of interleaved as flat
+      siblings below it. Items with no turnId (replay, user echoes,
+      out-of-band mission questions) render exactly as before.
+
 ## Fleet / missions / inbox (live-tested 2026-07-21, first real dispatch)
 
 Observed driving a real mission (`chain-acp`, strict HITL envelope) from Beam

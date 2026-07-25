@@ -38,6 +38,16 @@ export type AcpTimelineItemKind = 'message' | 'tool_call' | 'terminal' | 'error'
 export interface AcpTimelineItem {
   kind: AcpTimelineItemKind;
   id: string;
+  /**
+   * The turn (one `session/prompt` call) this item was created during, or
+   * `undefined` for items created with no turn in flight (`session/load`
+   * replay, a `!` passthrough terminal card, a delivered mission question).
+   * Lets the transcript group a turn's `tool_call` steps into one collapsible
+   * trail instead of interleaving them with the answer as flat siblings —
+   * see `TranscriptItems.tsx`'s turn grouping. Assigned once at creation and
+   * never changed afterwards, same as `kind`/`id`.
+   */
+  turnId?: string;
 }
 
 export interface AcpChatMessage {
@@ -172,6 +182,30 @@ export interface AcpSessionState {
    * ordering` tests.
    */
   activeTurnMessageId: string | null;
+  /**
+   * Every id that has ever served as an `activeTurnMessageId` (i.e. every
+   * canonical id a PAST OR CURRENT turn has been established under). Guards
+   * `resolveTurnMessageId`: the server/relay is trusted to keep a message id
+   * stable WITHIN one turn (that's what `activeTurnMessageId` itself relies
+   * on), but nothing guarantees it won't hand back an id from a turn that
+   * already finished — an external ACP agent reusing ids, a `messageId`-less
+   * backend whose fallback id collides with an old one, etc. Silently
+   * re-keying onto that id would fold the new turn's chunks into the OLD,
+   * already-rendered/collapsed message instead of starting a new one
+   * (observed as thinking silently stopping showing up after the first
+   * turn). Never cleared mid-session — only `session_reset` wipes it, same
+   * as everything else keyed by id.
+   */
+  usedTurnMessageIds: Record<string, true>;
+  /**
+   * This turn's id, tagged onto every `message`/`tool_call` item created
+   * while it's active (see `AcpTimelineItem.turnId`). Freshly minted on
+   * every `prompt_start` from the item count so far (append-only `items`
+   * makes that unique); left in place (not nulled) once the turn ends —
+   * nothing reads it again until the NEXT `prompt_start` overwrites it, and
+   * items already tagged keep their turnId forever regardless.
+   */
+  currentTurnId: string | null;
 }
 
 export const initialAcpSessionState: AcpSessionState = {
@@ -192,6 +226,8 @@ export const initialAcpSessionState: AcpSessionState = {
   error: null,
   connectionBanner: null,
   activeTurnMessageId: null,
+  usedTurnMessageIds: {},
+  currentTurnId: null,
 };
 
 export type AcpSessionAction =
@@ -223,9 +259,10 @@ function ensureItem(
   items: AcpTimelineItem[],
   kind: AcpTimelineItemKind,
   id: string,
+  turnId?: string,
 ): AcpTimelineItem[] {
   if (items.some(it => it.kind === kind && it.id === id)) return items;
-  return [...items, { kind, id }];
+  return [...items, turnId !== undefined ? { kind, id, turnId } : { kind, id }];
 }
 
 /**
@@ -287,6 +324,26 @@ function endStreaming(messages: Record<string, AcpChatMessage>): Record<string, 
   return changed ? next : messages;
 }
 
+/**
+ * Resolves the canonical `messages` key a `message_chunk`/`thought_chunk`
+ * should fold onto for the CURRENT turn, and whether this call is the one
+ * establishing a NEW canonical id (the turn's first chunk). See
+ * `usedTurnMessageIds`'s doc comment for why a collision guard is needed
+ * here rather than trusting `actionId` outright.
+ */
+function resolveTurnMessageId(
+  state: AcpSessionState,
+  actionId: string,
+  active: boolean,
+): { id: string; establishesNew: boolean } {
+  if (!active) return { id: actionId, establishesNew: false };
+  if (state.activeTurnMessageId !== null) {
+    return { id: state.activeTurnMessageId, establishesNew: false };
+  }
+  const id = state.usedTurnMessageIds[actionId] ? `${actionId}#turn-${state.items.length}` : actionId;
+  return { id, establishesNew: true };
+}
+
 export function acpSessionReducer(
   state: AcpSessionState,
   action: AcpSessionAction,
@@ -320,11 +377,11 @@ export function acpSessionReducer(
       // questions in one bubble sharing one answer box — the second unanswerable
       // behind the first's spent state. It keeps its own id, always.
       const outOfBand = action.missionAsk !== undefined;
-      const id =
-        state.isPrompting && !outOfBand ? (state.activeTurnMessageId ?? action.id) : action.id;
+      const active = state.isPrompting && !outOfBand;
+      const { id, establishesNew } = resolveTurnMessageId(state, action.id, active);
       return {
         ...state,
-        items: ensureItem(state.items, 'message', id),
+        items: ensureItem(state.items, 'message', id, active ? (state.currentTurnId ?? undefined) : undefined),
         messages: upsertMessage(
           state.messages,
           id,
@@ -332,17 +389,25 @@ export function acpSessionReducer(
           { text: action.text, image: action.image, missionAsk: action.missionAsk },
           // An out-of-band question is complete on arrival — never "still
           // streaming", which would render a caret under it forever.
-          state.isPrompting && !outOfBand,
+          active,
         ),
-        activeTurnMessageId: state.isPrompting && !outOfBand ? id : state.activeTurnMessageId,
+        activeTurnMessageId: active ? id : state.activeTurnMessageId,
+        usedTurnMessageIds: establishesNew
+          ? { ...state.usedTurnMessageIds, [id]: true }
+          : state.usedTurnMessageIds,
       };
     }
 
     case 'thought_chunk': {
-      const id = state.isPrompting ? (state.activeTurnMessageId ?? action.id) : action.id;
+      const { id, establishesNew } = resolveTurnMessageId(state, action.id, state.isPrompting);
       return {
         ...state,
-        items: ensureItem(state.items, 'message', id),
+        items: ensureItem(
+          state.items,
+          'message',
+          id,
+          state.isPrompting ? (state.currentTurnId ?? undefined) : undefined,
+        ),
         messages: upsertMessage(
           state.messages,
           id,
@@ -351,6 +416,9 @@ export function acpSessionReducer(
           state.isPrompting,
         ),
         activeTurnMessageId: state.isPrompting ? id : state.activeTurnMessageId,
+        usedTurnMessageIds: establishesNew
+          ? { ...state.usedTurnMessageIds, [id]: true }
+          : state.usedTurnMessageIds,
       };
     }
 
@@ -369,7 +437,12 @@ export function acpSessionReducer(
       };
       return {
         ...state,
-        items: ensureItem(state.items, 'tool_call', event.toolCallId),
+        items: ensureItem(
+          state.items,
+          'tool_call',
+          event.toolCallId,
+          state.isPrompting ? (state.currentTurnId ?? undefined) : undefined,
+        ),
         toolCalls: { ...state.toolCalls, [event.toolCallId]: merged },
       };
     }
@@ -412,8 +485,15 @@ export function acpSessionReducer(
       // Fresh turn, fresh canonical-id slot — see `activeTurnMessageId`'s doc
       // comment. Without this reset a second turn's first chunk would
       // silently alias onto the PREVIOUS turn's assistant message instead of
-      // starting a new one.
-      return { ...state, isPrompting: true, error: null, activeTurnMessageId: null };
+      // starting a new one. `currentTurnId` gets a fresh value too (see its
+      // doc comment) — `items.length` is append-only so it's unique.
+      return {
+        ...state,
+        isPrompting: true,
+        error: null,
+        activeTurnMessageId: null,
+        currentTurnId: `turn-${state.items.length}`,
+      };
 
     case 'prompt_end':
       return {

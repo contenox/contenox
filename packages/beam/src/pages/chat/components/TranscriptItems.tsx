@@ -11,6 +11,7 @@ import {
   InlineAttachments,
   InlineNotice,
   Span,
+  TerminalOutput,
   ToolCallCard,
   type ToolCallCardProps,
 } from '@contenox/ui';
@@ -25,6 +26,7 @@ import type {
   AcpErrorCard,
   AcpSessionState,
   AcpTerminalCard,
+  AcpTimelineItem,
   AcpToolCallState,
 } from '../../../hooks/acpSessionState';
 import { acpFailureCopyKeys, classifyAcpExecutionError } from '../../../lib/acpFailureKind';
@@ -163,11 +165,44 @@ function TranscriptMessage({
   );
 }
 
+/** Best-effort `$ command arg1 arg2` line from a `local_shell`/exec tool call's raw input (`{command, args}`, see `runtime/acpsvc/events.go` `summarizeToolCallArgs`). */
+function shellCommandLine(rawInput: unknown): string | null {
+  if (rawInput == null || typeof rawInput !== 'object') return null;
+  const obj = rawInput as Record<string, unknown>;
+  const command = typeof obj.command === 'string' ? obj.command : null;
+  if (!command) return null;
+  const args = Array.isArray(obj.args) ? obj.args.filter((a): a is string => typeof a === 'string') : [];
+  return ['$', command, ...args].join(' ');
+}
+
+/** Shell tool output is a plain string (`json.RawMessage(jsonString(ev.Content))` on the backend); split into terminal lines. */
+function shellOutputLines(rawOutput: unknown): string[] | null {
+  return typeof rawOutput === 'string' ? rawOutput.split('\n') : null;
+}
+
 function ToolCallDetail({ toolCall }: { toolCall: AcpToolCallState }) {
   const { t } = useTranslation();
   const diffs = (toolCall.content ?? []).filter(c => c.type === 'diff');
   const other = (toolCall.content ?? []).filter(c => c.type !== 'diff');
   const hasRaw = toolCall.rawInput != null || toolCall.rawOutput != null || other.length > 0;
+
+  // `execute`-kind calls (local_shell, run/exec tools) render like the actual
+  // shell they ran in, not a JSON dump — same TerminalOutput component the
+  // live `!`-passthrough terminal tab uses (packages/beam TerminalTab.tsx),
+  // just fed this one call's command + output instead of a PTY stream.
+  const shellLines =
+    toolCall.kind === 'execute' && other.length === 0 ? shellOutputLines(toolCall.rawOutput) : null;
+  if (shellLines) {
+    const commandLine = shellCommandLine(toolCall.rawInput);
+    return (
+      <div className="space-y-3">
+        <TerminalOutput
+          lines={commandLine ? [commandLine, ...shellLines] : shellLines}
+          maxHeight="15rem"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
@@ -287,21 +322,88 @@ export interface TranscriptItemsProps {
   onRespondPermission: (optionId: string) => void;
 }
 
+interface RenderItemContext {
+  session: AcpSessionState;
+  agentName: string | null;
+  latestErrorItemId: string | null;
+  pending: AcpSessionState['pendingPermission'];
+  anchorId: string | null;
+  onRespondPermission: (optionId: string) => void;
+}
+
+/** Renders ONE timeline item (plus its anchored permission card, if any). Shared by the flat path and the turn-grouped path below so both stay in sync. */
+function renderItem(item: AcpTimelineItem, isLatest: boolean, ctx: RenderItemContext): ReactNode {
+  const { session, agentName, latestErrorItemId, pending, anchorId, onRespondPermission } = ctx;
+  let rendered: ReactNode = null;
+  if (item.kind === 'message') {
+    const message = session.messages[item.id];
+    rendered = message ? (
+      <TranscriptMessage key={`m-${item.id}`} message={message} agentName={agentName} isLatest={isLatest} />
+    ) : null;
+  } else if (item.kind === 'terminal') {
+    const card = session.terminals[item.id];
+    rendered = card ? <TranscriptTerminal key={`x-${item.id}`} card={card} /> : null;
+  } else if (item.kind === 'error') {
+    const card = session.errorCards[item.id];
+    rendered =
+      card && item.id !== latestErrorItemId ? <TranscriptError key={`e-${item.id}`} card={card} /> : null;
+  } else {
+    const toolCall = session.toolCalls[item.id];
+    rendered = toolCall ? <TranscriptToolCall key={`t-${item.id}`} toolCall={toolCall} /> : null;
+  }
+  const anchorHere = pending && anchorId != null && item.kind === 'tool_call' && item.id === anchorId;
+  if (!anchorHere) return rendered;
+  // Return a keyed array (not a wrapper element) so the tool-call card keeps
+  // its own stable key and is NOT remounted when the permission arrives or
+  // resolves; the card is anchored as its immediate sibling.
+  return [
+    rendered,
+    <PermissionCard key={`perm-${item.id}`} permission={pending} onRespond={onRespondPermission} />,
+  ];
+}
+
+/** One maximal run of consecutive `session.items` sharing a defined `turnId`, or a lone untagged item. */
+interface TimelineGroup {
+  turnId: string | undefined;
+  entries: Array<{ item: AcpTimelineItem; index: number }>;
+}
+
+function groupByTurn(items: AcpTimelineItem[]): TimelineGroup[] {
+  const groups: TimelineGroup[] = [];
+  for (const [index, item] of items.entries()) {
+    const last = groups[groups.length - 1];
+    if (last && item.turnId !== undefined && last.turnId === item.turnId) {
+      last.entries.push({ item, index });
+    } else {
+      groups.push({ turnId: item.turnId, entries: [{ item, index }] });
+    }
+  }
+  return groups;
+}
+
 /**
  * Renders `session.items` in arrival order (D4's unified timeline) —
- * messages via `ChatMessage`, tool calls via `ToolCallCard`. Order is exactly
- * `session.items`; this component adds no derivation of its own.
+ * messages via `ChatMessage`, tool calls via `ToolCallCard`. Overall order is
+ * exactly `session.items`; the only derivation this component adds is
+ * grouping ONE turn's `tool_call`/`terminal` steps into a collapsible trail
+ * that sits above that turn's answer, instead of interleaving them as flat
+ * siblings — the steps happen first chronologically, but the answer is what
+ * the user actually reads, so it gets top billing once the steps are done.
+ * Items with no `turnId` (session/load replay, user echoes, out-of-band
+ * mission questions) render exactly as before, ungrouped.
  *
  * A pending permission request (`session.pendingPermission`) is rendered inline
  * as a `PermissionCard` anchored right after the tool-call item it belongs to
- * (matched by `toolCallId`), so the approve/deny surface lives chronologically
- * where the request happened instead of in a page-covering modal. When the
- * pending request references no tool-call item yet (it can arrive before its
+ * (matched by `toolCallId`, wherever that item ends up — flat or inside a
+ * step trail), so the approve/deny surface lives chronologically where the
+ * request happened instead of in a page-covering modal. When the pending
+ * request references no tool-call item yet (it can arrive before its
  * `tool_call` update), the card falls back to the end of the transcript. The
  * card answers ONLY via its explicit buttons — there is no dismiss/deny-on-
  * outside-click path anywhere in this flow.
  */
 export function TranscriptItems({ session, agentName, onRespondPermission }: TranscriptItemsProps) {
+  const { t } = useTranslation();
   const pending = session.pendingPermission;
   const pendingToolCallId = pending?.toolCall.toolCallId ?? null;
   // Anchor the card after a real tool-call item only when one matches; otherwise
@@ -328,50 +430,36 @@ export function TranscriptItems({ session, agentName, onRespondPermission }: Tra
       ? ([...session.items].reverse().find(it => it.kind === 'error')?.id ?? null)
       : null;
 
+  const ctx: RenderItemContext = { session, agentName, latestErrorItemId, pending, anchorId, onRespondPermission };
+  const render = (entry: { item: AcpTimelineItem; index: number }) =>
+    renderItem(entry.item, entry.index === session.items.length - 1, ctx);
+
   return (
     <>
-      {session.items.map((item, i) => {
-        const isLatest = i === session.items.length - 1;
-        let rendered: ReactNode = null;
-        if (item.kind === 'message') {
-          const message = session.messages[item.id];
-          rendered = message ? (
-            <TranscriptMessage
-              key={`m-${item.id}`}
-              message={message}
-              agentName={agentName}
-              isLatest={isLatest}
-            />
-          ) : null;
-        } else if (item.kind === 'terminal') {
-          const card = session.terminals[item.id];
-          rendered = card ? <TranscriptTerminal key={`x-${item.id}`} card={card} /> : null;
-        } else if (item.kind === 'error') {
-          const card = session.errorCards[item.id];
-          rendered =
-            card && item.id !== latestErrorItemId ? (
-              <TranscriptError key={`e-${item.id}`} card={card} />
-            ) : null;
-        } else {
-          const toolCall = session.toolCalls[item.id];
-          rendered = toolCall ? (
-            <TranscriptToolCall key={`t-${item.id}`} toolCall={toolCall} />
-          ) : null;
+      {groupByTurn(session.items).map(group => {
+        const steps = group.entries.filter(({ item }) => item.kind === 'tool_call' || item.kind === 'terminal');
+        const rest = group.entries.filter(({ item }) => item.kind !== 'tool_call' && item.kind !== 'terminal');
+        // Only worth a collapsible wrapper once there's both something that
+        // happened (steps) AND something to read below it (the answer). A
+        // steps-only group (still streaming, no text yet) or a message-only
+        // group (no tool calls this turn) renders exactly like the flat path.
+        if (group.turnId === undefined || steps.length === 0 || rest.length === 0) {
+          return group.entries.map(render);
         }
-        const anchorHere =
-          pending && anchorId != null && item.kind === 'tool_call' && item.id === anchorId;
-        if (!anchorHere) return rendered;
-        // Return a keyed array (not a wrapper element) so the tool-call card keeps
-        // its own stable key and is NOT remounted when the permission arrives or
-        // resolves; the card is anchored as its immediate sibling.
-        return [
-          rendered,
-          <PermissionCard
-            key={`perm-${item.id}`}
-            permission={pending}
-            onRespond={onRespondPermission}
-          />,
-        ];
+        // Starts open while its own turn is still streaming (so the user can
+        // watch it work), stays as the user last left it afterwards — no
+        // forced auto-collapse animation, per the "emit, don't animate" rule.
+        const stillStreaming = session.isPrompting && group.turnId === session.currentTurnId;
+        return (
+          <div key={`turn-${group.turnId}`} className="space-y-2">
+            <Collapsible
+              defaultOpen={stillStreaming}
+              title={t('acp_chat.turn_steps_toggle', { count: steps.length })}>
+              <div className="space-y-2">{steps.map(render)}</div>
+            </Collapsible>
+            {rest.map(render)}
+          </div>
+        );
       })}
       {pending && anchorId == null && (
         <PermissionCard key="perm-fallback" permission={pending} onRespond={onRespondPermission} />
