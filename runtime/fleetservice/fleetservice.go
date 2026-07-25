@@ -31,6 +31,7 @@ import (
 	"github.com/contenox/runtime/runtime/agentregistryservice"
 	"github.com/contenox/runtime/runtime/hitlservice"
 	"github.com/contenox/runtime/runtime/missionservice"
+	"github.com/contenox/runtime/runtime/missiontools"
 	"github.com/contenox/runtime/runtime/vfs"
 	"github.com/google/uuid"
 )
@@ -634,28 +635,43 @@ func (s *service) lastAgentText(instanceID string, sessionID libacp.SessionID) s
 	return text
 }
 
+// The mission tools as the MODEL sees them: taskengine qualifies every tool with
+// its provider name before offering it ("mission" + "." + "mission_report"), and
+// the executor resolves the call by that same qualified name — which is why the
+// unit's transcripts show `local_fs.read_file`, never `read_file`.
+//
+// These are DERIVED from the tool package's own constants, deliberately. They
+// were once inlined as prose here, on the reasoning that a rename would be caught
+// by the mission-tools tests — and the drift that actually happened was not a
+// rename at all: the prose named the BARE tools (`mission_report`) while the model
+// was offered the qualified ones, so an unattended unit was ordered, twice, to
+// call a function that did not exist in its list. It answered in prose, got
+// nudged, and returned an empty turn; the runtime then filed a blocker against a
+// unit that had done the work and simply had no reachable way to say so. Deriving
+// the strings makes that class of mismatch a compile-time impossibility.
+var (
+	toolAskAttention = missiontools.ToolsProviderName + "." + missiontools.ToolNameAskAttention
+	toolReport       = missiontools.ToolsProviderName + "." + missiontools.ToolNameReport
+	toolFinish       = missiontools.ToolsProviderName + "." + missiontools.ToolNameFinish
+)
+
 // missionPreamble is the unattended-context block Dispatch prepends to a unit's
 // FIRST turn, ahead of the clean intent — prevention, before the void ever opens.
 // It is WIRE-ONLY: never persisted as Mission.Intent, because it is context for
 // the model, not the operator's stated goal. It is written as model-facing prompt
-// surface — short, imperative, no fluff — and names the mission tools by their
-// wire names (mirroring runtime/missiontools.ToolName*), because those are the
-// strings the model actually sees in its tool list. The names are inlined as prose
-// rather than imported: it keeps this package's compile decoupled from a tool
-// package under active change, reports (mission_report) and asks
-// (mission_ask_attention) are the always-present pair, and a rename there is
-// caught by the mission-tools slice's own tests rather than drifting silently here.
-const missionPreamble = `You are running as an UNATTENDED mission unit. No human is reading this conversation — replying in prose reaches no one. You reach your operator ONLY through your mission tools:
-- mission_ask_attention: ask a question, or flag a blocker you must not decide alone.
-- mission_report: record real progress, a finding, or a result.
-- mission_finish: end the mission with a verdict, once the work is truly done.
-Do the work with your other tools. When you need the operator, or have something worth their attention, call a mission tool. Chat text alone will not be seen.`
+// surface — short, imperative, no fluff — and names the mission tools exactly as
+// the model's tool list does (see the block above).
+var missionPreamble = fmt.Sprintf(`You are running as an UNATTENDED mission unit. No human is reading this conversation — replying in prose reaches no one. You reach your operator ONLY through your mission tools:
+- %s: ask a question, or flag a blocker you must not decide alone.
+- %s: record real progress, a finding, or a result.
+- %s: end the mission with a verdict, once the work is truly done.
+Do the work with your other tools. When you need the operator, or have something worth their attention, call a mission tool. Chat text alone will not be seen.`, toolAskAttention, toolReport, toolFinish)
 
 // missionNudge is the SINGLE follow-up turn a unit earns when its first turn
 // produced no mission-tool fact: a terse reminder that it is unattended and must
 // reach the operator through its mission tools, or keep working with its others.
 // One nudge, ever (see driveUnattendedMission's hard cap).
-const missionNudge = `Your last turn ended without reaching your operator, and no human is reading this chat. To reach your operator now, call mission_ask_attention (a question or a blocker) or mission_report (progress, a finding, or a result); to end the mission, call mission_finish. If you are not done, keep working with your other tools and report when you have something. Do not answer in prose alone — it will not be seen.`
+var missionNudge = fmt.Sprintf(`Your last turn ended without reaching your operator, and no human is reading this chat. To reach your operator now, call %s (a question or a blocker) or %s (progress, a finding, or a result); to end the mission, call %s. If you are not done, keep working with your other tools and report when you have something. Do not answer in prose alone — it will not be seen.`, toolAskAttention, toolReport, toolFinish)
 
 // silentTurnBlockerLead is the stable, greppable lead of the blocker the runtime
 // files for a unit that ended two turns without reporting.

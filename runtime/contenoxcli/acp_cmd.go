@@ -529,10 +529,13 @@ func buildInProcessFleet(ctx context.Context, deps inProcessFleetDeps) (fleetser
 	// falling back to the operator inbox when no live parent owns it. It runs off
 	// the shared SQLite bus, so a unit's cross-process ReportAddedEvent reaches it.
 	router, err := reportrouter.New(reportrouter.Deps{
-		Bus:      deps.bus,
-		Sessions: missionReportDeliverer{transport: deps.transport, kernel: kernel},
-		Inbox:    operatorInbox,
-		Tracker:  deps.tracker,
+		Bus: deps.bus,
+		Sessions: missionReportDeliverer{
+			chat:   func() contenoxSessionDeliverer { return chatDeliverer(deps.transport()) },
+			kernel: kernel,
+		},
+		Inbox:   operatorInbox,
+		Tracker: deps.tracker,
 	})
 	if err != nil {
 		_ = kernel.Close()
@@ -573,16 +576,42 @@ func buildInProcessFleet(ctx context.Context, deps inProcessFleetDeps) (fleetser
 // the serve-forwarded topology could not make: there the firing session lived in
 // a different process, so the report fell to the inbox as parent-gone.
 type missionReportDeliverer struct {
-	transport func() *acpsvc.Transport
-	kernel    agentinstance.Manager
+	// chat resolves the ACP surface that may own the firing session, late-bound
+	// because the editor's lone transport does not exist yet when the router is
+	// built. It returns nil when there is none to ask. Both shapes of that surface
+	// implement the same one method: the editor's single *acpsvc.Transport, and
+	// serve's *acpsvc.SessionRouter, which finds the right one of its many
+	// connections by the same contenox session id.
+	chat   func() contenoxSessionDeliverer
+	kernel agentinstance.Manager
+}
+
+// contenoxSessionDeliverer injects an out-of-band update into a chat session
+// addressed by its CONTENOX (internal) session id — the id a mission carries as
+// its ParentSessionID. Declared here, where both implementations are consumed.
+type contenoxSessionDeliverer interface {
+	DeliverToContenoxSession(ctx context.Context, contenoxSessionID string, n libacp.SessionNotification) error
+}
+
+// chatDeliverer adapts a possibly-nil *acpsvc.Transport to the interface. The
+// explicit nil check is load-bearing: returning a nil *Transport as an interface
+// value yields a NON-nil interface holding a nil pointer, which would sail past
+// the caller's nil guard and panic on the first delivery.
+func chatDeliverer(t *acpsvc.Transport) contenoxSessionDeliverer {
+	if t == nil {
+		return nil
+	}
+	return t
 }
 
 var _ reportrouter.SessionDeliverer = missionReportDeliverer{}
 
 func (d missionReportDeliverer) DeliverToSession(ctx context.Context, sessionID libacp.SessionID, n libacp.SessionNotification) error {
-	if t := d.transport(); t != nil {
-		if err := t.DeliverToContenoxSession(ctx, string(sessionID), n); err == nil {
-			return nil
+	if d.chat != nil {
+		if chat := d.chat(); chat != nil {
+			if err := chat.DeliverToContenoxSession(ctx, string(sessionID), n); err == nil {
+				return nil
+			}
 		}
 	}
 	if d.kernel != nil {

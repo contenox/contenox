@@ -6,15 +6,20 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
+
+	"github.com/google/uuid"
 
 	libacp "github.com/contenox/runtime/libacp"
 	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/chatservice"
 	"github.com/contenox/runtime/runtime/internal/clikv"
 	"github.com/contenox/runtime/runtime/internal/setupcheck"
 	"github.com/contenox/runtime/runtime/modelcapability"
 	"github.com/contenox/runtime/runtime/reasoning"
 	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/taskengine"
 )
 
 // allACPCommands is the full, capability-unfiltered admin command set — every
@@ -142,6 +147,7 @@ func (t *Transport) dispatchCommand(ctx context.Context, sid libacp.SessionID, s
 			SessionID: sid,
 			Update:    libacp.NewAgentMessageChunk("⚠️  " + err.Error()),
 		})
+		t.persistCommandTurn(ctx, sess, name, args, "⚠️  "+err.Error())
 		return libacp.PromptResponse{StopReason: libacp.StopReasonEndTurn}, nil
 	}
 	if out != "" {
@@ -150,6 +156,7 @@ func (t *Transport) dispatchCommand(ctx context.Context, sid libacp.SessionID, s
 			Update:    libacp.NewAgentMessageChunk(out),
 		})
 	}
+	t.persistCommandTurn(ctx, sess, name, args, out)
 	if commandUpdatesSessionModel(name) {
 		sess.setModelSelection(t.provider(), t.model())
 	}
@@ -157,6 +164,59 @@ func (t *Transport) dispatchCommand(ctx context.Context, sid libacp.SessionID, s
 		t.sendConfigOptionUpdate(ctx, sid, sess)
 	}
 	return libacp.PromptResponse{StopReason: libacp.StopReasonEndTurn}, nil
+}
+
+// persistCommandTurn records a slash-command exchange — the line the operator
+// typed and the answer they got — in the session's durable transcript, the same
+// store an ordinary turn writes to.
+//
+// Without this a command is a WIRE EVENT ONLY: it renders once and is gone on
+// reload. That was invisible for /help, and badly wrong for /mission, whose whole
+// point is a durable act — an operator who fired a mission as a session's FIRST
+// message came back to a session with no messages at all, which has no title (the
+// sidebar falls back to a short id), no last-activity timestamp (so beam's
+// freshest-first roster sorts it below every real chat), and an empty transcript.
+// The session looked deleted. It was merely never written to.
+//
+// The two history-rewriting commands are excluded, because for them the
+// transcript is the OUTPUT, not the record: /clear empties it (appending the
+// command that emptied it would leave the one line it just promised to remove)
+// and /compact replaces it with a summary.
+func (t *Transport) persistCommandTurn(ctx context.Context, sess *sessionEntry, name, args, out string) {
+	if t.deps.DB == nil || sess == nil || commandRewritesHistory(name) {
+		return
+	}
+	internalID := sess.InternalSessionID
+	if internalID == "" || strings.TrimSpace(out) == "" {
+		return
+	}
+	typed := "/" + name
+	if args = strings.TrimSpace(args); args != "" {
+		typed += " " + args
+	}
+	now := time.Now().UTC()
+	msgs := []taskengine.Message{
+		{ID: uuid.NewString(), Role: "user", Content: typed, Timestamp: now},
+		{ID: uuid.NewString(), Role: "assistant", Content: out, Timestamp: now.Add(time.Millisecond)},
+	}
+	cleanCtx := context.WithoutCancel(ctx)
+	mgr := chatservice.NewManager(sess.WorkspaceID)
+	if err := mgr.PersistDiff(cleanCtx, t.deps.DB.WithoutTransaction(), internalID, msgs); err != nil {
+		reportErr, _, end := t.tracker().Start(cleanCtx, "persist", "acp_command_turn", "session_id", internalID, "command", name)
+		reportErr(err)
+		end()
+	}
+}
+
+// commandRewritesHistory reports whether a command owns the transcript itself, in
+// which case persistCommandTurn must not append to it. See there.
+func commandRewritesHistory(name string) bool {
+	switch name {
+	case "clear", "compact":
+		return true
+	default:
+		return false
+	}
 }
 
 func commandUpdatesSessionModel(name string) bool {

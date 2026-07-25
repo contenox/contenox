@@ -174,3 +174,35 @@ func TestGetCLIConfigReturnsFullSnapshot(t *testing.T) {
 	require.Equal(t, "true", got.TelemetryEnabled)
 	require.Equal(t, "true", got.UpdateCheck)
 }
+
+// TestPutCLIConfigAcceptsMissionDefaults pins the wire names of the mission pair
+// (kebab-case in, camelCase out) and that either key ALONE satisfies the
+// "provide at least one key" guard — the settings page saves this section on its
+// own, without resending the model defaults.
+func TestPutCLIConfigAcceptsMissionDefaults(t *testing.T) {
+	svc := &fakeStateService{
+		setSnapshot: stateservice.CLIConfigSnapshot{
+			DefaultMissionAgent:  "chain-contenox",
+			DefaultMissionPolicy: "hitl-policy-default.json",
+		},
+	}
+	mux := http.NewServeMux()
+	AddSetupRoutes(mux, svc, nil)
+
+	req := httptest.NewRequest(http.MethodPut, "/cli-config",
+		strings.NewReader(`{"default-mission-agent":"chain-contenox","default-mission-policy":"hitl-policy-default.json"}`))
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.True(t, svc.setCalled)
+	require.NotNil(t, svc.setPatch.DefaultMissionAgent)
+	require.NotNil(t, svc.setPatch.DefaultMissionPolicy)
+	require.Equal(t, "chain-contenox", *svc.setPatch.DefaultMissionAgent)
+	require.Equal(t, "hitl-policy-default.json", *svc.setPatch.DefaultMissionPolicy)
+
+	var got putCLIConfigResponse
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&got))
+	require.Equal(t, "chain-contenox", got.DefaultMissionAgent)
+	require.Equal(t, "hitl-policy-default.json", got.DefaultMissionPolicy)
+}

@@ -19,10 +19,10 @@ import { MissionPlanPanel } from '../../../components/MissionPlanPanel';
 import { MissionRevisionFeed } from '../../../components/MissionRevisionFeed';
 import { ScopeAnomalyChip, ScopeBadge } from '../../../components/ScopeStatus';
 import { UnitStatus } from '../../../components/UnitStatus';
-import { startAdoptSession, useAdoptIntent } from '../../../lib/adoptIntent';
 import { useFleet } from '../../../hooks/useFleet';
 import { useMissionChanges } from '../../../hooks/useMissionChanges';
 import { useMission, useMissionReports } from '../../../hooks/useMissions';
+import { startAdoptSession, useAdoptIntent } from '../../../lib/adoptIntent';
 import { relativeTime } from '../../../lib/relativeTime';
 import type { FleetInstanceState } from '../../../lib/types';
 import { blockedMissionIds } from '../../../lib/unitStatus';
@@ -127,7 +127,10 @@ export default function MissionDetailPage() {
   const canAdopt = instanceState === 'running' && !!m.sessionId && !!m.instanceId;
   const openSession = () => {
     if (!m.instanceId || !m.sessionId) return;
-    startAdoptSession({ instanceId: m.instanceId, sessionId: m.sessionId }, { setAdoptIntent, navigate });
+    startAdoptSession(
+      { instanceId: m.instanceId, sessionId: m.sessionId },
+      { setAdoptIntent, navigate },
+    );
   };
 
   return (
@@ -214,112 +217,122 @@ export default function MissionDetailPage() {
 
         {activeTab === 'overview' && (
           <div className="flex flex-col gap-8">
-        {m.lastError && (
-          <InlineNotice variant="error" role="alert">
-            <span className="font-medium">{t('missions.last_error_label')}: </span>
-            {m.lastError}
-          </InlineNotice>
-        )}
-
-        <Section title={t('missions.facts_title')}>
-          <div className="mt-2 space-y-1">
-            <KeyValue label={t('missions.facts_agent')} value={m.agentName} />
-            <KeyValue
-              label={t('missions.facts_envelope')}
-              value={
-                <Badge variant="outline" size="sm">
-                  {m.hitlPolicyName}
-                </Badge>
-              }
-            />
-            <KeyValue
-              label={t('missions.facts_heartbeat')}
-              value={
-                <span title={absoluteTime(m.lastHeartbeat)}>
-                  {heartbeatLabel(m.lastHeartbeat, i18n.language, {
-                    never: t('missions.heartbeat_never'),
-                    justNow: t('common.just_now'),
-                  })}
-                </span>
-              }
-            />
-            <KeyValue
-              label={t('missions.facts_session')}
-              value={<span className="font-mono text-xs break-all">{m.sessionId || '—'}</span>}
-            />
-            <KeyValue
-              label={t('missions.facts_instance')}
-              value={<span className="font-mono text-xs break-all">{m.instanceId || '—'}</span>}
-            />
-            <KeyValue label={t('missions.facts_created')} value={absoluteTime(m.createdAt)} />
-            <KeyValue label={t('missions.facts_updated')} value={absoluteTime(m.updatedAt)} />
-          </div>
-        </Section>
-
-        {/* The living plan — rendered only when the mission has one (an unplanned
-            mission carries the zero Plan, which shows no panel). */}
-        <MissionPlanPanel plan={m.plan} />
-
-        {/* The plan-revision history — the "+2/−1 — why" feed, newest first.
-            Renders nothing on a legacy/never-planned mission. */}
-        <MissionRevisionFeed revisions={m.planRevisions} />
-
-        <Section title={t('missions.reports_title')} description={t('missions.reports_description')}>
-          <div className="mt-4 space-y-3">
-            {reportsQuery.isLoading ? (
-              <LoadingState message={t('missions.reports_loading')} />
-            ) : reportsQuery.error ? (
-              <ErrorState
-                error={reportsQuery.error}
-                onRetry={() => void reportsQuery.refetch()}
-                title={t('missions.reports_load_error')}
-              />
-            ) : reports.length === 0 ? (
-              <P variant="muted">{t('missions.reports_empty')}</P>
-            ) : (
-              reports.map(r => (
-                <div
-                  key={r.id}
-                  className="border-surface-200 dark:border-dark-surface-600 rounded-lg border p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <Badge variant={REPORT_KIND_BADGE_VARIANT[r.kind]} size="sm">
-                        {t(REPORT_KIND_LABEL_KEY[r.kind])}
-                      </Badge>
-                      <span className="font-medium">{r.summary}</span>
-                    </div>
-                    <span
-                      className="text-text-muted dark:text-dark-text-muted text-xs"
-                      title={absoluteTime(r.createdAt)}>
-                      {relativeTime(r.createdAt, i18n.language, t('common.just_now'))}
-                    </span>
-                  </div>
-
-                  {r.detail && (
-                    <Collapsible title={t('missions.report_detail_toggle')} className="mt-3">
-                      <P className="mt-2 whitespace-pre-wrap">{r.detail}</P>
-                    </Collapsible>
-                  )}
-
-                  {r.refs && r.refs.length > 0 && (
-                    <div className="mt-3">
-                      <Span variant="muted" className="text-xs">
-                        {t('missions.report_refs_label')}:
-                      </Span>
-                      <ul className="mt-1 space-y-0.5">
-                        {r.refs.map((ref, i) => (
-                          <li key={i} className="font-mono text-xs break-all">
-                            {ref}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              ))
+            {m.lastError && (
+              <InlineNotice variant="error" role="alert">
+                <span className="font-medium">{t('missions.last_error_label')}: </span>
+                {m.lastError}
+              </InlineNotice>
             )}
-          </div>
-        </Section>
+
+            <Section title={t('missions.facts_title')}>
+              <div className="mt-2 space-y-1">
+                <KeyValue label={t('missions.facts_agent')} value={m.agentName} />
+                {/* The runtime's one line about WHY a mission came to rest where it did
+                (missionservice.StatusReason, attached by Finish). Only a terminal
+                status carries one, and for `stuck` it is the whole point of the
+                status — "it hit a boundary" is unactionable without which boundary —
+                so it is rendered right at the top of the facts, not buried. */}
+                {m.statusReason && (
+                  <KeyValue label={t('missions.facts_status_reason')} value={m.statusReason} />
+                )}
+                <KeyValue
+                  label={t('missions.facts_envelope')}
+                  value={
+                    <Badge variant="outline" size="sm">
+                      {m.hitlPolicyName}
+                    </Badge>
+                  }
+                />
+                <KeyValue
+                  label={t('missions.facts_heartbeat')}
+                  value={
+                    <span title={absoluteTime(m.lastHeartbeat)}>
+                      {heartbeatLabel(m.lastHeartbeat, i18n.language, {
+                        never: t('missions.heartbeat_never'),
+                        justNow: t('common.just_now'),
+                      })}
+                    </span>
+                  }
+                />
+                <KeyValue
+                  label={t('missions.facts_session')}
+                  value={<span className="font-mono text-xs break-all">{m.sessionId || '—'}</span>}
+                />
+                <KeyValue
+                  label={t('missions.facts_instance')}
+                  value={<span className="font-mono text-xs break-all">{m.instanceId || '—'}</span>}
+                />
+                <KeyValue label={t('missions.facts_created')} value={absoluteTime(m.createdAt)} />
+                <KeyValue label={t('missions.facts_updated')} value={absoluteTime(m.updatedAt)} />
+              </div>
+            </Section>
+
+            {/* The living plan — rendered only when the mission has one (an unplanned
+            mission carries the zero Plan, which shows no panel). */}
+            <MissionPlanPanel plan={m.plan} />
+
+            {/* The plan-revision history — the "+2/−1 — why" feed, newest first.
+            Renders nothing on a legacy/never-planned mission. */}
+            <MissionRevisionFeed revisions={m.planRevisions} />
+
+            <Section
+              title={t('missions.reports_title')}
+              description={t('missions.reports_description')}>
+              <div className="mt-4 space-y-3">
+                {reportsQuery.isLoading ? (
+                  <LoadingState message={t('missions.reports_loading')} />
+                ) : reportsQuery.error ? (
+                  <ErrorState
+                    error={reportsQuery.error}
+                    onRetry={() => void reportsQuery.refetch()}
+                    title={t('missions.reports_load_error')}
+                  />
+                ) : reports.length === 0 ? (
+                  <P variant="muted">{t('missions.reports_empty')}</P>
+                ) : (
+                  reports.map(r => (
+                    <div
+                      key={r.id}
+                      className="border-surface-200 dark:border-dark-surface-600 rounded-lg border p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Badge variant={REPORT_KIND_BADGE_VARIANT[r.kind]} size="sm">
+                            {t(REPORT_KIND_LABEL_KEY[r.kind])}
+                          </Badge>
+                          <span className="font-medium">{r.summary}</span>
+                        </div>
+                        <span
+                          className="text-text-muted dark:text-dark-text-muted text-xs"
+                          title={absoluteTime(r.createdAt)}>
+                          {relativeTime(r.createdAt, i18n.language, t('common.just_now'))}
+                        </span>
+                      </div>
+
+                      {r.detail && (
+                        <Collapsible title={t('missions.report_detail_toggle')} className="mt-3">
+                          <P className="mt-2 whitespace-pre-wrap">{r.detail}</P>
+                        </Collapsible>
+                      )}
+
+                      {r.refs && r.refs.length > 0 && (
+                        <div className="mt-3">
+                          <Span variant="muted" className="text-xs">
+                            {t('missions.report_refs_label')}:
+                          </Span>
+                          <ul className="mt-1 space-y-0.5">
+                            {r.refs.map((ref, i) => (
+                              <li key={i} className="font-mono text-xs break-all">
+                                {ref}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </Section>
           </div>
         )}
       </div>

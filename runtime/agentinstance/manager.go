@@ -506,13 +506,17 @@ func (m *manager) chainSpawner(agent *runtimetypes.Agent, cwd string) (agenthost
 			Transport: runtimetypes.ExternalACPTransportStdio,
 			Command:   self,
 			Args:      []string{ChainACPSubcommand},
-			// A chain unit declares no cwd of its own, so its sandbox workspace is the
-			// caller's resolved cwd (the mission/session root). Without this the wall
-			// fail-closes on an empty cwd even though the chain shares this runtime's
-			// state — the exact break the mission path hit.
+			// A chain unit declares no cwd of its own, so it runs in the caller's
+			// resolved cwd (the mission/session root).
 			Cwd: cwd,
 			Env: map[string]string{ChainPathEnvVar: cfg.Path},
 		},
+		// This is contenox spawning contenox, not a foreign agent, so it runs
+		// OUTSIDE the sandbox — see agenthost.ExternalACPAgent.SelfSpawn. The wall
+		// would deny the unit the very state it is defined by sharing (~/.contenox
+		// is not carved, the env is scrubbed); what governs it is the in-process
+		// capability grants and the HITL gate its tool calls already run through.
+		SelfSpawn: true,
 		Stderr:    m.stderr,
 		KillGrace: m.killGrace,
 	}, nil

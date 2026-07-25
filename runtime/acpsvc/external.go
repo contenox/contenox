@@ -1675,7 +1675,16 @@ func (t *Transport) bringUpExternal(ctx context.Context, upstreamID libacp.Sessi
 		return nil, libacp.NewErrorf(libacp.ErrInvalidParams,
 			"contenox.agent %q is a chain agent, which this transport cannot run: chain units are spawned by the fleet manager (run them under `contenox serve`)", agentName)
 	}
-	host := &agenthost.ExternalACPAgent{Config: *cfg, KillGrace: externalKillGrace}
+	// Seed the sandbox workspace from this session's cwd when the agent declares
+	// none of its own — the same defaulting the Instances path (Manager.StartResolved)
+	// and the one-shot path (agenthost.DriveTurn) do. An agent is normally registered
+	// by command alone, its working directory chosen per session, so without this the
+	// wall fail-closes on an empty cwd. A declared Cwd still wins.
+	spawnCfg := *cfg
+	if spawnCfg.Cwd == "" {
+		spawnCfg.Cwd = cwd
+	}
+	host := &agenthost.ExternalACPAgent{Config: spawnCfg, KillGrace: externalKillGrace}
 	handle, err := host.Connect(t.connCtx, bridge)
 	if err != nil {
 		return nil, libacp.InternalError(fmt.Sprintf("acpsvc: spawn agent %q: %v", agentName, err))

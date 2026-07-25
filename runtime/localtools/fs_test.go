@@ -25,6 +25,32 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 
+	// testFileContent is the canonical fixture every test.txt subtest starts
+	// from. Subtests must not depend on each other's leftovers: `sed` rewrites
+	// test.txt in place, so without a per-subtest reseed the assertions below
+	// only hold when the whole parent runs top to bottom. Running one subtest
+	// alone — which is what an IDE's per-test run button does — would then fail
+	// on a file that was never created.
+	const testFileContent = "hello world\nline 2\nline 3"
+
+	seedTestFile := func(t *testing.T) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(tempDir, "test.txt"), []byte(testFileContent), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// seedBigFile writes the oversized fixture for the read/output size-policy
+	// tests. Content is ASCII text, not NUL bytes: an all-zero fixture would be
+	// refused as binary before ever reaching the size checks these tests
+	// exercise (see TestUnit_LocalFSTools_ReadFile_RefusesBinary).
+	seedBigFile := func(t *testing.T) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(tempDir, "big.bin"), bytes.Repeat([]byte("a"), 2*1024*1024), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	t.Run("writeFile", func(t *testing.T) {
 		args := map[string]any{
 			"path":    "test.txt",
@@ -45,6 +71,7 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 	})
 
 	t.Run("readFile", func(t *testing.T) {
+		seedTestFile(t)
 		args := map[string]any{"path": "test.txt"}
 		toolsCall := &taskengine.ToolsCall{ToolName: "read_file"}
 		res, dataType, err := h.Exec(ctx, now, args, false, toolsCall)
@@ -58,6 +85,7 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 	})
 
 	t.Run("listDir", func(t *testing.T) {
+		seedTestFile(t)
 		args := map[string]any{"path": "."}
 		toolsCall := &taskengine.ToolsCall{ToolName: "list_dir"}
 		res, dataType, err := h.Exec(ctx, now, args, false, toolsCall)
@@ -143,6 +171,7 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 	})
 
 	t.Run("grep", func(t *testing.T) {
+		seedTestFile(t)
 		args := map[string]any{
 			"path":    "test.txt",
 			"pattern": "line 2",
@@ -159,6 +188,7 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 	})
 
 	t.Run("sed", func(t *testing.T) {
+		seedTestFile(t)
 		args := map[string]any{
 			"path":        "test.txt",
 			"pattern":     "line 3",
@@ -195,6 +225,7 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 	})
 
 	t.Run("UnknownArgsRejected", func(t *testing.T) {
+		seedTestFile(t)
 		args := map[string]any{"path": "test.txt", "unexpected": true}
 		toolsCall := &taskengine.ToolsCall{ToolName: "read_file"}
 		_, _, err := h.Exec(ctx, now, args, false, toolsCall)
@@ -223,6 +254,7 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 	})
 
 	t.Run("countStats", func(t *testing.T) {
+		seedTestFile(t)
 		args := map[string]any{"path": "test.txt"}
 		toolsCall := &taskengine.ToolsCall{ToolName: "count_stats"}
 		res, dataType, err := h.Exec(ctx, now, args, false, toolsCall)
@@ -230,14 +262,15 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 			t.Fatal(err)
 		}
 		stats := res.(string)
-		// test.txt has: "hello world\nline 2\nmodified line 3" (modified in sed test)
-		// Lines: 3, Words: 6, Bytes: ?
+		// test.txt is the seeded fixture: "hello world\nline 2\nline 3".
+		// Lines: 3, Words: 6.
 		if !strings.Contains(stats, "Lines: 3") || dataType != taskengine.DataTypeString {
 			t.Errorf("unexpected stats: %q", stats)
 		}
 	})
 
 	t.Run("readFileRange", func(t *testing.T) {
+		seedTestFile(t)
 		args := map[string]any{
 			"path":       "test.txt",
 			"start_line": float64(2),
@@ -255,27 +288,10 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 	})
 
 	t.Run("maxReadBytesRejectsLargeFile", func(t *testing.T) {
-		// Content is ASCII text, not NUL bytes: this fixture (and the three
-		// tests below that reuse it) exercises the _max_read_bytes /
-		// _max_output_bytes size policies specifically, independent of the
-		// binary-content refusal added for read_file (see
-		// TestUnit_LocalFSTools_ReadFile_RefusesBinary for that behavior).
-		// An all-zero fixture would now be correctly refused as binary
-		// before ever reaching the size/output-limit checks these tests
-		// intend to exercise.
-		bigPath := filepath.Join(tempDir, "big.bin")
-		f, err := os.Create(bigPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := f.Write(bytes.Repeat([]byte("a"), 2*1024*1024)); err != nil {
-			t.Fatal(err)
-		}
-		_ = f.Close()
-
+		seedBigFile(t)
 		args := map[string]any{"path": "big.bin"}
 		toolsCall := &taskengine.ToolsCall{ToolName: "read_file"}
-		_, _, err = h.Exec(ctx, now, args, false, toolsCall)
+		_, _, err := h.Exec(ctx, now, args, false, toolsCall)
 		if err == nil {
 			t.Fatal("expected error for file over default max read size")
 		}
@@ -285,6 +301,7 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 	})
 
 	t.Run("maxReadBytesUnlimited", func(t *testing.T) {
+		seedBigFile(t)
 		ctxUnlimited := taskengine.WithToolsArgs(ctx, localtools.LocalFSToolsName, map[string]string{
 			"_max_read_bytes":   "-1",
 			"_max_output_bytes": "-1",
@@ -301,6 +318,7 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 		// Rec 4 (tool-hardening.md): read_file no longer hard-errors when its output
 		// exceeds _max_output_bytes — it returns a bounded head plus a notice naming
 		// the exact next step ("start_line: N"), so nothing is dropped silently.
+		seedBigFile(t)
 		ctxSmallOut := taskengine.WithToolsArgs(ctx, localtools.LocalFSToolsName, map[string]string{
 			"_max_read_bytes":   "-1",
 			"_max_output_bytes": "64",
@@ -324,6 +342,7 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 	})
 
 	t.Run("maxOutputBytesUnlimited", func(t *testing.T) {
+		seedBigFile(t)
 		ctxBoth := taskengine.WithToolsArgs(ctx, localtools.LocalFSToolsName, map[string]string{
 			"_max_read_bytes":   "-1",
 			"_max_output_bytes": "-1",
@@ -397,6 +416,7 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 	})
 
 	t.Run("statFile", func(t *testing.T) {
+		seedTestFile(t)
 		args := map[string]any{"path": "test.txt"}
 		toolsCall := &taskengine.ToolsCall{ToolName: "stat_file"}
 		res, dataType, err := h.Exec(ctx, now, args, false, toolsCall)
@@ -413,6 +433,7 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 	})
 
 	t.Run("grepLineRange", func(t *testing.T) {
+		seedTestFile(t)
 		args := map[string]any{
 			"path":       "test.txt",
 			"pattern":    "line",
@@ -430,6 +451,7 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 	})
 
 	t.Run("grepRegex", func(t *testing.T) {
+		seedTestFile(t)
 		args := map[string]any{
 			"path":    "test.txt",
 			"pattern": `^line \d$`,
@@ -447,6 +469,7 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 	})
 
 	t.Run("grepInvalidRegex", func(t *testing.T) {
+		seedTestFile(t)
 		args := map[string]any{
 			"path":    "test.txt",
 			"pattern": "(",
@@ -460,6 +483,7 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 	})
 
 	t.Run("grepMaxMatches", func(t *testing.T) {
+		seedTestFile(t)
 		ctxLim := taskengine.WithToolsArgs(ctx, localtools.LocalFSToolsName, map[string]string{
 			"_max_grep_matches": "1",
 		})
@@ -468,12 +492,29 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 			"pattern": "e",
 		}
 		toolsCall := &taskengine.ToolsCall{ToolName: "grep"}
-		_, _, err := h.Exec(ctxLim, now, args, false, toolsCall)
-		if err == nil {
-			t.Fatal("expected max grep matches error")
+		res, _, err := h.Exec(ctxLim, now, args, false, toolsCall)
+		// Like read_file over its output cap, grep over _max_grep_matches
+		// truncates rather than erroring: hard-failing threw away every match
+		// already found, so the model paid for the search and got back neither
+		// the hits nor the knowledge of where they started.
+		if err != nil {
+			t.Fatalf("grep over the match cap must truncate, not error: %v", err)
 		}
-		if !strings.Contains(err.Error(), "_max_grep_matches") {
-			t.Fatalf("expected policy hint: %v", err)
+		out, ok := res.(string)
+		if !ok {
+			t.Fatalf("expected truncated string result, got %T", res)
+		}
+		if !strings.Contains(out, "1: hello world") {
+			t.Fatalf("truncated result must still return the matches found: %q", out)
+		}
+		if !strings.Contains(out, "_max_grep_matches") {
+			t.Fatalf("expected policy hint naming the knob to turn: %q", out)
+		}
+		if !strings.Contains(out, "start_line: 2") {
+			t.Fatalf("truncation notice must name the exact resume point: %q", out)
+		}
+		if !strings.Contains(out, "(recoverable:") {
+			t.Fatalf("truncation notice must carry the recoverable severity marker: %q", out)
 		}
 	})
 
@@ -499,6 +540,7 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 	})
 
 	t.Run("listDirMustBeDirectory", func(t *testing.T) {
+		seedTestFile(t)
 		args := map[string]any{"path": "test.txt"}
 		toolsCall := &taskengine.ToolsCall{ToolName: "list_dir"}
 		_, _, err := h.Exec(ctx, now, args, false, toolsCall)

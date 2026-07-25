@@ -90,7 +90,7 @@ func TestLoopback_ExternalAgent_NewSessionAndPromptRelays(t *testing.T) {
 	require.NoError(t, err)
 
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-external",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -145,7 +145,7 @@ func TestLoopback_ExternalAgent_AcceptsMentionResourceLink(t *testing.T) {
 	require.NoError(t, err)
 
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-external-mention",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -202,7 +202,7 @@ func TestLoopback_ExternalAgent_UnknownAgentRejected(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-external-unknown",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON("no-such-agent"),
 	})
@@ -240,7 +240,7 @@ func TestLoopback_ExternalAgent_DisabledAgentRejected(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-external-disabled",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -267,7 +267,7 @@ func TestLoopback_ExternalAgent_NoMetaKeyIsNative(t *testing.T) {
 	require.NoError(t, err)
 
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-native",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 	})
 	require.NoError(t, err)
@@ -292,7 +292,7 @@ func TestLoopback_ExternalAgent_CloseTearsDownProcess(t *testing.T) {
 	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
 	require.NoError(t, err)
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-external-close",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -331,7 +331,7 @@ func TestLoopback_ExternalAgent_PersistsHistoryForListing(t *testing.T) {
 	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
 	require.NoError(t, err)
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-external-hist",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -416,7 +416,7 @@ func TestE2E_Wire_ExternalAgent_CommandMenuAfterNewSessionResult(t *testing.T) {
 	require.Nil(t, resp.Error)
 
 	resp, notes := client.call(libacp.MethodSessionNew, libacp.NewSessionRequest{
-		Cwd:        "/tmp/wire-external-project",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -457,7 +457,7 @@ func TestLoopback_ExternalAgent_RelaysDownstreamCommandMenu(t *testing.T) {
 	require.NoError(t, err)
 
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-external-menu",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -495,7 +495,7 @@ func TestLoopback_ExternalAgent_SessionNewCarriesDownstreamConfigOptions(t *test
 	require.NoError(t, err)
 
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-external-cfg",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -537,7 +537,7 @@ func TestLoopback_ExternalAgent_SetConfigOptionRoundTripsToDownstream(t *testing
 	require.NoError(t, err)
 
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-external-cfg-set",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -585,7 +585,7 @@ func TestLoopback_ExternalAgent_LazyRespawnPushesConfigOptions(t *testing.T) {
 	require.NoError(t, err)
 
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-external-cfg-respawn",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -671,7 +671,7 @@ func TestE2E_Wire_ExternalAgent_ConfigOptionUpdateAfterNewSessionResult(t *testi
 	require.Nil(t, resp.Error)
 
 	resp, notes := client.call(libacp.MethodSessionNew, libacp.NewSessionRequest{
-		Cwd:        "/tmp/wire-external-cfg-project",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -785,7 +785,7 @@ func TestE2E_Wire_ExternalAgent_ReloadRestoresMenuAndConfigOptions(t *testing.T)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 
 	const ws = "wire-external-reload-ws"
-	const cwd = "/tmp/wire-external-reload-project"
+	cwd := t.TempDir()
 	agentName := registerStubAgentInDB(t, db, "claude-stub-reload", map[string]string{
 		"ACP_STUB_ADVERTISE_COMMANDS":       "1",
 		"ACP_STUB_ADVERTISE_CONFIG_OPTIONS": "1",
@@ -885,7 +885,7 @@ func TestLoopback_NativeSession_LoadUnaffectedByReloadPath(t *testing.T) {
 	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
 	require.NoError(t, err)
 
-	const cwd = "/tmp/loopback-native-reload"
+	cwd := t.TempDir()
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: cwd, McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
 	require.NotEmpty(t, newResp.ConfigOptions, "a native session/new advertises the chain config options")
@@ -931,7 +931,7 @@ func TestLoopback_ExternalAgent_SlashPromptPassesThroughVerbatim(t *testing.T) {
 	require.NoError(t, err)
 
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-external-passthrough",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -982,7 +982,7 @@ func TestLoopback_ExternalAgent_SessionNewCarriesSyntheticModeOption(t *testing.
 	require.NoError(t, err)
 
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-external-modes",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -1031,7 +1031,7 @@ func TestLoopback_ExternalAgent_SetModeOptionRoundTripsToDownstream(t *testing.T
 	require.NoError(t, err)
 
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-external-modes-set",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -1070,7 +1070,7 @@ func TestLoopback_ExternalAgent_CurrentModeUpdateRelaysAsConfigOption(t *testing
 	require.NoError(t, err)
 
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-external-modes-relay",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -1113,7 +1113,7 @@ func TestE2E_Wire_ExternalAgent_ReloadRestoresModePicker(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 
 	const ws = "wire-external-modes-reload-ws"
-	const cwd = "/tmp/wire-external-modes-reload-project"
+	cwd := t.TempDir()
 	agentName := registerStubAgentInDB(t, db, "claude-stub-modes-reload",
 		map[string]string{"ACP_STUB_ADVERTISE_MODES": "1"})
 
@@ -1178,7 +1178,7 @@ func TestLoopback_NativeSession_NoSyntheticModeOption(t *testing.T) {
 	require.NoError(t, err)
 
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-native-nomode",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 	})
 	require.NoError(t, err)
@@ -1206,7 +1206,7 @@ func TestLoopback_ExternalAgent_SessionNewCarriesSyntheticModelOption(t *testing
 	require.NoError(t, err)
 
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-external-models",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -1252,7 +1252,7 @@ func TestLoopback_ExternalAgent_SessionNewCarriesModeAndModelInOrder(t *testing.
 	require.NoError(t, err)
 
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-external-modes-models",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -1285,7 +1285,7 @@ func TestLoopback_ExternalAgent_SetModelOptionRoundTripsToDownstream(t *testing.
 	require.NoError(t, err)
 
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-external-models-set",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -1318,7 +1318,7 @@ func TestE2E_Wire_ExternalAgent_ReloadRestoresModelPicker(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 
 	const ws = "wire-external-models-reload-ws"
-	const cwd = "/tmp/wire-external-models-reload-project"
+	cwd := t.TempDir()
 	agentName := registerStubAgentInDB(t, db, "claude-stub-models-reload",
 		map[string]string{"ACP_STUB_ADVERTISE_MODELS": "1"})
 
@@ -1383,7 +1383,7 @@ func TestLoopback_NativeSession_NoSyntheticModelOption(t *testing.T) {
 	require.NoError(t, err)
 
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-native-nomodel",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 	})
 	require.NoError(t, err)
@@ -1417,7 +1417,7 @@ func TestLoopback_ExternalAgent_HITLPolicyPickerRoundTripsNativelyAndPersists(t 
 	require.NoError(t, err)
 
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-external-hitl",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -1483,7 +1483,7 @@ func TestLoopback_NativeSession_PolicySlashCommandStillWorks(t *testing.T) {
 	require.NoError(t, err)
 
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-native-policy",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 	})
 	require.NoError(t, err)

@@ -67,13 +67,13 @@ type Deps struct {
 	// non-interactively from the current environment. Nil disables the method.
 	EnvSetup *EnvSetupSpec
 
-	// PermissionRouter, when set, is a process-shared registry each transport
+	// SessionRouter, when set, is a process-shared registry each transport
 	// records its live (contenox session -> this transport) bindings into, so a
 	// single shared engine can route a HITL approval back to the WS connection
 	// whose client raised it. serve sets it (it hosts many ACP WS connections
 	// behind one engine); the stdio ACP path leaves it nil — it has one
 	// transport, late-bound directly into the engine's AskApproval closure.
-	PermissionRouter *PermissionRouter
+	SessionRouter *SessionRouter
 
 	// Instances, when set, owns the lifecycle of external-agent instances OFF any
 	// single connection: an external session obtains its downstream agent from this
@@ -597,13 +597,13 @@ func (t *Transport) acpSessionForContenoxID(contenoxSessionID string) (libacp.Se
 }
 
 // bindContenoxSession records the contenox<->ACP session mapping on this
-// connection and, when serve supplied a shared PermissionRouter, registers this
+// connection and, when serve supplied a shared SessionRouter, registers this
 // transport as the owner of the contenox session so the shared engine can route
 // HITL approvals here. Callers hold sessionMu; the router takes its own lock and
 // never calls back under it, so no lock-ordering hazard exists.
 func (t *Transport) bindContenoxSession(contenoxSessionID string, sid libacp.SessionID) {
 	t.contenoxToACPID[contenoxSessionID] = sid
-	t.deps.PermissionRouter.bind(contenoxSessionID, t)
+	t.deps.SessionRouter.bind(contenoxSessionID, t)
 }
 
 // unbindContenoxSession is the inverse: it drops the mapping and deregisters
@@ -611,7 +611,7 @@ func (t *Transport) bindContenoxSession(contenoxSessionID string, sid libacp.Ses
 // Callers hold sessionMu.
 func (t *Transport) unbindContenoxSession(contenoxSessionID string) {
 	delete(t.contenoxToACPID, contenoxSessionID)
-	t.deps.PermissionRouter.unbind(contenoxSessionID, t)
+	t.deps.SessionRouter.unbind(contenoxSessionID, t)
 }
 
 // registerPromptCancel records cancel as the in-flight turn's canceller for

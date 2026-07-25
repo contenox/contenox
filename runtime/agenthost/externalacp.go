@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/contenox/runtime/libacp"
@@ -51,6 +52,31 @@ type ExternalACPAgent struct {
 	// real telemetry later without this package requiring it: nil is treated as
 	// libtracker.NoopTracker (see buildAgentCmd), so the default is silent.
 	Tracker libtracker.ActivityTracker
+
+	// SelfSpawn marks this not as a FOREIGN agent but as THIS runtime re-invoking
+	// its own binary as an ACP unit (agentinstance.chainSpawner: `contenox acp`
+	// bound to a chain file). Such a unit is spawned WITHOUT the sandbox, and that
+	// is the whole reason the field exists.
+	//
+	// The wall confines code contenox did not write. A chain unit IS contenox: it
+	// shares the one global runtime state — HOME resolves the database, the seeded
+	// presets, the workspace id — which is precisely what distinguishes it from an
+	// external agent that brings its own everything. Confining it would deny that
+	// state on purpose: ~/.contenox is deliberately NOT carved (control-plane
+	// isolation — an agent must never reach the policy that governs it), so a
+	// confined unit cannot open the database it is supposed to share, and the
+	// scrubbed env would strip the very inheritance it is defined by. What governs a
+	// chain unit instead is in-process and stronger for this shape: its tool calls
+	// run through the runtime's own capability grants and are gated by HITL over
+	// session/request_permission, the same human-in-the-loop path an external
+	// agent's requests take.
+	//
+	// It is therefore NOT an escape hatch for foreign agents: no config field and no
+	// env toggle sets it. The kernel's chain spawn sets it explicitly; the same
+	// exemption is otherwise INFERRED, and only from the one fact that cannot be
+	// spoofed into a wider grant — the command resolving to this very executable
+	// (see selfInvocation, which buildAgentCmd consults).
+	SelfSpawn bool
 }
 
 // NewExternalACPAgent returns an ExternalACPAgent for cfg.
@@ -158,10 +184,12 @@ const sandboxCarveoutFile = ".contenox/sandbox-carveouts.json"
 // buildAgentCmd assembles the confined *exec.Cmd for spawning the external ACP
 // agent described by a, through libsandbox: the agent is ALWAYS spawned inside
 // "the wall" (a workspace-pinned, credential-scrubbed, offline-by-default
-// sandbox), never as a bare subprocess. There is deliberately no unsandboxed
-// path — the sandbox is the only spawn path — so on a host where the wall cannot
-// be built (non-Linux, or a Linux kernel without unprivileged user namespaces or
-// Landlock) libsandbox.Command fails closed and the agent does not run.
+// sandbox), never as a bare subprocess. For a FOREIGN agent there is deliberately
+// no unsandboxed path, so on a host where the wall cannot be built (non-Linux, or
+// a Linux kernel without Landlock) libsandbox.Command fails closed and the agent
+// does not run. The single exception is not a foreign agent at all — this runtime
+// re-invoking its own binary as a unit (see SelfSpawn and selfInvocation) — and it
+// is decided first, before any of the policy below applies.
 //
 // The Spec is fixed policy, not caller-tunable:
 //   - WorkspaceRoot is a.Config.Cwd, the one writable root. An empty Cwd is a
@@ -180,6 +208,15 @@ const sandboxCarveoutFile = ".contenox/sandbox-carveouts.json"
 //     added in the carve-out file. Net comes only from that file — empty means
 //     offline. AllowPrivateEgress and SyscallTap are off.
 func buildAgentCmd(ctx context.Context, a *ExternalACPAgent) (*exec.Cmd, error) {
+	// The one exception, and it is not a foreign agent at all: this runtime
+	// re-invoking its own binary — declared (the kernel's chain spawn) or merely
+	// registered that way (a dispatched mission unit is `contenox acp --auto` bound
+	// to a chain file, an ordinary external_acp record whose command happens to be
+	// us). See SelfSpawn for why the wall is the wrong instrument there and what
+	// governs such a unit instead.
+	if a.SelfSpawn || selfInvocation(a.Config.Command) {
+		return selfSpawnCmd(a), nil
+	}
 	// Fail closed, early, and legibly: external agents run ONLY inside the wall, so
 	// if this host cannot build even the floor (Landlock), refuse before spawning
 	// anything and point the operator at the guide — rather than letting the wall's
@@ -235,6 +272,70 @@ func buildAgentCmd(ctx context.Context, a *ExternalACPAgent) (*exec.Cmd, error) 
 	spec.NetworkWall = len(spec.Net) > 0 || networkWallOptIn()
 
 	return libsandbox.Command(ctx, spec, a.Config.Command, a.Config.Args...)
+}
+
+// selfInvocation reports whether command names THIS running executable — the
+// signature of contenox spawning contenox (a dispatched mission unit, a chain
+// unit), which is not a foreign agent and is not confined (see SelfSpawn).
+//
+// Identity is decided by os.SameFile, not by string equality: the same binary is
+// reached under different paths (a symlink on PATH, a relative command, /proc's
+// resolved path), and a wall exemption that a rename could dodge — or that a
+// lookalike path could win — would be worth nothing. A bare command name is
+// resolved through PATH first, exactly as exec would resolve it. Anything that
+// cannot be resolved or stat'ed is NOT us: this fails toward confinement.
+//
+// What it does NOT grant is the interesting part. Being this binary buys only the
+// right to run as this binary: whatever the unit then does — its tools, its file
+// writes, its shell — runs through the runtime's own capability grants and the HITL
+// gate. It is not a way to smuggle a foreign program past the wall, because the
+// program IS contenox.
+func selfInvocation(command string) bool {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return false
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	if !strings.ContainsRune(command, filepath.Separator) {
+		resolved, lerr := exec.LookPath(command)
+		if lerr != nil {
+			return false
+		}
+		command = resolved
+	}
+	selfInfo, err := os.Stat(self)
+	if err != nil {
+		return false
+	}
+	cmdInfo, err := os.Stat(command)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(selfInfo, cmdInfo)
+}
+
+// selfSpawnCmd assembles the UNCONFINED command for a self-spawned unit: this
+// binary, run with the parent's own environment plus the config's explicit vars,
+// pinned to the config's cwd when it declares one. Deliberately no libsandbox: see
+// SelfSpawn for why, and note that the two properties such a unit is defined by —
+// the inherited environment (HOME resolves the shared database and the seeded
+// presets) and its reach into that state — are exactly what the wall removes.
+//
+// Like libsandbox.Command it does NOT bind the command's lifetime to ctx: the
+// process is owned and supervised by whatever runs it (acpexec.Spawn, which does
+// bind to its own ctx), not by the assembly step.
+func selfSpawnCmd(a *ExternalACPAgent) *exec.Cmd {
+	cmd := exec.Command(a.Config.Command, a.Config.Args...)
+	cmd.Dir = a.Config.Cwd
+	env := os.Environ()
+	for k, v := range a.Config.Env {
+		env = append(env, k+"="+v) // last wins on exec, so this overrides an inherited name
+	}
+	cmd.Env = env
+	return cmd
 }
 
 // networkWallOptIn reports whether the operator opted into the namespaced network

@@ -43,12 +43,14 @@ export function UnitStatus({
           );
         }
 
+        // atom.label is the literal fallback for a fact with no translation key —
+        // a mission status this build does not know (see UNKNOWN_VERDICT).
         const label =
           atom.kind === 'liveness' && atom.heartbeat
             ? `${t('unit.liveness_prefix')}: ${relativeTime(atom.heartbeat, i18n.language, t('common.just_now'))}`
             : atom.labelKey
               ? t(atom.labelKey)
-              : '';
+              : (atom.label ?? '');
 
         return (
           <Badge

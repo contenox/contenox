@@ -43,6 +43,13 @@ type CLIConfigPatch struct {
 	HITLPolicyName              *string
 	TelemetryEnabled            *string
 	UpdateCheck                 *string
+	// DefaultMissionAgent and DefaultMissionPolicy are the two halves of a fireable
+	// `/mission <intent>`: which declared agent runs it, and the HITL policy that
+	// bounds it. Both are GLOBAL keys (a mission is not a per-workspace notion), and
+	// both must be set before /mission works at all — the dispatch refuses an
+	// unnamed agent or an unnamed envelope rather than choosing one.
+	DefaultMissionAgent  *string
+	DefaultMissionPolicy *string
 }
 
 // CLIConfigSnapshot is the resolved KV values after an update.
@@ -59,6 +66,8 @@ type CLIConfigSnapshot struct {
 	HITLPolicyName              string
 	TelemetryEnabled            string
 	UpdateCheck                 string
+	DefaultMissionAgent         string
+	DefaultMissionPolicy        string
 	ResolvedFrom                map[string]string
 	Present                     map[string]bool
 }
@@ -125,7 +134,9 @@ func (s *service) SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLICo
 		patch.DefaultChain == nil &&
 		patch.HITLPolicyName == nil &&
 		patch.TelemetryEnabled == nil &&
-		patch.UpdateCheck == nil {
+		patch.UpdateCheck == nil &&
+		patch.DefaultMissionAgent == nil &&
+		patch.DefaultMissionPolicy == nil {
 		return CLIConfigSnapshot{}, fmt.Errorf("provide at least one CLI config key")
 	}
 	store := runtimetypes.New(s.db.WithoutTransaction())
@@ -197,6 +208,21 @@ func (s *service) SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLICo
 			return CLIConfigSnapshot{}, fmt.Errorf("set update-check: %w", err)
 		}
 	}
+	// Global, like the model defaults and unlike default-chain/hitl-policy-name: a
+	// mission is fired at the fleet, not at a project, so the same pair answers from
+	// every workspace. Written verbatim (trimmed) — the names are validated where
+	// they are USED (the dispatch resolves the agent and the policy), so a value set
+	// before its agent exists is a stale pointer, not a corrupt config.
+	if patch.DefaultMissionAgent != nil {
+		if err := clikv.SetString(ctx, store, "default-mission-agent", strings.TrimSpace(*patch.DefaultMissionAgent)); err != nil {
+			return CLIConfigSnapshot{}, fmt.Errorf("set default-mission-agent: %w", err)
+		}
+	}
+	if patch.DefaultMissionPolicy != nil {
+		if err := clikv.SetString(ctx, store, "default-mission-policy", strings.TrimSpace(*patch.DefaultMissionPolicy)); err != nil {
+			return CLIConfigSnapshot{}, fmt.Errorf("set default-mission-policy: %w", err)
+		}
+	}
 	return s.cliConfigSnapshot(ctx, store), nil
 }
 
@@ -213,6 +239,8 @@ func (s *service) cliConfigSnapshot(ctx context.Context, store runtimetypes.Stor
 	hitlPolicy, policyFrom, hitlPolicyPresent := readWorkspaceCLIConfigValue(ctx, store, s.workspaceID, "hitl-policy-name")
 	telemetryEnabled, telemetryEnabledPresent := readCLIConfigValue(ctx, store, "telemetry-enabled")
 	updateCheck, updateCheckPresent := readCLIConfigValue(ctx, store, "update-check")
+	missionAgent, missionAgentPresent := readCLIConfigValue(ctx, store, "default-mission-agent")
+	missionPolicy, missionPolicyPresent := readCLIConfigValue(ctx, store, "default-mission-policy")
 	return CLIConfigSnapshot{
 		DefaultModel:                defaultModel,
 		DefaultProvider:             defaultProvider,
@@ -226,6 +254,8 @@ func (s *service) cliConfigSnapshot(ctx context.Context, store runtimetypes.Stor
 		HITLPolicyName:              hitlPolicy,
 		TelemetryEnabled:            telemetryEnabled,
 		UpdateCheck:                 updateCheck,
+		DefaultMissionAgent:         missionAgent,
+		DefaultMissionPolicy:        missionPolicy,
 		ResolvedFrom: map[string]string{
 			"defaultChain":   chainFrom,
 			"hitlPolicyName": policyFrom,
@@ -243,6 +273,8 @@ func (s *service) cliConfigSnapshot(ctx context.Context, store runtimetypes.Stor
 			"hitl-policy-name":              hitlPolicyPresent,
 			"telemetry-enabled":             telemetryEnabledPresent,
 			"update-check":                  updateCheckPresent,
+			"default-mission-agent":         missionAgentPresent,
+			"default-mission-policy":        missionPolicyPresent,
 		},
 	}
 }

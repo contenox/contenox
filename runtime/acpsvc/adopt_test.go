@@ -516,7 +516,7 @@ func TestLoopback_Adopt_NilInstancesRefused(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/adopt-nil-instances",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       adoptMetaJSON("inst-1", "sess-1"),
 	})
@@ -532,7 +532,7 @@ func TestLoopback_Adopt_UnknownInstanceRefused(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = c.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/adopt-unknown",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       adoptMetaJSON(uuid.NewString(), "sess-1"),
 	})
@@ -594,7 +594,7 @@ func TestLoopback_Adopt_NotRunningInstanceRefused(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = c.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/adopt-dead",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       adoptMetaJSON("inst-dead", "sess-1"),
 	})
@@ -672,7 +672,7 @@ func TestLoopback_Adopt_AbsentMetaLeavesBothExistingPathsUnchanged(t *testing.T)
 
 	// No `_meta` at all: the native path, which advertises no external agent.
 	nativeResp, err := c.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/adopt-fallthrough-native",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 	})
 	require.NoError(t, err)
@@ -681,7 +681,7 @@ func TestLoopback_Adopt_AbsentMetaLeavesBothExistingPathsUnchanged(t *testing.T)
 
 	// contenox.agent only: the historical external bring-up, one fresh instance.
 	extResp, err := c.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/adopt-fallthrough-ext",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -704,7 +704,7 @@ func TestLoopback_Adopt_MalformedAdoptMetaFallsThrough(t *testing.T) {
 
 	// Wrong-shaped adopt value, no agent key: native path, no error.
 	nativeResp, err := c.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/adopt-malformed-native",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       json.RawMessage(`{"contenox.adopt":"not-an-object"}`),
 	})
@@ -713,7 +713,7 @@ func TestLoopback_Adopt_MalformedAdoptMetaFallsThrough(t *testing.T) {
 
 	// Incomplete adopt value alongside a valid agent key: the agent path still runs.
 	extResp, err := c.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/adopt-malformed-ext",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta: json.RawMessage(
 			`{"contenox.agent":"` + agentName + `","contenox.adopt":{"instanceId":"only-half"}}`),

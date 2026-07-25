@@ -253,7 +253,12 @@ func TestFleetE2E_OvernightBatch(t *testing.T) {
 	// gated: the hermetic acp-stub-agent, told which named tool call to ask about
 	// and where to write its out-of-band outcome file (the unattended answerer maps
 	// the ask onto the mission's envelope).
-	gatedReportPath := filepath.Join(t.TempDir(), "overnight-gated-outcome.txt")
+	// Inside `home` — the workspace this batch's units are dispatched into (see
+	// the New below), and therefore the only root the agent sandbox lets a unit
+	// write to. An outcome file anywhere else is denied by Landlock and the unit
+	// goes silent, which reads here as "the gated unit never continued past its
+	// gate" long after the gate itself worked.
+	gatedReportPath := filepath.Join(home, "overnight-gated-outcome.txt")
 	gatedAgent := &runtimetypes.Agent{Name: "overnight-gated", Enabled: true}
 	require.NoError(t, gatedAgent.SetExternalACPConfig(runtimetypes.ExternalACPConfig{
 		Transport: runtimetypes.ExternalACPTransportStdio,

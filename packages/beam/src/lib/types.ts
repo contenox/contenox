@@ -270,6 +270,10 @@ export type CLIConfigUpdateResponse = {
   hitlPolicyName: string;
   telemetryEnabled?: string;
   updateCheck?: string;
+  /** Declared agent `/mission <intent>` fires when the prompt names none. */
+  defaultMissionAgent?: string;
+  /** HITL policy that bounds a fired mission — its envelope. */
+  defaultMissionPolicy?: string;
   resolvedFrom?: ConfigResolvedFrom;
 };
 
@@ -289,6 +293,8 @@ export type CLIConfigUpdateRequest = {
   'hitl-policy-name'?: string;
   'telemetry-enabled'?: string;
   'update-check'?: string;
+  'default-mission-agent'?: string;
+  'default-mission-policy'?: string;
 };
 
 /**
@@ -500,7 +506,18 @@ export type FleetEntry = {
  * entire run — LastHeartbeat/LastError on {@link Mission}, not Status, carry
  * unattended liveness.
  */
-export type MissionStatus = 'open' | 'landed' | 'derailed' | 'abandoned';
+/**
+ * A mission's lifecycle state — mirrored from `missionservice.Status`: one
+ * running state and the closed set of terminal ones it comes to rest in.
+ *
+ * `stuck` is deliberately NOT a flavour of `derailed`: it means the unit hit a
+ * boundary it cannot pass alone (a loop, a wall, a judgement call), which asks
+ * for attention rather than a post-mortem. The Go set is contracted to only ever
+ * GROW, so anything rendering a status must stay total over unknown values —
+ * see `composeUnitStatus`, where a missing case once took the whole missions
+ * page down with it.
+ */
+export type MissionStatus = 'open' | 'landed' | 'derailed' | 'stuck' | 'abandoned';
 
 /**
  * A plan entry's lifecycle state; mirrors missionservice.PlanEntryStatus, whose

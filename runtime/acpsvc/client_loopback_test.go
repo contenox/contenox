@@ -194,7 +194,7 @@ type loopbackHarness struct {
 	client *libacp.ClientSideConnection
 	lc     *loopbackClient
 	bus    libbus.Messenger
-	router *PermissionRouter
+	router *SessionRouter
 }
 
 func newLoopbackHarness(t *testing.T) *loopbackHarness {
@@ -218,17 +218,17 @@ func newLoopbackHarness(t *testing.T) *loopbackHarness {
 		EventPoll:   5 * time.Millisecond,
 		RequestPoll: 5 * time.Millisecond,
 	})
-	// serve wires a shared PermissionRouter so a single engine can route HITL
+	// serve wires a shared SessionRouter so a single engine can route HITL
 	// approvals to the owning WS connection; the harness mirrors that so the
 	// router path is exercised exactly as production does. It is inert for tests
 	// that never consult it.
-	router := NewPermissionRouter()
+	router := NewSessionRouter()
 	factory := New(Deps{
-		Engine:           &enginesvc.Engine{Bus: bus},
-		DB:               db,
-		ChainRegistry:    &ChainRegistry{defaultChain: &taskengine.TaskChainDefinition{}},
-		WorkspaceID:      "loopback-ws",
-		PermissionRouter: router,
+		Engine:        &enginesvc.Engine{Bus: bus},
+		DB:            db,
+		ChainRegistry: &ChainRegistry{defaultChain: &taskengine.TaskChainDefinition{}},
+		WorkspaceID:   "loopback-ws",
+		SessionRouter: router,
 	})
 
 	var tr *Transport
@@ -338,7 +338,7 @@ func TestLoopback_Prompt_StreamsUpdatesThroughRealClient(t *testing.T) {
 	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
 	require.NoError(t, err)
 
-	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: "/tmp/loopback-project", McpServers: []libacp.McpServer{}})
+	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
 	require.NotEmpty(t, newResp.SessionID)
 	h.lc.drain(t, 1) // deferred available_commands_update
@@ -412,7 +412,7 @@ func TestLoopback_Prompt_PushesDerivedTitleInSessionInfo(t *testing.T) {
 	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
 	require.NoError(t, err)
 
-	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: "/tmp/loopback-title", McpServers: []libacp.McpServer{}})
+	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
 	h.lc.drain(t, 1) // deferred available_commands_update
 
@@ -461,7 +461,7 @@ func TestLoopback_CancelPrompt_ResolvesStopReasonCancelled(t *testing.T) {
 
 	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
 	require.NoError(t, err)
-	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: "/tmp/loopback-cancel", McpServers: []libacp.McpServer{}})
+	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
 	h.lc.drain(t, 1)
 
@@ -524,7 +524,7 @@ func TestLoopback_ServerCancel_AbortsEngineCtxAndResolvesCancelled(t *testing.T)
 
 	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
 	require.NoError(t, err)
-	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: "/tmp/loopback-server-cancel", McpServers: []libacp.McpServer{}})
+	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
 	h.lc.drain(t, 1)
 
@@ -633,7 +633,7 @@ func TestLoopback_Prompt_PermissionRoundTripThroughRealClient(t *testing.T) {
 
 	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
 	require.NoError(t, err)
-	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: "/tmp/loopback-perm", McpServers: []libacp.McpServer{}})
+	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
 	h.lc.drain(t, 1)
 
@@ -681,9 +681,9 @@ func TestLoopback_Prompt_PermissionRoundTripThroughRealClient(t *testing.T) {
 	require.False(t, allowed, "client answered reject; AskApproval must resolve false")
 }
 
-// TestLoopback_PermissionRouter_RoutesToOwningTransport pins the serve HITL
+// TestLoopback_SessionRouter_RoutesToOwningTransport pins the serve HITL
 // bridge: serve runs many ACP WS connections behind ONE engine, so its single
-// AskApproval callback dispatches through a shared PermissionRouter keyed by the
+// AskApproval callback dispatches through a shared SessionRouter keyed by the
 // contenox session id in ctx (exactly what the engine's HITL wrapper carries).
 // This proves (a) a gated tool call for a live session routes to the owning
 // transport's session/request_permission — reaching the real client — and
@@ -692,13 +692,13 @@ func TestLoopback_Prompt_PermissionRoundTripThroughRealClient(t *testing.T) {
 // the session is closed the router no longer routes it. Without the fix, serve
 // wired AskApproval straight to the approval-API path, so a beam gated tool call
 // hung forever as "Ausstehend" with no permission prompt.
-func TestLoopback_PermissionRouter_RoutesToOwningTransport(t *testing.T) {
+func TestLoopback_SessionRouter_RoutesToOwningTransport(t *testing.T) {
 	h := newLoopbackHarness(t)
 	ctx := context.Background()
 
 	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
 	require.NoError(t, err)
-	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: "/tmp/loopback-router", McpServers: []libacp.McpServer{}})
+	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
 	h.lc.drain(t, 1)
 
@@ -756,7 +756,7 @@ func TestLoopback_Prompt_FSReadWriteThroughRealClient(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: "/tmp/loopback-fs", McpServers: []libacp.McpServer{}})
+	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
 	h.lc.drain(t, 1)
 
@@ -800,7 +800,7 @@ func TestLoopback_SetSessionConfigOption_RoundTripThroughRealClient(t *testing.T
 
 	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
 	require.NoError(t, err)
-	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: "/tmp/loopback-config", McpServers: []libacp.McpServer{}})
+	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
 	h.lc.drain(t, 1)
 

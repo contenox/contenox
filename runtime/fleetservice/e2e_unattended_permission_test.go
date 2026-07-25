@@ -114,6 +114,14 @@ func newUnattendedFixture(t *testing.T, bin string, args string) *unattendedFixt
 	policyDir := t.TempDir()
 	hitl := hitlservice.New(hitlservice.NewFSPolicySource(policyDir), runtimetypes.LocalTenantID, store, libtracker.NoopTracker{})
 
+	// ONE directory serves as both the unit's workspace and the place it reports
+	// through, and that is not incidental: a dispatched unit is spawned INSIDE the
+	// agent sandbox, whose only writable root is its workspace (the cwd Dispatch
+	// pins). A report file in some other temp dir is denied by Landlock, and the
+	// unit's write fails silently — which is exactly how these cases used to hang
+	// for the full 60s timeout on "the unit never reported its permission
+	// outcome", long after the permission path under test had worked perfectly.
+	workspace := t.TempDir()
 	fx := &unattendedFixture{
 		ctx:        ctx,
 		agents:     agents,
@@ -122,7 +130,7 @@ func newUnattendedFixture(t *testing.T, bin string, args string) *unattendedFixt
 		store:      store,
 		stderr:     &lockedBuffer{},
 		policyDir:  policyDir,
-		reportPath: filepath.Join(t.TempDir(), "gated-action-report.txt"),
+		reportPath: filepath.Join(workspace, "gated-action-report.txt"),
 	}
 
 	// The declared unit: the stub agent, told by its environment which tool call
@@ -155,7 +163,7 @@ func newUnattendedFixture(t *testing.T, bin string, args string) *unattendedFixt
 	)
 	t.Cleanup(func() { _ = fx.instances.Close() })
 
-	fx.svc = New(fx.instances, agents, missions, nil, t.TempDir(), libtracker.NoopTracker{})
+	fx.svc = New(fx.instances, agents, missions, nil, workspace, libtracker.NoopTracker{})
 	return fx
 }
 

@@ -74,6 +74,8 @@ type putCLIConfigRequest struct {
 	HITLPolicyName              *string `json:"hitl-policy-name"`
 	TelemetryEnabled            *string `json:"telemetry-enabled"`
 	UpdateCheck                 *string `json:"update-check"`
+	DefaultMissionAgent         *string `json:"default-mission-agent"`
+	DefaultMissionPolicy        *string `json:"default-mission-policy"`
 }
 
 // putCLIConfigResponse is the resolved CLI config snapshot, shared by
@@ -91,6 +93,8 @@ type putCLIConfigResponse struct {
 	HITLPolicyName              string            `json:"hitlPolicyName"`
 	TelemetryEnabled            string            `json:"telemetryEnabled"`
 	UpdateCheck                 string            `json:"updateCheck"`
+	DefaultMissionAgent         string            `json:"defaultMissionAgent"`
+	DefaultMissionPolicy        string            `json:"defaultMissionPolicy"`
 	ResolvedFrom                map[string]string `json:"resolvedFrom,omitempty"`
 }
 
@@ -108,6 +112,8 @@ func cliConfigResponseFromSnapshot(snap stateservice.CLIConfigSnapshot) putCLICo
 		HITLPolicyName:              snap.HITLPolicyName,
 		TelemetryEnabled:            snap.TelemetryEnabled,
 		UpdateCheck:                 snap.UpdateCheck,
+		DefaultMissionAgent:         snap.DefaultMissionAgent,
+		DefaultMissionPolicy:        snap.DefaultMissionPolicy,
 		ResolvedFrom:                snap.ResolvedFrom,
 	}
 }
@@ -152,7 +158,9 @@ func (h *setupHandler) putCLIConfig(w http.ResponseWriter, r *http.Request) {
 		body.DefaultChain == nil &&
 		body.HITLPolicyName == nil &&
 		body.TelemetryEnabled == nil &&
-		body.UpdateCheck == nil {
+		body.UpdateCheck == nil &&
+		body.DefaultMissionAgent == nil &&
+		body.DefaultMissionPolicy == nil {
 		_ = apiframework.Error(w, r, apiframework.BadRequest("Provide at least one CLI config key."), apiframework.UpdateOperation)
 		return
 	}
@@ -169,6 +177,8 @@ func (h *setupHandler) putCLIConfig(w http.ResponseWriter, r *http.Request) {
 		HITLPolicyName:              body.HITLPolicyName,
 		TelemetryEnabled:            body.TelemetryEnabled,
 		UpdateCheck:                 body.UpdateCheck,
+		DefaultMissionAgent:         body.DefaultMissionAgent,
+		DefaultMissionPolicy:        body.DefaultMissionPolicy,
 	})
 	if err != nil {
 		_ = apiframework.Error(w, r, err, apiframework.UpdateOperation)

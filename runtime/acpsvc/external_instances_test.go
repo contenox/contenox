@@ -57,12 +57,12 @@ func newInstancesFixtureWith(t *testing.T, build func(libdb.DBManager) agentinst
 	bus := libbus.NewInMem()
 	mgr := build(db)
 	factory := New(Deps{
-		Engine:           &enginesvc.Engine{Bus: bus},
-		DB:               db,
-		ChainRegistry:    &ChainRegistry{defaultChain: &taskengine.TaskChainDefinition{}},
-		WorkspaceID:      "loopback-ws",
-		PermissionRouter: NewPermissionRouter(),
-		Instances:        mgr,
+		Engine:        &enginesvc.Engine{Bus: bus},
+		DB:            db,
+		ChainRegistry: &ChainRegistry{defaultChain: &taskengine.TaskChainDefinition{}},
+		WorkspaceID:   "loopback-ws",
+		SessionRouter: NewSessionRouter(),
+		Instances:     mgr,
 	})
 	t.Cleanup(func() {
 		// LIFO after every connection has dropped: stop all surviving instances
@@ -189,13 +189,14 @@ func liveInstances(t *testing.T, mgr agentinstance.Manager) int {
 func TestLoopback_ExternalInstance_SurvivesConnectionDrop(t *testing.T) {
 	f := newInstancesFixture(t)
 	agentName := registerStubAgentInDB(t, f.db, "claude-stub-survive", nil)
+	cwd := t.TempDir()
 	ctx := context.Background()
 
 	c1 := f.connect()
 	_, err := c1.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
 	require.NoError(t, err)
 	newResp, err := c1.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-ext-survive",
+		Cwd:        cwd,
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -235,7 +236,7 @@ func TestLoopback_ExternalInstance_SurvivesConnectionDrop(t *testing.T) {
 	require.NoError(t, err)
 	_, err = c2.client.LoadSession(ctx, libacp.LoadSessionRequest{
 		SessionID: newResp.SessionID,
-		Cwd:       "/tmp/loopback-ext-survive",
+		Cwd:       cwd,
 	})
 	require.NoError(t, err)
 	promptResp2, err := c2.client.Prompt(ctx, libacp.PromptRequest{
@@ -254,13 +255,14 @@ func TestLoopback_ExternalInstance_SurvivesConnectionDrop(t *testing.T) {
 func TestLoopback_ExternalInstance_SessionLoadReattachesSameInstance(t *testing.T) {
 	f := newInstancesFixture(t)
 	agentName := registerStubAgentInDB(t, f.db, "claude-stub-reattach", nil)
+	cwd := t.TempDir()
 	ctx := context.Background()
 
 	c1 := f.connect()
 	_, err := c1.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
 	require.NoError(t, err)
 	newResp, err := c1.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-ext-reattach",
+		Cwd:        cwd,
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -280,7 +282,7 @@ func TestLoopback_ExternalInstance_SessionLoadReattachesSameInstance(t *testing.
 	require.NoError(t, err)
 	_, err = c2.client.LoadSession(ctx, libacp.LoadSessionRequest{
 		SessionID: newResp.SessionID,
-		Cwd:       "/tmp/loopback-ext-reattach",
+		Cwd:       cwd,
 	})
 	require.NoError(t, err)
 	// The re-attach is lazy: the first prompt after a load drives it.
@@ -304,13 +306,14 @@ func TestLoopback_ExternalInstance_SessionLoadReattachesSameInstance(t *testing.
 func TestLoopback_ExternalInstance_DeleteStopsInstance(t *testing.T) {
 	f := newInstancesFixture(t)
 	agentName := registerStubAgentInDB(t, f.db, "claude-stub-delete", nil)
+	cwd := t.TempDir()
 	ctx := context.Background()
 
 	c1 := f.connect()
 	_, err := c1.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
 	require.NoError(t, err)
 	newResp, err := c1.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-ext-delete",
+		Cwd:        cwd,
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})
@@ -331,7 +334,7 @@ func TestLoopback_ExternalInstance_DeleteStopsInstance(t *testing.T) {
 	// consumer actually holds.
 	_, aerr := f.mgr.Attach(ctx, instanceID, "any-session", newExternalBridge(c1.tr, "any-session", true))
 	require.ErrorIs(t, aerr, agentinstance.ErrNotFound)
-	_, oerr := f.mgr.OpenSession(ctx, instanceID, agentinstance.SessionSpec{Cwd: "/tmp/loopback-ext-delete"})
+	_, oerr := f.mgr.OpenSession(ctx, instanceID, agentinstance.SessionSpec{Cwd: cwd})
 	require.ErrorIs(t, oerr, agentinstance.ErrNotFound)
 }
 
@@ -349,7 +352,7 @@ func TestLoopback_ExternalInstance_NilInstancesFallsBackToConnCtxSpawn(t *testin
 	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
 	require.NoError(t, err)
 	nilResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-ext-nil",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(nilAgent),
 	})
@@ -365,7 +368,7 @@ func TestLoopback_ExternalInstance_NilInstancesFallsBackToConnCtxSpawn(t *testin
 	_, err = c.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
 	require.NoError(t, err)
 	mgrResp, err := c.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-ext-mgr",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(mgrAgent),
 	})
@@ -402,7 +405,7 @@ func TestLoopback_ExternalInstance_DisabledAgentRejected(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = c.client.NewSession(ctx, libacp.NewSessionRequest{
-		Cwd:        "/tmp/loopback-ext-disabled-mgr",
+		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 		Meta:       agentMetaJSON(agentName),
 	})

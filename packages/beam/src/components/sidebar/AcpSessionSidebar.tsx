@@ -5,14 +5,14 @@ import { useTranslation } from 'react-i18next';
 import { Link, useMatch, useNavigate } from 'react-router-dom';
 import { useAcpWorkspace } from '../../hooks/useAcpWorkspace';
 import { useWorkspaceRoots } from '../../hooks/useWorkspaceRoots';
-import { externalAgentFromMeta, type SessionInfo } from '../../lib/acp';
+import { externalAgentFromMeta, missionFromMeta, type SessionInfo } from '../../lib/acp';
 import { adoptResultFromMeta } from '../../lib/adoptMeta';
 import { relativeTime } from '../../lib/relativeTime';
 import { useStagedAgent } from '../../lib/stagedAgent';
 import { useStagedRoot } from '../../lib/stagedRoot';
 import { workspaceNameForCwd } from '../../lib/workspaceRoots';
-import { AgentPicker } from '../AgentPicker';
 import { meaningfulTitle, workspaceLabel } from '../../pages/chat/lib/sessionLabel';
+import { AgentPicker } from '../AgentPicker';
 import { startNewChat } from './newChatIntent';
 
 /**
@@ -69,7 +69,9 @@ export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =>
     // for adopted sessions and this is a defensive second gate. Leaving/closing
     // the tab detaches; ending the run is a fleet-board Stop, not a chat delete.
     if (adoptResultFromMeta(session._meta)) return;
-    const label = meaningfulTitle(session) ?? t('acp_sidebar.session_fallback_label', { shortId: session.sessionId.slice(0, 8) });
+    const label =
+      meaningfulTitle(session) ??
+      t('acp_sidebar.session_fallback_label', { shortId: session.sessionId.slice(0, 8) });
     if (!window.confirm(t('acp_sidebar.confirm_delete', { name: label }))) return;
     deleteSession(session.sessionId);
     if (session.sessionId === activeSessionId) {
@@ -91,7 +93,9 @@ export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =>
   // dropped as redundant; it stays true in the flat, single-project layout.
   const renderSessionRow = (session: SessionInfo, showProjectLabel: boolean) => {
     const isActive = activeSessionId === session.sessionId;
-    const label = meaningfulTitle(session) ?? t('acp_sidebar.session_fallback_label', { shortId: session.sessionId.slice(0, 8) });
+    const label =
+      meaningfulTitle(session) ??
+      t('acp_sidebar.session_fallback_label', { shortId: session.sessionId.slice(0, 8) });
     // relativeTime is total (non-optional string in, string out); a session
     // with no updatedAt yet is this call site's own absent-timestamp case, so
     // it is handled here rather than by widening the shared function.
@@ -99,6 +103,12 @@ export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =>
       ? relativeTime(session.updatedAt, i18n.language, t('common.just_now'))
       : null;
     const agentName = externalAgentFromMeta(session._meta);
+    // A session a fleet dispatch created is the UNIT of a mission, not a chat the
+    // operator started. It lives in the same workspace under the same identity as
+    // their own sessions and — having real messages while the session that FIRED it
+    // may have none — sorts above them, so without this badge the rail read as if a
+    // fired mission had quietly taken over an existing chat.
+    const missionId = missionFromMeta(session._meta);
     const workspaceName = showProjectLabel ? projectLabelFor(session) : null;
     // Adopted sessions expose NO delete affordance here: deleting one
     // stops the running dispatch (see handleDelete). Detach is via close.
@@ -126,11 +136,15 @@ export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =>
             <Span
               className="text-warning-800 dark:text-warning-300 mt-1 flex items-center gap-1.5 text-xs font-medium"
               title={t('acp_sidebar.pending_permission')}>
-              <span
-                aria-hidden
-                className="bg-warning-500 h-1.5 w-1.5 shrink-0 rounded-full"
-              />
+              <span aria-hidden className="bg-warning-500 h-1.5 w-1.5 shrink-0 rounded-full" />
               <span className="truncate">{t('acp_sidebar.pending_permission')}</span>
+            </Span>
+          )}
+          {missionId && (
+            <Span
+              className="text-info-800 dark:text-info-300 bg-info-100 dark:bg-info-900/40 mt-1 inline-block truncate rounded px-1.5 py-0.5 text-xs font-medium"
+              title={t('acp_sidebar.mission_session_title', { id: missionId })}>
+              {t('acp_sidebar.mission_session_badge')}
             </Span>
           )}
           {agentName && (
@@ -159,7 +173,7 @@ export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =>
         {!adopted && (
           <Button
             aria-label={t('acp_sidebar.delete_label', { name: label })}
-            className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+            className="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
             onClick={() => handleDelete(session)}
             size="icon"
             type="button"
@@ -192,7 +206,11 @@ export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =>
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="border-surface-300 dark:border-dark-surface-700 flex shrink-0 items-center gap-1 border-b p-3">
-        <Button variant="primary" size="sm" className="min-w-0 flex-1" onClick={() => startNew(null)}>
+        <Button
+          variant="primary"
+          size="sm"
+          className="min-w-0 flex-1"
+          onClick={() => startNew(null)}>
           <span className="truncate">{t('acp_sidebar.new_session')}</span>
         </Button>
         {/* Start a new chat with a specific registered agent (native contenox at
@@ -207,14 +225,15 @@ export function AcpSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =>
               palette="neutral"
               size="icon"
               aria-label={t('acp_sidebar.new_session_with_agent')}
-              title={t('acp_sidebar.new_session_with_agent')}
-            >
+              title={t('acp_sidebar.new_session_with_agent')}>
               <ChevronDown className="h-4 w-4" aria-hidden />
             </Button>
           }
         />
       </div>
-      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3" aria-label={t('acp_sidebar.title')}>
+      <nav
+        className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3"
+        aria-label={t('acp_sidebar.title')}>
         {isInitialLoad ? (
           <div className="flex items-center justify-center gap-2 py-8">
             <Spinner size="md" />

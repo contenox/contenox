@@ -558,6 +558,7 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 	t.bindContenoxSession(contenoxSessionID, sessionID)
 	t.sessionMu.Unlock()
 	t.persistSessionCwd(ctx, store, sessionID, sessionCwd)
+	t.persistSessionMission(ctx, store, sessionID, missionID)
 	t.clearToolCallState(sessionID)
 	t.subscribeTerminal(sessionID, contenoxSessionID)
 
@@ -827,6 +828,7 @@ func (t *Transport) DeleteSession(ctx context.Context, req libacp.DeleteSessionR
 	_ = store.DeleteKV(ctx, acpSessionHITLPolicyKVPrefix+string(req.SessionID))
 	_ = store.DeleteKV(ctx, acpSessionInstanceKVPrefix+string(req.SessionID))
 	_ = store.DeleteKV(ctx, acpSessionDownstreamKVPrefix+string(req.SessionID))
+	_ = store.DeleteKV(ctx, acpSessionMissionKVPrefix+string(req.SessionID))
 
 	reportChange(string(req.SessionID), map[string]any{"was_open": entry != nil})
 	return libacp.DeleteSessionResponse{}, nil
@@ -1045,7 +1047,7 @@ func (t *Transport) Close(ctx context.Context) error {
 		sids = append(sids, sid)
 		// Deregister from the shared permission router before dropping the map so
 		// a shared engine stops routing approvals to this closing connection.
-		t.deps.PermissionRouter.unbind(e.InternalSessionID, t)
+		t.deps.SessionRouter.unbind(e.InternalSessionID, t)
 	}
 	t.sessions = make(map[libacp.SessionID]*sessionEntry)
 	t.contenoxToACPID = make(map[string]libacp.SessionID)
@@ -1212,11 +1214,17 @@ func (t *Transport) ListSessions(ctx context.Context, req libacp.ListSessionsReq
 			Title:     t.sessionListTitle(ctx, chatMgr, exec, row.internalID, row.name),
 			Cwd:       t.sessionCwd(ctx, store, libacp.SessionID(row.name)),
 		}
-		// External sessions carry their agent attribution in `_meta` so a client
-		// (the beam fleet view) can tell which registered agent runs each one.
-		if agentName := t.readSessionAgent(ctx, store, libacp.SessionID(row.name)); agentName != "" {
-			info.Meta = agentMetaJSON(agentName)
-		}
+		// Sessions carry their attribution in `_meta` so a client can tell what each
+		// row IS: which registered agent runs an external session, and — for a
+		// session a fleet dispatch created — which mission it is the unit of. Without
+		// the mission half, a dispatched unit's session was indistinguishable from
+		// the operator's own chats in beam's sidebar (same workspace, same identity),
+		// which is exactly how a fired mission looked like it had "attached to an
+		// existing session".
+		info.Meta = sessionListMeta(
+			t.readSessionAgent(ctx, store, libacp.SessionID(row.name)),
+			t.readSessionMission(ctx, store, libacp.SessionID(row.name)),
+		)
 		if row.hasTime {
 			info.UpdatedAt = row.updatedAt.UTC().Format(time.RFC3339)
 		}

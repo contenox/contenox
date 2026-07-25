@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { AccessSettingsSection } from './AccessSettingsSection';
 import { AutocompleteSettingsSection } from './AutocompleteSettingsSection';
 import { GlobalSettingsSection } from './GlobalSettingsSection';
+import { MissionSettingsSection } from './MissionSettingsSection';
 import { ResponseSettingsSection } from './ResponseSettingsSection';
 import { SetupWizardSection } from './SetupWizardSection';
 import { ShellEnvSettingsSection } from './ShellEnvSettingsSection';
@@ -25,6 +26,7 @@ export default function SettingsPage() {
         <ResponseSettingsSection />
         <AutocompleteSettingsSection />
         <WorkspaceSettingsSection />
+        <MissionSettingsSection />
         <ShellEnvSettingsSection />
         <TelemetrySettingsSection />
         <AccessSettingsSection />

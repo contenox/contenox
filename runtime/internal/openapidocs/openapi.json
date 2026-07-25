@@ -1980,6 +1980,12 @@
           "default-max-tokens": {
             "type": "string"
           },
+          "default-mission-agent": {
+            "type": "string"
+          },
+          "default-mission-policy": {
+            "type": "string"
+          },
           "default-model": {
             "type": "string"
           },
@@ -2019,6 +2025,12 @@
             "type": "string"
           },
           "defaultMaxTokens": {
+            "type": "string"
+          },
+          "defaultMissionAgent": {
+            "type": "string"
+          },
+          "defaultMissionPolicy": {
             "type": "string"
           },
           "defaultModel": {

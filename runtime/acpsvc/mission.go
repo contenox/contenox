@@ -2,14 +2,21 @@ package acpsvc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
+
+	"github.com/google/uuid"
 
 	libacp "github.com/contenox/runtime/libacp"
+	"github.com/contenox/runtime/runtime/chatservice"
 	"github.com/contenox/runtime/runtime/fleetservice"
 	"github.com/contenox/runtime/runtime/internal/clikv"
+	"github.com/contenox/runtime/runtime/missionservice"
 	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/taskengine"
 )
 
 // ErrSessionNotLive reports that no session on this connection maps to a given
@@ -74,13 +81,15 @@ func (t *Transport) hasMissionCapability() bool {
 //
 // The governing ontology: a mission is a
 // SUBAGENT of the process that fired it, and its report notifies exactly the
-// parent that fired it. In the default topology the editor embeds the fleet and
-// its report router IN-PROCESS (acp_cmd.go), so the fired unit's report is
-// DELIVERED live back into THIS session's stream — the supervision edge closes
-// inside one process, in the editor, exactly where it was fired. The report
-// router reaches this session through DeliverToContenoxSession below; the
-// operator inbox is only the fallback for when this session has already ended by
-// the time a report lands (never an error — a report is a durable fact).
+// parent that fired it. Both in-process topologies deliver that way. The editor
+// embeds the fleet and its report router (acp_cmd.go) and reaches its lone
+// transport directly; serve reaches the RIGHT ONE of its many WS connections
+// through the shared SessionRouter (serve_cmd.go). Either way the fired unit's
+// report is DELIVERED live into THIS session's stream and PERSISTED into its
+// transcript, so it is still there after a reload and enters the next turn's
+// history — see DeliverToContenoxSession below. The operator inbox is only the
+// fallback for when no live connection holds this session by the time a report
+// lands (never an error — a report is a durable fact).
 //
 // # The forwarded case (opt-in): reports land in the operator inbox
 //
@@ -124,11 +133,15 @@ func (t *Transport) handleMission(ctx context.Context, sess *sessionEntry, args 
 
 	agentName, intent, named := t.resolveMissionAgentAndIntent(ctx, store, args)
 	if strings.TrimSpace(agentName) == "" {
-		return "", fmt.Errorf("no mission agent: name one as `/mission <agent-name> <intent>`, or set a default with `contenox config set default-mission-agent <name>`")
+		// Both remedies are named, editor first: the operator reading this is IN an
+		// editor session, where Settings → Missions picks the agent from the declared
+		// ones (beam's MissionSettingsSection), so sending them to a terminal to type a
+		// name they would have to remember is the worse of the two paths.
+		return "", fmt.Errorf("no mission agent: name one as `/mission <agent-name> <intent>`, or set a default under Settings → Missions (or `contenox config set default-mission-agent <name>`)")
 	}
 	policy := strings.TrimSpace(clikv.Read(ctx, store, "default-mission-policy"))
 	if policy == "" {
-		return "", fmt.Errorf("no mission envelope: set one with `contenox config set default-mission-policy <policy>` — a mission must name the HITL policy that bounds it")
+		return "", fmt.Errorf("no mission envelope: set one under Settings → Missions (or `contenox config set default-mission-policy <policy>`) — a mission must name the HITL policy that bounds it")
 	}
 
 	res, err := t.deps.Fleet.Dispatch(ctx, fleetservice.DispatchRequest{
@@ -209,6 +222,16 @@ func (t *Transport) resolveMissionAgentAndIntent(ctx context.Context, store runt
 // ordinary session/update — carrying the reportrouter's `contenox.missionReport`
 // _meta so the editor renders it as a report, not chat text.
 //
+// The delivered report is also PERSISTED into the session's transcript, not only
+// pushed. A pushed update lives on the wire: reload the editor and the report is
+// gone, even though the mission is done and the operator was watching — the very
+// gap the supervision edge exists to close. Persisting also makes the report real
+// to the SESSION rather than to the connection: the next turn's history carries
+// it, which is what lets a coordinating agent act on "unit X reported: …" the way
+// the report router's own doc describes. It is best-effort by the same rule the
+// router follows — the durable fact is the report itself, so a failed write is
+// tracked and never turns a successful delivery into a miss.
+//
 // Returns ErrSessionNotLive when no session on this connection maps to
 // contenoxSessionID (it has ended, or was never here), the signal that routes the
 // report to the operator inbox instead — never a fault.
@@ -217,11 +240,44 @@ func (t *Transport) DeliverToContenoxSession(ctx context.Context, contenoxSessio
 	if !ok {
 		return ErrSessionNotLive
 	}
+	t.persistDeliveredReport(ctx, contenoxSessionID, n)
 	// Re-address to the ACP session id the client learned at session/new; the
 	// router built n against the contenox id, which the editor never saw.
 	n.SessionID = sid
 	t.sendUpdate(ctx, n)
 	return nil
+}
+
+// persistDeliveredReport appends a delivered mission report to the firing
+// session's durable transcript as an assistant message, so it survives a reload
+// and enters the next turn's history. The text is the one the report router
+// already composed for the stream, so the transcript and the live update read
+// identically.
+//
+// Cancellation-immune (context.WithoutCancel) for the same reason
+// persistExternalTurn is: the report arrived: whether the request that carried it
+// is still alive must not decide whether it is remembered.
+func (t *Transport) persistDeliveredReport(ctx context.Context, contenoxSessionID string, n libacp.SessionNotification) {
+	if t.deps.DB == nil || contenoxSessionID == "" {
+		return
+	}
+	text := strings.TrimSpace(n.Update.Content.Text)
+	if text == "" {
+		return
+	}
+	msgs := []taskengine.Message{{
+		ID:        uuid.NewString(),
+		Role:      "assistant",
+		Content:   text,
+		Timestamp: time.Now().UTC(),
+	}}
+	cleanCtx := context.WithoutCancel(ctx)
+	mgr := chatservice.NewManager(t.workspaceID())
+	if err := mgr.PersistDiff(cleanCtx, t.deps.DB.WithoutTransaction(), contenoxSessionID, msgs); err != nil {
+		reportErr, _, end := t.tracker().Start(cleanCtx, "persist", "acp_mission_report", "session_id", contenoxSessionID)
+		reportErr(err)
+		end()
+	}
 }
 
 // splitFirstToken splits args into its first whitespace-delimited token and the
@@ -232,4 +288,67 @@ func splitFirstToken(args string) (first, rest string) {
 		return args[:i], strings.TrimSpace(args[i+1:])
 	}
 	return args, ""
+}
+
+// acpSessionMissionKVPrefix stores the mission id a session is the UNIT of,
+// keyed by the upstream ACP session id and written at session/new for a session
+// a fleet dispatch created (the mission id arrives as session/new `_meta`; see
+// NewSession). It is the durable half of an attribution the in-memory
+// sessionEntry already carried: session/list runs on a fresh connection, where
+// that entry does not exist.
+//
+// It is what lets a client TELL THE TWO APART. A dispatched unit's session is
+// created in the same workspace under the same 'acp-client' identity as the
+// operator's own chats, so without this every mission unit showed up in beam's
+// sidebar as an anonymous chat — and, having real messages while the session
+// that fired it had none, sorted ABOVE it.
+const acpSessionMissionKVPrefix = "acp:session_mission:"
+
+// sessionMissionRecord is the durable KV shape for a unit session's mission id.
+type sessionMissionRecord struct {
+	MissionID string `json:"missionId"`
+}
+
+func (t *Transport) persistSessionMission(ctx context.Context, store runtimetypes.Store, sid libacp.SessionID, missionID string) {
+	if strings.TrimSpace(missionID) == "" {
+		return
+	}
+	raw, err := json.Marshal(sessionMissionRecord{MissionID: missionID})
+	if err != nil {
+		return
+	}
+	if err := store.SetKV(ctx, acpSessionMissionKVPrefix+string(sid), raw); err != nil {
+		reportErr, _, end := t.tracker().Start(ctx, "persist_mission", "acp_session", "session_id", string(sid))
+		reportErr(err)
+		end()
+	}
+}
+
+func (t *Transport) readSessionMission(ctx context.Context, store runtimetypes.Store, sid libacp.SessionID) string {
+	var rec sessionMissionRecord
+	if err := store.GetKV(ctx, acpSessionMissionKVPrefix+string(sid), &rec); err != nil {
+		return ""
+	}
+	return rec.MissionID
+}
+
+// sessionListMeta builds a session/list entry's `_meta`, carrying whichever
+// attributions the session has: its external agent name, its mission id, or
+// both (an external agent CAN be the unit of a mission). Returns nil when it has
+// neither, so an ordinary chat session's entry stays free of an empty envelope.
+//
+// One builder rather than two assignments: the two attributions are independent
+// and a second `info.Meta = …` would silently drop the first.
+func sessionListMeta(agentName, missionID string) json.RawMessage {
+	meta := map[string]any{}
+	if agentName != "" {
+		meta[AgentMetaKey] = agentName
+	}
+	if missionID != "" {
+		meta[missionservice.MissionMetaKey] = missionservice.MissionMeta{MissionID: missionID}
+	}
+	if len(meta) == 0 {
+		return nil
+	}
+	return mustJSON(meta)
 }

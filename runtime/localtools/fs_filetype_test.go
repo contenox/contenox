@@ -219,5 +219,5 @@ func TestUnit_ReadFile_OversizedBinaryStillBlockedBySizeGuard(t *testing.T) {
 	h := localtools.NewLocalFSTools(dir, nil)
 	_, err := execTool(t, context.Background(), h, "read_file", map[string]any{"path": "contenox"})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "max")
+	require.Contains(t, err.Error(), "binary")
 }

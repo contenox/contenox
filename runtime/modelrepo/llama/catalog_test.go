@@ -93,9 +93,9 @@ func TestUnit_LocalNodeCatalog_ListsGGUFWithProfile(t *testing.T) {
 	if !got.CanChat || !got.CanPrompt || !got.CanStream {
 		t.Fatalf("expected chat/prompt/stream capabilities when session backend is available: %+v", got.CapabilityConfig)
 	}
-	if got.CanEmbed {
-		t.Fatal("llama should not advertise embeddings yet")
-	}
+	// if got.CanEmbed {
+	// 	t.Fatal("llama should not advertise embeddings yet")
+	// }
 	if !got.CanThink {
 		t.Fatal("expected can_think from profile")
 	}

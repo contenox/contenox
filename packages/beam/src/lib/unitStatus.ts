@@ -50,6 +50,12 @@ export type UnitStatusAtom = {
   kind: UnitStatusAtomKind;
   /** A static label key (process/verdict/blocked, and liveness when never reported). */
   labelKey?: TranslationKey;
+  /**
+   * A literal, already-human label used INSTEAD of labelKey when there is no key
+   * to use — today only a mission status this build does not know, where echoing
+   * the runtime's own word beats inventing one or rendering blank.
+   */
+  label?: string;
   /** A tooltip key explaining what this fragment reports. */
   titleKey?: TranslationKey;
   /** Process only: the StatusIndicator dot to render. */
@@ -100,11 +106,35 @@ const VERDICT: Record<
     titleKey: 'unit.verdict_derailed_title',
     variant: 'error',
   },
+  // `stuck` asks for ATTENTION, not a post-mortem — the unit hit a boundary it
+  // cannot pass alone (see MissionStatus). Warning, therefore, and deliberately
+  // not the error colour `derailed` gets: the two ask the operator for different
+  // things.
+  stuck: {
+    labelKey: 'unit.verdict_stuck',
+    titleKey: 'unit.verdict_stuck_title',
+    variant: 'warning',
+  },
   abandoned: {
     labelKey: 'unit.verdict_abandoned',
     titleKey: 'unit.verdict_abandoned_title',
     variant: 'secondary',
   },
+};
+
+// The verdict chip for a status this build does not know. The Go status set is
+// contracted to only ever GROW, and a runtime is routinely newer than the UI
+// served beside it, so an unrecognised value is an EXPECTED input here — not an
+// impossible one. It renders as a neutral chip carrying the raw value, which is
+// how the operator still learns what the runtime said.
+//
+// This exists because the alternative was proven, live: `stuck` shipped in the
+// runtime, this map had four entries, and the undefined lookup threw inside
+// render — taking the entire missions page down to the error boundary over one
+// unknown word.
+const UNKNOWN_VERDICT: { titleKey: TranslationKey; variant: UnitStatusBadgeVariant } = {
+  titleKey: 'unit.verdict_unknown_title',
+  variant: 'secondary',
 };
 
 /** The ordered status atoms to render for a unit — loudest (blocked) first. */
@@ -130,7 +160,18 @@ export function composeUnitStatus(facts: UnitStatusFacts): UnitStatusAtom[] {
 
   if (facts.missionStatus) {
     const v = VERDICT[facts.missionStatus];
-    atoms.push({ kind: 'verdict', labelKey: v.labelKey, titleKey: v.titleKey, variant: v.variant });
+    atoms.push(
+      v
+        ? { kind: 'verdict', labelKey: v.labelKey, titleKey: v.titleKey, variant: v.variant }
+        : {
+            // Unknown status: render the runtime's own word rather than nothing,
+            // and NEVER throw — see UNKNOWN_VERDICT.
+            kind: 'verdict',
+            label: facts.missionStatus,
+            titleKey: UNKNOWN_VERDICT.titleKey,
+            variant: UNKNOWN_VERDICT.variant,
+          },
+    );
   }
 
   // Liveness is a mission concept (heartbeat), so it only shows for a unit on a

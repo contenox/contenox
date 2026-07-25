@@ -47,6 +47,24 @@ const resources = {
         inherited_value: 'Inherited: {{value}}',
         chain_options_error: 'Could not load task chains: {{message}}',
         policy_options_error: 'Could not load HITL policies: {{message}}',
+        mission_section_title: 'Missions',
+        mission_section_description:
+          'What `/mission <intent>` fires when the prompt names no agent. Both are required — a mission runs as a declared agent, bounded by a HITL policy.',
+        mission_agent_label: 'Default mission agent',
+        mission_agent_tooltip:
+          'The declared agent a mission runs as. Only enabled agents can be fired; register agents with the contenox CLI.',
+        mission_policy_label: 'Default mission envelope',
+        mission_policy_tooltip:
+          'The HITL policy that bounds a fired mission: what its tool calls may do unattended and what waits for your approval.',
+        mission_not_set: 'Not set',
+        mission_incomplete_notice:
+          'Missions cannot be fired until both an agent and an envelope are set. Until then, /mission asks you to name one.',
+        mission_agent_unresolved:
+          '"{{name}}" is not an enabled agent right now — a mission fired on it will be refused.',
+        mission_policy_unresolved:
+          '"{{name}}" is not among the available HITL policies — a mission bounded by it will be refused.',
+        mission_no_agents: 'No enabled agents are declared yet.',
+        mission_agent_options_error: 'Could not load agents: {{message}}',
         save: 'Save',
         saved: 'Saved.',
         run_wizard_title: 'Setup wizard',
@@ -633,6 +651,7 @@ const resources = {
           open: 'Open',
           landed: 'Landed',
           derailed: 'Derailed',
+          stuck: 'Stuck',
           abandoned: 'Abandoned',
         },
         heartbeat_never: 'Never reported',
@@ -643,6 +662,7 @@ const resources = {
         not_found_description: 'It may have been deleted, or the id is wrong.',
         facts_title: 'Facts',
         facts_agent: 'Agent',
+        facts_status_reason: 'Reason',
         facts_status: 'Status',
         facts_envelope: 'Envelope',
         facts_session: 'Session',
@@ -739,8 +759,7 @@ const resources = {
       },
       unit: {
         blocked: 'Waiting for approval',
-        blocked_title:
-          'This unit reported a blocker and is waiting for your input or approval.',
+        blocked_title: 'This unit reported a blocker and is waiting for your input or approval.',
         verdict_open: 'No result yet',
         verdict_open_title:
           'The mission is still open — it has produced no result yet. This is not a health signal.',
@@ -748,6 +767,11 @@ const resources = {
         verdict_landed_title: 'The mission reported a successful result.',
         verdict_derailed: 'Derailed',
         verdict_derailed_title: 'The mission ended without landing its result.',
+        verdict_stuck: 'Stuck',
+        verdict_stuck_title:
+          'The mission hit a boundary it could not pass on its own — it is waiting for a human to judge, nudge, or replan it. Not a failure.',
+        verdict_unknown_title:
+          'A mission status this Beam build does not know — shown as the runtime reported it. Beam is likely older than the runtime serving it.',
         verdict_abandoned: 'Abandoned',
         verdict_abandoned_title: 'The mission was given up before it landed.',
         liveness_prefix: 'Heartbeat',
@@ -1951,7 +1975,8 @@ const resources = {
         image_attachment_alt: 'Attached image',
         image_expand: 'Show image full size',
         image_dialog_close: 'Close',
-        image_not_supported_notice: 'This agent does not accept images — the attachment was not added.',
+        image_not_supported_notice:
+          'This agent does not accept images — the attachment was not added.',
         image_too_large_notice: 'The image is too large (max. 5 MB after conversion).',
         image_prepare_failed_notice: 'The image could not be processed.',
         status_connecting: 'Connecting…',
@@ -2014,8 +2039,7 @@ const resources = {
         // watch and steer a running dispatch — see lib/adoptMeta.ts).
         adopted_controller_label: 'Taken over',
         adopted_observer_label: 'Observing',
-        adopted_controller_title:
-          'You control this session — its permission requests come to you.',
+        adopted_controller_title: 'You control this session — its permission requests come to you.',
         adopted_observer_title:
           'You are observing — another viewer controls this session and answers its permission requests.',
         adopted_mission_link: 'Back to the mission',
@@ -2050,6 +2074,9 @@ const resources = {
         confirm_delete: 'Delete "{{name}}"? This cannot be undone.',
         new_session_with_agent: 'New chat with an agent',
         pending_permission: 'Approval needed',
+        mission_session_badge: 'Mission unit',
+        mission_session_title:
+          'This session is a fleet mission unit (mission {{id}}), not a chat you started.',
         workspace_label: 'Workspace: {{path}}',
       },
       // Session workspace: the shared directory a chat session operates in — the
@@ -2110,8 +2137,7 @@ const resources = {
         out_of_bounds_title: 'This folder is outside the permitted roots.',
         out_of_bounds_body:
           'The workspace can only browse folders inside the roots this runtime was started with.',
-        out_of_bounds_body_path:
-          '“{{path}}” is outside the roots this runtime was started with.',
+        out_of_bounds_body_path: '“{{path}}” is outside the roots this runtime was started with.',
         out_of_bounds_allowed_label: 'Allowed roots',
       },
       // The project-registry management page (/projects, Slice 4): add, name, and
@@ -2148,7 +2174,8 @@ const resources = {
         selected_none: 'No folder selected yet — click one above.',
         manual_toggle: 'Enter a path manually',
         browse_toggle: 'Browse folders instead',
-        already_project: 'This folder is already registered as the project “{{name}}”. Adding it again just updates its name.',
+        already_project:
+          'This folder is already registered as the project “{{name}}”. Adding it again just updates its name.',
         add_update: 'Update project',
         forget: 'Forget',
         forget_confirm:
@@ -2311,6 +2338,24 @@ const resources = {
         inherited_value: 'Geerbt: {{value}}',
         chain_options_error: 'Task-Chains konnten nicht geladen werden: {{message}}',
         policy_options_error: 'HITL-Policies konnten nicht geladen werden: {{message}}',
+        mission_section_title: 'Missionen',
+        mission_section_description:
+          'Was `/mission <Auftrag>` startet, wenn im Prompt kein Agent genannt wird. Beides ist erforderlich — eine Mission läuft als deklarierter Agent, begrenzt durch eine HITL-Policy.',
+        mission_agent_label: 'Standard-Missions-Agent',
+        mission_agent_tooltip:
+          'Der deklarierte Agent, als der eine Mission läuft. Nur aktivierte Agenten können gestartet werden; Agenten werden über die contenox-CLI registriert.',
+        mission_policy_label: 'Standard-Missions-Envelope',
+        mission_policy_tooltip:
+          'Die HITL-Policy, die eine gestartete Mission begrenzt: was ihre Tool-Aufrufe unbeaufsichtigt dürfen und was auf Ihre Freigabe wartet.',
+        mission_not_set: 'Nicht gesetzt',
+        mission_incomplete_notice:
+          'Missionen können erst gestartet werden, wenn Agent und Envelope gesetzt sind. Bis dahin fordert /mission Sie auf, eines davon zu benennen.',
+        mission_agent_unresolved:
+          '„{{name}}“ ist derzeit kein aktivierter Agent — eine damit gestartete Mission wird abgelehnt.',
+        mission_policy_unresolved:
+          '„{{name}}“ ist keine der verfügbaren HITL-Policies — eine damit begrenzte Mission wird abgelehnt.',
+        mission_no_agents: 'Es sind noch keine aktivierten Agenten deklariert.',
+        mission_agent_options_error: 'Agenten konnten nicht geladen werden: {{message}}',
         save: 'Speichern',
         saved: 'Gespeichert.',
         run_wizard_title: 'Einrichtungsassistent',
@@ -2878,6 +2923,7 @@ const resources = {
           open: 'Offen',
           landed: 'Gelandet',
           derailed: 'Entgleist',
+          stuck: 'Feststeckend',
           abandoned: 'Aufgegeben',
         },
         heartbeat_never: 'Noch nie gemeldet',
@@ -2888,6 +2934,7 @@ const resources = {
         not_found_description: 'Sie wurde eventuell gelöscht, oder die ID ist falsch.',
         facts_title: 'Fakten',
         facts_agent: 'Agent',
+        facts_status_reason: 'Grund',
         facts_status: 'Status',
         facts_envelope: 'Hülle',
         facts_session: 'Sitzung',
@@ -2995,6 +3042,11 @@ const resources = {
         verdict_landed_title: 'Die Mission hat ein erfolgreiches Ergebnis gemeldet.',
         verdict_derailed: 'Entgleist',
         verdict_derailed_title: 'Die Mission endete, ohne ihr Ergebnis zu landen.',
+        verdict_stuck: 'Feststeckend',
+        verdict_stuck_title:
+          'Die Mission stieß an eine Grenze, die sie allein nicht überwinden kann — sie wartet auf eine menschliche Einschätzung, einen Anstoß oder eine Neuplanung. Kein Fehlschlag.',
+        verdict_unknown_title:
+          'Ein Missionsstatus, den dieser Beam-Build nicht kennt — angezeigt, wie die Runtime ihn gemeldet hat. Beam ist wahrscheinlich älter als die Runtime, die es ausliefert.',
         verdict_abandoned: 'Aufgegeben',
         verdict_abandoned_title: 'Die Mission wurde aufgegeben, bevor sie landete.',
         liveness_prefix: 'Herzschlag',
@@ -3857,7 +3909,8 @@ const resources = {
         image_attachment_alt: 'Angehängtes Bild',
         image_expand: 'Bild in voller Größe anzeigen',
         image_dialog_close: 'Schließen',
-        image_not_supported_notice: 'Dieser Agent akzeptiert keine Bilder — der Anhang wurde nicht hinzugefügt.',
+        image_not_supported_notice:
+          'Dieser Agent akzeptiert keine Bilder — der Anhang wurde nicht hinzugefügt.',
         image_too_large_notice: 'Das Bild ist zu groß (max. 5 MB nach Umwandlung).',
         image_prepare_failed_notice: 'Das Bild konnte nicht verarbeitet werden.',
         status_connecting: 'Verbinde…',
@@ -3948,6 +4001,9 @@ const resources = {
         confirm_delete: '„{{name}}“ löschen? Dies kann nicht rückgängig gemacht werden.',
         new_session_with_agent: 'Neuer Chat mit einem Agenten',
         pending_permission: 'Freigabe erforderlich',
+        mission_session_badge: 'Missions-Einheit',
+        mission_session_title:
+          'Diese Sitzung ist eine Fleet-Missions-Einheit (Mission {{id}}), kein von Ihnen gestarteter Chat.',
         workspace_label: 'Arbeitsbereich: {{path}}',
       },
       workspace: {
@@ -4029,7 +4085,8 @@ const resources = {
         add_error_fallback: 'Dieser Ordner konnte nicht hinzugefügt werden.',
         browse_open: 'Ordner auswählen…',
         dialog_title: 'Projekt hinzufügen',
-        browse_hint: 'Öffne Ordner, um hineinzusehen, und wähle dann den Ordner, der als Projekt registriert werden soll.',
+        browse_hint:
+          'Öffne Ordner, um hineinzusehen, und wähle dann den Ordner, der als Projekt registriert werden soll.',
         browse_start_label: 'Ausgehend von',
         browse_loading: 'Ordner werden geladen…',
         browse_empty: 'Keine Unterordner hier.',
@@ -4037,7 +4094,8 @@ const resources = {
         selected_none: 'Noch kein Ordner gewählt — klicke oben einen an.',
         manual_toggle: 'Pfad manuell eingeben',
         browse_toggle: 'Stattdessen Ordner durchsuchen',
-        already_project: 'Dieser Ordner ist bereits als Projekt „{{name}}“ registriert. Erneutes Hinzufügen aktualisiert nur seinen Namen.',
+        already_project:
+          'Dieser Ordner ist bereits als Projekt „{{name}}“ registriert. Erneutes Hinzufügen aktualisiert nur seinen Namen.',
         add_update: 'Projekt aktualisieren',
         forget: 'Entfernen',
         forget_confirm:

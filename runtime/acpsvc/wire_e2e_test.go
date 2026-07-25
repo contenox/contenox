@@ -172,7 +172,7 @@ func TestE2E_Wire_SessionNewListLoadRoundTrip(t *testing.T) {
 	require.Equal(t, libacp.ProtocolVersion, initResp.ProtocolVersion)
 	require.NotNil(t, initResp.AgentCapabilities.SessionCapabilities.List, "session/list capability must be advertised")
 
-	const cwd = "/tmp/wire-e2e-project"
+	cwd := t.TempDir()
 	resp, notes := client.call(libacp.MethodSessionNew, libacp.NewSessionRequest{
 		Cwd:        cwd,
 		McpServers: []libacp.McpServer{},
@@ -307,7 +307,7 @@ func TestE2E_Wire_SessionListPagination(t *testing.T) {
 
 	created := map[libacp.SessionID]bool{}
 	for i := 0; i < 5; i++ {
-		resp, _ := client.call(libacp.MethodSessionNew, libacp.NewSessionRequest{Cwd: "/tmp/paging", McpServers: []libacp.McpServer{}})
+		resp, _ := client.call(libacp.MethodSessionNew, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 		require.Nil(t, resp.Error)
 		var nr libacp.NewSessionResponse
 		require.NoError(t, json.Unmarshal(resp.Result, &nr))
@@ -501,7 +501,7 @@ func TestE2E_Wire_SessionListOrder(t *testing.T) {
 
 	var sids []libacp.SessionID
 	for i := 0; i < 4; i++ {
-		resp, _ := client.call(libacp.MethodSessionNew, libacp.NewSessionRequest{Cwd: "/tmp/order", McpServers: []libacp.McpServer{}})
+		resp, _ := client.call(libacp.MethodSessionNew, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 		require.Nil(t, resp.Error)
 		var nr libacp.NewSessionResponse
 		require.NoError(t, json.Unmarshal(resp.Result, &nr))

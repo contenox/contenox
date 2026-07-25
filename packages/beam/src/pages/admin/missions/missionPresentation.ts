@@ -15,6 +15,9 @@ export const MISSION_STATUS_INDICATOR: Record<MissionStatus, Status> = {
   open: 'in-progress',
   landed: 'completed',
   derailed: 'error',
+  // `stuck` is a boundary the unit cannot pass alone, not a failure — warning,
+  // which asks the operator to look, rather than error, which reports a verdict.
+  stuck: 'warning',
   abandoned: 'planned',
 };
 
@@ -22,6 +25,7 @@ export const MISSION_STATUS_LABEL_KEY: Record<MissionStatus, TranslationKey> = {
   open: 'missions.status.open',
   landed: 'missions.status.landed',
   derailed: 'missions.status.derailed',
+  stuck: 'missions.status.stuck',
   abandoned: 'missions.status.abandoned',
 };
 

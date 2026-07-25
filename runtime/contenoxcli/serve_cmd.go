@@ -433,7 +433,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// gymnastics): the per-connection transports built later (acpsvc.New below)
 	// register their live sessions into it, and the AskApproval closure consults
 	// it per request. Nil out of the box until a transport binds a session.
-	permissionRouter := acpsvc.NewPermissionRouter()
+	sessionRouter := acpsvc.NewSessionRouter()
 
 	engine, err := enginesvc.Build(ctx, db, enginesvc.Config{
 		DefaultModel:       opts.EffectiveDefaultModel,
@@ -458,7 +458,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		// uses it, an unanswered ask is still resolved automatically once its
 		// deadline passes (startHITLApprovalSweeper below).
 		AskApproval: func(ctx context.Context, req hitlservice.ApprovalRequest) (bool, error) {
-			if allowed, err := permissionRouter.AskApproval(ctx, req); !errors.Is(err, acpsvc.ErrNoBoundSession) {
+			if allowed, err := sessionRouter.AskApproval(ctx, req); !errors.Is(err, acpsvc.ErrNoBoundSession) {
 				return allowed, err
 			}
 			return hitlSvc.RequestApproval(ctx, req, taskEventSink)
@@ -599,16 +599,29 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// that reached no live supervisor (surfaced by /operator-inbox below), and the
 	// report router that consumes the ReportAddedEvent missions publishes and
 	// routes each report: into its parent session's stream when one fired the
-	// mission (the Manager is the SessionDeliverer), or into the inbox when an
-	// operator fired directly or the parent session has since ended. The router
-	// runs off the bus, so nothing it does can fail the AddReport that produced
-	// the event — routing is best-effort delivery on top of a durable report.
+	// mission, or into the inbox when an operator fired directly or the parent
+	// session has since ended. The router runs off the bus, so nothing it does can
+	// fail the AddReport that produced the event — routing is best-effort delivery
+	// on top of a durable report.
+	//
+	// The deliverer asks the CHAT surface first and the kernel second, which is
+	// what makes `/mission` fired from beam close its own supervision edge. A
+	// `/mission` sets the mission's parent to the FIRING chat session's contenox id
+	// — a beam session on one of this process's WS connections, which the kernel
+	// (it knows unit sessions only) can never resolve. Wiring the kernel alone here
+	// sent every beam-fired report to the operator inbox as "parent gone" while the
+	// operator watched the session that fired it. sessionRouter resolves that id to
+	// the exact live connection; the kernel remains second for a mission fired by a
+	// kernel-owned unit's own session.
 	operatorInbox := operatorinbox.New(db)
 	reportRouter, err := reportrouter.New(reportrouter.Deps{
-		Bus:      bus,
-		Sessions: instances,
-		Inbox:    operatorInbox,
-		Tracker:  tracker,
+		Bus: bus,
+		Sessions: missionReportDeliverer{
+			chat:   func() contenoxSessionDeliverer { return sessionRouter },
+			kernel: instances,
+		},
+		Inbox:   operatorInbox,
+		Tracker: tracker,
 	})
 	if err != nil {
 		return fmt.Errorf("build report router: %w", err)
@@ -645,7 +658,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 			// Share the same router the engine's AskApproval consults, so each WS
 			// connection's transport registers its live sessions and gated tool
 			// calls route back to the client that raised them.
-			PermissionRouter: permissionRouter,
+			SessionRouter: sessionRouter,
 			// External-agent sessions attach to Manager-owned instances that survive
 			// client disconnect/reload (a reload re-attaches to the same instance).
 			Instances: instances,

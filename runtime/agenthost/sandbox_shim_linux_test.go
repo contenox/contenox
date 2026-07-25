@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"syscall"
 	"testing"
 	"time"
@@ -96,23 +97,50 @@ func TestSmoke_SandboxConfinesSpawnedAgent(t *testing.T) {
 	// no ~/.contenox/sandbox-carveouts.json and therefore grants no network — the
 	// empty netns must make any outbound connect unreachable.
 	t.Setenv("HOME", t.TempDir())
+	// The namespaced network wall is OPT-IN (it needs unprivileged user namespaces
+	// a host may withhold; see buildAgentCmd), and with no carve-out file to imply
+	// it, this operator toggle is what turns it on. Without it the default fence
+	// confines the filesystem, exec, and env but leaves the host network — and this
+	// test is specifically about the network half, so it opts in explicitly.
+	t.Setenv("CONTENOX_SANDBOX_NETWORK_WALL", "1")
 
 	a := &ExternalACPAgent{Config: runtimetypes.ExternalACPConfig{
 		Transport: runtimetypes.ExternalACPTransportStdio,
-		Command:   "/proc/self/exe", // re-exec THIS binary as the confined "agent"
-		Cwd:       t.TempDir(),
-		Env:       map[string]string{smokeProbeEnv: "net-connect"},
+		// A COPY of this test binary, not /proc/self/exe: a command that resolves to
+		// the running executable is contenox spawning contenox and is deliberately not
+		// confined (selfInvocation), which would make this test assert nothing. The
+		// copy is a distinct file, so it is a foreign agent as far as the spawn path is
+		// concerned, while still being a binary that knows how to run the probe.
+		Command: copyOfTestBinary(t),
+		Cwd:     t.TempDir(),
+		Env:     map[string]string{smokeProbeEnv: "net-connect"},
 	}}
 
 	cmd, err := buildAgentCmd(context.Background(), a)
 	require.NoError(t, err)
 
 	// buildAgentCmd re-exec's /proc/self/exe as the sandbox shim (ShimMain in
-	// TestMain), which builds the wall and execve's the target — this binary again
-	// — with smokeProbeEnv surviving the scrub, so it runs runSmokeProbe confined.
+	// TestMain), which builds the wall and execve's the target — the copy of this
+	// binary — with smokeProbeEnv surviving the scrub, so it runs runSmokeProbe
+	// confined.
 	err = cmd.Run()
 	require.Equal(t, exitProbeUnreachable, exitCode(err),
 		"the spawned agent must be confined: an outbound connection is network-unreachable inside the empty netns")
+}
+
+// copyOfTestBinary copies the running test binary into t.TempDir() and returns the
+// copy's path: a program identical in behaviour to this one (so it can run the
+// probe) but a different file on disk (so the spawn path sees a foreign agent to
+// confine rather than contenox re-invoking itself).
+func copyOfTestBinary(t *testing.T) string {
+	t.Helper()
+	self, err := os.Executable()
+	require.NoError(t, err)
+	src, err := os.ReadFile(self)
+	require.NoError(t, err)
+	dst := filepath.Join(t.TempDir(), "fake-agent")
+	require.NoError(t, os.WriteFile(dst, src, 0o755))
+	return dst
 }
 
 // sandboxSupported reports whether this host can build the wall: a usable

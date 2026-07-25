@@ -2,6 +2,7 @@ package libsandbox
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -88,9 +89,10 @@ type planCarveout struct {
 // the shim enforces. It is the point where "~" is resolved and absoluteness is
 // required, because the enforcement layer — not the parser (LoadCarveouts) —
 // interprets paths. WorkspaceRoot and Home must be absolute (they anchor the cwd
-// and "~"); a non-absolute one wraps ErrInvalidSpec. Each carve-out path has "~"
-// resolved against Home and must then be absolute; anything else wraps
-// ErrIsolation, as does a target that did not resolve to an absolute path.
+// and "~"); a non-absolute one wraps ErrInvalidSpec, as does a WorkspaceRoot that
+// is not an existing directory. Each carve-out path has "~" resolved against Home
+// and must then be absolute; anything else wraps ErrIsolation, as does a target
+// that did not resolve to an absolute path.
 //
 // It assumes Spec.validate has already run (Command guarantees it): modes are
 // ModeRO/ModeRW and no path carries a ".." segment, so it only handles
@@ -98,6 +100,19 @@ type planCarveout struct {
 func buildPlan(spec Spec, execPath string, args []string) (isolationPlan, error) {
 	if !filepath.IsAbs(spec.WorkspaceRoot) {
 		return isolationPlan{}, fmt.Errorf("%w: WorkspaceRoot %q must be an absolute path", ErrInvalidSpec, spec.WorkspaceRoot)
+	}
+	// The workspace is the child's cwd, and a chdir into a path that is not an
+	// existing directory fails INSIDE the freshly forked child — where the kernel
+	// reports it against the child's exec path, surfacing as the deeply misleading
+	// "fork/exec /proc/self/exe: no such file or directory" (the shim binary is
+	// there; the workspace is not). Check it here so the caller is told which path
+	// is missing, before anything is spawned. The wall is not in the business of
+	// creating it: a workspace the caller never made is a caller bug, and silently
+	// materializing one would confine the agent to a directory nobody chose.
+	if info, err := os.Stat(spec.WorkspaceRoot); err != nil {
+		return isolationPlan{}, fmt.Errorf("%w: WorkspaceRoot %q is not usable as the agent's working directory: %v", ErrInvalidSpec, spec.WorkspaceRoot, err)
+	} else if !info.IsDir() {
+		return isolationPlan{}, fmt.Errorf("%w: WorkspaceRoot %q is not a directory", ErrInvalidSpec, spec.WorkspaceRoot)
 	}
 	if !filepath.IsAbs(spec.Home) {
 		return isolationPlan{}, fmt.Errorf("%w: Home %q must be an absolute path", ErrInvalidSpec, spec.Home)

@@ -56,3 +56,34 @@ func TestSetCLIConfig_DefaultThinkNormalizesLikeCLI(t *testing.T) {
 	_, err = svc.SetCLIConfig(ctx, CLIConfigPatch{DefaultThink: strPtr("extreme")})
 	require.Error(t, err)
 }
+
+// TestSetCLIConfig_MissionDefaultsRoundTrip pins the pair that makes `/mission
+// <intent>` fireable without naming an agent: both keys are GLOBAL (no workspace
+// scope — a mission is fired at the fleet, not at a project), both round-trip
+// through the snapshot, and an empty value clears the setting rather than being
+// ignored, so the UI can unset a default it once wrote.
+func TestSetCLIConfig_MissionDefaultsRoundTrip(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+
+	snap, err := svc.SetCLIConfig(ctx, CLIConfigPatch{
+		DefaultMissionAgent:  strPtr("  chain-contenox  "),
+		DefaultMissionPolicy: strPtr("hitl-policy-default.json"),
+	})
+	require.NoError(t, err)
+	require.Equal(t, "chain-contenox", snap.DefaultMissionAgent, "the stored agent name is trimmed")
+	require.Equal(t, "hitl-policy-default.json", snap.DefaultMissionPolicy)
+	require.True(t, snap.Present["default-mission-agent"])
+	require.True(t, snap.Present["default-mission-policy"])
+
+	snap, err = svc.CLIConfig(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "chain-contenox", snap.DefaultMissionAgent)
+	require.Equal(t, "hitl-policy-default.json", snap.DefaultMissionPolicy)
+
+	snap, err = svc.SetCLIConfig(ctx, CLIConfigPatch{DefaultMissionAgent: strPtr("")})
+	require.NoError(t, err)
+	require.Equal(t, "", snap.DefaultMissionAgent, "an explicit empty value clears the default")
+	require.Equal(t, "hitl-policy-default.json", snap.DefaultMissionPolicy,
+		"a nil field in the patch leaves its key untouched")
+}

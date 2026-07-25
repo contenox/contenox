@@ -30,6 +30,24 @@ needs to, to reach its model), but it cannot touch your filesystem or run outsid
 its box. That is the right default when the agent is trusted to use the network
 and what you care about is that it can't reach your files or your credentials.
 
+## What the wall does not confine: contenox itself
+
+The wall confines code contenox did not write. It is not applied to one thing:
+**contenox re-invoking its own binary** — a chain unit, or a mission unit
+dispatched by the fleet, which is `contenox` bound to a chain file. Such a unit is
+recognised by file identity (the command it names *is* this running executable, so
+a copy or a rename does not qualify) and is spawned outside the wall.
+
+That is a deliberate line, not a gap. A unit like this is defined by sharing the
+one runtime state — the same database, the same seeded presets, the same
+workspace — and the wall denies exactly that state on purpose (`~/.contenox` is
+never carved, so an agent can never reach the policy that governs it). Being
+contenox buys only the right to run as contenox: what such a unit then does runs
+through the runtime's own tool grants and the
+[human-in-the-loop gate](/docs/guide/hitl/), which is the layer built to govern
+it. A foreign agent gets the wall instead, because no such layer covers the code
+inside its process.
+
 ## Confining the network too (the opt-in wall)
 
 If you also want to restrict *which hosts* the agent may reach — so it can talk to

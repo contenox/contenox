@@ -166,9 +166,33 @@ export const AGENT_META_KEY = 'contenox.agent';
  * native session (no key), a blank value, or a malformed payload — attribution
  * degrades to the generic/native label rather than throwing.
  */
-export function externalAgentFromMeta(meta: Record<string, unknown> | undefined | null): string | null {
+export function externalAgentFromMeta(
+  meta: Record<string, unknown> | undefined | null,
+): string | null {
   const raw = meta?.[AGENT_META_KEY];
   return typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : null;
+}
+
+/**
+ * The `_meta` key that marks a session as the UNIT of a fleet mission —
+ * mirrored from `missionservice.MissionMetaKey`. The kernel puts it in a
+ * dispatched unit's `session/new` request, and `session/list` carries it back on
+ * that session's entry, which is how a client tells a mission unit apart from
+ * the operator's own chats: both live in the same workspace under the same
+ * identity, so without it a dispatched unit reads as an anonymous chat.
+ */
+export const MISSION_META_KEY = 'contenox.mission';
+
+/**
+ * Reads the mission id a session is the unit of out of its `_meta`, or `null`
+ * for an ordinary chat session (the common case). Tolerant of the shape by
+ * design: `_meta` is an open envelope other producers also write into.
+ */
+export function missionFromMeta(meta: Record<string, unknown> | undefined | null): string | null {
+  const raw = meta?.[MISSION_META_KEY];
+  if (typeof raw !== 'object' || raw === null) return null;
+  const id = (raw as { missionId?: unknown }).missionId;
+  return typeof id === 'string' && id.trim() !== '' ? id.trim() : null;
 }
 
 /** Builds the `session/new` request `_meta` that drives external agent `name` (see {@link AGENT_META_KEY}). */
@@ -506,9 +530,9 @@ interface ToolCallFields {
  * wire for that kind (see libacp/prompt.go).
  */
 export type SessionUpdate =
-  | ({ sessionUpdate: 'user_message_chunk'; content: ContentBlock; messageId?: string })
-  | ({ sessionUpdate: 'agent_message_chunk'; content: ContentBlock; messageId?: string })
-  | ({ sessionUpdate: 'agent_thought_chunk'; content: ContentBlock; messageId?: string })
+  | { sessionUpdate: 'user_message_chunk'; content: ContentBlock; messageId?: string }
+  | { sessionUpdate: 'agent_message_chunk'; content: ContentBlock; messageId?: string }
+  | { sessionUpdate: 'agent_thought_chunk'; content: ContentBlock; messageId?: string }
   | ({ sessionUpdate: 'tool_call' } & ToolCallFields)
   | ({ sessionUpdate: 'tool_call_update' } & ToolCallFields)
   | { sessionUpdate: 'plan'; entries: PlanEntry[] }
