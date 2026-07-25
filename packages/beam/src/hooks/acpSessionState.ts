@@ -14,6 +14,7 @@ import type {
   ToolKind,
   UsageEvent,
 } from '../lib/acp';
+import { shellCommandLine, shellOutputLines } from '../lib/shellExecution';
 
 /**
  * Pure, framework-free state for the ACP workspace's currently-open session:
@@ -144,8 +145,23 @@ export interface AcpSessionState {
   terminals: Record<string, AcpTerminalCard>;
   /** Failed-turn cards anchored in the transcript, keyed by timeline item id (see `AcpErrorCard`). */
   errorCards: Record<string, AcpErrorCard>;
-  /** Live shell scrollback for the terminal panel (null until first output). */
+  /**
+   * Live shell scrollback for the terminal panel (null until first output).
+   * Fed by two distinct sources appended into the SAME buffer: the
+   * `shell_session`/`!`-passthrough PTY stream (`terminal_output` action,
+   * offset-tracked) and, best-effort, completed `execute`-kind tool calls
+   * (`local_shell` etc — see `printedShellToolCalls`) formatted the same way
+   * — so the terminal panel is the one place that shows everything that ran
+   * a shell, not just the PTY.
+   */
   terminal: AcpTerminalState | null;
+  /**
+   * `toolCallId`s already appended into `terminal.text` by the `tool_call`
+   * reducer case, so a `pending` -> `completed` update pair (or a repeated
+   * `tool_call_update`) for the SAME call doesn't print its output twice.
+   * Never cleared mid-session — only `session_reset` wipes it.
+   */
+  printedShellToolCalls: Record<string, true>;
   plan: PlanEntry[];
   usage: AcpUsageState | null;
   configOptions: SessionConfigOption[];
@@ -216,6 +232,7 @@ export const initialAcpSessionState: AcpSessionState = {
   terminals: {},
   errorCards: {},
   terminal: null,
+  printedShellToolCalls: {},
   plan: [],
   usage: null,
   configOptions: [],
@@ -435,6 +452,29 @@ export function acpSessionReducer(
         rawInput: event.rawInput ?? existing?.rawInput,
         rawOutput: event.rawOutput ?? existing?.rawOutput,
       };
+      // A completed/failed `execute`-kind call (local_shell etc) also prints
+      // into the shared terminal panel scrollback — best-effort, once per
+      // call (guarded by `printedShellToolCalls`) — so it's visible in the
+      // ONE place a user actually watches for shell activity, not just
+      // buried in its own tool-call card. See `AcpTerminalState`'s doc
+      // comment for why this shares a buffer with the PTY stream instead of
+      // needing its own surface.
+      const outputLines =
+        merged.kind === 'execute' &&
+        (merged.status === 'completed' || merged.status === 'failed') &&
+        !state.printedShellToolCalls[event.toolCallId]
+          ? shellOutputLines(merged.rawOutput)
+          : null;
+      const terminal = outputLines
+        ? {
+            text:
+              (state.terminal?.text ?? '') +
+              (state.terminal?.text ? '\n' : '') +
+              [shellCommandLine(merged.rawInput), ...outputLines].filter((l): l is string => l != null).join('\n') +
+              '\n',
+            offset: state.terminal?.offset ?? 0,
+          }
+        : state.terminal;
       return {
         ...state,
         items: ensureItem(
@@ -444,6 +484,10 @@ export function acpSessionReducer(
           state.isPrompting ? (state.currentTurnId ?? undefined) : undefined,
         ),
         toolCalls: { ...state.toolCalls, [event.toolCallId]: merged },
+        terminal,
+        printedShellToolCalls: outputLines
+          ? { ...state.printedShellToolCalls, [event.toolCallId]: true }
+          : state.printedShellToolCalls,
       };
     }
 

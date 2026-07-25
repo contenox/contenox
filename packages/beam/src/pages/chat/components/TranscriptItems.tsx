@@ -30,6 +30,7 @@ import type {
   AcpToolCallState,
 } from '../../../hooks/acpSessionState';
 import { acpFailureCopyKeys, classifyAcpExecutionError } from '../../../lib/acpFailureKind';
+import { shellCommandLine, shellOutputLines } from '../../../lib/shellExecution';
 import { useTheme } from '../../../lib/ThemeProvider';
 import {
   shouldShowStreamingCaret,
@@ -163,21 +164,6 @@ function TranscriptMessage({
       )}
     </ChatMessage>
   );
-}
-
-/** Best-effort `$ command arg1 arg2` line from a `local_shell`/exec tool call's raw input (`{command, args}`, see `runtime/acpsvc/events.go` `summarizeToolCallArgs`). */
-function shellCommandLine(rawInput: unknown): string | null {
-  if (rawInput == null || typeof rawInput !== 'object') return null;
-  const obj = rawInput as Record<string, unknown>;
-  const command = typeof obj.command === 'string' ? obj.command : null;
-  if (!command) return null;
-  const args = Array.isArray(obj.args) ? obj.args.filter((a): a is string => typeof a === 'string') : [];
-  return ['$', command, ...args].join(' ');
-}
-
-/** Shell tool output is a plain string (`json.RawMessage(jsonString(ev.Content))` on the backend); split into terminal lines. */
-function shellOutputLines(rawOutput: unknown): string[] | null {
-  return typeof rawOutput === 'string' ? rawOutput.split('\n') : null;
 }
 
 function ToolCallDetail({ toolCall }: { toolCall: AcpToolCallState }) {

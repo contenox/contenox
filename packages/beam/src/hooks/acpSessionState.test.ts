@@ -464,6 +464,76 @@ describe('acpSessionReducer: terminal stream + cards', () => {
     expect(state.terminals['term-1']).toEqual({ id: 'term-1', command: 'echo hi', output: 'hi' });
   });
 
+  it('a completed local_shell (execute-kind) tool call prints its command+output into the terminal panel scrollback', () => {
+    const state = run(
+      { type: 'session_reset', sessionId: 's1' },
+      { type: 'prompt_start' },
+      {
+        type: 'tool_call',
+        event: {
+          updateKind: 'tool_call',
+          toolCallId: 'tc-1',
+          kind: 'execute',
+          status: 'pending',
+          rawInput: { command: 'echo', args: ['hi'] },
+        },
+      },
+      {
+        type: 'tool_call',
+        event: {
+          updateKind: 'tool_call_update',
+          toolCallId: 'tc-1',
+          kind: 'execute',
+          status: 'completed',
+          rawOutput: 'hi\n',
+        },
+      },
+    );
+    expect(state.terminal?.text).toContain('$ echo hi');
+    expect(state.terminal?.text).toContain('hi');
+  });
+
+  it('does not print a shell tool call output twice for repeated updates', () => {
+    const withPending = run(
+      { type: 'session_reset', sessionId: 's1' },
+      { type: 'prompt_start' },
+      {
+        type: 'tool_call',
+        event: {
+          updateKind: 'tool_call_update',
+          toolCallId: 'tc-1',
+          kind: 'execute',
+          status: 'completed',
+          rawInput: { command: 'echo', args: ['hi'] },
+          rawOutput: 'hi\n',
+        },
+      },
+    );
+    const afterRepeat = acpSessionReducer(withPending, {
+      type: 'tool_call',
+      event: {
+        updateKind: 'tool_call_update',
+        toolCallId: 'tc-1',
+        kind: 'execute',
+        status: 'completed',
+        rawOutput: 'hi\n',
+      },
+    });
+    expect(afterRepeat.terminal?.text).toBe(withPending.terminal?.text);
+  });
+
+  it('does not print a non-shell (e.g. read/write) tool call into the terminal panel', () => {
+    const state = run(
+      { type: 'session_reset', sessionId: 's1' },
+      { type: 'prompt_start' },
+      {
+        type: 'tool_call',
+        event: { updateKind: 'tool_call_update', toolCallId: 'tc-1', kind: 'read', status: 'completed' },
+      },
+    );
+    expect(state.terminal).toBeNull();
+  });
+
   it('clears terminal state on session_reset', () => {
     const dirty = run(
       { type: 'session_reset', sessionId: 's1' },
