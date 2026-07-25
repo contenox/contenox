@@ -13,9 +13,15 @@ describe('acpSessionReducer: unified timeline (D4)', () => {
       { type: 'session_reset', sessionId: 'sess-1' },
       { type: 'prompt_start' },
       { type: 'user_message_chunk', id: 'u1', text: 'run ls' },
-      { type: 'tool_call', event: { updateKind: 'tool_call', toolCallId: 'tc-1', title: 'ls', status: 'pending' } },
+      {
+        type: 'tool_call',
+        event: { updateKind: 'tool_call', toolCallId: 'tc-1', title: 'ls', status: 'pending' },
+      },
       { type: 'message_chunk', id: 'a1', text: 'Running ' },
-      { type: 'tool_call', event: { updateKind: 'tool_call_update', toolCallId: 'tc-1', status: 'completed' } },
+      {
+        type: 'tool_call',
+        event: { updateKind: 'tool_call_update', toolCallId: 'tc-1', status: 'completed' },
+      },
       { type: 'message_chunk', id: 'a1', text: 'ls now.' },
     );
 
@@ -25,7 +31,11 @@ describe('acpSessionReducer: unified timeline (D4)', () => {
       { kind: 'message', id: 'a1' },
     ]);
     expect(state.messages['u1']).toMatchObject({ role: 'user', text: 'run ls' });
-    expect(state.messages['a1']).toMatchObject({ role: 'assistant', text: 'Running ls now.', streaming: true });
+    expect(state.messages['a1']).toMatchObject({
+      role: 'assistant',
+      text: 'Running ls now.',
+      streaming: true,
+    });
     expect(state.toolCalls['tc-1']).toMatchObject({ title: 'ls', status: 'completed' });
     // tool_call_update merges into the existing card, not a second timeline item.
     expect(state.items.filter(it => it.id === 'tc-1')).toHaveLength(1);
@@ -62,12 +72,20 @@ describe('acpSessionReducer: unified timeline (D4)', () => {
     expect(streaming.messages['a1']).toMatchObject({ streaming: true, thinkingStreaming: true });
 
     const ended = acpSessionReducer(streaming, { type: 'prompt_end', stopReason: 'end_turn' });
-    expect(ended.messages['a1']).toMatchObject({ streaming: false, thinkingStreaming: false, text: 'ok', thinking: 'hmm' });
+    expect(ended.messages['a1']).toMatchObject({
+      streaming: false,
+      thinkingStreaming: false,
+      text: 'ok',
+      thinking: 'hmm',
+    });
     expect(ended.isPrompting).toBe(false);
     expect(ended.stopReason).toBe('end_turn');
 
     const erroredState = acpSessionReducer(streaming, { type: 'prompt_error', message: 'boom' });
-    expect(erroredState.messages['a1']).toMatchObject({ streaming: false, thinkingStreaming: false });
+    expect(erroredState.messages['a1']).toMatchObject({
+      streaming: false,
+      thinkingStreaming: false,
+    });
     expect(erroredState.error).toBe('boom');
   });
 
@@ -99,7 +117,9 @@ describe('acpSessionReducer: unified timeline (D4)', () => {
       { type: 'prompt_start' },
       { type: 'prompt_error', message: 'second failure' },
     );
-    const errorCards = state.items.filter(it => it.kind === 'error').map(it => state.errorCards[it.id].message);
+    const errorCards = state.items
+      .filter(it => it.kind === 'error')
+      .map(it => state.errorCards[it.id].message);
     expect(errorCards).toEqual(['first failure', 'second failure']);
   });
 });
@@ -126,7 +146,11 @@ describe('acpSessionReducer: stable message identity within one turn', () => {
 
     expect(state.items).toEqual([{ kind: 'message', id: 'assistant-1' }]);
     expect(Object.keys(state.messages)).toEqual(['assistant-1']);
-    expect(state.messages['assistant-1']).toMatchObject({ role: 'assistant', text: 'Hello world', streaming: true });
+    expect(state.messages['assistant-1']).toMatchObject({
+      role: 'assistant',
+      text: 'Hello world',
+      streaming: true,
+    });
   });
 
   it('id-then-no-id: a real messageId chunk followed by a turn-id-fallback chunk yields ONE item', () => {
@@ -140,7 +164,11 @@ describe('acpSessionReducer: stable message identity within one turn', () => {
 
     expect(state.items).toEqual([{ kind: 'message', id: 'msg-42' }]);
     expect(Object.keys(state.messages)).toEqual(['msg-42']);
-    expect(state.messages['msg-42']).toMatchObject({ role: 'assistant', text: 'Hello world', streaming: true });
+    expect(state.messages['msg-42']).toMatchObject({
+      role: 'assistant',
+      text: 'Hello world',
+      streaming: true,
+    });
   });
 
   it('thought-chunk-then-text-chunk with disagreeing ids yields ONE item with both thinking and text', () => {
@@ -169,10 +197,11 @@ describe('acpSessionReducer: stable message identity within one turn', () => {
       { type: 'message_chunk', id: 'assistant-1', text: 'first turn' },
       { type: 'prompt_end', stopReason: 'end_turn' },
     );
-    const second = acpSessionReducer(
-      acpSessionReducer(first, { type: 'prompt_start' }),
-      { type: 'message_chunk', id: 'assistant-2', text: 'second turn' },
-    );
+    const second = acpSessionReducer(acpSessionReducer(first, { type: 'prompt_start' }), {
+      type: 'message_chunk',
+      id: 'assistant-2',
+      text: 'second turn',
+    });
 
     expect(second.items).toEqual([
       { kind: 'message', id: 'assistant-1' },
@@ -209,7 +238,12 @@ describe('acpSessionReducer: session/load replay ordering', () => {
       { type: 'message_chunk', id: 'replay-1', text: 'Hello!' },
       {
         type: 'tool_call',
-        event: { updateKind: 'tool_call', toolCallId: 'tc-replay', title: 'search', status: 'completed' },
+        event: {
+          updateKind: 'tool_call',
+          toolCallId: 'tc-replay',
+          title: 'search',
+          status: 'completed',
+        },
       },
     );
 
@@ -251,7 +285,9 @@ describe('acpSessionReducer: session/load replay ordering', () => {
       { type: 'usage', usage: { used: 135, size: 26603 } },
       {
         type: 'config_options',
-        configOptions: [{ id: 'model', name: 'Model', type: 'string', currentValue: 'x', options: [] }],
+        configOptions: [
+          { id: 'model', name: 'Model', type: 'string', currentValue: 'x', options: [] },
+        ],
       },
       { type: 'prompt_start' },
       { type: 'prompt_error', message: 'chain execution failed' },
@@ -272,14 +308,30 @@ describe('acpSessionReducer: session/load replay ordering', () => {
 
 describe('acpSessionReducer: tool calls, plan, usage, config, commands', () => {
   it('merges tool_call_update onto an existing card in place', () => {
-    const created: ToolCallEvent = { updateKind: 'tool_call', toolCallId: 'tc-1', title: 'Run ls', kind: 'execute', status: 'pending' };
-    const updated: ToolCallEvent = { updateKind: 'tool_call_update', toolCallId: 'tc-1', status: 'completed', rawOutput: 'ok' };
+    const created: ToolCallEvent = {
+      updateKind: 'tool_call',
+      toolCallId: 'tc-1',
+      title: 'Run ls',
+      kind: 'execute',
+      status: 'pending',
+    };
+    const updated: ToolCallEvent = {
+      updateKind: 'tool_call_update',
+      toolCallId: 'tc-1',
+      status: 'completed',
+      rawOutput: 'ok',
+    };
     const state = run(
       { type: 'session_reset', sessionId: 's1' },
       { type: 'tool_call', event: created },
       { type: 'tool_call', event: updated },
     );
-    expect(state.toolCalls['tc-1']).toMatchObject({ title: 'Run ls', kind: 'execute', status: 'completed', rawOutput: 'ok' });
+    expect(state.toolCalls['tc-1']).toMatchObject({
+      title: 'Run ls',
+      kind: 'execute',
+      status: 'completed',
+      rawOutput: 'ok',
+    });
   });
 
   it('replaces plan/usage/configOptions/availableCommands wholesale on each update', () => {
@@ -290,13 +342,17 @@ describe('acpSessionReducer: tool calls, plan, usage, config, commands', () => {
       { type: 'available_commands', commands: [{ name: 'help', description: 'help' }] },
       {
         type: 'config_options',
-        configOptions: [{ id: 'think', name: 'Think', type: 'boolean', currentValue: 'true', options: [] }],
+        configOptions: [
+          { id: 'think', name: 'Think', type: 'boolean', currentValue: 'true', options: [] },
+        ],
       },
     );
     expect(state.plan).toEqual([{ content: 'a', priority: 'low', status: 'pending' }]);
     expect(state.usage).toEqual({ used: 10, size: 100 });
     expect(state.availableCommands).toEqual([{ name: 'help', description: 'help' }]);
-    expect(state.configOptions).toEqual([{ id: 'think', name: 'Think', type: 'boolean', currentValue: 'true', options: [] }]);
+    expect(state.configOptions).toEqual([
+      { id: 'think', name: 'Think', type: 'boolean', currentValue: 'true', options: [] },
+    ]);
   });
 });
 
@@ -314,7 +370,10 @@ describe('acpSessionReducer: terminal stream + cards', () => {
     const state = run(
       { type: 'session_reset', sessionId: 's1' },
       { type: 'terminal_output', payload: { sessionId: 's1', offset: 6, chunk: 'foobar' } },
-      { type: 'terminal_output', payload: { sessionId: 's1', offset: 4, chunk: 'fresh', reset: true } },
+      {
+        type: 'terminal_output',
+        payload: { sessionId: 's1', offset: 4, chunk: 'fresh', reset: true },
+      },
     );
     expect(state.terminal).toEqual({ text: 'fresh', offset: 4 });
   });
@@ -346,7 +405,11 @@ describe('acpSessionReducer: permission gate', () => {
       { type: 'session_reset', sessionId: 's1' },
       {
         type: 'permission_request',
-        request: { sessionId: 's1', toolCall: { toolCallId: 'tc-1' }, options: [{ optionId: 'a', name: 'A', kind: 'allow_once' }] },
+        request: {
+          sessionId: 's1',
+          toolCall: { toolCallId: 'tc-1' },
+          options: [{ optionId: 'a', name: 'A', kind: 'allow_once' }],
+        },
       },
     );
     expect(withRequest.pendingPermission).not.toBeNull();
@@ -439,7 +502,12 @@ describe('acpSessionReducer: streaming only marked during an active prompt turn 
       { type: 'message_chunk', id: 'replay-1', text: 'Hello!' },
     );
     expect(state.messages['replay-0']).toMatchObject({ text: 'hi there', streaming: false });
-    expect(state.messages['replay-1']).toMatchObject({ text: 'Hello!', thinking: 'thinking', streaming: false, thinkingStreaming: false });
+    expect(state.messages['replay-1']).toMatchObject({
+      text: 'Hello!',
+      thinking: 'thinking',
+      streaming: false,
+      thinkingStreaming: false,
+    });
   });
 });
 
@@ -471,8 +539,18 @@ describe('acpSessionReducer: image parts on messages', () => {
     const state = run(
       { type: 'session_reset', sessionId: 'sess-1' },
       { type: 'user_message_chunk', id: 'u1', text: 'what is this? ' },
-      { type: 'user_message_chunk', id: 'u1', text: '', image: { data: 'aGVsbG8=', mimeType: 'image/png' } },
-      { type: 'user_message_chunk', id: 'u1', text: '', image: { data: 'd29ybGQ=', mimeType: 'image/jpeg' } },
+      {
+        type: 'user_message_chunk',
+        id: 'u1',
+        text: '',
+        image: { data: 'aGVsbG8=', mimeType: 'image/png' },
+      },
+      {
+        type: 'user_message_chunk',
+        id: 'u1',
+        text: '',
+        image: { data: 'd29ybGQ=', mimeType: 'image/jpeg' },
+      },
     );
     // One timeline item, one message — the image chunks merged in, not split out.
     expect(state.items).toEqual([{ kind: 'message', id: 'u1' }]);
@@ -489,7 +567,12 @@ describe('acpSessionReducer: image parts on messages', () => {
   it('an image-only user_message_chunk (replayed/adopted session) creates a renderable message on its own', () => {
     const state = run(
       { type: 'session_reset', sessionId: 'sess-replay' },
-      { type: 'user_message_chunk', id: 'replay-0', text: '', image: { data: 'aGVsbG8=', mimeType: 'image/png' } },
+      {
+        type: 'user_message_chunk',
+        id: 'replay-0',
+        text: '',
+        image: { data: 'aGVsbG8=', mimeType: 'image/png' },
+      },
     );
     expect(state.items).toEqual([{ kind: 'message', id: 'replay-0' }]);
     // Replay arrives with no turn in flight — completed, not stuck streaming.
@@ -507,7 +590,12 @@ describe('acpSessionReducer: image parts on messages', () => {
       { type: 'message_chunk', id: 'a1', text: 'here you go' },
       // Mid-turn image chunk under a DIFFERENT id still resolves onto the
       // canonical turn message (one assistant message per turn).
-      { type: 'message_chunk', id: 'other', text: '', image: { data: 'aW1n', mimeType: 'image/png' } },
+      {
+        type: 'message_chunk',
+        id: 'other',
+        text: '',
+        image: { data: 'aW1n', mimeType: 'image/png' },
+      },
     );
     expect(state.items).toEqual([{ kind: 'message', id: 'a1' }]);
     expect(state.messages['a1']).toMatchObject({
@@ -524,5 +612,62 @@ describe('acpSessionReducer: image parts on messages', () => {
       { type: 'user_message_chunk', id: 'u1', text: 'no pictures here' },
     );
     expect(state.messages['u1'].images).toBeUndefined();
+  });
+});
+
+describe('delivered mission questions', () => {
+  // REGRESSION: two questions from the same unit arrived as message chunks with
+  // no id of their own, so they merged into ONE transcript message sharing ONE
+  // answer box — and once the first was answered, that box showed "answer sent"
+  // for good, leaving the second question with no field at all. Each question is
+  // its own message.
+  it('keeps each question in its own message, with its own answer handle', () => {
+    let state = acpSessionReducer(initialAcpSessionState, {
+      type: 'session_reset',
+      sessionId: 's1',
+    });
+    state = acpSessionReducer(state, {
+      type: 'message_chunk',
+      id: 'mission-ask-a1',
+      text: 'unit chain-acp is waiting on you: what do you need clarification on?',
+      missionAsk: { askId: 'a1', missionId: 'm1', summary: 'what do you need clarification on?' },
+    });
+    state = acpSessionReducer(state, {
+      type: 'message_chunk',
+      id: 'mission-ask-a2',
+      text: 'unit chain-acp is waiting on you: what line should I append?',
+      missionAsk: { askId: 'a2', missionId: 'm1', summary: 'what line should I append?' },
+    });
+
+    expect(state.items.filter(i => i.kind === 'message')).toHaveLength(2);
+    expect(state.messages['mission-ask-a1'].missionAsk?.askId).toBe('a1');
+    expect(state.messages['mission-ask-a2'].missionAsk?.askId).toBe('a2');
+  });
+
+  it('does not fold a question into the turn a session is streaming', () => {
+    // A question can land while the supervising agent is mid-turn (that is how
+    // the agent-answer path works). Merging it into that turn's message would
+    // hide the answer box inside the assistant's reply.
+    let state = acpSessionReducer(initialAcpSessionState, {
+      type: 'session_reset',
+      sessionId: 's1',
+    });
+    state = acpSessionReducer(state, { type: 'prompt_start' });
+    state = acpSessionReducer(state, {
+      type: 'message_chunk',
+      id: 'turn-1',
+      text: 'thinking about it… ',
+    });
+    state = acpSessionReducer(state, {
+      type: 'message_chunk',
+      id: 'mission-ask-a9',
+      text: 'unit chain-acp is waiting on you: which file?',
+      missionAsk: { askId: 'a9', missionId: 'm1', summary: 'which file?' },
+    });
+
+    expect(state.messages['turn-1'].text).toBe('thinking about it… ');
+    expect(state.messages['turn-1'].missionAsk).toBeUndefined();
+    expect(state.messages['mission-ask-a9'].missionAsk?.askId).toBe('a9');
+    expect(state.messages['mission-ask-a9'].streaming).not.toBe(true);
   });
 });

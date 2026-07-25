@@ -139,7 +139,9 @@ function TranscriptMessage({
       ) : null}
       {/* A message that IS a unit's question gets its answer box here: the unit is
           parked on the call that asked, so replying in place unblocks it. */}
-      {message.missionAsk && <MissionAskCard ask={message.missionAsk} />}
+      {message.missionAsk && (
+        <MissionAskCard key={message.missionAsk.askId} ask={message.missionAsk} />
+      )}
       {message.images && message.images.length > 0 && (
         // Image parts render after the flattened text (see AcpChatMessage.images),
         // via the shared inline-attachment image kind: constrained thumbnail,

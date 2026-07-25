@@ -388,7 +388,13 @@ function ApprovalCard({
   const [replyText, setReplyText] = useState('');
 
   return (
-    <Card variant="surface" statusBorder="warning">
+    <Card
+      variant="surface"
+      statusBorder="warning"
+      // A QUESTION spans the row. The two-up grid is right for a permission ask —
+      // tool, args, allow/deny — but a question is prose plus a text field, and at
+      // half width the answer box is a slot you type a sentence into sideways.
+      className={attention ? 'sm:col-span-2' : undefined}>
       <div className="flex items-center justify-between gap-3">
         <Span variant="status" className="text-warning-800 dark:text-dark-text-muted">
           {t(attention ? 'inbox.attention_card_title' : 'inbox.approval_card_title')}

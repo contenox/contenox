@@ -2,30 +2,133 @@
   "//compute": "OPTIONAL and OMITTED here by design, so this preset stays unbounded (unchanged behavior). The envelope is a unit's TOTAL boundary: to bound a mission's COMPUTE as well as its actions, add a top-level \"compute\" block, e.g. \"compute\": {\"maxTurns\": 40, \"maxToolCalls\": 300, \"maxTokens\": 2000000, \"onExhausted\": \"finish_stuck\"}. Bounds only RESTRICT (an absent field is unbounded); a mission that crosses one is finished at status \"stuck\" with a reason naming the bound. maxTurns and maxToolCalls are enforced host-side; maxTokens is best-effort (enforced only from reported usage); modelAllowlist/backendAllowlist are declared but not yet enforced. See docs/development/blueprints/acp/envelope-compute-bounds.md.",
   "default_action": "approve",
   "rules": [
-    {"tools": "local_fs", "tool": "read_file", "action": "allow"},
-    {"tools": "local_fs", "tool": "read_file_range", "action": "allow"},
-    {"tools": "local_fs", "tool": "list_dir", "action": "allow"},
-    {"tools": "local_fs", "tool": "grep", "action": "allow"},
-    {"tools": "local_fs", "tool": "stat_file", "action": "allow"},
-    {"tools": "local_fs", "tool": "count_stats", "action": "allow"},
-    {"tools": "local_fs", "tool": "write_file", "action": "approve"},
-    {"tools": "local_fs", "tool": "sed", "action": "approve"},
-
-    {"tools": "local_shell", "tool": "local_shell", "action": "deny", "when": [{"key": "command", "op": "command_blacklist", "value": "mkfs,mke2fs,fdisk,shred,wipefs"}]},
-    {"tools": "local_shell", "tool": "local_shell", "action": "approve", "when": [{"key": "command", "op": "command_ask_always", "value": "rm,sudo,dd,chmod,chown,mv,cp"}]},
-    {"tools": "local_shell", "tool": "local_shell", "action": "approve", "when": [{"key": "args", "op": "no_command_substitution", "value": ""}]},
-    {"tools": "local_shell", "tool": "local_shell", "action": "approve"},
-
-    {"tools": "shell_session", "tool": "shell_session_read", "action": "allow"},
-
-    {"tools": "webtools", "tool": "web_get", "action": "allow"},
-    {"tools": "webtools", "tool": "web_head", "action": "allow"},
-    {"tools": "webtools", "tool": "web_post", "action": "approve"},
-    {"tools": "webtools", "tool": "web_put", "action": "approve"},
-    {"tools": "webtools", "tool": "web_patch", "action": "approve"},
-    {"tools": "webtools", "tool": "web_delete", "action": "approve"},
-
-    {"tools": "echo", "action": "allow"},
-    {"tools": "print", "action": "allow"}
-  ]
+    {
+      "tools": "local_fs",
+      "tool": "read_file",
+      "action": "allow"
+    },
+    {
+      "tools": "local_fs",
+      "tool": "read_file_range",
+      "action": "allow"
+    },
+    {
+      "tools": "local_fs",
+      "tool": "list_dir",
+      "action": "allow"
+    },
+    {
+      "tools": "local_fs",
+      "tool": "grep",
+      "action": "allow"
+    },
+    {
+      "tools": "local_fs",
+      "tool": "stat_file",
+      "action": "allow"
+    },
+    {
+      "tools": "local_fs",
+      "tool": "count_stats",
+      "action": "allow"
+    },
+    {
+      "tools": "local_fs",
+      "tool": "write_file",
+      "action": "approve"
+    },
+    {
+      "tools": "local_fs",
+      "tool": "sed",
+      "action": "approve"
+    },
+    {
+      "tools": "local_shell",
+      "tool": "local_shell",
+      "action": "deny",
+      "when": [
+        {
+          "key": "command",
+          "op": "command_blacklist",
+          "value": "mkfs,mke2fs,fdisk,shred,wipefs"
+        }
+      ]
+    },
+    {
+      "tools": "local_shell",
+      "tool": "local_shell",
+      "action": "approve",
+      "when": [
+        {
+          "key": "command",
+          "op": "command_ask_always",
+          "value": "rm,sudo,dd,chmod,chown,mv,cp"
+        }
+      ]
+    },
+    {
+      "tools": "local_shell",
+      "tool": "local_shell",
+      "action": "approve",
+      "when": [
+        {
+          "key": "args",
+          "op": "no_command_substitution",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "tools": "local_shell",
+      "tool": "local_shell",
+      "action": "approve"
+    },
+    {
+      "tools": "shell_session",
+      "tool": "shell_session_read",
+      "action": "allow"
+    },
+    {
+      "tools": "webtools",
+      "tool": "web_get",
+      "action": "allow"
+    },
+    {
+      "tools": "webtools",
+      "tool": "web_head",
+      "action": "allow"
+    },
+    {
+      "tools": "webtools",
+      "tool": "web_post",
+      "action": "approve"
+    },
+    {
+      "tools": "webtools",
+      "tool": "web_put",
+      "action": "approve"
+    },
+    {
+      "tools": "webtools",
+      "tool": "web_patch",
+      "action": "approve"
+    },
+    {
+      "tools": "webtools",
+      "tool": "web_delete",
+      "action": "approve"
+    },
+    {
+      "tools": "echo",
+      "action": "allow"
+    },
+    {
+      "tools": "print",
+      "action": "allow"
+    }
+  ],
+  "attention": {
+    "allowAgentAnswers": true,
+    "maxAgentAnswers": 2
+  }
 }

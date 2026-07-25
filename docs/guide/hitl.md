@@ -115,6 +115,16 @@ Contenox ships five policy presets, written to `~/.contenox/` by `contenox init`
 | `hitl-policy-acp.json` | Profile for editor (ACP) sessions — gated tool calls route through the editor's own approval UI |
 | `hitl-policy-acpx.json` | Hardened profile for headless / untrusted-driver (ACPX, e.g. OpenClaw) sessions — shell, writes, and network are denied outright rather than offered for approval |
 
+Each preset also states who may answer a unit's question (see [`attention`](#who-may-answer-a-units-question-attention)) rather than inheriting the invisible default, and the stances follow each preset's character:
+
+| Name | `attention` |
+|---|---|
+| `hitl-policy-acp.json` | agent may answer, up to 3 — an editor session's agent holds the conversation the mission was fired in |
+| `hitl-policy-default.json` | agent may answer, up to 2 — routine questions, while whatever the unit then *does* stays gated by this same envelope |
+| `hitl-policy-dev.json` | agent may answer, up to 5 — the permissive local-development posture |
+| `hitl-policy-strict.json` | **human only** — a policy whose character is "a human decides" does not hand the deciding to a model |
+| `hitl-policy-acpx.json` | **human only** — an untrusted driver's agent must not answer its own subagent's escalation |
+
 ## Selecting the active policy
 
 ```bash

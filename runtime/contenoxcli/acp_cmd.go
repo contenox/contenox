@@ -431,6 +431,7 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 			contenoxDir: contenoxDir,
 			tracker:     tracker,
 			transport:   func() *acpsvc.Transport { return transport },
+			hitl:        acpHITL,
 		})
 		if buildErr != nil {
 			return buildErr
@@ -516,6 +517,10 @@ type inProcessFleetDeps struct {
 	// conn factory runs), so the report deliverer can reach the firing editor
 	// session a mission was fired from.
 	transport func() *acpsvc.Transport
+	// hitl is the durable ask store this process raises and answers questions
+	// through — the same instance the mission tools use, so the supervisor's
+	// answer and the unit's question meet in one place.
+	hitl hitlservice.Service
 }
 
 // buildInProcessFleet embeds the fleet the standalone editor dispatches
@@ -558,6 +563,18 @@ func buildInProcessFleet(ctx context.Context, deps inProcessFleetDeps) (fleetser
 		},
 		Inbox:   operatorInbox,
 		Tracker: deps.tracker,
+		// The editor topology gets the same autonomous edge serve has: a unit's
+		// question may be offered to the agent driving the session that fired it,
+		// when that mission's envelope allows. Without this an editor-fired mission
+		// could ask, and be answered by a human, but never by the very agent holding
+		// the conversation the mission came from — the case this is most useful in,
+		// since Zed and other ACP clients render no answer box of their own.
+		AgentSupervisor: agentAnswerOffer{
+			hitl:     deps.hitl,
+			missions: deps.missions,
+			prompter: transportPrompter{transport: deps.transport},
+			tracker:  deps.tracker,
+		},
 	})
 	if err != nil {
 		_ = kernel.Close()
@@ -708,6 +725,22 @@ func (a missionAttentionAsker) publishAsked(ctx context.Context, ev missionservi
 		return
 	}
 	_ = a.bus.Publish(ctx, missionservice.AttentionAskedSubject, raw)
+}
+
+// transportPrompter adapts this process's late-bound transport to the
+// session-prompting capability the agent-answer offer needs. Late-bound for the
+// same reason the deliverer is: the connection does not exist when the fleet is
+// composed.
+type transportPrompter struct {
+	transport func() *acpsvc.Transport
+}
+
+func (p transportPrompter) PromptContenoxSession(ctx context.Context, contenoxSessionID, text string) error {
+	t := p.transport()
+	if t == nil {
+		return acpsvc.ErrSessionNotLive
+	}
+	return t.PromptContenoxSession(ctx, contenoxSessionID, text)
 }
 
 func acpPolicySource() hitlservice.PolicySource {

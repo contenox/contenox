@@ -251,3 +251,37 @@ func TestUnit_RouteAsk_ParentNotLiveIsNotAFault(t *testing.T) {
 
 	require.Empty(t, inbox.items, "a missed ask notification is not an inbox report")
 }
+
+// TestUnit_DeliveredAsksCarryTheirOwnMessageID is the regression for two
+// questions rendering as one: streamed chunks group by message id, so a delivery
+// that carries none is folded into whatever message the session is accumulating.
+// Two questions then shared one transcript bubble and one answer box — and once
+// the first was answered, the second had no field at all.
+func TestUnit_DeliveredAsksCarryTheirOwnMessageID(t *testing.T) {
+	first := buildAskNotification(missionservice.AttentionAskedEvent{
+		MissionID: "m-1", AskID: "ask-1", ParentSessionID: "cnx", Summary: "which project?",
+	})
+	second := buildAskNotification(missionservice.AttentionAskedEvent{
+		MissionID: "m-1", AskID: "ask-2", ParentSessionID: "cnx", Summary: "which line?",
+	})
+
+	require.NotEmpty(t, first.Update.MessageID)
+	require.NotEqual(t, first.Update.MessageID, second.Update.MessageID,
+		"two questions must not land in one message — the second would be unanswerable behind the first")
+}
+
+// TestUnit_DeliveredReportsCarryTheirOwnMessageID holds the same line for
+// reports: two reports are two things a unit said, not one run-on message.
+func TestUnit_DeliveredReportsCarryTheirOwnMessageID(t *testing.T) {
+	first := buildReportNotification(missionservice.ReportAddedEvent{
+		MissionID: "m-1", ParentSessionID: "cnx",
+		Report: missionservice.Report{ID: "r-1", Kind: missionservice.ReportKindProgress, Summary: "read the README"},
+	})
+	second := buildReportNotification(missionservice.ReportAddedEvent{
+		MissionID: "m-1", ParentSessionID: "cnx",
+		Report: missionservice.Report{ID: "r-2", Kind: missionservice.ReportKindResult, Summary: "done"},
+	})
+
+	require.NotEmpty(t, first.Update.MessageID)
+	require.NotEqual(t, first.Update.MessageID, second.Update.MessageID)
+}

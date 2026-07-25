@@ -313,7 +313,15 @@ export function acpSessionReducer(
       // message/thought chunk resolves onto the turn's single canonical id
       // (established by whichever chunk arrived first), not onto whatever id
       // this particular chunk happens to carry.
-      const id = state.isPrompting ? (state.activeTurnMessageId ?? action.id) : action.id;
+      //
+      // A delivered QUESTION is the exception, and must be: it arrives OUT OF
+      // BAND (a subagent asking, not this session's model streaming), it is
+      // interactive, and folding it into the current turn's message put two
+      // questions in one bubble sharing one answer box — the second unanswerable
+      // behind the first's spent state. It keeps its own id, always.
+      const outOfBand = action.missionAsk !== undefined;
+      const id =
+        state.isPrompting && !outOfBand ? (state.activeTurnMessageId ?? action.id) : action.id;
       return {
         ...state,
         items: ensureItem(state.items, 'message', id),
@@ -322,9 +330,11 @@ export function acpSessionReducer(
           id,
           'assistant',
           { text: action.text, image: action.image, missionAsk: action.missionAsk },
-          state.isPrompting,
+          // An out-of-band question is complete on arrival — never "still
+          // streaming", which would render a caret under it forever.
+          state.isPrompting && !outOfBand,
         ),
-        activeTurnMessageId: state.isPrompting ? id : state.activeTurnMessageId,
+        activeTurnMessageId: state.isPrompting && !outOfBand ? id : state.activeTurnMessageId,
       };
     }
 
