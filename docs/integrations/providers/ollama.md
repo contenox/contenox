@@ -33,5 +33,4 @@ contenox config set default-provider ollama
 
 ## See also
 
-- [Local Models (GGUF)](/docs/integrations/providers/local-models/) — no Ollama required, runs directly in Contenox
 - [Configuration reference](/docs/reference/config/)

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/contenox/runtime/apiframework"
+	"github.com/contenox/runtime/runtime/errdefs"
 	"github.com/contenox/runtime/libacp"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/libtracker"
@@ -294,7 +294,7 @@ func TestFleetService_Dispatch_DisabledAgentRefused(t *testing.T) {
 
 	_, err := svc.Dispatch(ctx, DispatchRequest{AgentName: "runner", Intent: "do the thing", HITLPolicyName: "default"})
 	require.Error(t, err)
-	require.ErrorIs(t, err, apiframework.ErrConflict, "a disabled agent is refused as a 4xx conflict")
+	require.ErrorIs(t, err, errdefs.ErrConflict, "a disabled agent is refused as a 4xx conflict")
 	require.Contains(t, err.Error(), "disabled")
 	require.Empty(t, man.starts(), "a refused dispatch must never bring an instance up")
 }
@@ -427,7 +427,7 @@ func TestFleetService_Dispatch_MissingAgentNameRejected(t *testing.T) {
 	svc := New(&fakeManager{}, agents, nil, nil, "/project/root", nil)
 	_, err := svc.Dispatch(ctx, DispatchRequest{})
 	require.Error(t, err)
-	require.ErrorIs(t, err, apiframework.ErrMissingParameter)
+	require.ErrorIs(t, err, errdefs.ErrMissingParameter)
 }
 
 // TestFleetService_Dispatch_IntentRequiredRejected proves the intent — the
@@ -443,7 +443,7 @@ func TestFleetService_Dispatch_IntentRequiredRejected(t *testing.T) {
 
 	_, err := svc.Dispatch(ctx, DispatchRequest{AgentName: "runner", HITLPolicyName: "default"})
 	require.Error(t, err)
-	require.ErrorIs(t, err, apiframework.ErrMissingParameter)
+	require.ErrorIs(t, err, errdefs.ErrMissingParameter)
 	require.Empty(t, man.starts(), "rejected before any instance is brought up")
 }
 
@@ -460,7 +460,7 @@ func TestFleetService_Dispatch_EnvelopeRequiredRejected(t *testing.T) {
 
 	_, err := svc.Dispatch(ctx, DispatchRequest{AgentName: "runner", Intent: "do the thing"})
 	require.Error(t, err)
-	require.ErrorIs(t, err, apiframework.ErrMissingParameter)
+	require.ErrorIs(t, err, errdefs.ErrMissingParameter)
 	require.Empty(t, man.starts(), "rejected before any instance is brought up")
 }
 
@@ -525,7 +525,7 @@ func TestFleetService_Dispatch_InvalidCwdRejected(t *testing.T) {
 		AgentName: "runner", Intent: "do the thing", HITLPolicyName: "default", Cwd: t.TempDir(),
 	})
 	require.Error(t, err)
-	require.ErrorIs(t, err, apiframework.ErrInvalidParameterValue)
+	require.ErrorIs(t, err, errdefs.ErrInvalidParameter)
 	require.Empty(t, man.starts(), "rejected before any instance is brought up")
 }
 
@@ -551,7 +551,7 @@ func TestFleetService_Dispatch_RelativeCwdRejectedWithoutAllowlist(t *testing.T)
 			AgentName: "runner", Intent: "do the thing", HITLPolicyName: "default", Cwd: cwd,
 		})
 		require.Error(t, err, "cwd %q must be refused", cwd)
-		require.ErrorIs(t, err, apiframework.ErrInvalidParameterValue)
+		require.ErrorIs(t, err, errdefs.ErrInvalidParameter)
 	}
 	require.Empty(t, man.starts(), "rejected before any instance is brought up")
 	require.Empty(t, man.openSpecs, "no session is ever opened with a relative cwd")

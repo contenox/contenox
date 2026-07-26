@@ -28,7 +28,28 @@ export async function getStaticPaths() {
     add(`${retired}.html`, '/');
   }
 
-  const skip = (id: string) => id === 'index' || id.endsWith('/index');
+  // Docs retired with the terminal-first V1 (Beam web UI, VS Code extension,
+  // modeld local inference). Their pages are gone; the old URLs land on the
+  // retired-blueprints index that records where each surface went.
+  const retiredDocs = [
+    'guide/beam',
+    'integrations/editors/vscode-vscodium',
+    'integrations/providers/modeld',
+    'integrations/providers/modeld-architecture',
+    'integrations/providers/local-models',
+    'development/api_spec_generation',
+    'development/beam-serve-auth',
+    'development/modeld-llama-backend',
+    'development/modeld-local-inference-landscape',
+    'development/modeld-release-runbook',
+    'development/modeld-source-build',
+  ];
+  for (const id of retiredDocs) {
+    add(`docs/${id}.html`, '/docs/development/blueprints/retired/readme/');
+  }
+
+  const skip = (id: string) =>
+    id === 'index' || id.endsWith('/index') || retiredDocs.includes(id);
   for (const entry of await getCollection('docs')) {
     if (!skip(entry.id)) add(`docs/${entry.id}.html`, `/docs/${entry.id}/`);
   }

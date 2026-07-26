@@ -9,7 +9,7 @@ Always available. Provides read, write, search, and metadata operations scoped t
 The filesystem root is set when Contenox registers the local tool:
 
 - `contenox run` / `contenox chat`: `--local-exec-allowed-dir <dir>` sets the root. Without a root, `local_fs` rejects file paths.
-- ACP and VS Code sessions use the editor/client workspace context where available.
+- ACP sessions use the editor/client workspace context where available.
 
 `tools_policies.local_fs` controls read/output limits, denied path substrings, list filtering, and can override the root for a specific task with `_allowed_dir`.
 

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/contenox/runtime/apiframework"
+	"github.com/contenox/runtime/runtime/errdefs"
 	"github.com/contenox/runtime/runtime/agentregistryservice"
 	"github.com/stretchr/testify/require"
 )
@@ -42,9 +42,9 @@ func TestFleetService_Dispatch_NonexistentPolicyRefused(t *testing.T) {
 		HITLPolicyName: "no-such-policy.json",
 	})
 	require.Error(t, err)
-	require.ErrorIs(t, err, apiframework.ErrInvalidParameterValue,
+	require.ErrorIs(t, err, errdefs.ErrInvalidParameter,
 		"a nonexistent envelope is a 4xx invalid-parameter, not a silent default-gate substitution")
-	require.Equal(t, "hitlPolicyName", apiframework.GetErrorParam(err), "the error names the offending parameter")
+	require.Contains(t, err.Error(), "hitlPolicyName", "the error names the offending parameter")
 	require.Contains(t, err.Error(), "no-such-policy.json")
 	require.Equal(t, []string{"no-such-policy.json"}, val.validated, "the named envelope must be validated")
 	require.Empty(t, man.starts(), "a refused dispatch must never bring an instance up")

@@ -100,7 +100,7 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 // check must validate the model/provider the engine will ACTUALLY use for the turn
 // (opts.EffectiveDefault*, which honor --model/--provider), so an explicit override
 // to a healthy backend is not blocked by a broken persisted default: `--provider
-// vertex-google` must run even when default-provider=llama is configured but unservable.
+// vertex-google` must run even when default-provider=ollama is configured but unservable.
 // A model equal to the hardcoded fallback with no persisted config is still treated
 // as unset (matching the flag-vs-config precedence in cli.go/run_cmd.go); when the
 // effective value equals persisted config, the check sees that value directly and no

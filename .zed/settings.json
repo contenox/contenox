@@ -1,9 +1,0 @@
-{
-  "agent_servers": {
-    "Contenox": {
-      "type": "custom",
-      "command": "contenox",
-      "args": ["acp"],
-    },
-  },
-}

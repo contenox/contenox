@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/contenox/runtime/libsandbox"
-	"github.com/contenox/runtime/runtime/serverapi"
 	"github.com/contenox/runtime/runtime/shellenvservice"
 )
 
@@ -20,7 +19,7 @@ import (
 // off). The operator's SANDBOX_ENV_ALLOW / SANDBOX_ENV_DENY extend whichever scrub
 // is active. Agent shells default to deny-secrets (strip known credentials, keep
 // the toolchain), the operator terminal to off (a trusted human shell).
-func resolveSandboxScrubs(config *serverapi.Config, injectGlobal func() map[string]string) (shell, terminal func([]string) []string) {
+func resolveSandboxScrubs(config *sandboxEnvConfig, injectGlobal func() map[string]string) (shell, terminal func([]string) []string) {
 	extraAllow := libsandbox.ParseEnvList(config.SandboxEnvAllow)
 	extraDeny := libsandbox.ParseEnvList(config.SandboxEnvDeny)
 	shellFilter := libsandbox.EnvScrub(resolveScrubMode(config.SandboxShellScrub, libsandbox.ScrubDenySecrets), extraAllow, extraDeny)

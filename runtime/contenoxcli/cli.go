@@ -53,8 +53,12 @@ const (
 	defaultTimeout = 5 * time.Minute
 )
 
-// reservedSubcommands are first-arg names that must not be treated as run input (Cobra or our subcommands).
-var reservedSubcommands = map[string]bool{"init": true, "chat": true, "help": true, "completion": true, "session": true, "run": true, "tools": true, "mcp": true, "backend": true, "agent": true, "config": true, "model": true, "models": true, "modeld": true, "code": true, "doctor": true, "version": true, "state": true, "acp": true, "acpx": true, "vscode-agent": true, "setup": true, "cache": true, "serve": true, "update": true, "approvals": true, "fleet": true, "mission": true, "workspace": true, "sandbox": true, "shell-env": true}
+// reservedSubcommands are first-arg names that must not be treated as run input
+// (Cobra or our subcommands). RETIRED command names (serve, fleet, mission,
+// approvals, code, vscode-agent, modeld) stay reserved on purpose: an operator
+// typing one gets Cobra's unknown-command error naming the mistake, instead of
+// the word being silently injected as a chat prompt.
+var reservedSubcommands = map[string]bool{"init": true, "chat": true, "help": true, "completion": true, "session": true, "run": true, "tools": true, "mcp": true, "backend": true, "agent": true, "config": true, "model": true, "models": true, "doctor": true, "version": true, "state": true, "acp": true, "acpx": true, "setup": true, "cache": true, "update": true, "workspace": true, "sandbox": true, "shell-env": true, "serve": true, "fleet": true, "mission": true, "approvals": true, "code": true, "vscode-agent": true, "modeld": true}
 
 // Main runs the contenox CLI: init subcommand or run (default) with optional positional input.
 func Main() {
@@ -187,11 +191,12 @@ func firstNonFlagIsReserved(args []string) bool {
 
 var rootCmd = &cobra.Command{
 	Use:   "contenox",
-	Short: "Local AI workflow runtime: run versioned chains with your tools and models.",
-	Long: `Contenox is a local runtime for packaged, auditable AI workflows.
-Chains define the prompts, model routing, tools, retries, branch conditions,
-and human approval gates. State is stored in SQLite. Cloud providers and Ollama
-work directly from the CLI; local GGUF/OpenVINO inference is served by modeld.
+	Short: "An open coding harness: chat, chains, and missions from your terminal.",
+	Long: `Contenox is an open coding harness. Chat and shell in your terminal, use
+the same harness from any ACP editor, and package repeatable work into chains —
+prompts, model routing, tools, retries, and approval gates in one versioned
+file. State lives in local SQLite. Hosted providers and Ollama work out of the
+box; for local inference run Ollama or vLLM.
 
   Quickstart:
     contenox setup                         # interactive wizard — pick provider, model, API key
@@ -200,15 +205,9 @@ work directly from the CLI; local GGUF/OpenVINO inference is served by modeld.
 
   Inspect models:
     contenox model list                    # models exposed by registered live backends
-    contenox model registry-list           # curated local models available for 'model pull'
-    contenox model local                   # installed local GGUF/OpenVINO artifacts
+    contenox model registry-list           # curated models in the local registry
 
   Or register an LLM backend manually:
-    # Local llama.cpp GGUF via modeld (no provider API key, no network):
-    contenox backend add llama --type llama --url <models-dir>
-    contenox config set default-provider llama
-    contenox config set default-model <model-name>
-
     # Local Ollama daemon
     ollama serve && ollama pull qwen2.5:7b
     contenox backend add ollama --type ollama
@@ -235,11 +234,11 @@ work directly from the CLI; local GGUF/OpenVINO inference is served by modeld.
     contenox config set default-provider openrouter
 
   VS Code autocomplete can use a separate model from chat:
-    # Example: chat on OpenAI, ghost text on local modeld llama.
+    # Example: chat on OpenAI, ghost text on local Ollama.
     contenox config set default-provider openai
     contenox config set default-model    gpt-5-mini
-    contenox config set default-autocomplete-provider llama
-    contenox config set default-autocomplete-model    qwen3-coder-30b-a3b
+    contenox config set default-autocomplete-provider ollama
+    contenox config set default-autocomplete-model    qwen2.5-coder:7b
 
   Scope note:
     Backends and config are GLOBAL (stored in ~/.contenox/local.db).
@@ -315,12 +314,6 @@ This writes default-chain.json and default-run-chain.json.
 
 After init, register a backend, make sure the runtime can see a model, then set your defaults:
 
-  # Local llama.cpp via modeld:
-  contenox model pull qwen3-4b
-  contenox model local
-  contenox config set default-provider llama
-  contenox config set default-model qwen3-4b
-
   # Local Ollama:
   contenox backend add local --type ollama
   contenox config set default-provider ollama
@@ -347,8 +340,8 @@ After init, register a backend, make sure the runtime can see a model, then set 
   contenox config set default-model deepseek/deepseek-chat-v3-5
 
   # Optional VS Code autocomplete model, independent from chat:
-  contenox config set default-autocomplete-provider llama
-  contenox config set default-autocomplete-model qwen3-coder-30b-a3b
+  contenox config set default-autocomplete-provider ollama
+  contenox config set default-autocomplete-model qwen2.5-coder:7b
 
 Use --force to overwrite existing files, or --update to refresh unchanged default files to the latest version.`,
 	Args: cobra.MaximumNArgs(1),
@@ -407,18 +400,11 @@ func init() {
 	rootCmd.AddCommand(cacheCmd)
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(modelCmd)
-	rootCmd.AddCommand(modeldCmd)
-	rootCmd.AddCommand(codeCmd)
 	rootCmd.AddCommand(stateCmd)
 	rootCmd.AddCommand(acpCmd)
 	rootCmd.AddCommand(acpxCmd)
-	rootCmd.AddCommand(vscodeAgentCmd)
 	rootCmd.AddCommand(setupCmd)
 	rootCmd.AddCommand(updateCmd)
-	rootCmd.AddCommand(serveCmd)
-	rootCmd.AddCommand(approvalsCmd)
-	rootCmd.AddCommand(fleetCmd)
-	rootCmd.AddCommand(missionCmd)
 	rootCmd.AddCommand(workspaceCmd)
 	rootCmd.AddCommand(sandboxCmd)
 	rootCmd.AddCommand(shellEnvCmd)

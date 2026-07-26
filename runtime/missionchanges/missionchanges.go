@@ -56,7 +56,7 @@ import (
 	"sort"
 	"strings"
 
-	apiframework "github.com/contenox/runtime/apiframework"
+	"github.com/contenox/runtime/runtime/errdefs"
 	"github.com/contenox/runtime/libacp"
 	"github.com/contenox/runtime/runtime/missionservice"
 )
@@ -240,7 +240,7 @@ func (s *service) Diff(ctx context.Context, missionID, filePath string) (*Diff, 
 	folded := fold(updates)
 	fileDiff, ok := folded.files[filePath]
 	if !ok {
-		return nil, apiframework.NotFound("no changed file at that path in this mission")
+		return nil, errdefs.NotFound("no changed file at that path in this mission")
 	}
 	original, modified, truncated := capDiff(fileDiff.firstOld, fileDiff.lastNew)
 	return &Diff{Original: original, Modified: modified, Truncated: truncated}, nil

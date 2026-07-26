@@ -24,7 +24,7 @@ import (
 	"fmt"
 	"strings"
 
-	apiframework "github.com/contenox/runtime/apiframework"
+	"github.com/contenox/runtime/runtime/errdefs"
 	"github.com/contenox/runtime/libacp"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/agentinstance"
@@ -242,17 +242,17 @@ func (s *service) Get(ctx context.Context, instanceID string) (agentinstance.Ins
 
 func (s *service) Dispatch(ctx context.Context, req DispatchRequest) (DispatchResult, error) {
 	if strings.TrimSpace(req.AgentName) == "" {
-		return DispatchResult{}, apiframework.MissingParameter("agentName", "agentName is required")
+		return DispatchResult{}, errdefs.MissingParameter("agentName", "agentName is required")
 	}
 	// Every dispatch is a mission (see DispatchRequest): the intent becomes
 	// the unit's first turn and the HITL policy becomes its envelope, so
 	// both are required up front rather than validated in combination with
 	// each other or with whether a mission registry happens to be wired.
 	if strings.TrimSpace(req.Intent) == "" {
-		return DispatchResult{}, apiframework.MissingParameter("intent", "intent is required")
+		return DispatchResult{}, errdefs.MissingParameter("intent", "intent is required")
 	}
 	if strings.TrimSpace(req.HITLPolicyName) == "" {
-		return DispatchResult{}, apiframework.MissingParameter("hitlPolicyName", "hitlPolicyName is required: a mission must name its envelope")
+		return DispatchResult{}, errdefs.MissingParameter("hitlPolicyName", "hitlPolicyName is required: a mission must name its envelope")
 	}
 	// The envelope is the load-bearing invariant of mission mode, so validate that
 	// the named policy actually loads BEFORE anything is brought up. Without this a
@@ -263,7 +263,7 @@ func (s *service) Dispatch(ctx context.Context, req DispatchRequest) (DispatchRe
 	// a mission that is already running.
 	if s.policyValidator != nil {
 		if err := s.policyValidator.ValidatePolicy(ctx, req.HITLPolicyName); err != nil {
-			return DispatchResult{}, apiframework.InvalidParameterValue("hitlPolicyName",
+			return DispatchResult{}, errdefs.InvalidParameterValue("hitlPolicyName",
 				fmt.Sprintf("hitl policy %q could not be loaded: it must name an existing policy (see `contenox config` / the .contenox policy files)", strings.TrimSpace(req.HITLPolicyName)))
 		}
 	}
@@ -285,7 +285,7 @@ func (s *service) Dispatch(ctx context.Context, req DispatchRequest) (DispatchRe
 	agent, err := agentregistryservice.ResolveForSpawn(ctx, s.agents, req.AgentName)
 	if err != nil {
 		if errors.Is(err, agentregistryservice.ErrAgentDisabled) {
-			return DispatchResult{}, apiframework.Conflict(err.Error())
+			return DispatchResult{}, errdefs.Conflict(err.Error())
 		}
 		return DispatchResult{}, err
 	}
@@ -771,7 +771,7 @@ func (s *service) Cancel(ctx context.Context, instanceID, sessionID string) erro
 func (s *service) resolveCwd(cwd string) (string, error) {
 	resolved, err := vfs.ResolveSessionCwd(s.workspaceRoots, cwd, s.projectRoot)
 	if err != nil {
-		return "", apiframework.InvalidParameterValue("cwd", err.Error())
+		return "", errdefs.InvalidParameterValue("cwd", err.Error())
 	}
 	return resolved, nil
 }

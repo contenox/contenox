@@ -1,4 +1,4 @@
-# CI: Beam build/test/embed smoke, contenox compile smoke, Windows cross-compile smoke, and cheap TestUnit_* Go tests.
+# CI: contenox compile smoke, Windows cross-compile smoke, CLI help smoke, and cheap TestUnit_* Go tests.
 # No TestSystem_* / Docker / LLM integration tests.
 name: CI
 
@@ -22,25 +22,17 @@ jobs:
         with:
           go-version: "1.25"
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: |
-            packages/ui/package-lock.json
-            packages/beam/package-lock.json
-
-      - name: Build, test, and verify Beam UI
-        run: make build-ui test-ui verify-ui-embed
+      - name: Install task
+        run: go install github.com/go-task/task/v3/cmd/task@latest
 
       - name: Build contenox (compile smoke)
-        run: make build-contenox
+        run: task build
 
       - name: Build contenox for Windows (compile smoke)
-        run: make build-contenox-windows
+        run: task build-windows
 
       - name: CLI help smoke
-        run: make test-contenox-help
+        run: task test-cli-help
 
       - name: Cheap Go tests (TestUnit_* + -short only)
-        run: make test-unit
+        run: task test-unit

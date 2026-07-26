@@ -19,7 +19,7 @@ import (
 // validConfigKeys lists the keys users can set via `contenox config set`.
 var validConfigKeys = map[string]string{
 	"default-model":                 "Default LLM model name (e.g. qwen2.5:7b)",
-	"default-provider":              "Default LLM provider type (e.g. llama, ollama, openrouter, openai, gemini; local aliases llama)",
+	"default-provider":              "Default LLM provider type (e.g. ollama, openrouter, openai, gemini)",
 	"default-alt-model":             "Optional alt LLM model name. Used by chains referencing {{var:alt_model}}.",
 	"default-alt-provider":          "Optional alt LLM provider type. Used by chains referencing {{var:alt_provider}}.",
 	"default-autocomplete-model":    "Optional VS Code autocomplete model name, independent from default-model.",
@@ -44,7 +44,7 @@ Workspace keys (scoped to current project): default-chain, hitl-policy-name
 
 Supported keys:
   default-model                  Default LLM model name (e.g. qwen2.5:7b)
-  default-provider               Default LLM provider type (e.g. llama, ollama, openrouter, openai, gemini; local aliases llama)
+  default-provider               Default LLM provider type (e.g. ollama, openrouter, openai, gemini)
   default-alt-model              Optional alt LLM model name (chains using {{var:alt_model}})
   default-alt-provider           Optional alt LLM provider (chains using {{var:alt_provider}})
   default-autocomplete-model     Optional VS Code autocomplete model, separate from chat
@@ -71,12 +71,6 @@ workspace and fall back to the global value when not set locally.
 Examples:
   contenox config set default-model    qwen2.5:7b
   contenox config set default-provider ollama
-
-  # Keep chat on a hosted provider, but run VS Code ghost text on local modeld:
-  contenox config set default-provider openai
-  contenox config set default-model    gpt-5-mini
-  contenox config set default-autocomplete-provider llama
-  contenox config set default-autocomplete-model    qwen3-coder-30b-a3b
 
   # Local-network Ollama autocomplete only:
   contenox config set default-autocomplete-provider ollama

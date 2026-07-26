@@ -91,7 +91,7 @@ To skip Contenox HITL entirely (trusted/scripted contexts), launch with `--auto`
 
 ## Fire missions with `/mission`
 
-Type `/mission <intent>` (or `/mission <agent-name> <intent>`) in the agent panel to fire a [mission](/docs/reference/contenox-cli/#contenox-mission) without leaving the conversation: a declared agent runs the intent unattended under its envelope, as a child subprocess of this editor session — no `contenox serve` needed. The unit's reports stream live back into the session that fired it; if that session has ended when a report lands, it waits in the operator inbox (`contenox approvals`).
+Type `/mission <intent>` (or `/mission <agent-name> <intent>`) in the agent panel to fire a [mission](/docs/reference/contenox-cli/#the-mission-slash-command) without leaving the conversation: a declared agent runs the intent unattended under its envelope, as a child subprocess of this editor session. The unit's reports stream live back into the session that fired it.
 
 Set the fallbacks the bare form uses first:
 

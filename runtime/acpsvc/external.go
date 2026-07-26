@@ -1670,10 +1670,11 @@ func (t *Transport) bringUpExternal(ctx context.Context, upstreamID libacp.Sessi
 	// there). Building a subprocess out of those zero bytes would spawn nothing
 	// coherent, so refuse honestly and name the remedy. A chain unit needs the
 	// Manager, which owns the self-spawn that binds this binary to a chain file;
-	// `contenox serve` wires one, the bare stdio transport does not.
+	// an editor session's embedded fleet wires one, the bare stdio transport does
+	// not.
 	if agent.Kind == runtimetypes.AgentKindChain {
 		return nil, libacp.NewErrorf(libacp.ErrInvalidParams,
-			"contenox.agent %q is a chain agent, which this transport cannot run: chain units are spawned by the fleet manager (run them under `contenox serve`)", agentName)
+			"contenox.agent %q is a chain agent, which this transport cannot run: chain units are spawned by the fleet manager (fire them as a mission from an editor session, e.g. `/mission %s <intent>`)", agentName, agentName)
 	}
 	// Seed the sandbox workspace from this session's cwd when the agent declares
 	// none of its own — the same defaulting the Instances path (Manager.StartResolved)

@@ -54,10 +54,10 @@ func TestReadinessDefaults(t *testing.T) {
 			opts: chatOpts{
 				EffectiveDefaultModel:    "phi-4-mini",
 				EffectiveConfiguredModel: "",
-				EffectiveDefaultProvider: "llama",
+				EffectiveDefaultProvider: "vllm",
 			},
 			wantModel:    "phi-4-mini",
-			wantProvider: "llama",
+			wantProvider: "vllm",
 		},
 		{
 			// The reported bug: a healthy explicit override must beat a broken
@@ -67,7 +67,7 @@ func TestReadinessDefaults(t *testing.T) {
 				EffectiveDefaultModel:       "gemini-2.5-flash",
 				EffectiveConfiguredModel:    "unservable-model",
 				EffectiveDefaultProvider:    "vertex-google",
-				EffectiveConfiguredProvider: "llama",
+				EffectiveConfiguredProvider: "vllm",
 			},
 			wantModel:    "gemini-2.5-flash",
 			wantProvider: "vertex-google",
@@ -80,7 +80,7 @@ func TestReadinessDefaults(t *testing.T) {
 				EffectiveDefaultModel:       "persisted",
 				EffectiveConfiguredModel:    "persisted",
 				EffectiveDefaultProvider:    "vertex-google",
-				EffectiveConfiguredProvider: "llama",
+				EffectiveConfiguredProvider: "vllm",
 			},
 			wantModel:    "",
 			wantProvider: "vertex-google",

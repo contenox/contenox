@@ -1,0 +1,174 @@
+# Task (go-task) is the build system: https://taskfile.dev
+# Install: go install github.com/go-task/task/v3/cmd/task@latest
+# Run `task --list` for the target overview.
+version: '3'
+
+vars:
+  BIN_DIR: '{{.ROOT_DIR}}/bin'
+  # ACP peers default to their in-repo builds when present, so the harness
+  # targets run with zero manual env on a checkout that has built them
+  # (tools/acp-validator README, rust-sdk at tools/rust-sdk). Explicit env
+  # overrides; a missing binary keeps the clear set-this-var failure/skip.
+  ACP_VALIDATOR_BIN:
+    sh: ls {{.ROOT_DIR}}/tools/acp-validator/target/debug/acp-validator 2>/dev/null || true
+  ACP_YOPO_BIN:
+    sh: ls {{.ROOT_DIR}}/tools/rust-sdk/target/debug/yopo 2>/dev/null || true
+  ACP_TESTY_BIN:
+    sh: ls {{.ROOT_DIR}}/tools/rust-sdk/target/debug/testy 2>/dev/null || true
+  ACP_MCP_ECHO_BIN:
+    sh: ls {{.ROOT_DIR}}/tools/rust-sdk/target/debug/mcp-echo-server 2>/dev/null || true
+
+tasks:
+  build:
+    desc: Build the contenox CLI (pure Go, static)
+    cmds:
+      - CGO_ENABLED=0 go build -o {{.BIN_DIR}}/contenox {{.ROOT_DIR}}/cmd/contenox
+
+  build-windows:
+    desc: Cross-build the Windows CLI binary
+    cmds:
+      - CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o {{.BIN_DIR}}/contenox-windows-amd64.exe {{.ROOT_DIR}}/cmd/contenox
+
+  test:
+    desc: Full serial Go test suite
+    cmds:
+      - GOMAXPROCS=1 go test -timeout 30m ./...
+
+  test-unit:
+    desc: Fast unit gate (TestUnit_, -short)
+    cmds:
+      - GOMAXPROCS=4 go test -short -timeout 15m -run '^TestUnit_' ./...
+
+  test-system:
+    desc: System tests (TestSystem_)
+    cmds:
+      - GOMAXPROCS=1 go test -run '^TestSystem_' ./...
+
+  test-cli-verbose:
+    desc: Verbose CLI package tests
+    cmds:
+      - GOMAXPROCS=4 go test -v ./runtime/contenoxcli/...
+
+  test-cli-help:
+    desc: Verify CLI help output against the golden script
+    deps: [build]
+    cmds:
+      - chmod +x {{.ROOT_DIR}}/scripts/verify_cli_help.sh
+      - CONTENOX_BIN={{.BIN_DIR}}/contenox {{.ROOT_DIR}}/scripts/verify_cli_help.sh
+
+  tool-eval:
+    desc: 'Gated per-model tool-eval matrix (opt-in: exports CONTENOX_RUN_TOOL_EVALS=1)'
+    cmds:
+      - CONTENOX_RUN_TOOL_EVALS=1 CONTENOX_TOOL_EVAL_OUT={{.BIN_DIR}} GOMAXPROCS=1 go test -v -timeout 30m -run '^TestSystem_ToolEval' ./runtime/tooleval
+
+  acp-conformance:
+    desc: Validate libacp agent-side wire dispatch against the Rust reference ACP clients
+    preconditions:
+      - sh: test -n "{{.ACP_VALIDATOR_BIN}}"
+        msg: 'set ACP_VALIDATOR_BIN=/path/to/acp-validator (build tools/acp-validator; see its README)'
+    cmds:
+      - ACP_VALIDATOR_BIN={{.ACP_VALIDATOR_BIN}} ACP_YOPO_BIN={{.ACP_YOPO_BIN}} ACP_STUB_ADVERTISE_MODES=1 go test -run '^TestConformance_' -v ./libacp/...
+
+  acp-client-e2e:
+    desc: Validate libacp client-side wire dispatch against the Rust reference testy agent
+    preconditions:
+      - sh: test -n "{{.ACP_TESTY_BIN}}"
+        msg: 'set ACP_TESTY_BIN=/path/to/testy (build the agentclientprotocol rust-sdk test agent)'
+    cmds:
+      - ACP_TESTY_BIN={{.ACP_TESTY_BIN}} ACP_MCP_ECHO_BIN={{.ACP_MCP_ECHO_BIN}} go test -run '^TestTesty_' -v ./libacp/acpexec/...
+
+  acp-host-e2e:
+    desc: 'Registry→resolve→spawn→session host path, end to end (contenox self-loopback always; testy when built)'
+    cmds:
+      - ACP_TESTY_BIN={{.ACP_TESTY_BIN}} ACP_MCP_ECHO_BIN={{.ACP_MCP_ECHO_BIN}} ACP_CLAUDE_ACP_BIN=$ACP_CLAUDE_ACP_BIN go test -run '^TestHostE2E_' -v ./runtime/agenthost/...
+
+  test-all:
+    desc: 'The one-command release gate: build, then every suite, fast gates first'
+    deps: [build, 'website:build']
+    cmds:
+      - task: test-unit
+      - task: test-cli-help
+      - task: acp-conformance
+      - task: acp-client-e2e
+      - task: acp-host-e2e
+      - task: test
+      - 'echo "==> test-all: all gates green"'
+
+  dev-install:
+    desc: Build and link the CLI into ~/.local/bin
+    deps: [build]
+    cmds:
+      - task: dev-link
+
+  dev-link:
+    desc: Symlink bin/contenox into ~/.local/bin
+    deps: [build]
+    cmds:
+      - mkdir -p $HOME/.local/bin
+      - ln -sf {{.BIN_DIR}}/contenox $HOME/.local/bin/contenox
+      - 'echo "Linked $HOME/.local/bin/contenox -> {{.BIN_DIR}}/contenox (ensure ~/.local/bin precedes other installs on PATH)"'
+
+  dev-unlink:
+    desc: Remove the ~/.local/bin symlink
+    cmds:
+      - rm -f $HOME/.local/bin/contenox
+
+  website:deps:
+    desc: Install website dependencies
+    dir: website
+    cmds:
+      - npm ci
+
+  website:dev:
+    desc: Run the website dev server
+    dir: website
+    cmds:
+      - npm run dev
+
+  website:build:
+    desc: Build the static website
+    dir: website
+    cmds:
+      - npm run build
+
+  website:preview:
+    desc: Preview the built website
+    deps: ['website:build']
+    dir: website
+    cmds:
+      - npm run preview
+
+  version:set:
+    desc: Stamp the version file (tools/version)
+    cmds:
+      - go run {{.ROOT_DIR}}/tools/version/main.go set
+
+  version:bump-patch:
+    desc: Bump patch version, create release commit and tag
+    cmds:
+      - go run {{.ROOT_DIR}}/tools/version/main.go bump patch
+
+  version:bump-minor:
+    desc: Bump minor version, create release commit and tag
+    cmds:
+      - go run {{.ROOT_DIR}}/tools/version/main.go bump minor
+
+  version:bump-major:
+    desc: Bump major version, create release commit and tag
+    cmds:
+      - go run {{.ROOT_DIR}}/tools/version/main.go bump major
+
+  release:
+    desc: Print the release runbook
+    silent: true
+    cmds:
+      - 'echo "Release process (must match .github/workflows/release.yml):"'
+      - 'echo "  1. Bump: task version:bump-patch|version:bump-minor|version:bump-major"'
+      - 'echo "  2. Review the generated release commit and tag"'
+      - 'echo "  3. Push: git push && git push origin vX.Y.Z"'
+      - 'echo "CI verifies runtime/version/version.txt matches the tag, then builds and publishes assets."'
+
+  clean:
+    desc: Remove build outputs
+    cmds:
+      - rm -rf {{.BIN_DIR}}

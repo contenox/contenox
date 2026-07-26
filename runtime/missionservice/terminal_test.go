@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	apiframework "github.com/contenox/runtime/apiframework"
+	"github.com/contenox/runtime/runtime/errdefs"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/stretchr/testify/require"
 )
@@ -96,7 +96,7 @@ func TestUnit_MissionService_FinishIsIdempotentForSameStatusAndConflictsOnDiffer
 	// A different terminal status: a conflict, the mission stays landed.
 	_, err = svc.Finish(ctx, m.ID, StatusDerailed, "second thoughts")
 	require.Error(t, err)
-	require.ErrorIs(t, err, apiframework.ErrConflict, "a re-finish to a different terminal is a conflict")
+	require.ErrorIs(t, err, errdefs.ErrConflict, "a re-finish to a different terminal is a conflict")
 
 	persisted, err := svc.Get(ctx, m.ID)
 	require.NoError(t, err)

@@ -18,18 +18,14 @@ var doctorCmd = &cobra.Command{
 	Use:   "doctor",
 	Short: "Check LLM setup: defaults, registered backends, and connectivity.",
 	Long: `Shows whether your default model and provider are set, lists every registered backend
-(llama.cpp GGUF via modeld, OpenVINO via modeld, Ollama, OpenAI, Gemini, vLLM,
-Vertex AI), and reports reachability and setup issues for each. Use it after
-contenox init, after contenox backend add, or when chat/run cannot resolve a model.
+(Ollama, OpenAI, Gemini, vLLM, Vertex AI), and reports reachability and setup
+issues for each. Use it after contenox init, after contenox backend add, or when
+chat/run cannot resolve a model.
 
 Additionally, if you use local Ollama: when no Ollama backend is ready yet, doctor may probe
 your Ollama URL (OLLAMA_HOST, or http://127.0.0.1:11434) and suggest commands to pull a model
 (at least ollama pull qwen2.5:7b), register the backend, and set defaults—including --url for a
 non-default host or port.
-
-Note on local backend types: 'llama' and 'openvino' are served by the modeld daemon.
-modeld runs one local backend mode at a time and keeps one active model slot. The old
-'local' type is accepted as a compatibility alias for llama.
 
 Examples:
   contenox doctor

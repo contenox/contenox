@@ -1,11 +1,11 @@
 ---
 title: Least-privilege shell environment
-description: Give an agent exactly the environment its task needs — not your whole .env — by stripping serve's secrets and injecting only what you choose.
+description: Give an agent exactly the environment its task needs — not your whole .env — by stripping the runtime's secrets and injecting only what you choose.
 ---
 
 # Least-privilege shell environment
 
-An agent that can run a shell can read its environment — and by default that environment is serve's own, with every variable serve was started with. The usual way an agent gets a value it needs, say a `DATABASE_URL`, is to read your `.env`; but reading `.env` for one variable hands it the `STRIPE_SECRET_KEY` two lines below, too.
+An agent that can run a shell can read its environment — and by default that environment is the contenox process's own, with every variable it was started with. The usual way an agent gets a value it needs, say a `DATABASE_URL`, is to read your `.env`; but reading `.env` for one variable hands it the `STRIPE_SECRET_KEY` two lines below, too.
 
 Contenox inverts that. It gives each spawned shell — the `local_shell` tool, the `shell_session` / `!` PTY, the interactive terminal — exactly the environment a task needs, in two moves:
 
@@ -18,7 +18,7 @@ The agent gets its `DATABASE_URL`, does the work, and your other secrets were ne
 
 Scrubbing is **on by default** for agent-reachable shells. When contenox spawns one, it builds the environment in two layers:
 
-1. The **scrub** filters serve's environment down to a policy you choose. The default, `deny-secrets`, keeps the toolchain's variables but drops the control plane and the common credential shapes.
+1. The **scrub** filters the contenox process's environment down to a policy you choose. The default, `deny-secrets`, keeps the toolchain's variables but drops the control plane and the common credential shapes.
 2. The **injection** overlays your own variables on top, so an injected value always wins — and applies even when the scrub is `off`.
 
 The scrub policy is set per surface:
@@ -28,7 +28,7 @@ The scrub policy is set per surface:
 | `local_shell` and the `!` / `shell_session` PTY | the agent | `SANDBOX_SHELL_SCRUB` | `deny-secrets` |
 | the interactive terminal panel | the operator, typing directly | `SANDBOX_TERMINAL_SCRUB` | `off` |
 
-Agent-reachable shells scrub by default because the agent is untrusted. The terminal panel is the operator's own shell, so it defaults to `off`; set it to `deny-secrets` or `strict` when serve is exposed on a LAN.
+Agent-reachable shells scrub by default because the agent is untrusted. The terminal panel is the operator's own shell, so it defaults to `off`; set it to `deny-secrets` or `strict` when you want the same guarantees there.
 
 ## Scrub: deny by default
 
@@ -60,10 +60,10 @@ TMPDIR   USER   LOGNAME   SHELL
 
 ```bash
 # Agent shells scrubbed of secrets (the default); lock down the operator terminal too:
-SANDBOX_TERMINAL_SCRUB=deny-secrets contenox serve
+SANDBOX_TERMINAL_SCRUB=deny-secrets contenox beam
 
 # Hand agent shells only a hand-picked environment:
-SANDBOX_SHELL_SCRUB=strict SANDBOX_ENV_ALLOW="GOCACHE,CARGO_HOME,HTTP_PROXY" contenox serve
+SANDBOX_SHELL_SCRUB=strict SANDBOX_ENV_ALLOW="GOCACHE,CARGO_HOME,HTTP_PROXY" contenox beam
 ```
 
 > [!NOTE]
@@ -71,7 +71,7 @@ SANDBOX_SHELL_SCRUB=strict SANDBOX_ENV_ALLOW="GOCACHE,CARGO_HOME,HTTP_PROXY" con
 
 ## Inject: grant what the task needs
 
-`SANDBOX_ENV_ALLOW` *passes through* a variable that is already in serve's environment. To give a shell a variable that is **not** in serve's environment — or to set one to a value you choose — inject it directly. Injected variables are global (every spawned shell), stored as plain configuration, and read live, so an edit applies to the next shell without restarting serve.
+`SANDBOX_ENV_ALLOW` *passes through* a variable that is already in the process's environment. To give a shell a variable that is **not** in the environment — or to set one to a value you choose — inject it directly. Injected variables are global (every spawned shell), stored as plain configuration, and read live, so an edit applies to the next shell without a restart.
 
 ```bash
 contenox shell-env set DATABASE_URL=postgres://localhost/app HTTP_PROXY=http://proxy:3128
@@ -79,16 +79,14 @@ contenox shell-env list
 contenox shell-env unset HTTP_PROXY
 ```
 
-Or edit them in Beam under **Settings → Shell environment variables**.
-
 Injected values are layered on top of the scrub, so they always win and apply even when the scrub mode is `off`. They are plain config, **not** a place for secrets.
 
 > [!NOTE]
-> `SANDBOX_ENV_ALLOW` and `shell-env` are different tools. `SANDBOX_ENV_ALLOW` *passes through* a variable serve already has; `shell-env` *sets* a variable to a value you choose, whether or not serve has it.
+> `SANDBOX_ENV_ALLOW` and `shell-env` are different tools. `SANDBOX_ENV_ALLOW` *passes through* a variable the process already has; `shell-env` *sets* a variable to a value you choose, whether or not the process has it.
 
 ## Verify before you trust it
 
-Preview exactly which variable names a shell would inherit from serve's environment under the current scrub —
+Preview exactly which variable names a shell would inherit from the contenox process's environment under the current scrub —
 
 ```bash
 contenox sandbox env            # the agent-shell policy

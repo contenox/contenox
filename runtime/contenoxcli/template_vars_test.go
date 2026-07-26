@@ -9,9 +9,9 @@ import (
 func TestUnit_BuildTemplateVars_PreservesConfiguredDefaultForRecovery(t *testing.T) {
 	vars := buildTemplateVars(chatOpts{
 		EffectiveDefaultModel:       "does-not-exist",
-		EffectiveDefaultProvider:    "llama",
+		EffectiveDefaultProvider:    "vllm",
 		EffectiveConfiguredModel:    "qwen3-4b",
-		EffectiveConfiguredProvider: "openvino",
+		EffectiveConfiguredProvider: "mistral",
 		EffectiveAltDefaultModel:    "small-model",
 		EffectiveAltDefaultProvider: "ollama",
 		EffectiveMaxTokens:          "4096",
@@ -19,9 +19,9 @@ func TestUnit_BuildTemplateVars_PreservesConfiguredDefaultForRecovery(t *testing
 	})
 
 	require.Equal(t, "does-not-exist", vars["model"])
-	require.Equal(t, "llama", vars["provider"])
+	require.Equal(t, "vllm", vars["provider"])
 	require.Equal(t, "qwen3-4b", vars["default_model"])
-	require.Equal(t, "openvino", vars["default_provider"])
+	require.Equal(t, "mistral", vars["default_provider"])
 	require.Equal(t, "small-model", vars["alt_model"])
 	require.Equal(t, "ollama", vars["alt_provider"])
 	require.Equal(t, "4096", vars["max_tokens"])

@@ -1,6 +1,6 @@
 # Contenox V1 Feature Map
 
-Date: 2026-06-13
+Date: 2026-06-13 (revised 2026-07-26 for the V1 surface reset)
 
 This document maps the current Contenox feature surface so it can be converted
 into a manual testing plan for a V1 release. It is intentionally broader than a
@@ -10,18 +10,15 @@ deferred.
 
 ## V1 Product Boundary
 
-Contenox V1 is a local-first AI workflow runtime with four primary entry
-points:
+Contenox V1 is a single-binary coding agent with two entry points:
 
-- `contenox` CLI for setup, chain execution, chat, sessions, model/provider
-  configuration, tools, MCP servers, and local inspection.
-- ACP stdio server for editor and desktop clients that speak Agent Client
-  Protocol.
-- `contenox serve`, which hosts Beam (the bundled web UI), the HTTP API under
-  `/api` (including the OpenAI-compatible and Ollama-compatible inbound
-  endpoints), the `/acp` WebSocket, and the generated OpenAPI docs.
-- VS Code extension that bundles or launches the local runtime and exposes
-  native editor surfaces.
+- The `contenox` CLI: setup, chain execution, chat, sessions, model/provider
+  configuration, tools, MCP servers, local inspection, and the Beam terminal
+  UI (`contenox beam`) — an interactive session that combines chat, plan, and
+  shell in one persistent view.
+- `contenox acp` / `contenox acpx`: the ACP stdio server for editor and
+  desktop clients that speak Agent Client Protocol (Zed, JetBrains, AionUi,
+  OpenClaw).
 
 V1 is a desktop/workspace runtime for the three major OS families:
 
@@ -29,20 +26,17 @@ V1 is a desktop/workspace runtime for the three major OS families:
 - macOS
 - Windows
 
-That support promise applies to both the standalone CLI runtime and the bundled
-runtime inside the VS Code extension. It has direct testing implications: a V1
-release cannot be validated only on the maintainer's development OS.
-
 The current V1 direction explicitly does not include:
 
 - A TypeScript rewrite of the Contenox engine, or chain semantics implemented
   outside the Go runtime.
-- A separate UI server: Beam is embedded in the `contenox` binary and served
-  by `contenox serve`, never deployed on its own.
+- A served web UI, an HTTP API, or any other network-hosted surface. The
+  runtime is driven from the terminal or over ACP stdio.
+- An in-house local inference engine. Local models run through Ollama or vLLM.
 
-Manual testing should therefore cover local runtime behavior, stdio bridge
-behavior, editor integration, the served web surface (Beam, `/api`, the
-compatibility endpoints), and packaged native binary distribution.
+Manual testing should therefore cover local runtime behavior, the Beam TUI,
+stdio bridge behavior, editor integration over ACP, and packaged native binary
+distribution.
 
 ## Critical User Journeys
 
@@ -55,22 +49,19 @@ these fail on the target platform being released.
    `contenox "..."`.
 3. User runs `contenox chat`, continues the same session, switches sessions,
    and sees persisted history.
-4. User enables local tools intentionally, sees HITL approval where expected,
+4. User opens `contenox beam`, chats, runs a shell command, and sees the
+   session persist across a relaunch.
+5. User enables local tools intentionally, sees HITL approval where expected,
    approves a safe operation, and sees a denied unsafe operation blocked.
-5. User registers and uses at least one non-shell external tool path:
+6. User registers and uses at least one non-shell external tool path:
    OpenAPI remote tools or MCP.
-6. User installs the VS Code extension, runs `Contenox: Run Setup`, opens
-   `@contenox`, asks about selected code, and receives context-aware output.
-7. User triggers VS Code inline autocomplete and can diagnose an explicit skip
-   or see an insertion candidate.
-8. User uses an ACP client through `contenox acp` and sees editor-mediated
+7. User uses an ACP client through `contenox acp` and sees editor-mediated
    permission handling for gated tools.
-9. Release package contains exactly the intended runtime artifacts for the
-   target platform and no dev-only files, secrets, source maps, or stale UI
-   packages.
-10. Release artifacts install and run on Linux, macOS, and Windows, with
-    platform-specific shell, filesystem, path, executable-bit, and editor-host
-    behavior verified.
+8. Release package contains exactly the intended runtime artifacts for the
+   target platform and no dev-only files, secrets, or stale packages.
+9. Release artifacts install and run on Linux, macOS, and Windows, with
+   platform-specific shell, filesystem, path, and executable-bit behavior
+   verified.
 
 ## Feature Area 1: Installation, Packaging, And Versioning
 
@@ -81,14 +72,7 @@ these fail on the target platform being released.
 - CLI version via `contenox version` and `contenox --version`.
 - Self-update via `contenox update`.
 - Shell completion generation via `contenox completion`.
-- VS Code VSIX packaging in `packages/vscode`.
 - Standalone native release binaries for supported OS/architecture targets.
-- Platform-specific VS Code Marketplace artifacts:
-  - `linux-x64`
-  - `linux-arm64`
-  - `darwin-arm64`
-  - `darwin-x64`
-  - `win32-x64`
 
 ### Manual test implications
 
@@ -98,26 +82,16 @@ these fail on the target platform being released.
 - Verify `contenox --version` matches `runtime/version/version.txt`.
 - Verify `contenox update` behavior both when current and when update metadata
   says a newer release exists.
-- Verify packaged VSIX contains one native binary for the target platform.
-- Verify macOS/Linux packaged binary has executable permission.
-- Verify Windows packaged extension contains `bin/contenox.exe`.
-- Verify VS Code Remote SSH/container scenario uses a runtime path inside the
-  remote environment.
-- Verify CLI and VSIX release artifacts are named predictably enough for users
-  to select the correct platform package from GitHub Releases.
+- Verify CLI release artifacts are named predictably enough for users to
+  select the correct platform package from GitHub Releases.
 
 ### Release risks
 
-- Native CGO build dependencies differ across targets.
-- macOS/Linux executable bits can be lost if packaged from Windows.
+- Native build dependencies can differ across targets.
 - Windows path separators, shell selection, executable suffixes, process
   spawning, and quoting rules differ from Unix.
 - macOS signing/notarization expectations may become a distribution issue even
   when the binary itself runs locally.
-- Remote VS Code workspaces install/run the extension on the workspace host, not
-  necessarily the user's laptop OS.
-- VS Code Marketplace publish is currently PAT-based and must later move away
-  from global PATs before December 1, 2026.
 
 ## Feature Area 2: Runtime State And Configuration
 
@@ -152,8 +126,6 @@ these fail on the target platform being released.
   values.
 - Verify config values survive process restart.
 - Verify invalid config keys and invalid values produce useful errors.
-- Verify autocomplete-specific defaults are respected separately from chat
-  defaults.
 
 ### Release risks
 
@@ -169,13 +141,9 @@ these fail on the target platform being released.
 - `contenox doctor` readiness report.
 - `contenox doctor --json`.
 - `contenox doctor --skip-cycle`.
-- VS Code `Contenox: Run Setup`.
-- VS Code `Contenox: Show Status`.
-- VS Code bridge `health` request.
 
 ### Supported setup targets
 
-- Embedded local llama.cpp model.
 - Local Ollama daemon.
 - Hosted Ollama Cloud.
 - OpenAI.
@@ -187,7 +155,6 @@ these fail on the target platform being released.
 
 - Test setup from a completely clean state.
 - Test setup cancellation and rerun.
-- Test setup inside VS Code terminal flow.
 - Test `doctor` before any backend exists.
 - Test `doctor` with configured provider but missing API key.
 - Test `doctor` with configured provider and reachable model.
@@ -197,8 +164,6 @@ these fail on the target platform being released.
 
 - Setup success depends on provider network availability.
 - Users need clear recovery when auth expires or an API key env var is missing.
-- VS Code setup must not leave the bridge in a stale state; restart/status must
-  clearly reflect the new config.
 
 ## Feature Area 4: Providers, Backends, And Models
 
@@ -211,7 +176,6 @@ these fail on the target platform being released.
 
 ### Backend types in the CLI surface
 
-- `local`: embedded llama.cpp, no external server.
 - `ollama`: local Ollama daemon or hosted Ollama Cloud.
 - `openai`: OpenAI API.
 - `openrouter`: OpenRouter API.
@@ -225,13 +189,7 @@ these fail on the target platform being released.
 ### Model commands
 
 - `contenox model list`: query live backends.
-- `contenox model registry-list`: list curated and user-added local model
-  registry entries.
 - `contenox model show <name>`.
-- `contenox model add <name> --url ...`.
-- `contenox model remove <name>`.
-- `contenox model pull <name>`.
-- `contenox model pull <name> --url ...`.
 - `contenox model set-context <name> --context ...`.
 - `contenox model capability set|show|unset <provider> <model>`.
 
@@ -257,14 +215,12 @@ these fail on the target platform being released.
   reasoning behavior.
 - Test `model set-context` accepts bare numbers and shorthand such as `32k` and
   `1m`.
-- Test first local `model pull` can become the default where intended.
 
 ### Release risks
 
 - Provider catalogs and model names change over time.
 - Some provider errors are string-classified for retry behavior.
 - Bedrock and Vertex require ambient cloud auth, making manual testing harder.
-- Large local GGUF downloads are slow and can dominate manual release cycles.
 
 ## Feature Area 5: Chain DSL
 
@@ -275,7 +231,6 @@ these fail on the target platform being released.
 - `chain-acp.json`: default ACP/editor chain.
 - `chain-acpx.json`: headless/untrusted-driver ACP chain.
 - `chain-compact.json`: history compaction chain.
-- `chain-fim.json`: fill-in-middle chain for editor autocomplete.
 - HITL policy JSON files.
 
 ### Chain-level fields
@@ -415,6 +370,14 @@ The engine does not expand `env:VAR` macros. Callers must explicitly populate
 - Piped stdin can preload editor/reference content.
 - `--chain` overrides the configured default chain.
 
+### The Beam TUI
+
+- `contenox beam` opens the interactive terminal session: chat, plan, and
+  shell in one persistent view.
+- Slash commands drive session-level actions, including in-process missions
+  via `/mission`.
+- HITL approval renders inline in the TUI.
+
 ### Output and diagnostics
 
 - `--raw`: print full output.
@@ -432,6 +395,8 @@ The engine does not expand `env:VAR` macros. Callers must explicitly populate
 - Test output modes separately from model success.
 - Test run mode does not persist chat messages.
 - Test chat mode persists messages.
+- Test the Beam TUI launches, chats, runs a shell command, and resumes its
+  session.
 
 ## Feature Area 7: Sessions And History
 
@@ -454,8 +419,6 @@ The engine does not expand `env:VAR` macros. Callers must explicitly populate
 - Persistent conversation messages in SQLite.
 - Session workspace and namespace scoping.
 - History compaction through `chain-compact.json`.
-- VS Code sessions view.
-- VS Code slash command `/compact [keep]`.
 
 ### Manual test implications
 
@@ -466,7 +429,6 @@ The engine does not expand `env:VAR` macros. Callers must explicitly populate
 - Test fork preserves messages.
 - Test fork with summary uses compaction chain.
 - Test session scoping across two workspaces.
-- Test VS Code sessions view follows CLI/runtime state.
 
 ## Feature Area 8: Tool System
 
@@ -480,9 +442,7 @@ For `execute_config.tools` in the current code:
 - `["*", "!name"]`: all tools except excluded names.
 - exclusion-only lists expose no tools.
 
-Release documentation must be reconciled with this behavior. Older text in
-`docs/contenox-cli.md` still describes absent tool fields as exposing all
-registered tools.
+Release documentation must be reconciled with this behavior.
 
 ### Local filesystem tools: `local_fs`
 
@@ -663,8 +623,8 @@ secret, keychain, browser-profile, cloud-credential, and wallet paths.
 ### Approval surfaces
 
 - CLI/TTY approval for command-line runs.
+- Inline approval cards in the Beam TUI.
 - ACP `session/request_permission` for editor clients.
-- VS Code approval prompts and diff flows through the extension.
 
 ### Manual test implications
 
@@ -721,158 +681,7 @@ Features:
 - Test `--auto` only in controlled test mode.
 - Test `acpx` cannot mutate or shell out under default policy.
 
-## Feature Area 11: VS Code Extension
-
-### Extension identity
-
-- Publisher: `contenox`
-- Extension name: `contenox-runtime`
-- Extension ID: `contenox.contenox-runtime`
-- Display name: `Contenox`
-- Extension kind: `workspace`
-
-### Runtime bridge
-
-- Extension starts `contenox vscode-agent --stdio`.
-- Bridge uses framed JSON-RPC over stdio.
-- Stdout is reserved for protocol.
-- Logs and diagnostics go to stderr/output channel.
-- Extension can use bundled binary or configured `contenox.binaryPath`.
-- `contenox.dataDir` can point at an existing Contenox state directory.
-
-### Commands
-
-- Open chat and proposed agent session.
-- Diagnose agent sessions.
-- Ask/fix selected code.
-- Add selection to chat.
-- Fix/explain diagnostics.
-- Review workspace changes.
-- Draft commit message.
-- Refresh/open/delete sessions.
-- Show status.
-- Restart bridge.
-- Run setup.
-- Select provider/model/chat model.
-- Select autocomplete provider/model.
-- Select HITL policy.
-- Select thinking level.
-- Trigger/test/enable/disable/toggle autocomplete.
-- Show output.
-- Show/clear telemetry log.
-- Test language model provider.
-- Show/refresh MCP servers.
-- Open tool diff.
-
-### Chat participant
-
-Participant:
-
-- `@contenox`
-
-Native participant commands:
-
-- `/fix`
-- `/explain`
-- `/doctor`
-- `/review`
-- `/commit`
-- `/compact`
-- `/policy`
-- `/websearch`
-
-Bridge slash commands:
-
-- `/help`
-- `/doctor`
-- `/clear`
-- `/compact [keep]`
-- `/model [model-name]`
-- `/provider [provider-name]`
-- `/autocomplete-model [model-name]`
-- `/autocomplete-provider [provider-name]`
-- `/max-tokens [count]`
-- `/think [auto|off|minimal|low|medium|high|xhigh]`
-- `/policy [policy-name]`
-- `/capability set|show|unset <provider> <model> [--think true|false]`
-- `/websearch <query>`
-
-### Editor integrations
-
-- Editor context menu actions for selected code.
-- Chat code action menu entries.
-- Lightbulb diagnostics quick fixes.
-- Active editor/file context attachment.
-- Git status and diff collection for review/commit workflows.
-- Native diff editor for proposed tool diffs.
-
-### Inline autocomplete
-
-Features:
-
-- Uses `chain-fim.json`.
-- Enabled by `contenox.autocomplete.enabled`.
-- Provider/model can be set through VS Code settings or runtime config.
-- Prefix/suffix bounds:
-  - `maxPrefixChars`
-  - `maxSuffixChars`
-  - `maxDocumentChars`
-  - `maxTokens`
-  - `debounceMs`
-- Test command shows raw completion or explicit skip/error reason.
-
-### Language model provider
-
-- Contributes VS Code language model provider vendor `contenox`.
-- Provides a test command using VS Code model selection.
-- Should not require GitHub Copilot sign-in for Contenox-owned paths.
-
-### MCP provider
-
-- Contributes MCP server definition provider `contenox.mcpServers`.
-- Should expose only VS Code-supported MCP server definitions.
-- OAuth and unsupported transports/types should remain runtime-only or be
-  clearly filtered.
-
-### Workspace trust
-
-- Untrusted workspaces are limited.
-- Restricted configurations:
-  - `contenox.binaryPath`
-  - `contenox.dataDir`
-  - `contenox.autocomplete.enabled`
-- Runtime actions that read or mutate workspace files should stay disabled
-  until the workspace is trusted.
-
-### Local telemetry
-
-- Local diagnostic JSONL events.
-- No remote telemetry service.
-- Output and protocol logs are local and explicit.
-
-### Manual test implications
-
-- Test activation and bridge start on clean VS Code.
-- Test `Contenox: Show Status` before setup.
-- Test setup, restart bridge, and status after setup.
-- Test provider/model selectors update runtime config.
-- Test `@contenox hello`.
-- Test every participant command.
-- Test selected-code ask/fix/add flows.
-- Test diagnostics quick fixes from the lightbulb.
-- Test git review and commit prompt creation.
-- Test session view refresh/open/delete.
-- Test HITL approval and denial.
-- Test opening a proposed diff.
-- Test autocomplete trigger and debounce behavior.
-- Test disabled autocomplete state.
-- Test local telemetry log and clear command.
-- Test MCP server list/refresh with stdio, HTTP, SSE, OAuth, and unsupported
-  combinations.
-- Test remote workspace binary path behavior.
-- Test restricted workspace behavior.
-
-## Feature Area 12: Observability, Traceability, And Debugging
+## Feature Area 11: Observability, Traceability, And Debugging
 
 ### CLI features
 
@@ -892,33 +701,23 @@ Features:
 - Thinking traces are stored separately from message content and are not sent
   back into history as normal text.
 
-### VS Code features
-
-- Output channel.
-- Protocol logging when enabled.
-- Local JSONL telemetry.
-- Status bar state.
-
 ### Manual test implications
 
 - Run a chain with `--trace` and confirm events stream as steps happen.
 - Run a chain with `--steps` and confirm final summary.
 - Confirm state list/show after a successful and failed run.
 - Confirm cache clear changes model-list fetch behavior after backend changes.
-- Confirm VS Code telemetry includes bridge spawn, chat, autocomplete, and
-  code-action events.
 
-## Feature Area 13: Security And Privacy
+## Feature Area 12: Security And Privacy
 
 ### V1 guarantees to preserve
 
-- Local-first runtime state.
+- State stored locally (SQLite); nothing leaves the machine except provider calls.
 - No required daemon.
 - No required hosted Contenox service.
 - API keys should be provided through env vars, not inline literals.
 - Tool policies are explicit in chains.
 - Local shell is opt-in.
-- Workspace trust limits VS Code behavior.
 - HITL approval gates unsafe operations.
 - Local telemetry is not sent remotely.
 
@@ -930,41 +729,28 @@ Features:
 - Confirm local_fs cannot access outside allowed dir.
 - Confirm local_shell cannot run denied commands.
 - Confirm webtools reject disallowed schemes and hosts.
-- Confirm VS Code untrusted workspace blocks runtime actions.
-- Confirm Marketplace package contains only the intended runtime artifacts and
-  no stray UI build outputs.
 
-## Feature Area 14: CI And Release Automation
+## Feature Area 13: CI And Release Automation
 
 ### Current CI surfaces
 
 - `make test-unit`.
 - `make test-contenox-help`.
 - Go package tests.
-- VS Code extension type-check.
-- VS Code extension package check.
 - Site type-check/build/lint for the in-repo `website/` package.
 - GitHub Release workflow that builds standalone CLI artifacts.
-- GitHub Release workflow should upload platform-specific VSIX artifacts for
-  manual VS Code/VSCodium installation from a release.
-- VS Code Marketplace workflow that verifies metadata, builds platform-specific
-  VSIX artifacts, checks contents, and optionally publishes.
 
 ### Manual test implications
 
 - CI is not enough for V1 because provider auth, editor UI, platform-specific
   binaries, and HITL UX need real interaction.
 - CI artifacts should be inspected before publish.
-- GitHub Release assets should be inspected for CLI binaries and
-  `contenox-runtime-<target>-<version>.vsix` files.
-- Pre-release Marketplace install should be tested before stable tag publish.
 - Release testing should include at least:
   - Linux x64.
   - macOS arm64.
   - Windows x64.
-  - one remote workspace scenario.
 
-## Feature Area 15: Cross-Platform Support
+## Feature Area 14: Cross-Platform Support
 
 ### Supported OS families
 
@@ -973,12 +759,10 @@ support is not just packaging; it affects runtime behavior.
 
 Required OS-family coverage:
 
-- Linux: local CLI, shell tools, local filesystem tools, ACP stdio, VS Code
-  extension, VSIX install.
-- macOS: local CLI, shell tools, local filesystem tools, ACP stdio, VS Code
-  extension, VSIX install.
-- Windows: local CLI, PowerShell/`cmd.exe` shell tools, local filesystem tools,
-  ACP stdio where supported by the client, VS Code extension, VSIX install.
+- Linux: local CLI, Beam TUI, shell tools, local filesystem tools, ACP stdio.
+- macOS: local CLI, Beam TUI, shell tools, local filesystem tools, ACP stdio.
+- Windows: local CLI, Beam TUI, PowerShell/`cmd.exe` shell tools, local
+  filesystem tools, ACP stdio where supported by the client.
 
 ### Release targets to track
 
@@ -988,14 +772,6 @@ Standalone CLI release artifacts:
 - `linux-arm64`
 - `darwin-arm64`
 - `windows-amd64`
-
-VS Code/VSCodium VSIX release artifacts:
-
-- `linux-x64`
-- `linux-arm64`
-- `darwin-arm64`
-- `darwin-x64`
-- `win32-x64`
 
 If the release workflow adds or removes targets, update this section and the
 manual test plan in the same change.
@@ -1008,11 +784,12 @@ manual test plan in the same change.
   and symlink behavior.
 - Shell behavior: POSIX `sh` on Unix, PowerShell or `cmd.exe` on Windows.
 - Quoting and argument splitting for `local_shell`.
-- Process lifecycle and stdio framing for ACP and VS Code bridge.
+- Terminal behavior for the Beam TUI: raw mode, resize, and Windows terminal
+  hosts (Windows Terminal vs. legacy console).
+- Process lifecycle and stdio framing for ACP.
 - File permissions and read-before-write tracking.
 - Line endings in generated files and docs.
 - Default browser/OAuth callback behavior for MCP OAuth.
-- VS Code extension host location for Remote SSH, containers, and Codespaces.
 
 ### Manual test implications
 
@@ -1023,32 +800,26 @@ Minimum V1 platform test matrix:
 | Install CLI from release | Required | Required | Required |
 | `contenox init` + `doctor` | Required | Required | Required |
 | One-shot run/chat/session | Required | Required | Required |
-| Local model or one hosted provider | Required | Required | Required |
+| Beam TUI smoke | Required | Required | Required |
+| Local model (Ollama) or one hosted provider | Required | Required | Required |
 | `local_fs` read/write/read-before-write | Required | Required | Required |
 | `local_shell` allowed/denied command | Required | Required | Required |
 | MCP stdio server | Required | Required | Required |
 | ACP client smoke | Required on one Unix target | Required with Zed | Optional if no stable Windows ACP client |
-| VS Code VSIX manual install | Required | Required | Required |
-| `@contenox /doctor` in VS Code | Required | Required | Required |
-| VS Code autocomplete smoke | Required | Required | Required |
 
 Additional target checks:
 
 - Linux ARM64 and macOS Intel can be package/binary smoke tests until real
   hardware or runners are available.
-- Windows requires a real editor smoke, not just a cross-built binary.
-- Remote SSH/container behavior should be tested at least once with a Linux
-  remote workspace from a non-Linux client.
+- Windows requires a real terminal smoke, not just a cross-built binary.
 
 ### Release risks
 
 - Cross-compilation can produce a binary that packages cleanly but fails at
-  runtime because of CGo, libc, or C++ dependency differences.
+  runtime because of libc or toolchain differences.
 - Windows command execution bugs often hide behind tests written on Unix.
-- VSIX target selection is easy for users to get wrong unless release docs and
-  asset names are clear.
-- Marketplace and GitHub Release artifacts can drift unless both workflows use
-  the same target matrix and package cleanliness checks.
+- Release assets can drift unless the workflow and this map use the same
+  target matrix.
 
 ## Remaining Documentation And Release Gaps
 
@@ -1057,15 +828,9 @@ Additional target checks:
   tools, and `["*"]` exposes all registered tools.
 - Decide whether SSH localtools are public V1, experimental, or hidden.
 - Decide whether `acpx` is documented publicly or kept as integration-only.
-- Decide whether VS Code language model provider and MCP provider are stable V1
-  surfaces or preview surfaces.
 - Document auth renewal UX for MCP OAuth and provider API-key expiry.
-- Document remote VS Code workspace behavior clearly.
-- Public site/docs were scanned and cleaned for stale surface claims (pages
-  written before `contenox serve`, Beam, and the compatibility endpoints
-  landed), stale MCP test server references, stale repo links, and
-  proxy-current-feature language. Re-run the stale-string scan before release.
-- Create a short Marketplace release checklist from this feature map.
+- Re-run the stale-string scan of the public docs before release so pages
+  describe the product users actually receive.
 
 ## Manual Test Plan Skeleton
 
@@ -1076,10 +841,10 @@ should use.
 2. Fresh setup and doctor.
 3. Global config and project-local chain state.
 4. Backend/provider matrix.
-5. Local model registry and download.
-6. Chain DSL validation and execution.
-7. Stateless run modes.
-8. Stateful chat and sessions.
+5. Chain DSL validation and execution.
+6. Stateless run modes.
+7. Stateful chat and sessions.
+8. The Beam TUI.
 9. HITL policy behavior.
 10. Local filesystem tools.
 11. Local shell tools.
@@ -1089,16 +854,6 @@ should use.
 15. Observability and state inspection.
 16. Cross-platform CLI smoke: Linux, macOS, Windows.
 17. ACP clients, with Zed as the primary required smoke target.
-18. VS Code bridge health/config.
-19. VS Code chat participant.
-20. VS Code editor actions and diagnostics.
-21. VS Code autocomplete.
-22. VS Code sessions view.
-23. VS Code LM provider.
-24. VS Code MCP provider.
-25. Remote workspace behavior.
-26. GitHub Release VSIX manual install.
-27. Marketplace pre-release install.
 
 ## V1 Release Gate Recommendation
 
@@ -1107,21 +862,13 @@ For V1, treat these as required pass/fail gates:
 - Clean install and setup on Linux x64, macOS arm64, and Windows x64.
 - `contenox init`, one-shot run, chat, session persistence, and doctor pass on
   Linux, macOS, and Windows.
-- At least one local model path or one hosted provider path passes end to end.
+- The Beam TUI opens, chats, runs an approved shell command, and resumes its
+  session on all three platforms.
+- At least one local model path (Ollama) or one hosted provider path passes
+  end to end.
 - Tool safety gates pass for local_fs, local_shell, and webtools, including a
   real Windows local_shell smoke.
 - One OpenAPI tools registration and one MCP stdio registration pass.
 - ACP works in Zed with a real stdio `agent_servers` configuration.
-- VS Code extension works from Marketplace/pre-release artifact for:
-  - setup
-  - chat
-  - selection explain
-  - diagnostics action
-  - autocomplete
-  - HITL approval
-  - session view
-- GitHub Release VSIX assets install manually in VS Code or VSCodium on Linux,
-  macOS, and Windows.
 - Platform package contents are clean and match the target OS/architecture.
-- Public docs and Marketplace README describe the same product users actually
-  receive.
+- Public docs describe the same product users actually receive.

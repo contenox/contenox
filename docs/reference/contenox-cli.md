@@ -41,7 +41,7 @@ Runs an interactive setup wizard to configure your primary provider, model, and 
 contenox setup
 ```
 
-The wizard will guide you through picking a provider (like a local model, OpenAI, or Gemini), entering an API key if required, and setting your first default model.
+The wizard will guide you through picking a provider (like Ollama, OpenAI, or Gemini), entering an API key if required, and setting your first default model.
 
 ### `contenox` (bare — stateful `chat`)
 
@@ -138,7 +138,7 @@ contenox doctor --skip-cycle    # faster; skips backend sync (status may be stal
 
 ### `contenox model`
 
-Manage models in the local **Model Registry** — a name-to-URL index of GGUF files that can be downloaded for local inference. See [Local Models (GGUF)](/docs/integrations/providers/local-models/) for a full walkthrough.
+Manage model configuration: the local **Model Registry** (a name-to-URL index of model entries), live model listings from configured backends, context-window overrides, and capability overrides.
 
 #### `contenox model registry-list`
 
@@ -147,24 +147,6 @@ List all curated and user-added registry entries. Does not require a running bac
 ```bash
 contenox model registry-list
 ```
-
-#### `contenox model pull`
-
-Download a curated or custom GGUF model to `~/.contenox/models/llama/<name>/model.gguf` (OpenVINO IR models, curated names ending in `-ov`, land under `~/.contenox/models/openvino/<name>/`).
-
-```bash
-contenox model pull qwen3-4b                                         # curated model
-contenox model pull gemma4-e4b                                       # curated vision model (fetches mmproj.gguf too)
-contenox model pull my-model --url https://huggingface.co/org/repo/resolve/main/model.gguf
-```
-
-After downloading, the model is ready for the `llama` backend (or `openvino` for `-ov` models). `contenox init` registers those backends, and the first pulled model becomes `default-model` on a fresh install. Local inference is served by the `modeld` daemon, which must be running in the matching backend mode.
-
-Curated vision models (shown as `chat+vision` in `model registry-list`) install every artifact image input needs in one pull: llama entries fetch the multimodal projector beside the model as `mmproj.gguf` (a failed projector download is a hard error, and re-running the pull adds a missing projector to an already-installed model); OpenVINO vision snapshots already include their vision encoder.
-
-| Flag    | Description                                          |
-| ------- | ---------------------------------------------------- |
-| `--url` | Direct GGUF download URL (requires a name as arg[0]) |
 
 #### `contenox model add`
 
@@ -218,23 +200,6 @@ contenox model set-context gemini-3.1-pro-preview --context 1m
 | ----------- | ---------------------------------------------------------------- |
 | `--context` | Context window size: bare integer or shorthand (`12k`, `128k`, `1m`). Required. |
 
-#### `contenox model local`
-
-List installed local model artifacts on disk (under `~/.contenox/models/`), independent of any running backend.
-
-```bash
-contenox model local
-```
-
-#### `contenox model push`
-
-Push a local model artifact to a `modeld` backend (the local daemon or a remote node), so that node can load and serve it.
-
-```bash
-contenox model push qwen3-4b                 # push to the local modeld
-contenox model push qwen3-4b --backend <name> # push to a specific modeld node
-```
-
 #### `contenox model capability`
 
 Manage manual provider/model capability overrides — the reasoning (`think`) and image-input (`vision`) capabilities the runtime assumes for a given provider/model when the catalog doesn't declare them.
@@ -245,28 +210,6 @@ contenox model capability set   <provider> <model> --vision true  # mark the mod
 contenox model capability show  <provider> <model>                # show the current override
 contenox model capability unset <provider> <model>                # remove the override (revert to catalog)
 ```
-
-#### `contenox model snapshot`
-
-Capture and restore local `modeld` session snapshots — the KV-cache / prefill state of a warmed model — for faster resumption.
-
-```bash
-contenox model snapshot save    <model> --out snap.bin   # warm a session, prefill, write the snapshot
-contenox model snapshot restore [model] --in  snap.bin   # restore a session from a snapshot file
-```
-
-### `contenox modeld`
-
-Manage the local `modeld` inference daemon that serves GGUF (llama) and OpenVINO models.
-
-See the dedicated [modeld guide](/docs/integrations/providers/modeld/) for architecture and concepts.
-
-```bash
-contenox modeld install                       # download + verify the prebuilt daemon
-contenox modeld install --backend openvino    # require the openvino backend
-```
-
-`install` resolves the newest protocol-compatible prebuilt build for this platform, verifies its checksum, installs it under `~/.contenox/modeld/`, and prints the `modeld serve` command to start it. It is non-interactive (the same install runs inside `contenox setup` when a local provider is selected); the installer supports it via `CONTENOX_WITH_MODELD=1`.
 
 ### `contenox tools`
 
@@ -292,7 +235,7 @@ contenox tools remove <name>
 
 ### `contenox agent`
 
-Inspect and manage the runtime's declared agents. An agent is one of the runtime's own [task chains](/docs/guide/beam/), addressable and spawnable as an ACP peer. Agents are registered automatically by chain-agent discovery from the chain files on disk — this command inspects them, toggles their enabled state, and removes stale registrations. They appear in [Beam](/docs/guide/beam/)'s agent picker and over the read-only `GET /api/agents` endpoint.
+Inspect and manage the runtime's declared agents. An agent is one of the runtime's own [task chains](/docs/guide/first-chain/), addressable and spawnable as an ACP peer. Agents are registered automatically by chain-agent discovery from the chain files on disk — this command inspects them, toggles their enabled state, and removes stale registrations. Declared agents are what `/mission` fires.
 
 ```bash
 contenox agent list                       # id, name, source, kind, enabled
@@ -307,14 +250,14 @@ contenox agent remove agent-reviewer      # (alias: rm)
 
 Initializes a workspace (`.contenox/`) and ensures default runtime presets exist globally (`~/.contenox/`). It's best to run `contenox setup` first for a guided configuration.
 
-`init` creates the `.contenox/workspace.id` marker — a project's portable identity. The marker carries a stable workspace UUID (the database scoping token every session under the project is filed under) plus an optional friendly **name** (what the Beam project registry and the folder picker show). It travels *with* the directory, so a project means one thing to serve, the CLI, and the API alike. Default chains and HITL policies are written under `~/.contenox/` unless they already exist. Workspace-local `.contenox/` files can override these global presets by name.
+`init` creates the `.contenox/workspace.id` marker — a project's portable identity. The marker carries a stable workspace UUID (the database scoping token every session under the project is filed under) plus an optional friendly **name**. It travels *with* the directory, so a project means one thing to the CLI and every ACP session alike. Default chains and HITL policies are written under `~/.contenox/` unless they already exist. Workspace-local `.contenox/` files can override these global presets by name.
 
 By default `init` walks up to reuse an ancestor's `.contenox` if one exists (like `git`). Pass `--project` to force a *fresh* project marker in the current directory instead — a distinct workspace nested under a larger one — and `--name` to give it a friendly name (default: the folder's own name). Marking a project does not by itself let sessions open it; `init --project` prints the `contenox workspace add` line that grants it.
 
 You can optionally specify a provider to pre-configure defaults.
 
 ```bash
-contenox init                          # local-first default
+contenox init                          # scaffold with default chains
 contenox init gemini                   # pre-configure for Gemini
 contenox init openai                   # pre-configure for OpenAI
 contenox init --force                  # overwrite existing files
@@ -336,7 +279,6 @@ Register and manage LLM backend endpoints.
 ```bash
 contenox backend add ollama       --type ollama
 contenox backend add ollama-cloud --type ollama --url https://ollama.com/api --api-key-env OLLAMA_API_KEY
-contenox backend add llama        --type llama --url ~/.contenox/models/llama/
 contenox backend add openai       --type openai  --api-key-env OPENAI_API_KEY
 contenox backend add openrouter   --type openrouter --api-key-env OPENROUTER_API_KEY
 contenox backend add anthropic    --type anthropic --api-key-env ANTHROPIC_API_KEY
@@ -354,7 +296,7 @@ contenox backend remove myvllm
 
 | Flag            | Description                                                                               |
 | --------------- | ----------------------------------------------------------------------------------------- |
-| `--type`        | Backend type: `llama`, `openvino`, `modeld`, `ollama`, `openai`, `openrouter`, `anthropic`, `mistral`, `gemini`, `bedrock`, `vllm`, `vertex-google`. (`local` is a legacy alias for `llama`.) |
+| `--type`        | Backend type: `ollama`, `openai`, `openrouter`, `anthropic`, `mistral`, `gemini`, `bedrock`, `vllm`, `vertex-google`. |
 | `--url`         | Base URL (auto-inferred for openai/openrouter/anthropic/mistral/gemini; required for vllm, bedrock, and vertex-google) |
 | `--api-key-env` | Environment variable holding the API key (preferred)                                      |
 | `--api-key`     | API key literal (avoid — use `--api-key-env`)                                             |
@@ -364,8 +306,8 @@ contenox backend remove myvllm
 Manage persistent CLI defaults stored in SQLite.
 
 ```bash
-contenox config set default-provider llama
-contenox config set default-model    granite-3.2-2b
+contenox config set default-provider ollama
+contenox config set default-model    qwen3:8b
 contenox config set default-alt-model gemini-2.5-flash
 contenox config set default-alt-provider gemini
 contenox config set default-autocomplete-model qwen2.5-coder:7b
@@ -383,7 +325,7 @@ Valid global keys: `default-model`, `default-provider`, `default-alt-model`, `de
 
 Valid workspace keys: `default-chain`, `hitl-policy-name`.
 
-`default-mission-agent` and `default-mission-policy` are the fallbacks mission mode fires with when none is named — see [`contenox mission`](#contenox-mission) and the `/mission` slash command.
+`default-mission-agent` and `default-mission-policy` are the fallbacks mission mode fires with when none is named — see [the `/mission` slash command](#the-mission-slash-command).
 
 ### `contenox mcp`
 
@@ -444,127 +386,23 @@ For OAuth servers the full sequence is: `contenox mcp add <name> ... --auth-type
 > [!NOTE]
 > `mcp update --header` and `mcp update --inject` each **replace** the entire corresponding map. Pass all required values in a single update call.
 
-### `contenox serve`
+### The `/mission` slash command
 
-Starts the Contenox HTTP server and serves the Beam web UI. Foundation routes live at `/health` and `/version`; the product API is under `/api`; chat (with its HITL approvals and execution-state replay) runs over the `/acp` WebSocket; the Beam UI is served at `/`.
+Missions are the dual of chat mode. In chat you prompt turn by turn and approve each gated action yourself. In mission mode you fire a one-line intent at a declared agent under an **envelope** — a HITL policy that bounds what it may do unattended — and keep working; the unit acts inside the envelope, and only crossing it costs your attention.
 
-```bash
-contenox serve                                  # binds 127.0.0.1:32123 by default
-contenox serve ./repo ./another-repo            # extra allowed session workspace roots
-```
-
-Binds `127.0.0.1:32123` by default (override with `ADDR`/`PORT`). Set `TOKEN` to require a bearer token on mutating/cross-origin requests (mandatory when `ADDR` is not loopback). A configured model is required — run `contenox setup` first. Terminal routes are on by default under `/api/terminal/sessions` (disable with `TERMINAL_ENABLED=false`).
-
-| Flag / env | Description |
-| ---------- | ----------- |
-| `--workspace-root <dir>` | Directory a browser client may choose as a session workspace (repeatable). The serve directory is always allowed; also settable via `WORKSPACE_ROOTS` or as positional args. These are the launch-time roots; grant more at runtime — without a restart — via [`contenox workspace add`](#contenox-workspace) or `POST /workspace/roots`. |
-| `ADDR` / `PORT` | Override the bind address/port. |
-| `TOKEN` | Bearer token required on mutating API requests and cross-origin reads. |
-| `BEAM_DEV_PROXY_URL` | Proxy Beam UI requests to a Vite dev server while keeping `/api` on this server. |
-| `TERMINAL_ENABLED` | Terminal routes under `/api/terminal/sessions`, on by default (`false` disables). |
-| `TERMINAL_ALLOWED_ROOT` | Directory terminal sessions are confined to (default: the workspace root). |
-| `TERMINAL_MAX_SESSIONS` | Concurrent terminal session cap (default 8; 0 = unlimited). |
-| `TERMINAL_SHELL` | Shell binary for terminal sessions (default: `$SHELL`). |
-| `TERMINAL_IDLE_TIMEOUT` | Idle duration after which a terminal session is reaped. |
-| `HITL_APPROVAL_TIMEOUT` | Ceiling for pending HITL approvals, a Go duration (e.g. `1h`); expired asks are auto-resolved. |
-| `ALLOWED_API_ORIGINS` / `PROXY_ORIGIN` | CORS: extra allowed API origins / the trusted reverse-proxy origin. |
-| `SANDBOX_SHELL_SCRUB` | Environment-scrub policy for agent-reachable shells (`local_shell`, the `!` / `shell_session` PTY): `deny-secrets` (default), `strict`, `off`. See [Least-privilege shell environment](/docs/guide/environment-scrubbing/). |
-| `SANDBOX_TERMINAL_SCRUB` | Environment-scrub policy for the interactive terminal panel: `off` (default), `deny-secrets`, `strict`. Enable it for LAN-exposed serves. |
-| `SANDBOX_ENV_ALLOW` / `SANDBOX_ENV_DENY` | Extra variable names or globs to also pass through / always drop under the active scrub. Preview the result with `contenox sandbox env`. |
-
-### `contenox fleet`
-
-Operate the fleet — the supervised agent **units** a running `contenox serve` is hosting — from the shell. These verbs act on units (the running processes); the **work** a unit was sent to do lives under [`contenox mission`](#contenox-mission).
-
-The fleet is not in the database — it is a set of live subprocesses owned by the serve process's in-memory manager — so, unlike `contenox state`/`session`, these verbs reach serve over its REST API. By default that is `http://127.0.0.1:32123`; override with `--server`/`--token` or `CONTENOX_SERVER_URL`/`CONTENOX_SERVER_TOKEN` (the same client `contenox approvals` uses).
-
-```bash
-contenox fleet list                       # the board: every declared agent + its live units + intent
-contenox fleet list --json                # the raw /fleet records (declared agents + instances)
-contenox fleet show <instance-id>         # one unit's status (state, sessions, viewers, session ids)
-contenox fleet stop <instance-id>         # tear a unit down (idempotent)
-contenox fleet cancel <instance-id>       # cancel every in-flight turn on the unit
-contenox fleet cancel <instance-id> --session <session-id>   # cancel just that session
-```
-
-`list` renders the config+runtime join: every declared agent (idle ones included), each live instance's kind/state/session/viewer counts, and the mission `INTENT` the unit was fired with (joined from the bound mission; `-` when the unit has no mission behind it). `stop` is idempotent by the kernel contract — stopping an unknown or already-stopped instance succeeds — so a script may call it without a preceding existence check. To FIRE a new unit, use `contenox mission fire`; there is deliberately no `fleet dispatch`.
-
-| Flag | Description |
-| ---- | ----------- |
-| `--server <url>` | Base URL of a running `contenox serve` (default `http://127.0.0.1:32123`; also `CONTENOX_SERVER_URL`). |
-| `--token <token>` | Bearer token, when serve was started with one (also `CONTENOX_SERVER_TOKEN`). |
-| `--json` | Emit the raw route response instead of a table (`list`, `show`). |
-| `--session <id>` | `cancel` only this session id, instead of every session on the unit. |
-
-### `contenox mission`
-
-Work with an agent in **mission mode** — the dual of chat mode. In chat you prompt turn by turn and approve each gated action yourself. In mission mode you fire a one-line intent at a declared agent under an **envelope** (a HITL policy that bounds what it may do unattended) and detach; the unit acts inside the envelope and only crossing it costs your attention, in the [approvals inbox](#contenox-approvals). A mission is a subagent of whatever process fires it — the [`/mission` slash command](#the-mission-slash-command) runs one in-process inside your editor session; **these CLI verbs** are the operator's remote lever, firing onto (and reading from) a running `contenox serve` over the same REST API as `contenox fleet`.
-
-```bash
-contenox mission fire --agent reviewer --intent "triage the failing CI run" --policy hitl-policy-strict.json
-contenox mission fire --intent "summarise today's commits"    # --agent/--policy from config defaults
-contenox mission list                     # what is running, for whom, under what envelope, and why
-contenox mission show <mission-id>        # the mission plus its reports, newest first
-```
-
-`fire` brings up a unit, hands it the intent as its first turn, and returns as soon as the session is open (the turn runs detached); the printed mission/instance/session ids let you follow it with `mission show` and `fleet show`. `--intent` is always required; `--agent` and `--policy` fall back to the config keys `default-mission-agent` / `default-mission-policy`, so a configured operator can fire with intent alone. A mission with no agent or no envelope is refused. `--cwd` roots the unit's session in an absolute directory serve allows.
-
-`show` prints the mission record — intent, agent, envelope, status, the session/instance it spawned, the parent session that supervises it (set only when a mission is fired from a chat by `/mission`, not by an operator directly), and liveness — followed by the unit's reports, newest first.
-
-| Flag | Description |
-| ---- | ----------- |
-| `--server <url>` / `--token <token>` | Reach a running `contenox serve` (as `contenox fleet`). |
-| `--agent <name>` | Declared agent to fire (`fire`; default: config `default-mission-agent`). |
-| `--intent <line>` | One-line mission intent — required for `fire`. |
-| `--policy <name>` | Envelope: the HITL policy bounding the unit (`fire`; default: config `default-mission-policy`). |
-| `--cwd <dir>` | Absolute working directory for the unit's session (`fire`; default: serve's project root). |
-| `--limit <n>` | Cap the mission list (`list`) or the reports shown (`show`). |
-| `--json` | Emit raw records: the dispatch ids (`fire`), the mission list (`list`), or `{mission, reports}` (`show`). |
-
-#### The `/mission` slash command
-
-From inside a chat (`contenox acp`, or the Beam chat) you can fire a mission without leaving the conversation:
+From inside a session (`contenox acp`, or the Beam TUI) fire a mission without leaving the conversation:
 
 - `/mission <intent>` — fires the configured `default-mission-agent` under the `default-mission-policy` envelope.
 - `/mission <agent-name> <intent>` — fires the named agent instead.
 
-The two forms are the same shape, so contenox resolves the first token against the declared-agent registry: a hit is the named form, a miss means the whole line is the intent for the default agent. The confirmation always states which agent was chosen and echoes the intent, so a misread is visible immediately. A mission fired this way is supervised by the calling session — its reports return there rather than to the operator inbox.
+The two forms are the same shape, so contenox resolves the first token against the declared-agent registry: a hit is the named form, a miss means the whole line is the intent for the default agent. The confirmation always states which agent was chosen and echoes the intent, so a misread is visible immediately.
 
-In a standalone `contenox acp` editor session the dispatch runs **in-process** by default: the fired unit is a child subprocess of the editor process itself, no running serve is needed, and the unit's reports stream live back into the firing session as they land (the operator inbox only catches a report whose firing session has already ended). Setting `CONTENOX_SERVER_URL` opts into **forwarding** the dispatch to that serve instead — for firing onto a bigger box — in which case reports land in that serve's operator inbox (`contenox approvals`), since a remote kernel cannot deliver into an editor session it does not own. The hardened `acpx` profile never offers `/mission`.
+The dispatch runs **in-process**: the fired unit is a child subprocess of the calling session's own process, no daemon is needed, and the unit's reports stream live back into the firing session as they land. A mission with no agent or no envelope is refused. The hardened `acpx` profile never offers `/mission`.
 
-### `contenox approvals`
-
-List and answer everything a running `contenox serve` is holding for you — the inbox for asks raised by an agent working with no attached session (dispatched fleet work, a headless API caller). A permission request that would otherwise hang until its policy-rule timeout, or the serve-level ceiling, is answerable here as soon as it lands.
-
-Two kinds of ask arrive in this one queue, and they are answered differently:
-
-- a **permission ask** — a gated tool call waiting on a verdict. Answer it with `--approve` or `--deny`.
-- an **attention ask** — a running mission unit's *question* (`mission / mission_ask_attention` in the list). Answer it with `--reply "<text>"`: your words are handed straight back to the unit as the result of the tool call it is parked on, and it continues with them on the same turn.
-
-A pending approval is a goroutine parked inside the running serve process — answering it has to reach that process, not just its database — so, unlike `contenox state`/`session`, this command talks to serve's REST API (default `http://127.0.0.1:32123`; override with `--server`/`--token` or `CONTENOX_SERVER_URL`/`CONTENOX_SERVER_TOKEN`).
-
-```bash
-contenox approvals list                     # pending asks, newest first
-contenox approvals list --json              # raw records, including full diff content
-contenox approvals answer <id> --approve
-contenox approvals answer <id> --deny
-contenox approvals answer <id> --reply "the contenox runtime repo, docs/ only"
-```
-
-`list` prints each ask's id, tool, args summary, policy and matched rule, diff presence, the agent/mission/instance/session attribution (with several units running, the row has to say **whose** action is gated; `-` for an ask raised outside the fleet), and the created/expires timestamps. For an attention ask the args summary *is* the question, and the mission column names who is waiting on you.
-
-`answer` requires exactly one of `--approve`/`--deny`/`--reply`. `--reply` is refused on a permission ask (prose is not a verdict); `--approve`/`--deny` on an attention ask leaves the unit with no answer, so it falls back to filing its question as a blocker. An id that is unknown, already answered, or expired (auto-resolved by serve's sweeper) fails with a non-zero exit status saying which — answering twice is never silently a no-op.
-
-| Flag | Description |
-| ---- | ----------- |
-| `--server <url>` / `--token <token>` | Reach a running `contenox serve` (as `contenox fleet`). |
-| `--limit <n>` | Cap the pending list (`list`; 0 = server default cap). |
-| `--reply <text>` | Answer a unit's question with text (`answer`, attention asks) — the unit receives it as its tool result. |
-| `--json` | Emit raw records (`list`) or the answer result (`answer`). |
 
 ### `contenox workspace`
 
-Grant or revoke the **workspace roots** a session may run in — the directories a chat, a dispatched mission unit, or a Beam file browse may choose as its working directory. Granting a root grants everything **under** it; a directory outside every granted root (a sibling, a prefix-trick neighbour like `/home/meX` against `/home/me`, or a symlink whose real target escapes) is refused. A too-broad root — the filesystem root, your home directory, or a top-level system directory like `/srv` — is also refused, so a grant can never hand a session an entire home or disk; grant the specific project directory.
+Grant or revoke the **workspace roots** a session may run in — the directories a chat, a fired mission unit, or an ACP session may choose as its working directory. Granting a root grants everything **under** it; a directory outside every granted root (a sibling, a prefix-trick neighbour like `/home/meX` against `/home/me`, or a symlink whose real target escapes) is refused. A too-broad root — the filesystem root, your home directory, or a top-level system directory like `/srv` — is also refused, so a grant can never hand a session an entire home or disk; grant the specific project directory.
 
 ```bash
 contenox workspace add /home/me/src              # grant a root (and everything under it)
@@ -573,56 +411,15 @@ contenox workspace list                           # the roots you have granted
 contenox workspace remove /home/me/scratch        # revoke a grant
 ```
 
-Granting a root also **registers it as a project**: `add` writes (or reuses) the folder's `.contenox/workspace.id` marker, so a root added here shows the same friendly name in `list`, the API, and the Beam project registry. `--name` sets that name (default: the folder's own name); re-running `add` on an already-granted path with a new `--name` **renames** the project without changing its workspace id, so its existing sessions stay attached. This is the exact same marker stamp `init --project` and Beam's "Add project" apply — one on-disk result across all three entry points.
+Granting a root also **registers it as a project**: `add` writes (or reuses) the folder's `.contenox/workspace.id` marker, so a root added here shows the same friendly name in `list`. `--name` sets that name (default: the folder's own name); re-running `add` on an already-granted path with a new `--name` **renames** the project without changing its workspace id, so its existing sessions stay attached. This is the exact same marker stamp `init --project` applies — one on-disk result across both entry points.
 
-Unlike `fleet` / `mission`, these do **not** reach serve over REST. A grant is durable config in the shared database (`~/.contenox/local.db`), so `add`/`remove` write it directly and then ring a reload doorbell on the shared bus. A running `contenox serve` picks up the signal and swaps its live workspace-root set **without a restart**; a serve started later reads the same durable config at boot. So these verbs work whether or not serve is up, and a running serve applies them live.
+A grant is durable config in the shared database (`~/.contenox/local.db`), so `add`/`remove` write it directly and every session — CLI, TUI, or ACP — reads the same grants.
 
-`add` requires the path to be an existing directory (a workspace root must be a real directory); `remove` does not, so a grant to a since-deleted directory can be cleaned up. Both are idempotent. `list` prints the durable grants these verbs manage, each with its project name when set — serve additionally always allows its own launched default root (its served directory, or home for a bare `contenox serve`), which is not a grant and appears in the API and Beam folder picker (`GET /workspace/roots`) rather than here.
+`add` requires the path to be an existing directory (a workspace root must be a real directory); `remove` does not, so a grant to a since-deleted directory can be cleaned up. Both are idempotent. `list` prints the durable grants these verbs manage, each with its project name when set.
 
 | Flag | Description |
 | ---- | ----------- |
 | `--name <name>` (on `add`) | Friendly project name stamped into the folder's marker; re-adding with a new name renames the project |
-
-A LAN operator working only through the browser has the same verbs over the authenticated REST surface: `POST /workspace/roots {"path": "<dir>", "name": "<name>"}` grants (and names) and `DELETE /workspace/roots?path=<dir>` revokes, each token-authed and returning the new root list — the same validation, project-marker stamp, durable write, and reload doorbell as the CLI. Each returned root carries its `name` (the marker's, empty when unset), a `default` flag, and a `managed` flag marking the operator-added roots the browser may forget (as opposed to serve's structural launch roots).
-
-#### `contenox workspace access [--root <root>] [--policy <name>] <path> [<path>...]`
-
-Preview what the active HITL policy would decide for a read and a write access to one or more paths — without touching the filesystem, prompting for approval, or running any tool call. This is the same evaluation the live agent's tool dispatch gates run for `local_fs` (`read_file`/`list_dir` for the read dimension, `write_file` for the write dimension); it is also the batch, structured-reason data source behind Beam's access-preview panel.
-
-Unlike `add`/`remove`/`list` (durable grants, no serve required), a verdict is computed live by a running `contenox serve` — this reaches its REST API (`POST /workspace/access`), the same `--server`/`--token`/`CONTENOX_SERVER_URL`/`CONTENOX_SERVER_TOKEN` convention as `contenox approvals`.
-
-```bash
-contenox workspace access src/main.go
-contenox workspace access --policy hitl-policy-strict.json .ssh/id_rsa
-contenox workspace access --root /home/me/project src/main.go .ssh/id_rsa ../escape
-```
-
-Each `<path>` is relative to the workspace root being evaluated. A path that does not resolve inside that root (outside every allowlisted root, or past a symlink escape) comes back `reachable:false` with no read/write verdict — no policy is evaluated for a path that is not really inside the root. Sample run against a workspace root containing a normal source file and a `.ssh/id_rsa` key, evaluated under `hitl-policy-strict.json`:
-
-```
-$ contenox workspace access --policy hitl-policy-strict.json src/main.go .ssh/id_rsa ../escape
-Policy: hitl-policy-strict.json
-PATH         REACHABLE  READ   WRITE    REASON
-src/main.go  true       allow  approve  write:matched_rule#30
-.ssh/id_rsa  true       deny   deny     read:matched_rule#0 write:matched_rule#0
-../escape    false      -      -        -
-```
-
-The header line names the *resolved* policy (the one that actually gated the batch — the active-policy KV value or the configured fallback, not merely whatever `--policy` was requested). `READ`/`WRITE` show each dimension's action (`allow`/`approve`/`deny`); the `REASON` column omits a plain `allow` (the routine, expected case) and otherwise shows which rule decided it (`matched_rule#<index>`) or that the policy's `default_action` applied.
-
-| Flag | Description |
-| ---- | ----------- |
-| `--root <root>` | Workspace root the paths resolve against (a granted root, or a directory under one); omitted resolves to serve's default (first-configured) root |
-| `--policy <name>` | HITL policy file name to evaluate against, e.g. `hitl-policy-strict.json`; omitted uses the runtime's active policy resolution, the same one the live agent uses |
-| `--server <url>` / `--token <token>` | Reach a running `contenox serve` (as `contenox approvals`) |
-
-### `contenox code [vscode args...]`
-
-Launches VS Code with Contenox's proposed-API extension enabled. Extra arguments are passed through to `code`.
-
-```bash
-contenox code .
-```
 
 ### `contenox state`
 
@@ -663,14 +460,6 @@ contenox acpx                # headless / untrusted-driver profile
 
 The chain each profile loads is overridable via `CONTENOX_ACP_CHAIN_PATH` (acp) and `CONTENOX_ACPX_CHAIN_PATH` (acpx). See the [editor integration guides](/docs/integrations/editors/zed/) for client setup.
 
-### `contenox vscode-agent`
-
-Runs the Contenox VS Code bridge over stdio. This is launched by the VS Code extension, not typically invoked by hand.
-
-```bash
-contenox vscode-agent --stdio
-```
-
 ### `contenox version`
 
 Prints the current binary version and exits.
@@ -685,8 +474,6 @@ contenox version
 |---|---|
 | `CONTENOX_ACP_CHAIN_PATH` | Override the chain file used by ACP sessions |
 | `CONTENOX_ACPX_CHAIN_PATH`| Override the chain file used by headless ACPX sessions |
-| `CONTENOX_SERVER_URL` | Base URL of a running `contenox serve` for `fleet`/`mission`/`approvals` (instead of `--server`). In a `contenox acp` editor session, setting it is also the explicit opt-in that **forwards** `/mission` dispatches to that serve instead of running them in-process. |
-| `CONTENOX_SERVER_TOKEN` | Bearer token for the serve API (instead of `--token`). |
 | `CONTENOX_DEFAULT_MODEL` / `CONTENOX_DEFAULT_PROVIDER` | Process-level override of the configured default model/provider (nothing is persisted). Also the ACP `env_var` auth-method contract for non-interactive setup. |
 | `CONTENOX_DEFAULT_ALT_MODEL` / `CONTENOX_DEFAULT_ALT_PROVIDER` | Same, for the alt model pair. |
 | `CONTENOX_DEFAULT_MAX_TOKENS` / `CONTENOX_DEFAULT_THINK` | Same, for the response token cap and reasoning level. |

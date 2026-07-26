@@ -5,7 +5,7 @@ the conversation:
 
 - **Agent side** — `libacp.AgentSideConnection` serving a `libacp.Agent`.
   This is the upward direction: `runtime/acpsvc` implements the production
-  agent that editors (Zed, beam, the VS Code bridge) drive via
+  agent that ACP clients (Zed, JetBrains, the Beam TUI) drive via
   `contenox acp`.
 - **Client side** — `libacp.ClientSideConnection` driving a `libacp.Client`.
   This is the downward direction: contenox itself opening sessions on other

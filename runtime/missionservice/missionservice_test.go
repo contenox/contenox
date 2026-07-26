@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	apiframework "github.com/contenox/runtime/apiframework"
+	"github.com/contenox/runtime/runtime/errdefs"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/google/uuid"
@@ -281,7 +281,7 @@ func TestUnit_MissionService_BindConflictingSessionIsRejected(t *testing.T) {
 
 	_, err = svc.Bind(ctx, m.ID, "session-2", "")
 	require.Error(t, err)
-	require.True(t, errors.Is(err, apiframework.ErrConflict))
+	require.True(t, errors.Is(err, errdefs.ErrConflict))
 
 	// The original binding must survive the rejected attempt.
 	persisted, err := svc.Get(ctx, m.ID)
@@ -301,7 +301,7 @@ func TestUnit_MissionService_BindConflictingInstanceIsRejected(t *testing.T) {
 
 	_, err = svc.Bind(ctx, m.ID, "", "instance-2")
 	require.Error(t, err)
-	require.True(t, errors.Is(err, apiframework.ErrConflict))
+	require.True(t, errors.Is(err, errdefs.ErrConflict))
 
 	persisted, err := svc.Get(ctx, m.ID)
 	require.NoError(t, err)

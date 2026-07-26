@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/contenox/runtime/libsandbox"
-	"github.com/contenox/runtime/runtime/serverapi"
 	"github.com/spf13/cobra"
 )
 
@@ -45,8 +44,8 @@ func init() {
 }
 
 func runSandboxEnv(cmd *cobra.Command, _ []string) error {
-	config := &serverapi.Config{}
-	if err := serverapi.LoadConfig(config); err != nil {
+	config := &sandboxEnvConfig{}
+	if err := loadEnvConfig(config); err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
 	// nil injector: this preview reports the SCRUB only (what serve's own

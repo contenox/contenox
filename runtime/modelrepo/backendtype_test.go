@@ -2,17 +2,18 @@ package modelrepo
 
 import "testing"
 
-func TestUnit_IsLocalBackendType(t *testing.T) {
-	local := []string{"llama", "openvino", "local", "modeld", "LLAMA", " OpenVINO "}
-	for _, v := range local {
-		if !IsLocalBackendType(v) {
-			t.Errorf("IsLocalBackendType(%q) = false, want true", v)
-		}
+func TestUnit_CanonicalBackendType(t *testing.T) {
+	cases := map[string]string{
+		"ollama":     "ollama",
+		" OLLAMA ":   "ollama",
+		"OpenAI":     "openai",
+		"vllm":       "vllm",
+		"":           "",
+		" Anthropic": "anthropic",
 	}
-	remote := []string{"ollama", "openai", "gemini", "mistral", "bedrock", "vllm", "", "anthropic"}
-	for _, v := range remote {
-		if IsLocalBackendType(v) {
-			t.Errorf("IsLocalBackendType(%q) = true, want false", v)
+	for in, want := range cases {
+		if got := CanonicalBackendType(in); got != want {
+			t.Errorf("CanonicalBackendType(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

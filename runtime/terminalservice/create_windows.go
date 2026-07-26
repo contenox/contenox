@@ -9,7 +9,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/contenox/runtime/apiframework"
+	"github.com/contenox/runtime/runtime/errdefs"
 	"github.com/contenox/runtime/runtime/terminalstore"
 	"github.com/google/uuid"
 	"golang.org/x/sys/windows"
@@ -21,7 +21,7 @@ func (s *service) Create(ctx context.Context, principal string, req CreateReques
 	}
 	cwd, err := ResolveCwdUnderRoot(s.cfg.AllowedRoot, req.CWD)
 	if err != nil {
-		return nil, apiframework.BadRequest(err.Error())
+		return nil, errdefs.BadRequest(err.Error())
 	}
 	shell := req.Shell
 	if shell == "" {
@@ -29,7 +29,7 @@ func (s *service) Create(ctx context.Context, principal string, req CreateReques
 	}
 	resolvedShell, err := resolveShell(shell)
 	if err != nil {
-		return nil, apiframework.BadRequest(err.Error())
+		return nil, errdefs.BadRequest(err.Error())
 	}
 	shell = resolvedShell
 	cols, rows := req.Cols, req.Rows

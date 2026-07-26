@@ -5,7 +5,7 @@ Production-ready, copy-paste patterns for automating real work with `contenox ru
 Each recipe is a **pre-built solution**: pipe data in, the model executes your chain, you get structured output back. Stateless runs stay composable with the rest of your shell.
 
 > **Prerequisites**
-> - Run `contenox init` in your project once, then either pull a local model (`contenox model pull granite-3.2-2b`) or configure a cloud backend — see [Quickstart](/docs/guide/quickstart/).
+> - Run `contenox init` in your project once, then either point Contenox at a local Ollama model or configure a cloud backend — see [Quickstart](/docs/guide/quickstart/).
 > - Use `--shell` for direct CLI recipes that need command execution; command policy lives in each chain’s `tools_policies`.
 
 ## Categories

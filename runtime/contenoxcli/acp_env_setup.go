@@ -98,7 +98,7 @@ func completeEnvSetup(ctx context.Context, db libdb.DBManager) error {
 	if model == "" {
 		model = sp.defaultModel
 	}
-	if model == "" && !isLocalModeldProvider(sp.key) {
+	if model == "" {
 		return fmt.Errorf("set %s: provider %q has no default model", envDefaultModel, sp.key)
 	}
 
@@ -118,10 +118,8 @@ func completeEnvSetup(ctx context.Context, db libdb.DBManager) error {
 		}
 	}
 
-	if !isLocalModeldProvider(sp.key) {
-		if err := registerSetupBackend(ctx, db, sp.key, apiKey, baseURL); err != nil {
-			return err
-		}
+	if err := registerSetupBackend(ctx, db, sp.key, apiKey, baseURL); err != nil {
+		return err
 	}
 
 	store := runtimetypes.New(db.WithoutTransaction())

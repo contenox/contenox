@@ -1,0 +1,114 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+@tailwind utilities;
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Contenox design-system tokens, vendored from the retired shared UI package
+   (the runtime is terminal-first; there is no web UI to share them with
+   anymore). Trimmed to what the site uses: surface/text semantics, the indigo
+   primary ramp for focus rings, and the compact prose treatment. */
+
+@layer components {
+  /* Tighten up prose spacing to feel more like a compact document */
+  .prose-compact :where(p, ul, ol, pre, blockquote) {
+    margin-top: 0.75em;
+    margin-bottom: 0.75em;
+  }
+  .prose-compact :where(li) {
+    margin-top: 0.25em;
+    margin-bottom: 0.25em;
+  }
+  .prose-compact :where(ul, ol) {
+    padding-left: 1.25em;
+  }
+  .prose-compact {
+    line-height: 1.6;
+  }
+  .prose-compact :where(h1, h2, h3, h4) {
+    margin-top: 1.25em;
+    margin-bottom: 0.5em;
+  }
+}
+
+@theme {
+  /* Vibrant indigo primary (focus rings, accents) */
+  --color-primary-50: #eef2ff;
+  --color-primary-100: #e0e7ff;
+  --color-primary-200: #c7d2fe;
+  --color-primary-300: #a5b4fc;
+  --color-primary-400: #818cf8;
+  --color-primary-500: #6366f1;
+  --color-primary-600: #4f46e5;
+  --color-primary-700: #4338ca;
+  --color-primary-800: #3730a3;
+  --color-primary-900: #312e81;
+  --color-primary: var(--color-primary-600);
+
+  /* Dark-mode primary is neutral-white; indigo stays CTA-only. */
+  --color-dark-primary-500: #ededed;
+
+  /* Typography */
+  --color-text: #2b2f33;
+  --color-dark-text: #e8eaed;
+
+  /* Light surfaces */
+  --color-surface-50: #f8f9fa;
+  --color-surface-100: #fcfcfc;
+  --color-surface-200: #f3f4f6;
+  --color-surface-300: #e5e7eb;
+  --color-surface-400: #d1d5db;
+  --color-surface-500: #9ca3af;
+  --color-surface-600: #6b7280;
+  --color-surface-700: #4b5563;
+  --color-surface-800: #374151;
+  --color-surface-900: #1f2937;
+  --color-surface: var(--color-surface-50);
+
+  /* Dark surfaces (brand-matched cool graphite: #08090a → #0d0e10 → #121416) */
+  --color-dark-surface-50: #08090a;
+  --color-dark-surface-100: #0d0e10;
+  --color-dark-surface-200: #121416;
+  --color-dark-surface-300: #1a1c1f;
+  --color-dark-surface-400: #24262a;
+  --color-dark-surface-500: #2f3237;
+  --color-dark-surface-600: #3b3e44;
+  --color-dark-surface-700: #4b4f56;
+  --color-dark-surface-800: #5f636b;
+  --color-dark-surface-900: #757980;
+  --color-dark-surface: var(--color-dark-surface-200);
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary-500);
+    outline-offset: 2px;
+    transition: outline-offset 0.2s ease;
+  }
+  .dark :focus-visible {
+    outline-color: var(--color-dark-primary-500);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root,
+  .dark {
+    transition:
+      background-color 0.3s ease,
+      color 0.3s ease;
+  }
+
+  * {
+    transition:
+      background-color 0.3s ease,
+      color 0.3s ease,
+      border-color 0.3s ease;
+  }
+}

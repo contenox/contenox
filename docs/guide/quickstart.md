@@ -13,19 +13,11 @@ description: Install Contenox and connect a model.
 curl -fsSL https://contenox.com/install.sh | sh
 ```
 
-To also preinstall the local inference daemon (a ~600 MB download, otherwise
-installed on demand by `contenox setup` or `contenox modeld install`):
-
-```bash
-curl -fsSL https://contenox.com/install.sh | CONTENOX_WITH_MODELD=1 sh
-```
-
 Or download the binary directly from [GitHub Releases](https://github.com/contenox/runtime/releases/latest).
 
-The whole local-first path — install, setup, daemon, model pull, first prompt —
-in one take:
+The whole path — install, setup, first prompt — in one take:
 
-![Install demo: install.sh, contenox setup picking the local llama provider, starting modeld, pulling a model, and a first local answer](/install.gif)
+![Install demo: install.sh, contenox setup, and a first answer](/install.gif)
 
 ---
 
@@ -37,33 +29,21 @@ Run this once in the project directory you want Contenox to work in:
 contenox init
 ```
 
-This creates the workspace marker, writes the default chain and HITL policy presets, and registers the local `llama` and `openvino` inference backends (both served by the `modeld` daemon).
+This creates the workspace marker and writes the default chain and HITL policy presets.
 
 ---
 
-## 3. Pull a local model
+## 3. Connect a model
 
-For the local-first path, install and start the `modeld` daemon, then pull a
-curated GGUF model:
+For the local path, install [Ollama](https://ollama.com), pull a model, and point Contenox at it:
 
 ```bash
-contenox modeld install     # downloads + verifies the daemon; prints the serve command
-contenox model pull granite-3.2-2b
+ollama pull qwen3:8b
+contenox setup          # pick Ollama, done
 contenox doctor
 ```
 
-Keep the printed `modeld serve` command running in another terminal — it is
-the process that loads models and serves inference.
-
-See the [modeld guide](/docs/integrations/providers/modeld/) (and [Architecture](/docs/integrations/providers/modeld-architecture/)) for how the daemon works, capacity planning, remote nodes, and the lease/slot model.
-
-Local models are served by the bundled `modeld` daemon. With `contenox serve`
-running, the Beam UI's modeld console shows the daemon and lets you load or
-unload the resident model:
-
-![Beam's modeld console: pick a local model, load it into the GPU slot, watch it go resident, unload it](/modeld-console.gif)
-
-On a fresh install, the first pulled model becomes `default-model`, and `contenox init` sets `default-provider` to `llama` when no provider was already configured.
+See the [Ollama guide](/docs/integrations/providers/ollama/) for details, including Ollama Cloud.
 
 Run your first prompt:
 
@@ -87,9 +67,9 @@ contenox chat -e
 Contenox can also run inside editor or desktop clients that speak ACP. The same chains, model config, tools, and HITL policy are used either way:
 
 - [Use from Zed](/docs/integrations/editors/zed/)
-- [Use from VS Code or VSCodium](/docs/integrations/editors/vscode-vscodium/)
 - [Use from JetBrains](/docs/integrations/editors/jetbrains/)
 - [Use from AionUi](/docs/integrations/editors/aionui/)
+- [Use from OpenClaw](/docs/integrations/editors/openclaw/)
 
 ---
 
@@ -99,7 +79,6 @@ Contenox needs at least one model to work. Pick the option that fits:
 
 | Option | What you need |
 |--------|--------------|
-| [Built-in local models](/docs/integrations/providers/local-models/) | Nothing - Contenox downloads and runs GGUF models itself |
 | [Ollama](/docs/integrations/providers/ollama/) | Ollama installed locally, or an Ollama Cloud key |
 | [Google Gemini](/docs/integrations/providers/gemini/) | A free Gemini API key (no GPU) |
 | [OpenRouter](/docs/integrations/providers/openrouter/) | One OpenRouter API key for many hosted models |
@@ -108,18 +87,13 @@ Contenox needs at least one model to work. Pick the option that fits:
 | [Mistral](/docs/integrations/providers/mistral/) | A Mistral API key |
 | [AWS Bedrock](/docs/integrations/providers/bedrock/) | An AWS account with Bedrock model access |
 
-If you're not sure, start with [built-in local models](/docs/integrations/providers/local-models/) — no account or API key needed.
-
-All providers can also be configured from the Beam UI (`contenox serve`), which
-stores keys and creates the matching backend for you:
-
-![Beam's cloud providers page: Ollama, OpenAI, Anthropic, Gemini, Mistral, and Vertex AI configuration cards](/beam-providers.png)
+If you're not sure, start with [Ollama](/docs/integrations/providers/ollama/) for a fully local setup, or [Gemini](/docs/integrations/providers/gemini/) for a free hosted key.
 
 ---
 
 ## Next steps
 
-- [**Beam: the bundled web UI**](/docs/guide/beam/) — run `contenox serve` and drive the same sessions, chains, and approval gates in the browser
+- **Beam, the terminal UI** — run `contenox beam` for chat, plan, and shell in one persistent session
 - [**Your first chain**](/docs/guide/first-chain/) — author your own agent in five edits
 - [Core concepts](/docs/guide/concepts/) — how chains, tasks, and tools fit together
 - [MCP integration](/docs/integrations/tools/mcp/) — connect external tools

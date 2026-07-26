@@ -22,7 +22,7 @@ var modelAddCmd = &cobra.Command{
 	Use:   "add <name>",
 	Short: "Register a model in the local registry without downloading.",
 	Long: `Register a model name and its source URL in the local model registry.
-This does not download the model; use 'model pull' to download.
+This does not download the model.
 
 Examples:
   contenox model add my-llm --url https://huggingface.co/org/model.gguf

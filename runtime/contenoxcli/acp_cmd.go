@@ -81,7 +81,6 @@ func init() {
 	for _, c := range []*cobra.Command{acpCmd, acpxCmd} {
 		c.Flags().Bool("auto", false, "Non-interactive mode: disable HITL permission prompts (gated tools run unattended)")
 		c.Flags().Bool("setup", false, "Run interactive setup wizard to configure provider and model, then exit.")
-		c.Flags().Bool("setup-web", false, "Serve the Beam setup wizard in the browser, exit once configured.")
 		c.Flags().String("workspace-id", "", "Workspace ID for new ACP sessions (default: the stable workspace from ~/.contenox/workspace.id, same as the CLI). Existing sessions are always located by their session ID regardless of workspace.")
 	}
 	acpCmd.Flags().Bool("experimental-acp", false, "Accepted for compatibility with ACP clients that hardcode this launch flag (e.g. AionUi); no effect.")
@@ -138,9 +137,6 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	ctx, stop := signal.NotifyContext(parentCtx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	if setupWeb, _ := cmd.Flags().GetBool("setup-web"); setupWeb {
-		return runSetupWeb(ctx, cmd.OutOrStdout(), true)
-	}
 	// Deferred before the engine is built so it runs after engine teardown
 	// (LIFO): drain registered model-backend shutdown hooks (e.g. native
 	// in-process inference sessions) deterministically on exit. No-op when no
@@ -410,17 +406,12 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	var (
 		missionFleet      acpsvc.MissionDispatcher
 		missionAgents     acpsvc.MissionAgentResolver
-		missionForward    *acpsvc.MissionForwardConfig
 		stopFleetTeardown func()
 	)
 	isDispatchedUnit := strings.TrimSpace(os.Getenv(profile.chainEnv)) != ""
 	switch {
 	case !profile.embedFleet || isDispatchedUnit:
 		// No mission capability in this process (acpx, or this process is a unit).
-	case strings.TrimSpace(os.Getenv(envServeURL)) != "":
-		// OPT-IN forwarding: fire onto the serve named by CONTENOX_SERVER_URL.
-		fwd := newMissionForwarder()
-		missionFleet, missionAgents, missionForward = fwd, fwd, fwd.forwardConfig()
 	case engine != nil:
 		// IN-PROCESS fleet (the default editor journey — needs a configured model,
 		// since the dispatched unit resolves the same $HOME state this editor runs on).
@@ -460,12 +451,10 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 		KnownPolicies:         embeddedPolicyNames(),
 		HITLDefaultPolicyName: profile.hitlPolicy,
 		UpdateBanner:          updateBanner,
-		// `/mission` dispatch: the in-process fleet by default, the opt-in serve
-		// forwarder when CONTENOX_SERVER_URL is set, or all nil (acpx, a dispatched
+		// `/mission` dispatch: the in-process fleet, or nil (acpx, a dispatched
 		// unit, or a setup-only editor) — nil-safe throughout acpsvc when unwired.
-		Fleet:            missionFleet,
-		Agents:           missionAgents,
-		MissionForwarded: missionForward,
+		Fleet:  missionFleet,
+		Agents: missionAgents,
 		EnvSetup: &acpsvc.EnvSetupSpec{
 			Vars: acpEnvSetupVars(),
 			Complete: func(cctx context.Context) error {

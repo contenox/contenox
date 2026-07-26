@@ -17,12 +17,11 @@ If you haven't installed Contenox yet, do the [Quickstart](/docs/guide/quickstar
 
 **A project-local workspace marker** — `.contenox/workspace.id` in the current directory. This is like `.git/` — it marks this directory tree as a Contenox workspace. The engine walks up from your current directory looking for this marker to resolve which workspace you're in.
 
-**Global runtime files** — `~/.contenox/` stores everything that's shared across workspaces: default chain presets, HITL policies, pulled models, and the SQLite database.
+**Global runtime files** — `~/.contenox/` stores everything that's shared across workspaces: default chain presets, HITL policies, and the SQLite database.
 
 ```
 ~/.contenox/                    ← global (shared across all workspaces)
 ├── local.db                    ← SQLite: backends, config, sessions, MCP registrations
-├── models/                     ← GGUF model files (populated by `contenox model pull`)
 ├── default-chain.json          ← the interactive chat chain
 ├── default-run-chain.json      ← the one-shot pipeline chain
 ├── hitl-policy-default.json    ← default HITL policy
@@ -50,11 +49,8 @@ You don't have to start there. You can write your own.
 
 Chains live as files in `~/.contenox/` (and your workspace `.contenox/`); the
 CLI picks one per invocation with `--chain`, or falls back to the configured
-`default-chain`. Sessions in the Beam UI (`contenox serve`) run the workspace's
-default chain, with the model, HITL policy, and reasoning effort switchable per
-session:
-
-![Beam's new-session page: per-session Model, HITL Policy, Think, Token Limit, and Workspace controls above an empty chat](/beam-new-chat.png)
+`default-chain`. Sessions in the Beam TUI (`contenox beam`) and in ACP editors
+run the workspace's default chain the same way.
 
 ---
 
@@ -240,7 +236,7 @@ That's it. You've written:
 - A tool policy with allowlists
 - A retry policy with backoff and jitter
 
-This file works against Ollama, OpenAI, Gemini, vLLM, or local GGUF/OpenVINO models (the `llama`/`openvino` backends served by the `modeld` daemon) by changing one config line. It works on your laptop today; the same artifact runs on Contenox Services tomorrow without modification.
+This file works against Ollama, OpenAI, Gemini, or a self-hosted vLLM endpoint by changing one config line. It works on your laptop today; the same artifact runs on Contenox Services tomorrow without modification.
 
 ## Next
 

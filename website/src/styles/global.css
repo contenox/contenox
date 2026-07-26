@@ -1,8 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 
-/* The shared Contenox design system — same tokens Beam uses. */
-@import '../../../packages/ui/src/index.css';
+/* The Contenox design-system tokens, vendored locally (see tokens.css). */
+@import './tokens.css';
 
 @theme {
   --font-sans: 'Outfit', ui-sans-serif, system-ui, sans-serif;

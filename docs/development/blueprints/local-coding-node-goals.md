@@ -1,8 +1,8 @@
 # Contenox Local Coding Node — Goals
 
 > **Status:** product-goals blueprint (substrate-neutral). This is the "why" and
-> "what" behind the modeld backend implementation tracks (llama.cpp and
-> OpenVINO). Backends are *means* to these goals, not the goals.
+> "what" behind local inference on consumer hardware. Backends are *means* to
+> these goals, not the goals — today the local backends are Ollama and vLLM.
 
 ---
 
@@ -20,9 +20,9 @@ buyable node under ~1.5k EUR  (no 24GB+ GPU, no ~4k unified-memory box)
 ```
 
 This is a single-user product target, not a single-process assumption. The user
-can have multiple VS Code windows, Zed ACP threads, and CLI sessions open at the
-same time. Runtime ownership and workspace-write coordination are covered in
-`modeld/multi-client-coordination.md`.
+can have multiple editor ACP threads, Beam TUI panes, and CLI sessions open at
+the same time. Runtime ownership and workspace-write coordination were explored
+in the retired modeld multi-client-coordination record (git history; see [Retired R&D](retired/README.md)).
 
 Everything else serves this single goal: a developer (or we) should not have to
 buy frontier hardware or leak code to the cloud to get useful coding help.

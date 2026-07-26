@@ -14,8 +14,6 @@ import (
 	"github.com/contenox/runtime/libkvstore"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/backendservice"
-	"github.com/contenox/runtime/runtime/modelrepo"
-	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
 	"github.com/contenox/runtime/runtime/runtimestate"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/google/uuid"
@@ -38,22 +36,6 @@ var backendCmd = &cobra.Command{
 	Long: `Register and manage LLM backend endpoints.
 
 A backend points at an LLM provider. Supported types:
-  llama                         Local llama.cpp GGUF runtime served by the modeld daemon — NO external
-                                server, NO network, NO API key. Persistent sessions, explicit profiles,
-                                embeddings, and live prefix reuse. Point --url at the models directory.
-                                Registered automatically by 'contenox init'. modeld serves one active
-                                model at a time. --type local maps here.
-  openvino                      Local OpenVINO IR runtime served by the modeld daemon (CPU / GPU) —
-                                NO external server, NO network, NO API key. Point --url at the models
-                                directory. Registered automatically by 'contenox init'. modeld serves one
-                                local backend mode at a time; inactive local registrations are hidden
-                                from 'contenox model list'.
-  modeld                        A modeld node, local or remote. --url local (the default when omitted)
-                                reaches the SAME local daemon as the llama/openvino rows above, through
-                                the daemon's lease rather than a stored address. --url host:port dials a
-                                modeld instance running on another machine (a personal server, a GPU
-                                box on your tailnet, an EC2 instance) directly over gRPC — plaintext, no
-                                auth: only bind a remote modeld on a trusted network.
   ollama                        Local Ollama daemon (requires: ollama serve) or hosted Ollama Cloud.
   openai                        api.openai.com (requires --api-key-env).
   openrouter                    openrouter.ai — routes 300+ models from many providers through one
@@ -64,9 +46,6 @@ A backend points at an LLM provider. Supported types:
                                 login and GOOGLE_CLOUD_PROJECT).
 
 Examples:
-  # Local llama.cpp inference through modeld — no provider API key, no network:
-  contenox backend add llama --type llama --url <models-dir>
-
   # Register a local Ollama server (default URL inferred):
   contenox backend add ollama --type ollama
 
@@ -90,9 +69,6 @@ Examples:
   # Register a custom vLLM server:
   contenox backend add myvllm --type vllm --url http://gpu-host:8000
 
-  # Register a remote modeld node (a personal server, a tailnet peer, an EC2 GPU box):
-  contenox backend add gpu-box --type modeld --url 100.64.0.5:9090
-
   contenox backend list
   contenox backend show openai
   contenox backend remove myvllm`,
@@ -101,8 +77,8 @@ Examples:
 // defaultBaseURLForType infers --url for backend types with one sensible
 // default, and errors out for types where a default would be actively wrong
 // (vertex-google/bedrock carry account-specific info no default could guess).
-// Types not listed here (llama, openvino, vllm, myvllm-style custom
-// endpoints) return "" unchanged — the caller must pass --url explicitly.
+// Types not listed here (vllm, myvllm-style custom endpoints) return ""
+// unchanged — the caller must pass --url explicitly.
 func defaultBaseURLForType(typ string) (string, error) {
 	switch typ {
 	case "ollama":
@@ -117,12 +93,6 @@ func defaultBaseURLForType(typ string) (string, error) {
 		return "https://api.mistral.ai/v1", nil
 	case "gemini":
 		return "https://generativelanguage.googleapis.com", nil
-	case "modeld":
-		// "local" reaches the local daemon via its lease, not a stored
-		// address — the same one the llama/openvino rows already use. This
-		// makes `backend add <name> --type modeld` (no --url) the easy path
-		// for registering "this machine's modeld" alongside a remote node.
-		return modeldconn.LocalSentinel, nil
 	case "vertex-google":
 		return "", fmt.Errorf("--url is required for %s backends\n  Include project and location, e.g.:\n  --url \"https://us-central1-aiplatform.googleapis.com/v1/projects/$GOOGLE_CLOUD_PROJECT/locations/us-central1\"", typ)
 	case "bedrock":
@@ -138,14 +108,6 @@ var backendAddCmd = &cobra.Command{
 	Long: `Register a named LLM backend endpoint in the local SQLite database.
 
 The --type flag determines which provider protocol is used.
-  llama                         Local llama.cpp GGUF runtime served by modeld.
-                                No Ollama, no provider API key required. Persistent sessions,
-                                explicit runtime profiles, embeddings, and live prefix reuse.
-                                Compatibility: --type local maps to this provider.
-  openvino                      Local OpenVINO IR runtime served by modeld. No provider API key required.
-                                modeld runs either llama or openvino mode at a time.
-  modeld                        A modeld node. --url local (default) reaches the local daemon via its
-                                lease; --url host:port dials a remote node directly.
   openai, anthropic, mistral,
   gemini                        Cloud providers. Base URL inferred if --url is omitted. Requires --api-key-env.
   openrouter                    openrouter.ai — single API key for 300+ models. Base URL inferred. Requires --api-key-env.
@@ -158,14 +120,12 @@ API keys should be passed via --api-key-env (reads from environment) rather than
 --api-key (inline literal) to avoid leaking secrets into shell history.
 
 Examples:
-  contenox backend add llama      --type llama       --url <models-dir>
   contenox backend add ollama     --type ollama
   contenox backend add ollama-cloud --type ollama    --url https://ollama.com/api --api-key-env OLLAMA_API_KEY
   contenox backend add openai     --type openai      --api-key-env OPENAI_API_KEY
   contenox backend add openrouter --type openrouter  --api-key-env OPENROUTER_API_KEY
   contenox backend add gemini     --type gemini      --api-key-env GEMINI_API_KEY
-  contenox backend add myvllm    --type vllm         --url http://gpu-host:8000
-  contenox backend add gpu-box    --type modeld      --url 100.64.0.5:9090`,
+  contenox backend add myvllm    --type vllm         --url http://gpu-host:8000`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := libtracker.WithNewRequestID(context.Background())
@@ -247,8 +207,6 @@ var backendListCmd = &cobra.Command{
 	Short: "List all registered backends.",
 	Long: `List every registered backend as a table of name, type, and URL.
 
-modeld backends are annotated as "modeld (local)" when they reach the local
-daemon via its lease, or "modeld (remote)" when they carry a host:port address.
 If no backends are registered, prints a hint to run 'contenox backend add'.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -270,16 +228,7 @@ If no backends are registered, prints a hint to run 'contenox backend add'.`,
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 		fmt.Fprintln(w, "NAME\tTYPE\tURL")
 		for _, b := range backends {
-			url := b.BaseURL
-			typ := b.Type
-			if modelrepo.CanonicalBackendType(b.Type) == "modeld" {
-				if b.BaseURL == modeldconn.LocalSentinel || b.BaseURL == "" {
-					typ = "modeld (local)"
-				} else {
-					typ = "modeld (remote)"
-				}
-			}
-			fmt.Fprintf(w, "%s\t%s\t%s\n", b.Name, typ, url)
+			fmt.Fprintf(w, "%s\t%s\t%s\n", b.Name, b.Type, b.BaseURL)
 		}
 		return w.Flush()
 	},
@@ -388,7 +337,7 @@ func globalContenoxDir() (string, error) {
 }
 
 func init() {
-	backendAddCmd.Flags().String("type", "ollama", "Backend type: llama (local GGUF via modeld; local alias accepted), openvino, modeld (a modeld node, local or remote), ollama, openai, openrouter, anthropic, mistral, bedrock, gemini, vllm, vertex-google")
+	backendAddCmd.Flags().String("type", "ollama", "Backend type: ollama, openai, openrouter, anthropic, mistral, bedrock, gemini, vllm, vertex-google")
 	backendAddCmd.Flags().String("url", "", "Base URL of the backend (auto-inferred for openai/openrouter/anthropic/mistral/gemini if omitted; set https://ollama.com/api for hosted Ollama)")
 	backendAddCmd.Flags().String("api-key-env", "", "Name of the environment variable holding the API key (preferred over --api-key)")
 	backendAddCmd.Flags().String("api-key", "", "API key literal — prefer --api-key-env to avoid leaking into shell history")

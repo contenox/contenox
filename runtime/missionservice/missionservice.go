@@ -52,7 +52,7 @@ import (
 	"strings"
 	"time"
 
-	apiframework "github.com/contenox/runtime/apiframework"
+	"github.com/contenox/runtime/runtime/errdefs"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/google/uuid"
@@ -490,7 +490,7 @@ type Service interface {
 	// one-mission, one-unit invariant mission mode requires. Re-binding the
 	// id a mission already carries is an idempotent no-op; binding a
 	// DIFFERENT id over one already set is a conflict
-	// (apiframework.ErrConflict) rather than an append. An unknown mission
+	// (errdefs.ErrConflict) rather than an append. An unknown mission
 	// id surfaces as libdb.ErrNotFound.
 	Bind(ctx context.Context, id string, sessionID, instanceID string) (*Mission, error)
 
@@ -508,7 +508,7 @@ type Service interface {
 	// is the only permitted target, and a mission already terminal is immutable.
 	// A second Finish naming the SAME terminal status is an idempotent no-op
 	// (safe to retry); a DIFFERENT terminal status over an already-finished
-	// mission is apiframework.ErrConflict (a landed mission does not later
+	// mission is errdefs.ErrConflict (a landed mission does not later
 	// become derailed). An unknown mission id surfaces as libdb.ErrNotFound.
 	Finish(ctx context.Context, id string, status Status, reason string) (*Mission, error)
 
@@ -757,7 +757,7 @@ func (s *service) Bind(ctx context.Context, id string, sessionID, instanceID str
 		case sessionID:
 			// Idempotent re-bind of the id already carried: no-op.
 		default:
-			return nil, apiframework.Conflict(fmt.Sprintf("mission %q is already bound to session %q", id, m.SessionID))
+			return nil, errdefs.Conflict(fmt.Sprintf("mission %q is already bound to session %q", id, m.SessionID))
 		}
 	}
 	if instanceID != "" {
@@ -768,7 +768,7 @@ func (s *service) Bind(ctx context.Context, id string, sessionID, instanceID str
 		case instanceID:
 			// Idempotent re-bind of the id already carried: no-op.
 		default:
-			return nil, apiframework.Conflict(fmt.Sprintf("mission %q is already bound to instance %q", id, m.InstanceID))
+			return nil, errdefs.Conflict(fmt.Sprintf("mission %q is already bound to instance %q", id, m.InstanceID))
 		}
 	}
 	if !changed {
@@ -957,7 +957,7 @@ func (s *service) Finish(ctx context.Context, id string, status Status, reason s
 			// is genuinely free of side effects.
 			return m, nil
 		}
-		return nil, apiframework.Conflict(fmt.Sprintf("mission %q already finished as %q; cannot re-finish as %q", id, m.Status, status))
+		return nil, errdefs.Conflict(fmt.Sprintf("mission %q already finished as %q; cannot re-finish as %q", id, m.Status, status))
 	}
 	old := m.Status
 	m.Status = status

@@ -23,6 +23,11 @@ Conventions:
   to their first heading. Set `draft: true` to keep a doc out of the build.
 - `public/` is served at the site root; `public/install.sh` must stay
   URL-stable (`https://contenox.com/install.sh` is referenced by docs and the
-  install instructions).
+  install instructions). Only small, URL-stable assets (install.sh, logos,
+  favicons, the OG image) live here.
+- Heavy media (demo gifs, screenshots, diagrams) is hosted on the website S3
+  bucket. Docs markdown still references it root-relatively (`/hero.gif`);
+  `src/lib/remark-md-links.mjs` rewrites those image paths to the bucket URL
+  at build time — add new filenames to its `S3_MEDIA` set after uploading.
 - Deployment (CI push of `dist/` to a GitHub Pages repo) is not wired yet;
   builds are local-only.

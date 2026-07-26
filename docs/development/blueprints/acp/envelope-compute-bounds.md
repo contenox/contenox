@@ -2,7 +2,7 @@
 
 Date: 2026-07-21
 Status: building. The schema + the minimal honest enforcement slice have landed
-(see "Slice status"). Companion to `fleet-consolidation.md` (the mission envelope
+(see "Slice status"). Companion to the retired fleet-consolidation record (git history — the mission envelope
 concept), `mission-plans.md` ("determinism only at boundaries"), and
 `tool-hardening.md` (advice-vs-gate vocabulary).
 
@@ -160,9 +160,10 @@ seams a mission naturally passes through:
    with a teaching outcome" rather than stopping between turns. It counts each
    mission's gated dispatches; the call that crosses the bound is refused (the model
    sees a hard permission-deny) and the mission is finished stuck with a reason
-   naming the bound. This seam lands in `contenox serve` for free: serve already
-   constructs the answerer with the real `hitlservice` (which implements
-   `ComputeBoundsReader`) and the mission store, so no serve wiring changes.
+   naming the bound. This seam lands in the mission host for free: the
+   in-process dispatch path already constructs the answerer with the real
+   `hitlservice` (which implements `ComputeBoundsReader`) and the mission
+   store, so no extra wiring.
 
 Rejected seam: a `toolguidance`-style decorator INSIDE the subprocess. It would see
 every tool call (not just gated ones) and could return a teaching error string the
@@ -207,8 +208,8 @@ requires the subprocess-side seam above — a named follow-up.
 - **Enforcement** (`fleetservice/compute.go`, `fleetservice.go`, `unattended.go`):
   `maxTurns` + `maxTokens` in the drive loop (via `WithComputeBounds`), and
   `maxToolCalls` in the unattended answerer (per-call refusal + `Finish(stuck)`). —
-  **LANDED** (maxToolCalls live in serve via the answerer; maxTurns/maxTokens await
-  the one-line serve hookup below).
+  **LANDED** (maxToolCalls live via the answerer; maxTurns/maxTokens await
+  the one-line host hookup below).
 - **Tests**: schema parse/validate matrix + absent-block-unbounded + restrict-only
   (`hitlservice/policy_compute_test.go`); counting correctness + drive-loop
   maxTurns/maxTokens + answerer refusal (`fleetservice/compute_test.go`); the
@@ -220,11 +221,11 @@ requires the subprocess-side seam above — a named follow-up.
 
 ## Follow-ups (named, not done)
 
-1. **Serve hookup for the drive-loop bounds.** `contenox serve` does not yet pass
+1. **Host hookup for the drive-loop bounds.** The mission host does not yet pass
    `fleetservice.WithComputeBounds(hitlSvc.(hitlservice.ComputeBoundsReader))` to
    `fleetservice.New`, so `maxTurns`/`maxTokens` are enforced today only where the
-   option is wired (tests). One additive line, deferred because serve wiring
-   (contenoxcli) is another cycle's scope. `maxToolCalls` already lands in serve via
+   option is wired (tests). One additive line, deferred because host wiring
+   (contenoxcli) is another cycle's scope. `maxToolCalls` already lands via
    the answerer.
 2. **Subprocess-side tool-call seam.** A decorator in the unit's own process
    (keyed on `missiontools.WithMissionID`, reading bounds from the shared DB) would

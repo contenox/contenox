@@ -1,13 +1,12 @@
 # Blueprint: Contenox as an ACP Hub — the client-side engine capability
 
 Contenox sits on both sides of the Agent Client Protocol. Upward, `acpsvc` is
-an ACP **agent**: editors, beam, and any conformant ACP client drive it, over
-stdio (`contenox acp` / `contenox acpx`) today and over `/acp` transports as
-they land. Downward, the Go runtime is an ACP **client**: the engine opens
-sessions on *other* ACP agents and drives them the same way Zed drives
-contenox.
+an ACP **agent**: editors, the Beam TUI, and any conformant ACP client drive
+it over stdio (`contenox acp` / `contenox acpx`). Downward, the Go runtime is
+an ACP **client**: the engine opens sessions on *other* ACP agents and drives
+them the same way Zed drives contenox.
 
-The downward direction is not an app and not a beam feature. It is a
+The downward direction is not an app and not a UI feature. It is a
 capability of the Go runtime itself, reachable from two places, both
 sanctioned, neither prioritized over the other:
 
@@ -91,8 +90,8 @@ completion. Everything that happened in between — files edited, commands run,
 services restarted — is invisible to the chain that called `Chat`.
 
 That is semantically leaky by default, and it is leaky in exactly the way the
-beam chat doctrine (`../beam/beam-on-acp.md`) exists to prevent, aimed in
-the opposite direction: a chain step is supposed to be a reviewable unit whose
+chat-on-ACP doctrine (the retired beam-on-acp record, in git history) exists to prevent,
+aimed in the opposite direction: a chain step is supposed to be a reviewable unit whose
 guardrail evaluates its *complete* output before anything proceeds (blocking
 whole-message output is the architecturally
 honest default). A provider call that silently performed side effects defeats
@@ -124,7 +123,7 @@ client core.
 
 **Invariant: if permission routing degrades into auto-approve — "skip HITL,
 it's just a sub-agent" — the entire governance value of driving that agent is
-gone.** The same failure mode the beam chat doctrine polices for inbound
+gone.** The same failure mode the chat-on-ACP doctrine polices for inbound
 approvals (a permission request rendered honestly, with the rule that gated it
 nameable) applies outbound: an operator must always be able to name which
 policy gated the sub-agent's last action.
@@ -141,17 +140,13 @@ which is exactly what `acpsvc` wraps (`acpsvc.New(deps) libacp.AgentFactory`,
 pending-request map, and the permission callback, shared machinery the two
 shapes sit on top of as thin adapters.
 
-Why one shared core matters: `runtime/vscodeagent` hand-rolls its own
-pending-request bookkeeping
-(`clientReqPending map[string]chan clientResponse`,
-`runtime/vscodeagent/server.go:42`) to answer reverse calls on its own bespoke
-stdio bridge protocol — the same shape (a request-id-keyed map, resolved when
-the peer's response arrives) that the client core provides for
-`session/request_permission`, `fs/read_text_file`, and `terminal/create`.
-Solving it again for real external ACP agents, bespoke and non-reusable,
-would repeat that mistake; a future `/acp` outbound WebSocket dial (mirroring
-the inbound `/acp` WebSocket transport beam uses) likewise reuses the
-core rather than adding a third implementation.
+Why one shared core matters: the retired VS Code bridge hand-rolled its own
+pending-request bookkeeping (a request-id-keyed map, resolved when the peer's
+response arrives) on a bespoke stdio protocol — the same shape the client core
+provides for `session/request_permission`, `fs/read_text_file`, and
+`terminal/create`. Solving it again for real external ACP agents, bespoke and
+non-reusable, would repeat that mistake; any future outbound transport dial
+likewise reuses the core rather than adding another implementation.
 
 Symmetry worth noting: `acpsvc`'s own `local_shell` handling already expects
 capable peers to run commands on the peer's own machine — it routes through
@@ -209,10 +204,9 @@ permission-routing invariant applying to the remote host's own HITL policy.
 - **Auto-approve as a default or fallback permission policy for a driven
   agent.** Permission routing must reach contenox's HITL policy machinery,
   never a bypass justified by "it's just a sub-agent."
-- **A second (or third — counting `acp-web-client`'s official-SDK-based
-  browser client) hand-rolled ACP client RPC layer outside `libacp`.**
-  Replicating `vscodeagent`'s bespoke pending-request map instead of extending
-  the shared core repeats a mistake already made once.
+- **A second hand-rolled ACP client RPC layer outside `libacp`.**
+  Replicating the retired VS Code bridge's bespoke pending-request map instead
+  of extending the shared core repeats a mistake already made once.
 - **A chain step or provider that cannot name which sub-agent, session, or
   policy backs it.** The operator must always be able to answer "what is this
   and what rule gated its last action," outbound as well as inbound.

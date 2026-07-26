@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/contenox/runtime/apiframework"
+	"github.com/contenox/runtime/runtime/errdefs"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/terminalstore"
 )
@@ -167,7 +167,7 @@ func (s *service) List(ctx context.Context, principal string, createdAtCursor *t
 
 func (s *service) UpdateGeometry(ctx context.Context, principal, id string, cols, rows int) error {
 	if cols <= 0 || rows <= 0 {
-		return apiframework.BadRequest("cols and rows must be positive")
+		return errdefs.BadRequest("cols and rows must be positive")
 	}
 	st := s.store()
 	row, err := st.GetByIDAndPrincipal(ctx, id, principal)

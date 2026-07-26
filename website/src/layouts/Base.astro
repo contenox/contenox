@@ -13,7 +13,7 @@ interface Props {
 }
 const {
   title,
-  description = 'Contenox — local-first AI workflow runtime. Package repeatable work into versioned chains and run them from the CLI, VS Code, or any ACP editor.',
+  description = 'Contenox — an open coding harness. Chat, missions, and tools in your terminal, the beam TUI, or any ACP editor, on the models you choose.',
   lang = 'en',
   ogType = 'website',
   alternates,
@@ -24,8 +24,8 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
 const ogImage = new URL('/opengraph-image.png', Astro.site);
 
 const t = lang === 'de'
-  ? { start: 'Loslegen', theme: 'Farbschema umschalten', tagline: 'Lokale Runtime für nachvollziehbare KI-Workflows.' }
-  : { start: 'Get Started', theme: 'Toggle theme', tagline: 'Local runtime for auditable AI workflows.' };
+  ? { start: 'Loslegen', theme: 'Farbschema umschalten', tagline: 'Ein offenes Coding-Harness — jedes Modell, jeder Editor.' }
+  : { start: 'Get Started', theme: 'Toggle theme', tagline: 'An open coding harness — any model, any editor.' };
 
 const navSections = await buildNavSections();
 ---

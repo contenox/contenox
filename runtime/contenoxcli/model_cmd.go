@@ -2,12 +2,8 @@ package contenoxcli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,35 +13,23 @@ import (
 	libbus "github.com/contenox/runtime/libbus"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/libtracker"
-	"github.com/contenox/runtime/runtime/backendservice"
-	"github.com/contenox/runtime/runtime/modelregistry"
-	"github.com/contenox/runtime/runtime/modelrepo"
-	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
 	"github.com/contenox/runtime/runtime/modelservice"
 	"github.com/contenox/runtime/runtime/runtimestate"
 	"github.com/contenox/runtime/runtime/runtimetypes"
-	"github.com/contenox/runtime/runtime/transport"
 	"github.com/spf13/cobra"
 )
 
 var modelCmd = &cobra.Command{
 	Use:     "model",
 	Aliases: []string{"models"},
-	Short:   "Inspect LLM models from live backends and local disk.",
-	Long: `Inspect models from LLM backends and local model storage.
+	Short:   "Inspect LLM models from live backends.",
+	Long: `Inspect models from LLM backends.
 
 'model list' queries registered backends in real time and shows models that can
-be used now. For local llama/OpenVINO, that means modeld is running in the
-matching backend mode and can describe/load the model. Inactive local modeld
-backend registrations are hidden from this live list.
-
-'model local' is the offline inventory of installed GGUF/OpenVINO artifacts on
-disk. It does not require modeld and may include models that are not currently
-loadable by the active daemon.
+be used now.
 
 Examples:
   contenox model list
-  contenox model local
   contenox model registry-list
 
 Set the default model:
@@ -67,10 +51,6 @@ var modelListCmd = &cobra.Command{
 	Long: `Query each registered backend in real time and show models that can be used now.
 
 For cloud/Ollama/vLLM providers this is the provider-advertised live catalog.
-For local llama/OpenVINO this is the modeld runtime view: only the backend mode
-currently served by modeld is shown, and only models modeld can describe/load
-are listed. Use 'contenox model local' to inspect installed local artifacts even
-when modeld is stopped or serving the other local backend.
 
 Shows model name, backend, and effective capabilities observed at runtime plus
 manual overrides (chat, embed, prompt, think, vision, context length).
@@ -86,31 +66,6 @@ Examples:
 		}
 		defer db.Close()
 		return printLiveModels(ctx, db, cmd.OutOrStdout(), cmd.ErrOrStderr())
-	},
-}
-
-var modelLocalCmd = &cobra.Command{
-	Use:     "local",
-	Aliases: []string{"installed", "library"},
-	Short:   "List installed local model artifacts.",
-	Long: `List local llama/OpenVINO model artifacts on disk.
-
-This is an offline inventory surface: it scans local model directories and does
-not require modeld to be running or the model to be loaded. When modeld is
-reachable, the currently active slot is marked in the STATUS column.
-
-Examples:
-  contenox model local
-  contenox model installed`,
-	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := libtracker.WithNewRequestID(context.Background())
-		db, _, err := openBackendDB(cmd)
-		if err != nil {
-			return err
-		}
-		defer db.Close()
-		return printLocalModelInventory(ctx, db, cmd.OutOrStdout())
 	},
 }
 
@@ -147,7 +102,6 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 	// Stable sort by backend name.
 	type entry struct {
 		backendName string
-		backendType string
 		backendErr  string
 		pulled      []string
 		canChat     map[string]bool
@@ -161,7 +115,6 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 	for _, bs := range rt {
 		e := entry{
 			backendName: bs.Name,
-			backendType: modelrepo.CanonicalBackendType(bs.Backend.Type),
 			backendErr:  bs.Error,
 			canChat:     map[string]bool{},
 			canEmbed:    map[string]bool{},
@@ -192,11 +145,7 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 	any := false
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "BACKEND\tMODEL\tCHAT\tEMBED\tPROMPT\tTHINK\tVISION\tCTX")
-	activeModeldBackend := modeldconn.Backend()
 	for _, e := range entries {
-		if hideInactiveLocalBackend(e.backendType, activeModeldBackend, e.backendErr, e.pulled) {
-			continue
-		}
 		if e.backendErr != "" {
 			errMsg := e.backendErr
 			if len(errMsg) > 80 {
@@ -230,318 +179,12 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 		return err
 	}
 	if !any {
-		fmt.Fprintln(out, "\nNo loadable models found on any live backend. For installed local artifacts, run: contenox model local")
+		fmt.Fprintln(out, "\nNo loadable models found on any live backend.")
 	}
 	if preferredModel != "" {
 		fmt.Fprintln(out, "\n* = default model (contenox config set default-model <name>)")
 	}
 	return nil
-}
-
-func hideInactiveLocalBackend(backendType, activeModeldBackend, backendErr string, pulled []string) bool {
-	typ := modelrepo.CanonicalBackendType(backendType)
-	if typ != "llama" && typ != "openvino" {
-		return false
-	}
-	if backendErr != "" || len(pulled) > 0 {
-		return false
-	}
-	return activeModeldBackend == "" || activeModeldBackend != typ
-}
-
-// resolveModeldAddr turns a backend's BaseURL (which may be the LocalSentinel)
-// into a concrete dialable address using the lease if necessary. Cheap for local.
-func resolveModeldAddr(ctx context.Context, baseURL string) string {
-	if baseURL == "" || baseURL == modeldconn.LocalSentinel {
-		if r, err := modeldconn.LocalEndpointAddr(ctx); err == nil {
-			return r
-		}
-		return ""
-	}
-	return baseURL
-}
-
-type localModelInventoryEntry struct {
-	BackendName string
-	Type        string
-	Model       string
-	Path        string
-	Status      string
-	// Detail is a human-readable annotation shown after the model name, used to
-	// surface a variant's base model and adapters (empty for plain base models).
-	Detail string
-}
-
-type localModelScanRoot struct {
-	backendName string
-	typ         string
-	root        string
-}
-
-func printLocalModelInventory(ctx context.Context, db libdb.DBManager, out io.Writer) error {
-	entries, err := localModelInventory(ctx, db)
-	if err != nil {
-		return err
-	}
-	if len(entries) == 0 {
-		fmt.Fprintln(out, "No local model artifacts found.")
-		return nil
-	}
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "BACKEND\tTYPE\tMODEL\tSTATUS\tPATH")
-	for _, e := range entries {
-		model := e.Model
-		if e.Detail != "" {
-			model = e.Model + "  (" + e.Detail + ")"
-		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", e.BackendName, e.Type, model, e.Status, e.Path)
-	}
-	return w.Flush()
-}
-
-func localModelInventory(ctx context.Context, db libdb.DBManager) ([]localModelInventoryEntry, error) {
-	backends, err := backendservice.New(db).List(ctx, nil, 1000)
-	if err != nil {
-		return nil, fmt.Errorf("list backends: %w", err)
-	}
-
-	var roots []localModelScanRoot
-	for _, b := range backends {
-		typ := modelrepo.CanonicalBackendType(b.Type)
-		if typ != "llama" && typ != "openvino" {
-			continue
-		}
-		if strings.TrimSpace(b.BaseURL) == "" {
-			continue
-		}
-		roots = append(roots, localModelScanRoot{backendName: b.Name, typ: typ, root: b.BaseURL})
-	}
-	for _, r := range defaultLocalModelRoots() {
-		roots = append(roots, r)
-	}
-
-	status, _ := modeldconn.Status(ctx)
-	var out []localModelInventoryEntry
-	seen := map[string]bool{}
-	for _, root := range roots {
-		found, err := scanLocalModelRoot(root.backendName, root.typ, root.root, status)
-		if err != nil {
-			continue
-		}
-		for _, e := range found {
-			key := e.Type + "\x00" + e.Path
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			out = append(out, e)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Type != out[j].Type {
-			return out[i].Type < out[j].Type
-		}
-		if out[i].BackendName != out[j].BackendName {
-			return out[i].BackendName < out[j].BackendName
-		}
-		return out[i].Model < out[j].Model
-	})
-	return out, nil
-}
-
-func defaultLocalModelRoots() []localModelScanRoot {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return nil
-	}
-	base := filepath.Join(home, ".contenox", "models")
-	return []localModelScanRoot{
-		{backendName: "(default)", typ: "llama", root: filepath.Join(base, "llama")},
-		{backendName: "(default)", typ: "openvino", root: filepath.Join(base, "openvino")},
-		{backendName: "(legacy)", typ: "llama", root: base},
-	}
-}
-
-func scanLocalModelRoot(backendName, typ, root string, status transport.DaemonStatus) ([]localModelInventoryEntry, error) {
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return nil, err
-	}
-	var out []localModelInventoryEntry
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		dir := filepath.Join(root, name)
-		if path, ok := localModelArtifactPath(typ, dir); ok {
-			out = append(out, localModelInventoryEntry{
-				BackendName: backendName,
-				Type:        typ,
-				Model:       name,
-				Path:        path,
-				Status:      localModelStatus(typ, path, status),
-			})
-			continue
-		}
-		// A directory without a base artifact may be a convention-based variant
-		// (contenox-variant.json): the base weights/IR reused from a sibling dir
-		// plus adapters. Surface it as a selectable model showing its base +
-		// adapters.
-		if typ == "llama" {
-			if basePath, detail, ok := localLlamaVariant(root, dir); ok {
-				out = append(out, localModelInventoryEntry{
-					BackendName: backendName,
-					Type:        typ,
-					Model:       name,
-					Path:        basePath,
-					Status:      localModelStatus(typ, basePath, status),
-					Detail:      detail,
-				})
-			}
-		}
-		if typ == "openvino" {
-			if basePath, detail, ok := localOpenVINOVariant(root, dir); ok {
-				out = append(out, localModelInventoryEntry{
-					BackendName: backendName,
-					Type:        typ,
-					Model:       name,
-					Path:        basePath,
-					Status:      localModelStatus(typ, basePath, status),
-					Detail:      detail,
-				})
-			}
-		}
-	}
-	return out, nil
-}
-
-// localLlamaVariant recognizes a llama variant directory and returns the reused
-// base model.gguf path plus a "base X + adapters …" annotation. It is a
-// best-effort offline inventory read (unlike the catalog scan it does not fail
-// hard on a malformed marker); an unreadable marker or a missing base model
-// yields ok=false so the directory is simply skipped.
-func localLlamaVariant(root, variantDir string) (basePath, detail string, ok bool) {
-	f, err := os.Open(filepath.Join(variantDir, "contenox-variant.json"))
-	if err != nil {
-		return "", "", false
-	}
-	defer f.Close()
-	var v struct {
-		BaseModel string `json:"base_model"`
-		Adapters  []struct {
-			Name string `json:"name"`
-			Path string `json:"path"`
-		} `json:"adapters"`
-	}
-	if err := json.NewDecoder(f).Decode(&v); err != nil {
-		return "", "", false
-	}
-	base := strings.TrimSpace(v.BaseModel)
-	if base == "" || strings.ContainsAny(base, `/\`) {
-		return "", "", false
-	}
-	basePath = filepath.Join(root, base, "model.gguf")
-	if _, err := os.Stat(basePath); err != nil {
-		return "", "", false
-	}
-	names := make([]string, 0, len(v.Adapters))
-	for _, a := range v.Adapters {
-		n := strings.TrimSpace(a.Name)
-		if n == "" {
-			n = strings.TrimSpace(filepath.Base(a.Path))
-		}
-		if n != "" {
-			names = append(names, n)
-		}
-	}
-	detail = "variant of " + base
-	if len(names) > 0 {
-		detail += " + " + strings.Join(names, ", ")
-	}
-	return basePath, detail, true
-}
-
-// localOpenVINOVariant recognizes an OpenVINO variant directory and returns the
-// reused base IR directory plus a "variant of X + adapters …" annotation. Like
-// localLlamaVariant it is a best-effort offline inventory read: an unreadable
-// marker, a marker targeting a different backend, or a missing base model yields
-// ok=false so the directory is simply skipped (never a scan-breaking error).
-func localOpenVINOVariant(root, variantDir string) (basePath, detail string, ok bool) {
-	f, err := os.Open(filepath.Join(variantDir, "contenox-variant.json"))
-	if err != nil {
-		return "", "", false
-	}
-	defer f.Close()
-	var v struct {
-		Backend   string `json:"backend"`
-		BaseModel string `json:"base_model"`
-		Adapters  []struct {
-			Name string `json:"name"`
-			Path string `json:"path"`
-		} `json:"adapters"`
-	}
-	if err := json.NewDecoder(f).Decode(&v); err != nil {
-		return "", "", false
-	}
-	// Emit only openvino variants: a marker targeting another backend belongs to
-	// that backend's root, not here.
-	if b := strings.TrimSpace(v.Backend); b != "" && b != "openvino" {
-		return "", "", false
-	}
-	base := strings.TrimSpace(v.BaseModel)
-	if base == "" || strings.ContainsAny(base, `/\`) {
-		return "", "", false
-	}
-	baseDir := filepath.Join(root, base)
-	if _, ok := openVINOModelEntrypointPath(baseDir); !ok {
-		return "", "", false
-	}
-	names := make([]string, 0, len(v.Adapters))
-	for _, a := range v.Adapters {
-		n := strings.TrimSpace(a.Name)
-		if n == "" {
-			n = strings.TrimSpace(filepath.Base(a.Path))
-		}
-		if n != "" {
-			names = append(names, n)
-		}
-	}
-	detail = "variant of " + base
-	if len(names) > 0 {
-		detail += " + " + strings.Join(names, ", ")
-	}
-	// The base IR directory is the artifact path for an openvino model (mirrors
-	// localModelArtifactPath's openvino case), so status resolves against it.
-	return baseDir, detail, true
-}
-
-func localModelArtifactPath(typ, dir string) (string, bool) {
-	switch typ {
-	case "llama":
-		path := filepath.Join(dir, "model.gguf")
-		if _, err := os.Stat(path); err == nil {
-			return path, true
-		}
-	case "openvino":
-		if _, ok := openVINOModelEntrypointPath(dir); ok {
-			return dir, true
-		}
-	}
-	return "", false
-}
-
-func localModelStatus(typ, path string, status transport.DaemonStatus) string {
-	if status.Active == nil {
-		return "installed"
-	}
-	if status.Active.Type == typ && status.Active.Path == path {
-		if status.State == "" {
-			return "active"
-		}
-		return "active:" + string(status.State)
-	}
-	return "installed"
 }
 
 func boolMark(b bool) string {
@@ -643,171 +286,5 @@ func init() {
 	modelSetContextCmd.Flags().String("context", "", "Context window size: bare int or shorthand (12k, 128k, 1m).")
 	_ = modelSetContextCmd.MarkFlagRequired("context")
 	modelCmd.AddCommand(modelListCmd)
-	modelCmd.AddCommand(modelLocalCmd)
 	modelCmd.AddCommand(modelSetContextCmd)
-
-	// Add push support for sending local artifacts to (remote) modeld backends.
-	modelPushCmd.Flags().String("backend", "", "Target modeld backend name (required for remote modeld; supports 'local' sentinel)")
-	modelPushCmd.Flags().String("file", "", "Path to local GGUF file or directory (for IR)")
-	_ = modelPushCmd.MarkFlagRequired("backend")
-	modelCmd.AddCommand(modelPushCmd)
-}
-
-var modelPushCmd = &cobra.Command{
-	Use:   "push <name>",
-	Short: "Push a local model artifact to a modeld backend (local or remote).",
-	Long: `Push a local GGUF file, or a curated registry model, to the models store of
-a specific modeld backend. This is the way to deploy models to a remote
-specialist modeld node (e.g. a GPU box).
-
-Examples:
-  contenox model push my-qwen --backend gpu-box --file /path/to/model.gguf
-  contenox model push qwen3-8b --backend gpu-box
-
-The second form (no --file) first checks locally-installed artifacts by name,
-then falls back to the curated registry ('contenox model registry-list') and
-streams the model straight from its source URL to the target backend — it
-is never written to local disk first, so pushing a large curated model to a
-remote box does not cost a local download plus a re-upload over your LAN.
-
-The backend must be of type "modeld" (or the implicit local one).
-
-Same capability is also available as POST /backends/{id}/models/push (raw file
-body, ?name=<model-name>) and from Beam's Backends page. All three interfaces
-support single-file GGUF push only — OpenVINO IR (directory) push needs
-tar-stream support that hasn't landed yet, anywhere.`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := libtracker.WithNewRequestID(context.Background())
-		name := args[0]
-		backendName, _ := cmd.Flags().GetString("backend")
-		filePath, _ := cmd.Flags().GetString("file")
-
-		db, _, err := openBackendDB(cmd)
-		if err != nil {
-			return err
-		}
-		defer db.Close()
-
-		// remoteSource, when set, streams directly from a curated registry URL
-		// instead of a local file — closed explicitly wherever this function
-		// returns after it is opened.
-		var remoteSource io.ReadCloser
-		var remoteTotalBytes int64 = -1
-		defer func() {
-			if remoteSource != nil {
-				_ = remoteSource.Close()
-			}
-		}()
-
-		if filePath == "" {
-			// Try to resolve from local model inventory by name.
-			entries, _ := localModelInventory(ctx, db)
-			for _, e := range entries {
-				if e.Model == name || strings.HasSuffix(e.Path, name) || strings.Contains(e.Path, name) {
-					filePath = e.Path
-					break
-				}
-			}
-			if filePath != "" {
-				fmt.Fprintf(cmd.ErrOrStderr(), "resolved local artifact for %s: %s\n", name, filePath)
-			} else {
-				// Fall back to the curated registry: stream straight from its
-				// source URL to the target backend rather than downloading
-				// locally first and re-uploading a possibly multi-GB file.
-				reg := modelregistry.New(nil)
-				d, regErr := reg.Resolve(ctx, name)
-				if regErr != nil {
-					return fmt.Errorf("--file is required (model %q not found in local artifacts or the curated registry; run 'contenox model local' or 'contenox model registry-list')", name)
-				}
-				if d.BackendType() != "llama" {
-					return fmt.Errorf("curated model %q is an OpenVINO IR (multi-file) entry; push doesn't support that yet (same tar-stream gap as local directory push) — run 'contenox model pull %s' on the target machine instead", name, name)
-				}
-				if d.SourceURL == "" {
-					return fmt.Errorf("curated model %q has no source URL to stream from", name)
-				}
-				if d.MMProjURL != "" {
-					fmt.Fprintf(cmd.ErrOrStderr(), "warning: %q is a vision model but push streams only the model GGUF — the multimodal projector (mmproj.gguf) is not pushed, so the target serves it text-only until %s is placed beside model.gguf on that node (e.g. via 'contenox model pull %s' there)\n", name, llamaMMProjFileName, name)
-				}
-				fmt.Fprintf(cmd.ErrOrStderr(), "streaming %s from registry source -> backend %s\n  %s\n", name, backendName, d.SourceURL)
-				resp, httpErr := http.Get(d.SourceURL) //nolint:gosec
-				if httpErr != nil {
-					return fmt.Errorf("download %s: %w", d.SourceURL, httpErr)
-				}
-				if resp.StatusCode != http.StatusOK {
-					resp.Body.Close()
-					return fmt.Errorf("download %s: HTTP %s", d.SourceURL, resp.Status)
-				}
-				remoteSource = resp.Body
-				remoteTotalBytes = resp.ContentLength
-			}
-		}
-
-		allBackends, err := backendservice.New(db).List(ctx, nil, 1000)
-		if err != nil {
-			return fmt.Errorf("list backends: %w", err)
-		}
-		var bs *runtimetypes.Backend
-		for _, b := range allBackends {
-			if b.Name == backendName {
-				bs = b
-				break
-			}
-		}
-		if bs == nil {
-			return fmt.Errorf("backend %q not found", backendName)
-		}
-		typ := modelrepo.CanonicalBackendType(bs.Type)
-		if typ != "modeld" && typ != "llama" && typ != "openvino" {
-			return fmt.Errorf("backend %q is not a modeld (or llama/openvino) backend", backendName)
-		}
-
-		addr := resolveModeldAddr(ctx, bs.BaseURL)
-		if addr == "" {
-			return fmt.Errorf("could not resolve address for backend %s", backendName)
-		}
-		// Use the good per-backendID cached client (self-healing, redials on restart).
-		// This goes through modeldconn.Endpoint (the supported path).
-		ec, ecErr := modeldconn.Endpoint(ctx, bs.ID, addr)
-		if ecErr != nil {
-			return fmt.Errorf("connect to modeld backend %s: %w", backendName, ecErr)
-		}
-
-		var manifest transport.PushManifest
-		manifest.Name = name
-		manifest.Type = "llama"
-		if ec.Backend != "" {
-			manifest.Type = ec.Backend
-		}
-		manifest.Format = transport.PushFormatFile
-
-		var source io.Reader
-		if remoteSource != nil {
-			manifest.TotalBytes = remoteTotalBytes
-			source = remoteSource
-		} else {
-			info, statErr := os.Stat(filePath)
-			if statErr != nil {
-				return fmt.Errorf("stat %s: %w", filePath, statErr)
-			}
-			if info.IsDir() {
-				return fmt.Errorf("directory push (IR) requires tar streaming support; use a GGUF file for now or implement tar in this flow")
-			}
-			f, ferr := os.Open(filePath)
-			if ferr != nil {
-				return ferr
-			}
-			defer f.Close()
-			fi, _ := f.Stat()
-			manifest.TotalBytes = fi.Size()
-			source = f
-		}
-
-		res, perr := ec.PushModel(ctx, manifest, source)
-		if perr != nil {
-			return perr
-		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Pushed %s to backend %s (already present=%v, bytes=%d)\n", name, backendName, res.AlreadyPresent, res.BytesWritten)
-		return nil
-	},
 }

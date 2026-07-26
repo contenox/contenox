@@ -47,21 +47,14 @@ type MissionAgentResolver interface {
 
 // hasMissionCapability reports whether this transport can run /mission at all: a
 // dispatcher to fire through (Deps.Fleet) AND an agent resolver to parse the
-// two-shape grammar (Deps.Agents). Both are wired together in three shapes — a
-// serve-hosted ACP session (serve_cmd.go); a standalone `contenox acp` editor
-// that embeds the fleet IN-PROCESS, which is the DEFAULT now (a mission is a
-// subagent of THIS process; see runtime/contenoxcli/acp_cmd.go); and, only as an explicit opt-in
-// (CONTENOX_SERVER_URL set), a FORWARDING pair pointed at a running serve
-// (Deps.MissionForwarded).
+// two-shape grammar (Deps.Agents). Both are wired by a `contenox acp` editor
+// that embeds the fleet IN-PROCESS (a mission is a subagent of THIS process;
+// see runtime/contenoxcli/acp_cmd.go).
 //
 // This single bit gates whether /mission is ADVERTISED (acpCommands, commands.go
-// — never advertise what cannot work). It is now UNCONDITIONAL of reachability:
-// an editor that embeds the fleet always advertises /mission, and the opt-in
-// forwarding pair advertises it too. An unreachable serve is no longer hidden
-// from the menu; it is caught at INVOCATION by handleMission, which teaches
-// rather than half-firing — a stable menu the operator can rely on, honest at
-// the point of use. serve's own in-process kernel and the editor's embedded
-// fleet both leave MissionForwarded nil.
+// — never advertise what cannot work): an editor that embeds the fleet always
+// advertises /mission. A process that is ITSELF a dispatched unit, or a
+// setup-only editor with no model, leaves both nil and never lists it.
 func (t *Transport) hasMissionCapability() bool {
 	return t.deps.Fleet != nil && t.deps.Agents != nil
 }
@@ -77,52 +70,24 @@ func (t *Transport) hasMissionCapability() bool {
 // the Enabled gate, the envelope, teardown-on-failure, and the mission record
 // are all the shared implementation.
 //
-// # Where reports go: this session, live (the default)
+// # Where reports go: this session, live
 //
 // The governing ontology: a mission is a
 // SUBAGENT of the process that fired it, and its report notifies exactly the
-// parent that fired it. Both in-process topologies deliver that way. The editor
-// embeds the fleet and its report router (acp_cmd.go) and reaches its lone
-// transport directly; serve reaches the RIGHT ONE of its many WS connections
-// through the shared SessionRouter (serve_cmd.go). Either way the fired unit's
+// parent that fired it. The editor embeds the fleet and its report router
+// (acp_cmd.go) and reaches its lone transport directly, so the fired unit's
 // report is DELIVERED live into THIS session's stream and PERSISTED into its
-// transcript, so it is still there after a reload and enters the next turn's
-// history — see DeliverToContenoxSession below. The operator inbox is only the
-// fallback for when no live connection holds this session by the time a report
-// lands (never an error — a report is a durable fact).
-//
-// # The forwarded case (opt-in): reports land in the operator inbox
-//
-// When CONTENOX_SERVER_URL is explicitly set, the dispatcher is instead a
-// FORWARDER pointed at a running serve (Deps.MissionForwarded), so an operator
-// can fire onto a bigger box. The dispatch rides over REST, ParentSessionID and
-// all — but that parent session id names a session living in THIS acp process,
-// which the remote serve's kernel does not own, so serve's report router misses
-// on DeliverToSession and falls back to the operator inbox as parent-gone. The
-// forwarded confirmation says so plainly rather than promising a session
-// delivery it cannot make; live cross-process delivery is a named follow-up.
+// transcript — still there after a reload, entering the next turn's history;
+// see DeliverToContenoxSession below. The operator inbox is only the fallback
+// for when no live connection holds this session by the time a report lands
+// (never an error — a report is a durable fact).
 func (t *Transport) handleMission(ctx context.Context, sess *sessionEntry, args string) (string, error) {
-	// Opt-in forwarding (CONTENOX_SERVER_URL set) is the one path whose target can
-	// be gone at invocation time. /mission is advertised unconditionally now (see
-	// hasMissionCapability), so honesty lives HERE: a serve that has since stopped
-	// gets a teaching error naming it and how to bring it back, rather than a raw
-	// connection failure from the forwarded dispatch below.
-	if f := t.deps.MissionForwarded; f != nil {
-		if f.Reachable != nil && !f.Reachable() {
-			target := "the configured serve"
-			if f.TargetURL != nil {
-				if u := strings.TrimSpace(f.TargetURL()); u != "" {
-					target = "the serve at " + u
-				}
-			}
-			return "", fmt.Errorf("mission dispatch is unavailable: %s stopped answering — restart it or run `contenox serve`, then try /mission again", target)
-		}
-	} else if !t.hasMissionCapability() {
+	if !t.hasMissionCapability() {
 		// No fleet is wired in-process: a setup-only editor with no model yet, or a
 		// process that is ITSELF a dispatched unit (a subagent does not host its own
 		// fleet). /mission is not advertised here, so reaching this is a stale menu or
-		// a remembered command. Teach the in-process paths, NOT serve-as-center.
-		return "", fmt.Errorf("mission dispatch is unavailable in this session: /mission needs a configured model and the in-process fleet. Configure a model with `contenox config set default-model …` and fire /mission from your editor session, or set CONTENOX_SERVER_URL to fire onto a running serve.")
+		// a remembered command. Teach the in-process path.
+		return "", fmt.Errorf("mission dispatch is unavailable in this session: /mission needs a configured model and the in-process fleet. Configure a model with `contenox config set default-model …` and fire /mission from your editor session.")
 	}
 	args = strings.TrimSpace(args)
 	if args == "" {
@@ -133,15 +98,11 @@ func (t *Transport) handleMission(ctx context.Context, sess *sessionEntry, args 
 
 	agentName, intent, named := t.resolveMissionAgentAndIntent(ctx, store, args)
 	if strings.TrimSpace(agentName) == "" {
-		// Both remedies are named, editor first: the operator reading this is IN an
-		// editor session, where Settings → Missions picks the agent from the declared
-		// ones (beam's MissionSettingsSection), so sending them to a terminal to type a
-		// name they would have to remember is the worse of the two paths.
-		return "", fmt.Errorf("no mission agent: name one as `/mission <agent-name> <intent>`, or set a default under Settings → Missions (or `contenox config set default-mission-agent <name>`)")
+		return "", fmt.Errorf("no mission agent: name one as `/mission <agent-name> <intent>`, or set a default with `contenox config set default-mission-agent <name>`")
 	}
 	policy := strings.TrimSpace(clikv.Read(ctx, store, "default-mission-policy"))
 	if policy == "" {
-		return "", fmt.Errorf("no mission envelope: set one under Settings → Missions (or `contenox config set default-mission-policy <policy>`) — a mission must name the HITL policy that bounds it")
+		return "", fmt.Errorf("no mission envelope: set one with `contenox config set default-mission-policy <policy>` — a mission must name the HITL policy that bounds it")
 	}
 
 	res, err := t.deps.Fleet.Dispatch(ctx, fleetservice.DispatchRequest{
@@ -180,17 +141,10 @@ func (t *Transport) handleMission(ctx context.Context, sess *sessionEntry, args 
 		agentRole = "named agent"
 	}
 	// The report-routing tail is honest about where reports actually go. The
-	// default in-process fleet supervises the mission from THIS session, so its
-	// reports arrive here live; the operator inbox is only the fallback for a
-	// session that has ended when a report lands. A FORWARDED session (opt-in,
-	// CONTENOX_SERVER_URL set) fired at a remote serve whose kernel does not own
-	// this session, so its reports fall back to that serve's operator inbox as
-	// parent-gone (see this function's doc comment) — the confirmation says so
-	// rather than promising a session delivery that will not happen.
+	// in-process fleet supervises the mission from THIS session, so its reports
+	// arrive here live; the operator inbox is only the fallback for a session
+	// that has ended when a report lands.
 	tail := "Reports arrive live in this session as the mission runs; if this session has ended when one lands, it waits in the operator inbox."
-	if t.deps.MissionForwarded != nil {
-		tail = "Reports land in the operator inbox on that serve (read them with `contenox approvals`, or `contenox mission show`); live delivery back into this editor session is a named follow-up."
-	}
 	return fmt.Sprintf(
 		"Mission fired at %s %q under envelope %q.\nIntent: %s\nMission %s (instance %s, session %s). %s",
 		agentRole, agentName, policy, intent, res.MissionID, res.InstanceID, res.SessionID, tail,

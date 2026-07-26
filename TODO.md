@@ -1,301 +1,207 @@
-# TODO — UX/design issues from live testing
+# TODO — V1 Release
 
-## Feedback / liveness diagnosis (2026-07-25)
+**Direction:** contenox V1 is terminal-first. The only product surface is the
+`contenox` CLI + ACP editor sessions + the upcoming `contenox beam` TUI.
+We only keep code that directly supports this. Motives: see WHY.md.
+Past work is presented ONLY in the website-docs R&D page
+(`docs/development/blueprints/retired/README.md`) — no other historic records
+in the repo; details live in git history.
 
-Root cause of "I don't use Beam, I wrap it in Zed / use Claude / Codex instead":
-Beam is not calm-by-design, it's mute-by-default. It renders terminal states
-(`Fertig`) and skips every transitional one, so a 90s turn on a slow backend
-looks identical to a hang. This is the inverse failure of the "labor
-illusion" (Buell & Norton) — other tools fake motion to feel responsive;
-Beam has real signal (token usage, step name, tool dispatch, HITL decisions)
-and just doesn't render it. The fix is plumbing (emit what's already in the
-event stream), not animation — a backend engineer adding decorative motion
-would produce jank, which reads worse than silence. Concrete gaps already
-tracked below: live token counter during a turn, tool cards with an
-in-progress/elapsed state (see "Waiting/elapsed feedback" above), current
-step name visible, and the three rendering bugs below found while digging
-into this.
+**This file also serves follow-up sessions as the hunting list for stale
+strings, features, and code branches — see §8.**
 
-- [x] **`local_shell` tool calls don't reach the integrated shell panel.**
-      INVESTIGATED and resolved differently than first framed: `local_shell`
-      is a stateless one-shot exec (`runtime/acpsvc/commandrunner.go:43`),
-      architecturally distinct from the PTY-backed `shell_session`/`!`-passthrough
-      stream `TerminalTab.tsx` observes — it has no live session to attach to,
-      so routing it INTO that panel isn't the right fix. Instead its
-      `ToolCallDetail` (`TranscriptItems.tsx`) now renders `execute`-kind
-      output through the same `TerminalOutput` component `TerminalTab` uses
-      (`$ command args` + output, monospace terminal chrome) instead of a
-      JSON dump of `{input, output, content}` — it *looks* like the shell it
-      ran in, without pretending it's the same live surface.
-- [x] **Gemini/Vertex "thoughts" stop rendering after turn 1.** Repo-only
-      investigation could NOT conclusively pin a backend-side "first-turn-only"
-      gate — Gemini's `ThinkingConfig` request-building
-      (`runtime/modelrepo/gemini/client.go`) is turn-invariant, and the native
-      relay never sets `MessageID` at all (`libacp.NewAgentThoughtChunk`,
-      `libacp/prompt.go:252`), so the frontend's per-turn fallback id
-      (`turn-N`, unique via `nextId('assistant')`) should already avoid
-      collisions on that path. What WAS confirmed and fixed: the reducer had
-      zero guard against a server/relay reusing (or coincidentally repeating)
-      a message id from an ALREADY-CLOSED turn — doing so would silently fold
-      the new turn's thinking into the old, already-rendered/collapsed
-      message instead of starting a new one, exactly matching the symptom.
-      Added `usedTurnMessageIds` tracking + `resolveTurnMessageId` disambiguation
-      in `acpSessionState.ts` (covered by two new reducer tests). If the bug
-      persists after this, it's confirmed to be a genuine backend/Gemini-API
-      behavior and needs a live two-turn repro to chase further — this fix is
-      a real hardening either way, not a guess dressed up as a root cause.
-- [x] **Tool calls render below the streaming answer instead of above it,
-      grouped per turn.** Added `turnId` to `AcpTimelineItem`
-      (`acpSessionState.ts`), tagged onto `message`/`tool_call` items created
-      while a turn (`session/prompt` call) is in flight. `TranscriptItems.tsx`
-      now groups consecutive same-`turnId` items: when a turn produced both
-      steps and an answer, the `tool_call`/`terminal` items render inside a
-      collapsible **turn-scoped step trail** (open while that turn is still
-      streaming, left as the user leaves it after — no forced auto-collapse
-      animation) ABOVE the turn's message, instead of interleaved as flat
-      siblings below it. Items with no turnId (replay, user echoes,
-      out-of-band mission questions) render exactly as before.
+## 1. Kill product branches — DONE (this session, 2026-07-26)
 
-## Fleet / missions / inbox (live-tested 2026-07-21, first real dispatch)
+- [x] Beam web UI — `packages/beam`, `runtime/internal/web`, serve/beam wiring
+- [x] UI library — `packages/ui` (website now vendors its own tokens.css)
+- [x] API layer — `runtime/serverapi` + 24 `runtime/internal/*api` pkgs
+- [x] API framework — `apiframework/` deleted; error taxonomy folded into
+      `runtime/errdefs` (fleet/mission/missionchanges/terminal services)
+- [x] API spec generator — `internal/openapigen`, `tools/openapi-gen`
+- [x] modeld — COMPLETELY: daemon AND client half (modeldinstall/probe/conn,
+      `runtime/transport`, modelrepo llama+openvino, local backend types,
+      snapshot/warmcache, statetype Resolved*/LiveEngine fields).
+      Local inference for users = Ollama or vLLM.
+- [x] VS Code extension — `packages/vscode`, `runtime/vscodeagent`,
+      `contenox code`, `vscode-agent` cmd
+- [x] apitests/, `runtime/benchreport`
+- [x] REST-lever CLI verbs died with serve: `fleet`, `mission`, `approvals`,
+      `workspace access`, `model push/pull/local/snapshot`, `setup --web`,
+      `--setup-web`, `CONTENOX_SERVER_URL` mission forwarding (acpsvc
+      MissionForwardConfig removed). Missions/HITL live on IN-PROCESS
+      (ACP `/mission`, future TUI).
+- [x] Gates: `go build ./...` + `go vet ./...` green; CLI help smoke green
+      (21 surviving subcommands); website builds
+- [ ] Full `go test -short ./...` — running at session end; record outcome
 
-Observed driving a real mission (`chain-acp`, strict HITL envelope) from Beam
-over LAN. The fleet surfaces are functionally wired but not operable yet:
+## 2. Public docs — DONE except final review
 
-- [ ] **Fleet board layout is unusable.** Declared-but-idle agents render as
-      repetitive near-empty cards ("Deklariert, aber nicht laufend…" × N),
-      and the one card that matters — a running instance with its
-      status/sessions/viewers table — is crushed into the same small card
-      format. Idle agents should be a compact secondary list; running units
-      deserve the space. Redesign the page around "what is running now",
-      not around the declared-agent grid.
-- [ ] **Status vocabulary split reads as contradiction.** The board shows the
-      instance state ("Läuft"/green) while the missions page shows the
-      mission status ("Offen") plus "Noch nie gemeldet" for the heartbeat —
-      three different truths about ONE unit with no reconciliation. The UI
-      must present unit state + mission status + liveness as one composed
-      picture (and once terminal statuses land, "open" must never read like
-      a health indicator).
-- [ ] **No session peek — the operator is blind.** There is no way to see
-      what a dispatched unit is doing: no transcript view, no live stream,
-      nothing. This is THE missing piece for trust (fleetservice's documented
-      "no adoption into a beam chat session" v1 limitation, now confirmed as
-      the first thing a real operator reaches for). The kernel already
-      supports viewer attach + journal replay — Beam needs a read-only
-      session viewer on the instance (attach as observer), reachable from
-      board and mission detail.
-- [ ] **Stuck-unit blindness (the trust collapse).** A unit that is stuck or
-      waiting produced NOTHING in the inbox, and with no session peek and no
-      heartbeat the operator cannot distinguish "working", "blocked on an
-      unsurfaced ask", and "dead". Whatever the root cause of the missing
-      ask (under investigation), the UX requirement stands: a unit in ANY
-      wait state must be visible as such on the board/inbox, and "no signal
-      for N minutes" is itself an attention-worthy inbox condition.
-- [ ] **Fleet/mission/inbox pages ignore mobile and the house UI patterns.**
-      None of the new pages work in a mobile viewport, and they diverge from
-      the layout/component patterns the other admin pages use. Audit them
-      against the existing pages' responsive patterns and bring them in line
-      (same tokens, same list/card idioms, same breakpoint behavior).
+- [x] R&D policy implemented: single narrative page
+      `blueprints/retired/README.md`; ALL retired blueprint records deleted
+      (2026-07-26 decision) — details only in git history
+- [x] docs/ sweep: dead user manuals deleted, quickstart/CLI-ref/config/
+      editors/hitl/env-scrubbing de-Beam/de-modeld, v1-feature-map +
+      windows blueprints rewritten terminal-first, internal/ records of killed
+      products deleted
+- [x] website/: Landing Beam-web section → `contenox beam` TUI section (EN+DE),
+      Base meta, legacy redirects → retired/readme/, media → S3
+- [x] README rewritten (terminal-first, zero killed-product mentions)
+- [x] CONTRIBUTING rewritten (Task workflow, current commands, voice note)
+- [x] WHY.md created (motive record; steer via this file)
+- [ ] USER REVIEW: R&D page tone, landing TUI copy (EN+DE), README
 
-# Archived — chat-path findings (2026-07-16)
+## 3. `contenox beam` — the new TUI (NEXT MILESTONE)
 
-## Chat path polish (the actual product surface)
+Decision: NOT a port of the old vibe TUI (that was a control panel). The new
+`contenox beam` is a true coding TUI — easy copy/paste etc. — built ON TOP of
+the ACP services (acpsvc / agent sessions), not necessarily ACP-native.
+Plan in a dedicated session.
 
-The chat UI reads impressive at first glance but lacks every interaction that
-makes an agent chat usable in practice:
+- [ ] Design doc / blueprint for the beam TUI (prior art: old vibe TUI,
+      1530-LOC bubbletea app — find via `git log --all -i --grep='vibe'`;
+      hashes change after the history rewrite). Design inspiration the
+      user likes: the xAI/Grok TUI — study its layout/interaction patterns
+      when planning beam
+- [ ] **Modularization:** define a proper reusable component / module
+      structure for the CLI and TUI — this is now the core bet, so it must be
+      very maintainable, but pragmatic: no overengineering. Candidate seams:
+      command wiring vs. engine bootstrap vs. rendering; shared session/
+      approval components used by both CLI verbs and TUI panes; acpsvc as the
+      one service boundary both talk to. Decide before the TUI grows.
+- [ ] Implement + register the `beam` subcommand (docs already describe it —
+      README says "in development"; ship before V1 or soften docs)
 
-- [x] **Live streaming render.** Backend streaming with tools landed
-      2026-07-16 (taskexec + llama client Stream). Render-polish closed:
-      `TranscriptItems.tsx` renders assistant/user text through ReactMarkdown
-      (partial-markdown handling — see next item) and wires
-      `ChatStreamingCaret` on the actively-streaming message plus
-      `ChatTranscriptStreamingPlaceholder` for the gap after a turn starts but
-      before the first chunk arrives (`chatTranscript.tsx`); `AcpChatPage.tsx`
-      wires `ChatScrollToLatest` (gated on `!isNearBottom` from
-      `useChatScroll`) so a user scrolled up isn't yanked to the bottom by
-      incoming chunks. REMAINING: this was verified via `tsc`/`vitest`/`build`
-      only — live end-to-end verification against a real streaming session
-      (actual modeld + contenox serve) is pending; this slice was explicitly
-      told not to drive the live app.
-- [ ] **Waiting/elapsed feedback.** No "agent is responding…" state, no
-      elapsed-time indicator ("responding for 12s"), no distinction between
-      queued (model cold-loading, single slot busy) and generating. Local
-      inference is slow — the UI must own that honestly.
-- [x] **Tool cards.** Shipped: tool calls render through `ToolCallCard`
-      (`@contenox/ui`) in `TranscriptItems.tsx` — tool title/kind,
-      pending/running/succeeded/failed status, and a collapsible `ToolCallDetail`
-      (target locations, `DiffView` for edits, raw output) rather than raw dumps.
-- [x] **File peek.** Shipped: file edits render as a `DiffView` inside the
-      tool-call card's detail; clicking a workspace file opens it as a read-only
-      canvas tab (`fileCanvasTab` / `CanvasRegion`), and the `@`-mention menu
-      shows a live `useFilePreview` of the highlighted file.
-- [x] **@-mentions.** Shipped: typing `@` in the composer opens `MentionMenu`
-      (`useMentionMenu` in `ChatSessionTab.tsx`) to attach workspace files, which
-      ride the prompt as reference `resource_link` blocks (`activeMentions`).
-- [ ] **Dark-mode shade/contrast audit.** Light mode reads noticeably more
-      polished than dark mode (observed 2026-07-16): dark shades and contrast
-      steps are flatter — surfaces, borders, and muted text blur together.
-      Audit the dark palette tokens against the light ones (border visibility,
-      elevation steps, muted-text contrast) and fix at the token level, not
-      per-component.
-- [x] **Proper previews.** Audited: message text was plain
-      `whitespace-pre-wrap`, falling back for everything. Wired the
-      already-built `packages/ui` chat components into
-      `TranscriptItems.tsx`'s `TranscriptMessage`: text now renders through
-      `ReactMarkdown` + `remark-gfm` + `chatTranscriptMarkdownComponents`
-      (code blocks, inline code, blockquotes, GFM tables/strikethrough),
-      same pattern as `ChatSurface.tsx` (the VS Code webview chat,
-      `ChatSurface.tsx:1046-1050`/`1093-1096`). Thought blocks render through
-      `ChatStreamThinkingBox` instead of a plain `<p>`. Diffs already render
-      via `DiffView` in `ToolCallDetail` (pre-existing, unaffected). Raw image
-      content blocks were not in this slice's harvest list (no ACP image
-      content is currently produced) and remain unaddressed.
+### 3b. Vision e2e (MUST be intact for V1 — currently has NO entry point)
 
-Deferred design issues observed while live-testing beam chat against a real
-modeld + contenox serve. Infra/plumbing issues are NOT listed here — they are
-being fixed directly.
+Audit 2026-07-26: the engine back half is fully intact — `taskengine.Message.
+Images` flows through taskexec into every surviving provider (ollama, gemini,
+openai chat+responses, anthropic messages codec), llmresolver routes on
+`CanVision`, and `taskexec_images_test.go` covers the conversion. But every
+image PRODUCER died with the purge: the only writers of `Images` were the
+killed compatapi HTTP endpoints. Today:
+- ACP advertises `PromptCapabilities.Image: false` (acpsvc/initialize.go:77)
+  and the native driver flattens prompts via `libacp.FlattenContent`, which
+  DROPS image blocks (only telemetry records `dropped_content_kinds`).
+- The CLI has no attach mechanism.
 
-## Error handling / recovery UX
+Work items:
+- [ ] ACP: advertise `Image: true`; native driver must map image content
+      blocks → `ImagePart{Data, MimeType}` on the user message instead of
+      flattening them away (turn input becomes text + images, not a string)
+- [ ] CLI: `contenox chat --attach <img>` (repeatable) feeding ImageParts
+- [ ] beam TUI: image paste/attach is a design requirement from day one
+- [ ] Tests: e2e ACP-image-block → chain → provider-wire assertion (mock
+      provider), plus a gated real-model vision test (ollama container,
+      vision-capable model) replacing the deleted llama full-stack vision e2e
+- [ ] Capability truth: `model list` / doctor should make CanVision visible
+      so a failed vision route teaches instead of confusing
 
-- [x] **Double error screen when modeld is down.** When modeld is unreachable,
-      the user gets two stacked/successive error surfaces instead of one clear
-      "runtime backend unreachable" state with a retry affordance. Deduplicate
-      into a single error state.
-- [x] **Wrong redirect target for broken default model.** When modeld is up but
-      the configured default model can't serve (e.g. default is an OpenVINO
-      artifact while the llama backend is running), beam redirects to the
-      **Backends** page — but the actual fix lives on the **Settings/Config**
-      page (default model selection). Redirect (or at least deep-link) to where
-      the user can fix it, and say *what* is misconfigured.
-- [x] **Error states should name the failing component.** "modeld down",
-      "default model not servable", "chain failed" are different failures with
-      different fixes; the UI should distinguish them instead of generic error
-      screens.
+## 4. Git history & assets
 
-## Chat session controls
+- [x] Website media → S3: bucket `contenox-website-assets-573643652148`
+      (us-east-1, public read), `media/` live + `retired/` archive; local
+      copies in scratchpad assets-export/
+- [x] git-filter-repo fetched; purge inventory finalized:
+      root binaries (contenox-runtime, contenox, contenox-cli, runtime, beam,
+      vibe ×2, acp-stub-agent ×2) + historical media (website/public dead+
+      migrated files, website/assets/, scripts/demos video dirs,
+      website/public/demo.webm, old hitl-*.png)
+- [x] .gitignore: binary names blocked
+- [ ] **USER: commit the staged V1 reshape** (Claude stages only, never
+      commits). The rewrite needs a clean committed tree.
+- [ ] Then: git bundle backup → run filter-repo (purge list above) → verify
+      sizes/paths → force-push main + announce re-clone
+- [ ] AWS: decommission old bucket `contenox-modeld-artifacts-573643652148`?
 
-- [x] **No session controls on an empty chat.** Model/HITL/Think/Token-Limit
-      controls are `session.configOptions`, built server-side per live session
-      (`runtime/acpsvc/config_options.go:33`) and pushed via `session/update`
-      after `session/new`. Sessions are minted lazily on first prompt submit,
-      so on a fresh "Neue Sitzung" chat there is no session and therefore no
-      controls — you cannot pick the model *before* the first turn, which is
-      precisely the turn that fails when the default model is broken.
-      Fix options: (a) session-less config surface (workspace-level
-      config_options at initialize/connect, staged client-side, applied right
-      after session/new in handleSubmit); (b) eager session mint on
-      "Neue Sitzung" (needs empty-session pruning so the sidebar doesn't fill
-      with husks). Option (a) is protocol/plumbing work, not just UI.
-      RESOLVED via option (a). Server advertises workspace-level config options
-      in the `initialize` response `_meta` under
-      `contenox.workspaceConfigOptions` (`runtime/acpsvc/initialize.go`,
-      `runtime/acpsvc/config_options.go` `workspaceConfigOptions`); a spec-safe
-      extension conformant clients ignore. Lazy mint is kept. Client renders the
-      controls on the empty chat from those options, stages picks locally, and
-      flushes them via `set_config_option` right after `session/new` and before
-      the first prompt (`packages/beam/.../acpWorkspaceController.ts`
-      `applyConfigOptions`, `AcpChatPage.tsx` handleSubmit).
+## 5. Build system — DONE
 
-## Settings page (beam)
+- [x] Taskfile.yml (build, tests, ACP harnesses, website, version, dev-link)
+- [x] Makefile, Makefile.version, mk/ deleted; scripts/verify_cli_help.sh
+      updated to the 21 surviving commands
+- [x] tools/version: VS Code metadata sync removed (README TAG mechanism kept)
+- [x] ci.yml + release.yml: task-based, beam/ui/vscode jobs removed
+- [ ] Install `task` locally: `go install github.com/go-task/task/v3/cmd/task@latest`
 
-- [ ] **Inline help boxes, including condition-triggered ones.** Tooltips
-      (shipped 2026-07-16) are a good start but hide the guidance behind
-      hover. The CLI goes further: it prints inline hints, many
-      condition-triggered (`doctor` suggests the exact fix for the detected
-      state, `setup` explains the next step, commands hint follow-ups on
-      success/failure). The UI needs the equivalent: persistent inline help
-      boxes per section, plus conditional ones driven by runtime state
-      ("no backend registered — add one below", "default model not servable
-      on the active engine — pick a servable one", "think unset: falls back
-      to High"). Ties into the runtime-generated-UI blueprint: conditional
-      help is server-known state and belongs in served specs, not hardcoded
-      client logic.
-- [x] **Settings changes have no observable effect.** INVESTIGATED: values
-      *are* persisted (SQLite KV via `runtime/internal/clikv`, same store the
-      CLI uses) and every form already showed Saved/error feedback in the
-      current tree. The real gap was plumbing, and it's asymmetric:
-      - `hitl-policy-name` is read live on every `session/update`
-        (`runtime/acpsvc/config_options.go` `activeHITLPolicy` →
-        `clikv.ReadHITLPolicy`) — already applies immediately, no fix needed.
-      - `default-model`/`-provider`/`-alt-model`/`-alt-provider`/`-max-tokens`/
-        `-think` are seeded into `acpsvc.Transport` once from `Deps` at
-        `contenox serve` startup (`runtime/acpsvc/transport.go:92` "seed from
-        Deps at construction; not read again") — genuinely frozen for the
-        life of the beam/ACP chat connection. RESOLUTION: surfaced this
-        explicitly instead of silence — a restart notice on
-        GlobalSettingsSection/ResponseSettingsSection
-        (`settingsAdvanced.restart_notice`) states these apply immediately to
-        the OpenAI-compatible API / VS Code / task-chain runs (all read them
-        live per-request via `stateservice.ResolveRuntimeDefaults`,
-        confirmed in `runtime/internal/compatapi/openai_chat.go:33`) but need
-        `contenox serve` restarted to reach the beam chat window.
-      - `default-chain` (Workspace-Standards) doesn't affect beam/ACP chat
-        *at all*, restart or not: the ACP chain is loaded once from
-        `~/.contenox/default-acp-chain.json` (`runtime/acpsvc/chain.go`),
-        entirely separate from the `default-chain` KV key. That key only
-        drives the OpenAI-compatible API and the VS Code extension. Surfaced
-        via `settingsAdvanced.chain_scope_notice` on WorkspaceSettingsSection
-        rather than leaving it silently inert.
-      Deep architectural rework to make the ACP connection itself hot-reload
-      is out of scope for this slice (large, cross-cutting with concurrent
-      Go taskengine/session-controls work); restart-required is the honest,
-      shipped resolution per the task's own fallback instruction.
-- [x] **Zero guidance on the Settings page.** Ported CLI help text
-      (`runtime/contenoxcli/config_cmd.go` `validConfigKeys`) into tooltips
-      across every field, in a new `settingsAdvanced` i18n namespace
-      (`packages/beam/src/i18n.ts`, en+de). `default-think`'s tooltip states
-      the "unset → High" runtime fallback explicitly and suggests Low/Medium
-      on local GPUs; `default-alt-model`/`-provider`'s tooltip explains the
-      chain router/recovery-step usage. "Inherit"/"Not set" options are
-      labeled and explained inline.
-- [x] **Settings page only covered 4 of 12 `contenox config` keys.** Added
-      the missing 8: `default-alt-model`/`-alt-provider` (GlobalSettingsSection),
-      `default-max-tokens`/`-think` (new ResponseSettingsSection),
-      `default-autocomplete-model`/`-provider` (new AutocompleteSettingsSection),
-      `telemetry-enabled`/`update-check` (new TelemetrySettingsSection, as
-      switches). Backend: added `GET /api/cli-config` (full snapshot, all 12
-      keys) and extended `PUT /api/cli-config` to accept `telemetry-enabled`/
-      `update-check` (`runtime/internal/setupapi/routes.go`,
-      `runtime/stateservice/stateservice.go`); `default-think` is now
-      validated server-side the same way the CLI does
-      (`reasoning.Normalize`). OpenAPI spec regenerated (`make openapi`).
-- [x] **Einrichtungsassistent (setup wizard) entry appears dead.** Verified:
-      already wired correctly in the current tree
-      (`packages/beam/src/pages/admin/settings/SetupWizardSection.tsx` calls
-      `openWizardManually()` from `lib/wizardDismissal.ts`; `Layout.tsx`'s
-      `showWizard` honors the resulting `manualOpen` flag and renders the
-      wizard full-screen). No further action needed here.
-- [x] **Sidebar toggle inside the setup wizard did nothing.** The wizard
-      replaces the whole main area and never renders `<Sidebar>`, but the
-      navbar's `SidebarToggle` still rendered and toggled dead state.
-      Hidden it while `showWizard` is true
-      (`packages/beam/src/components/Layout.tsx`, navbar's toggle condition).
+## 6. Open decisions (USER)
 
-## Model provisioning page ("Modell bereitstellen")
+- [ ] **Repo/product rename** — "runtime" hurts product-market fit; options in
+      session report (candidates: beam, contenox, others)
+- [ ] **Repo restructure** (user wants: guts into a kernel package, less flat,
+      clear what-is-what; internal-first; no types-split-from-logic). Agreed
+      direction 2026-07-26 — layered, hoisted out of the runtime/ wrapper
+      (kills the …/runtime/runtime/… double path), ALMOST EVERYTHING under Go
+      `internal/` so the compiler enforces the public surface (k8s's pkg/ +
+      staging model is the wrong template — we're a product repo, not a
+      library federation):
+      · `libacp/` — the one deliberately public library (reusable Go ACP impl)
+      · `internal/kernel/` — taskengine, agentinstance, nativeturn, contextasm,
+        enginesvc, llmresolver, reasoning
+      · `internal/models/` — modelrepo+providers, llmrepo, runtimestate
+        (fold statetype INTO runtimestate), backendservice, providerservice,
+        modelregistry, modelcapability
+      · `internal/services/` — chat/session/mission/fleet/hitl/mcp/tools/
+        shell/vfs/workspace/…
+      · `internal/store/` — runtimetypes (persistence layer: entities + SQLite
+        Store; types stay with their logic — NO standalone types/ package)
+      · `internal/surfaces/` — contenoxcli, acpsvc, beamtui
+      · `internal/{bus,dbexec,kvstore,sandbox,tracker}/` — former lib*s
+      · `internal/errdefs/` — the one tiny shared leaf (tailscale-types/key
+        style exception)
+      Execute as ONE atomic import rewrite TOGETHER with the module/repo
+      rename, sequenced AFTER the pending commit and the history purge,
+      BEFORE beam TUI code.
+- [x] **taskengine** — RESOLVED (2026-07-26): keep the engine (it executes
+      every chat/ACP/mission turn and owns the Message/ImagePart vocabulary);
+      demote the public chain-authoring story. Follow-ups:
+      - [ ] reframe docs/specification/ + landing "Chain is the contract" cap:
+            users author AGENTS (agent-*.json) and ENVELOPES (HITL policies) —
+            chains are the substrate, documented for power users
+      - [ ] move `runtime/taskengine` → `runtime/internal/taskengine` during
+            the modularization milestone (mechanical import rewrite; not in
+            this commit)
+      - [x] core/kernel layering stays: thin surfaces → services → engine is
+            the build-on-services rule; agentinstance kernel carries missions
+            and the beam engine-bridge
+- [ ] **Active blueprints cull** — user hinted "99% of blueprints can go";
+      kept for now: acp/ (5), providers/ (2), windows/ (2), v1-feature-map,
+      product-surface-truth, tool-hardening, local-coding-node-goals, README.
+      Say the word and they go too.
+- [ ] **Orphaned engineering** (outside CLI closure — chop or keep?):
+      `runtime/tooleval` (+fixtures; Taskfile tool-eval uses it), `libcipher`,
+      `libprocess`, `libroutine`, `scripts/demos/`,
+      `scripts/contenox-agentic-bench.ps1` + bench chain json.
+      KEEP (harness/tooling): tools/acp-validator, libacp/cmd/acp-stub-agent,
+      tools/version.
 
-- [ ] **Visual redesign — the list is unusable.** 39 flat rows rendering raw
-      HuggingFace URLs as primary content, size crammed onto the URL string
-      ("...Q4_K_M.gguf12723 MB"). Should be cards/rows built from structured
-      fields: model name, parameter size, quant, backend badge (GGUF/OpenVINO),
-      size in GB, curated badge — URL demoted to a details/tooltip affordance.
-- [ ] **Group and dedupe variants.** Nearly every model appears twice
-      (`qwen3-14b` + `qwen3-14b-ov`); group GGUF/OpenVINO variants of the same
-      model into one entry with a backend picker, and group by family.
-- [ ] **Fit-for-this-device indicator.** The registry knows the artifact size
-      and modeld knows the device budget (weights + KV floor + reserves —
-      see modeld/capacity). Show "fits fully / won't fit on your GPU" per
-      model, so users don't download a 4.8GB model onto a 6GB card and hit
-      degraded serving. This is the exact trap the default qwen3-8b setup
-      walked into.
-- [ ] **Search/filter/sort.** 39 entries need a filter box, backend filter,
-      and size sort at minimum.
-- [ ] **Download feedback.** "Die Runtime erkennt es automatisch" — but there
-      is no visible progress/state for a multi-GB download.
-- [ ] **"Modell registrieren" form** needs validation and help text (what URL
-      shapes are accepted, GGUF file vs OpenVINO repo).
+## 7. Verification gates before calling V1 prep done
 
-## Resource/feedback transparency
+- [x] go build ./... && go vet ./... green
+- [ ] go test -short ./... green (or documented pre-existing failures)
+- [x] website builds post-purge (100+ pages, retired index live)
+- [x] `contenox --help` shows only surviving commands
+- [ ] grep gates in §8 clean (first pass done; re-run after TUI lands)
 
-- [x] **No progress signal while the model is generating.** A reply to "hi" can
-      take minutes (cold load + long reasoning chain) with no token streaming or
-      progress indication, which reads as "the response never lands". Surface
-      generation progress / streaming state in the transcript.
+## 8. Stale-hunt list (follow-up sessions)
+
+Run these; every hit must be justified or killed:
+- `grep -rniE 'modeld|openvino|llamacpp|llama\.cpp' --include='*.go' .`
+  (known acceptable: modelregistry curated-catalog data labels — decide
+  whether the GGUF/IR catalog itself survives without local inference!)
+- `grep -rniE '"serve"|serverapi|/api/' runtime/ --include='*.go'` (judge each)
+- `grep -rniE 'vscode|vs code' --include='*.go' .` (taskengine/tasktype.go
+  prose comments; localtools skip-dir `.vscode` default is legit)
+- `grep -rniE 'beam' docs/ website/ README.md` (must mean the TUI or retired page)
+- `grep -rn 'make ' docs/ CONTRIBUTING.md README.md .github/` (should be task)
+- `contenox model registry-*` commands: registry lists GGUF/OpenVINO curated
+  models but `model pull` is gone — dead feature branch? decide
+- `runtime/internal/hostcapacity` — former modeld capacity helper; check
+  remaining importers, likely dead
+- `runtime/agentsmd`, `runtime/agentview`, `runtime/accessview`,
+  `runtime/presence`, `runtime/operatorinbox` — verify still reachable from
+  CLI closure after serve removal
+- examples/ chains re-verify against surviving providers
+- `.contenox/` in-repo chain configs — check for killed-cmd references
+- go.mod: charmbracelet deps should arrive only with the new TUI; grpc is
+  indirect-only now
+- `runtime/version` + install.sh + release.yml artifact-name consistency
+- SUPPORT.md issue templates (.github/ISSUE_TEMPLATE?) for killed surfaces

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # verify_cli_help.sh — smoke test that the contenox binary exposes the expected
-# top-level subcommands and exits cleanly. Invoked by `make test-contenox-help`.
+# top-level subcommands and exits cleanly. Invoked by `task test-cli-help`.
 #
 # Usage:
 #   CONTENOX_BIN=./bin/contenox ./scripts/verify_cli_help.sh
 #
-# The Makefile sets CONTENOX_BIN before calling this script.
+# The Taskfile sets CONTENOX_BIN before calling this script.
 set -euo pipefail
 
 BIN="${CONTENOX_BIN:-./bin/contenox}"
@@ -34,28 +34,23 @@ EXPECTED_CMDS=(
   "acp"
   "acpx"
   "agent"
-  "approvals"
   "backend"
   "cache"
   "chat"
-  "code"
   "config"
   "doctor"
-  "fleet"
   "init"
   "mcp"
-  "mission"
   "model"
-  "modeld"
   "run"
-  "serve"
+  "sandbox"
   "session"
   "setup"
+  "shell-env"
   "state"
   "tools"
   "update"
   "version"
-  "vscode-agent"
   "workspace"
 )
 

@@ -147,10 +147,10 @@ func TestUnit_HandleMission_UnknownFirstTokenFallsBackToDefault(t *testing.T) {
 	}
 }
 
-// The DEFAULT in-process editor (Fleet+Agents wired, MissionForwarded nil) must
-// confirm that reports arrive LIVE in this session — the ontology's supervision
-// edge closing inside the editor — naming the operator inbox only as the ended-
-// session fallback. It must NOT say reports go to the inbox as the primary home.
+// The in-process editor (Fleet+Agents wired) must confirm that reports arrive
+// LIVE in this session — the ontology's supervision edge closing inside the
+// editor — naming the operator inbox only as the ended-session fallback. It
+// must NOT say reports go to the inbox as the primary home.
 func TestUnit_HandleMission_InProcessConfirmationNamesThisSession(t *testing.T) {
 	disp := &fakeDispatcher{result: fleetservice.DispatchResult{InstanceID: "i", SessionID: "s", MissionID: "m"}}
 	tr, db := newMissionTestTransport(t, disp, &fakeResolver{})
@@ -163,52 +163,6 @@ func TestUnit_HandleMission_InProcessConfirmationNamesThisSession(t *testing.T) 
 	}
 	if !strings.Contains(out, "live in this session") {
 		t.Fatalf("in-process confirmation must say reports arrive live in this session: %q", out)
-	}
-}
-
-// The OPT-IN forwarding path (MissionForwarded set) with an UNREACHABLE serve
-// must teach at invocation — naming the serve and how to bring it back — rather
-// than half-fire. Advertisement is unconditional now, so this honesty lives here.
-func TestUnit_HandleMission_ForwardedUnreachableTeaches(t *testing.T) {
-	disp := &fakeDispatcher{}
-	tr, db := newMissionTestTransport(t, disp, &fakeResolver{})
-	setMissionConfig(t, db, "default-mission-agent", "reviewer")
-	setMissionConfig(t, db, "default-mission-policy", "envelope.json")
-	tr.deps.MissionForwarded = &MissionForwardConfig{
-		Reachable: func() bool { return false },
-		TargetURL: func() string { return "http://serve.example:8080" },
-	}
-
-	_, err := tr.handleMission(context.Background(), &sessionEntry{InternalSessionID: "cnx"}, "go")
-	if err == nil {
-		t.Fatal("an unreachable forwarded serve must teach, not fire")
-	}
-	for _, want := range []string{"unavailable", "stopped answering", "http://serve.example:8080"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("forwarded teaching error missing %q: %q", want, err.Error())
-		}
-	}
-	if disp.got.AgentName != "" {
-		t.Fatal("no dispatch may be attempted when the forwarded serve is unreachable")
-	}
-}
-
-// The OPT-IN forwarding path with a REACHABLE serve fires, and its confirmation
-// stays forwarding-honest: reports land in the OPERATOR INBOX on that serve
-// (the firing session lives in this process, which serve's kernel does not own).
-func TestUnit_HandleMission_ForwardedConfirmationNamesInbox(t *testing.T) {
-	disp := &fakeDispatcher{result: fleetservice.DispatchResult{MissionID: "m-remote"}}
-	tr, db := newMissionTestTransport(t, disp, &fakeResolver{})
-	setMissionConfig(t, db, "default-mission-agent", "reviewer")
-	setMissionConfig(t, db, "default-mission-policy", "envelope.json")
-	tr.deps.MissionForwarded = &MissionForwardConfig{Reachable: func() bool { return true }}
-
-	out, err := tr.handleMission(context.Background(), &sessionEntry{InternalSessionID: "cnx"}, "go")
-	if err != nil {
-		t.Fatalf("handleMission: %v", err)
-	}
-	if !strings.Contains(out, "operator inbox") {
-		t.Fatalf("forwarded confirmation must name the operator inbox: %q", out)
 	}
 }
 
@@ -316,17 +270,16 @@ func TestUnit_AcpCommands_WithoutMissionCapability_ExcludesMission(t *testing.T)
 
 // handleMission's guard must be keyed to the SAME capability bit as the
 // advertisement filter (hasMissionCapability), not merely Fleet==nil: a stale
-// or manually-typed /mission (with no in-process fleet wired and no forwarding
-// opted in) must hit a clear teaching error — never a panic. Per the refit the
-// error teaches the IN-PROCESS paths (a configured model + the editor's embedded
-// fleet, or CONTENOX_SERVER_URL to forward), NOT serve-as-the-center.
+// or manually-typed /mission (with no in-process fleet wired) must hit a clear
+// teaching error — never a panic. The error teaches the IN-PROCESS path (a
+// configured model + the editor's embedded fleet); remote forwarding is gone.
 func TestUnit_HandleMission_TeachingErrorWithoutCapability(t *testing.T) {
 	tr, _ := newMissionTestTransport(t, nil, nil)
 	_, err := tr.handleMission(context.Background(), &sessionEntry{}, "do something")
 	if err == nil {
 		t.Fatal("want a teaching error, got nil")
 	}
-	for _, want := range []string{"unavailable", "default-model", "in-process fleet", "CONTENOX_SERVER_URL"} {
+	for _, want := range []string{"unavailable", "default-model", "in-process fleet"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("teaching error missing %q: %q", want, err.Error())
 		}

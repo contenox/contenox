@@ -3,7 +3,7 @@
 Date: 2026-07-20 (slice status updated 2026-07-21)
 Status: building. Slices 1, 2 (store half), 4 (prompt half) and 5 have landed;
 see "Slice cut" below for the per-slice status. Companion to
-`fleet-consolidation.md` (missions, supervision edge, reports) and informed by
+the retired fleet-consolidation record (git history: missions, supervision edge, reports) and informed by
 the mission-mode slices landed 2026-07-20 (mission tools, report routing,
 `/mission`, inbox).
 
@@ -163,7 +163,8 @@ contract is a separate direction, below).
    port lives in `missionservice`). The ACP full-snapshot `plan` projection on
    the owning session is still open.
 3. **Inbox/board rendering**: per-mission step progress; "plan revised"
-   entries in the triage feed with explanations. — **IN PROGRESS** (beam).
+   entries in the triage feed with explanations. — **IN PROGRESS** (the Beam
+   TUI's mission panel).
 4. **Planner profile + prompt**: a declared planner agent (envelope grants
    plan tools + mission verbs, withholds execution tools) with the adapted
    Codex discipline text; the batch journey (plan → fire → skim → assess)
@@ -182,7 +183,7 @@ contract is a separate direction, below).
    `fleetservice/e2e_mission_revision_loop_test.go`.
 
 Open directions, explicitly not in these slices: plan-as-contract (plan
-steps scoping envelopes — blueprint-first, feeds the Beam state-diff
+steps scoping envelopes — blueprint-first, feeds the state-diff
 criterion: landed-vs-planned is its concrete test), plan-file round-trip
 tooling, and modes surfaced to editors via `session/set_mode`.
 

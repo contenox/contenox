@@ -6,8 +6,8 @@ check` is its user-facing twin. Scopes how a declared agent is *served* as an AC
 how the runtime's new **client-host** role (`runtime/agenthost`) is verified
 end-to-end. Sits on top of the landed external-agent plumbing (`agents` table,
 `agentregistryservice`, `agenthost`) and the registration UX
-([the `contenox agent` CLI](../../../reference/contenox-cli.md)). Beam is out of
-scope here.
+([the `contenox agent` CLI](../../../reference/contenox-cli.md)). UI surfaces
+are out of scope here.
 
 ## Problem
 

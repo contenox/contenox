@@ -1,9 +1,12 @@
 package contenoxcli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -209,70 +212,141 @@ func TestSystem_ACPMissionInProcess(t *testing.T) {
 		"the editor's death must reap its dispatched unit(s) — an orphan child remains\nacp stderr:\n%s", h.stderr())
 }
 
-// TestSystem_ACPMissionForwardOptInHonest proves the opt-in forwarding path stays
-// honest even without the in-process fleet: with CONTENOX_SERVER_URL pointed at a
-// DEAD address, /mission is still advertised (advertisement is unconditional
-// now), but INVOKING it yields the forwarding teaching error naming the serve —
-// no half-fire.
-func TestSystem_ACPMissionForwardOptInHonest(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping acp forward-opt-in honesty e2e: builds contenox and spawns a real acp subprocess")
-	}
+// ── helpers ─────────────────────────────────────────────────────────────────
 
-	bin := fwdBuildBin(t)
-	root := t.TempDir()
-	homeDir := filepath.Join(root, "home")
-	workspaceDir := filepath.Join(root, "workspace")
-	dataDir := filepath.Join(workspaceDir, ".contenox")
-	dbPath := filepath.Join(homeDir, ".contenox", "local.db")
-	require.NoError(t, os.MkdirAll(homeDir, 0o755))
-	require.NoError(t, os.MkdirAll(workspaceDir, 0o755))
+// ── ACP client harness over the acp subprocess's stdio ──────────────────────
 
-	// A free port we immediately release: nothing listens, so the forwarder's
-	// health probe reads unreachable — a dead serve address.
-	deadURL := "http://127.0.0.1:" + strconv.Itoa(fwdFreePort(t))
-
-	baseEnv := append(os.Environ(),
-		"HOME="+homeDir,
-		"CONTENOX_DEFAULT_MODEL=inproc-e2e-fake-model",
-		"CONTENOX_DEFAULT_PROVIDER=ollama",
-		"CONTENOX_SERVER_TOKEN=",
-		"CONTENOX_ACP_CHAIN_PATH=",
-		// The opt-in: forward at a serve that is not there.
-		"CONTENOX_SERVER_URL="+deadURL,
-	)
-	fwdRunCLI(t, bin, baseEnv, "--data-dir", dataDir, "--db", dbPath, "init", "--force")
-	// default-mission-policy is the envelope the /mission handler reads before it
-	// would dispatch; without it the handler errors on the envelope, not the serve.
-	inprocSeedConfig(t, dbPath)
-
-	h, _, _ := inprocSpawnACP(t, bin, baseEnv)
-	ctx := context.Background()
-	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{
-		ProtocolVersion: libacp.ProtocolVersion,
-		ClientInfo:      &libacp.Implementation{Name: "zed", Version: "e2e"},
-	})
-	require.NoErrorf(t, err, "acp initialize failed\nacp stderr:\n%s", h.stderr())
-
-	projectDir := filepath.Join(workspaceDir, "project")
-	require.NoError(t, os.MkdirAll(projectDir, 0o755))
-
-	// /mission is advertised (unconditional), even pointed at a dead serve.
-	sid, cmds := h.newSessionCommands(t, ctx, projectDir)
-	require.Containsf(t, cmds, "mission",
-		"/mission is advertised on the opt-in forwarding path even when the serve is down\nacp stderr:\n%s", h.stderr())
-
-	// Invoking it teaches, naming the dead serve — no half-fire.
-	require.Eventuallyf(t, func() bool {
-		teaching := h.promptFor(t, ctx, sid, "/mission "+inprocAgentName+" "+inprocIntent)
-		return strings.Contains(teaching, "unavailable") &&
-			strings.Contains(teaching, "stopped answering") &&
-			strings.Contains(teaching, deadURL)
-	}, 20*time.Second, 750*time.Millisecond,
-		"a /mission forwarded at a dead serve must teach, naming the serve\nacp stderr:\n%s", h.stderr())
+// fwdACPClient captures every session/update notification in wire order, so the
+// test can assert the advertised command menu and the /mission confirmation the
+// way a real editor renders them.
+type fwdACPClient struct {
+	libacp.UnimplementedClient
+	updates chan libacp.SessionNotification
 }
 
-// ── helpers ─────────────────────────────────────────────────────────────────
+func (c *fwdACPClient) SessionUpdate(_ context.Context, n libacp.SessionNotification) error {
+	c.updates <- n
+	return nil
+}
+
+type fwdACPHarness struct {
+	client    *libacp.ClientSideConnection
+	lc        *fwdACPClient
+	stderrBuf *fwdLockedBuffer
+}
+
+func (h *fwdACPHarness) stderr() string { return h.stderrBuf.String() }
+
+// newSessionCommands opens a fresh session and returns its id and the advertised
+// slash-command names (from the available_commands_update the agent emits after
+// the session/new result).
+func (h *fwdACPHarness) newSessionCommands(t *testing.T, ctx context.Context, cwd string) (libacp.SessionID, []string) {
+	t.Helper()
+	resp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: cwd, McpServers: []libacp.McpServer{}})
+	require.NoErrorf(t, err, "session/new failed\nacp stderr:\n%s", h.stderr())
+	deadline := time.After(10 * time.Second)
+	for {
+		select {
+		case n := <-h.lc.updates:
+			if n.Update.SessionUpdate == libacp.SessionUpdateAvailableCommands {
+				names := make([]string, 0, len(n.Update.AvailableCommands))
+				for _, c := range n.Update.AvailableCommands {
+					names = append(names, c.Name)
+				}
+				return resp.SessionID, names
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for available_commands_update\nacp stderr:\n%s", h.stderr())
+		}
+	}
+}
+
+// promptFor sends one prompt (here always a `/mission …` slash command, which
+// acpsvc intercepts) and returns the text of the agent_message_chunk the command
+// emits — the confirmation, or the teaching/command error rendered inline.
+func (h *fwdACPHarness) promptFor(t *testing.T, ctx context.Context, sid libacp.SessionID, text string) string {
+	t.Helper()
+	_, err := h.client.Prompt(ctx, libacp.PromptRequest{
+		SessionID: sid,
+		Prompt:    []libacp.ContentBlock{libacp.NewTextContent(text)},
+	})
+	require.NoErrorf(t, err, "prompt failed\nacp stderr:\n%s", h.stderr())
+	deadline := time.After(15 * time.Second)
+	for {
+		select {
+		case n := <-h.lc.updates:
+			if n.Update.SessionUpdate == libacp.SessionUpdateAgentMessageChunk {
+				if c := n.Update.Content; c != nil && strings.TrimSpace(c.Text) != "" {
+					return c.Text
+				}
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for the command's agent message\nacp stderr:\n%s", h.stderr())
+		}
+	}
+}
+
+// stdioRWC adapts a subprocess's stdout (read) + stdin (write) into the single
+// ReadWriteCloser libacp speaks over — exactly how an editor talks to `contenox
+// acp`, but with the pipes an exec.Cmd hands back instead of the editor's tty.
+type stdioRWC struct {
+	r io.Reader
+	w io.WriteCloser
+}
+
+func (s stdioRWC) Read(p []byte) (int, error)  { return s.r.Read(p) }
+func (s stdioRWC) Write(p []byte) (int, error) { return s.w.Write(p) }
+func (s stdioRWC) Close() error                { return s.w.Close() }
+
+// fwdLockedBuffer is a concurrency-safe sink for a subprocess's stderr/log.
+type fwdLockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *fwdLockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *fwdLockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// ── self-contained build/CLI/port helpers (no dependency on sibling test files) ──
+
+// fwdBuildBin compiles cmd/contenox into t.TempDir(); the go build cache makes
+// reruns cheap.
+func fwdBuildBin(t *testing.T) string {
+	t.Helper()
+	binPath := filepath.Join(t.TempDir(), "contenox")
+	out, err := exec.Command("go", "build", "-o", binPath, "github.com/contenox/runtime/cmd/contenox").CombinedOutput()
+	require.NoErrorf(t, err, "build contenox:\n%s", out)
+	return binPath
+}
+
+// fwdRunCLI runs a contenox setup command and fails on non-zero exit.
+func fwdRunCLI(t *testing.T, bin string, env []string, args ...string) {
+	t.Helper()
+	cmd := exec.Command(bin, args...)
+	cmd.Env = env
+	out, err := cmd.CombinedOutput()
+	require.NoErrorf(t, err, "contenox %v:\n%s", args, out)
+}
+
+// fwdFreePort returns a currently-free loopback TCP port. A small race window
+// exists between close and serve's bind, acceptable for a test.
+func fwdFreePort(t *testing.T) int {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	port := l.Addr().(*net.TCPAddr).Port
+	require.NoError(t, l.Close())
+	return port
+}
 
 // inprocSeed declares the fired agent as an external `contenox acp --auto` unit
 // bound to its chain (the child inherits the editor's $HOME/DB via os.Environ),
