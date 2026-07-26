@@ -121,7 +121,7 @@ export function Layout({ defaultOpen = true, mainContent, sidebarContent, classN
   const navbar = (
     <Panel
       variant="bordered"
-      className="flex h-16 shrink-0 items-center justify-between gap-4 bg-inherit px-4 text-inherit">
+      className="flex h-16 shrink-0 items-center justify-between gap-4 backdrop-blur-md bg-surface-50/80 dark:bg-dark-surface-100/80 border-b border-surface-200 dark:border-dark-surface-400/50 shadow-sm px-4 z-40">
       <div className="flex shrink-0 items-center gap-4">
         {/* The wizard replaces the whole main area (see showWizard below) and
             never renders <Sidebar>, so toggling it here would do nothing
@@ -163,7 +163,7 @@ export function Layout({ defaultOpen = true, mainContent, sidebarContent, classN
     return (
       <div
         className={cn(
-          'bg-surface-50 dark:bg-dark-surface-100 flex h-screen flex-col text-inherit',
+          'bg-surface-100 dark:bg-dark-surface-100 flex h-screen flex-col text-inherit',
           className,
         )}>
         {navbar}
@@ -176,7 +176,7 @@ export function Layout({ defaultOpen = true, mainContent, sidebarContent, classN
     return (
       <div
         className={cn(
-          'bg-surface-50 dark:bg-dark-surface-100 flex h-screen flex-col text-inherit',
+          'bg-surface-100 dark:bg-dark-surface-100 flex h-screen flex-col text-inherit',
           className,
         )}>
         {navbar}
@@ -190,7 +190,7 @@ export function Layout({ defaultOpen = true, mainContent, sidebarContent, classN
   return (
     <div
       className={cn(
-        'bg-surface-50 dark:bg-dark-surface-100 flex h-screen flex-col text-inherit',
+        'bg-surface-100 dark:bg-dark-surface-100 flex h-screen flex-col text-inherit',
         className,
       )}>
       {navbar}
@@ -212,7 +212,7 @@ export function Layout({ defaultOpen = true, mainContent, sidebarContent, classN
           items={[]}>
           {renderedSidebarContent}
         </Sidebar>
-        <main className="bg-surface-50 dark:bg-dark-surface-100 min-h-0 min-w-0 flex-1 overflow-hidden">
+        <main className="bg-surface-100 dark:bg-dark-surface-100 min-h-0 min-w-0 flex-1 overflow-hidden">
           {mainContent}
         </main>
       </div>

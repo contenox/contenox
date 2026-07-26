@@ -90,7 +90,7 @@ export default function MissionListPage() {
             description={t('missions.empty_description')}
           />
         ) : (
-          <Section>
+          <Section variant="empty">
             <div className="space-y-3">
               {missions.map(m => {
                 const inst = m.instanceId ? instanceById.get(m.instanceId) : undefined;

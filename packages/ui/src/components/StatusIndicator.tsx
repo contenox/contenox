@@ -66,7 +66,10 @@ export function StatusIndicator({
       {/* Status indicator */}
       <div className="flex items-center gap-2">
         <span
-          className={cn("w-2 h-2 rounded-full", statusConfig[status].color)}
+          className={cn(
+            "w-2 h-2 rounded-full",
+            statusConfig[status].color,
+          )}
         />
         {showIcon && (
           <span className={cn("text-xs", statusConfig[status].text)}>

@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 @tailwind utilities;
@@ -150,19 +152,19 @@
 
 @theme {
   /* ========== Light Mode Palettes ========== */
-  /* Light Mode - monochrome primary */
-  --color-primary-50: #f5f5f5;
-  --color-primary-100: #e5e5e5;
-  --color-primary-200: #d4d4d4;
-  --color-primary-300: #a3a3a3;
-  --color-primary-400: #737373;
-  --color-primary-500: #525252;
-  --color-primary-600: #404040;
-  --color-primary-700: #262626;
-  --color-primary-800: #171717;
-  --color-primary-900: #0a0a0a;
-  --color-primary: var(--color-primary-500);
-  --color-brand: var(--color-primary-500);
+  /* Light Mode - Vibrant Indigo Primary */
+  --color-primary-50: #eef2ff;
+  --color-primary-100: #e0e7ff;
+  --color-primary-200: #c7d2fe;
+  --color-primary-300: #a5b4fc;
+  --color-primary-400: #818cf8;
+  --color-primary-500: #6366f1;
+  --color-primary-600: #4f46e5;
+  --color-primary-700: #4338ca;
+  --color-primary-800: #3730a3;
+  --color-primary-900: #312e81;
+  --color-primary: var(--color-primary-600);
+  --color-brand: var(--color-primary-600);
 
   /* Light Mode Secondary - Neutral Slate */
   --color-secondary-50: #f8fafc;
@@ -208,17 +210,18 @@
   --color-background-dark: var(--color-surface-200); /* Was #f3f4f6 */
   --color-background: var(--color-background-light);
 
-  /* Gradient (primary -> accent) */
+  /* Gradient (pure indigo depth, no violet/pink) */
   --color-gradientStart: var(--color-primary-500);
-  --color-gradientEnd: var(--color-accent-500);
+  --color-gradientEnd: #3730a3; /* indigo-800 */
   --color-gradient: linear-gradient(
-    to right,
+    to bottom,
     var(--color-gradientStart),
     var(--color-gradientEnd)
   );
 
   /* ========== Dark Mode Palettes ========== */
-  /* ========== Dark Mode Primary Colors (Monochrome) ========== */
+  /* ========== Dark Mode Primary Colors — neutral/light (brand-matched) ========== */
+  /* On contenox.com, dark primary is neutral-white for text; indigo is CTA-only */
   --color-dark-primary-50: #fafafa;
   --color-dark-primary-100: #f5f5f5;
   --color-dark-primary-200: #e5e5e5;
@@ -369,10 +372,10 @@
   --color-dark-background: var(--color-dark-background-light);
 
   /* ========== Gradients ========== */
-  --color-dark-gradientStart: var(--color-dark-surface-500); /* 1a2639 */
-  --color-dark-gradientEnd: var(--color-dark-primary-800);
+  --color-dark-gradientStart: var(--color-dark-primary-500); 
+  --color-dark-gradientEnd: #3730a3; /* indigo-800 */
   --color-dark-gradient: linear-gradient(
-    135deg,
+    to bottom,
     var(--color-dark-gradientStart),
     var(--color-dark-gradientEnd)
   );
@@ -406,36 +409,36 @@
   --color-dark-text-surface-inverted: var(--color-dark-text-inverted);
 
   /* ========== Light Mode Surface Colors ========== */
-  --color-surface-50: #f8f9fa; /* Soft off-white (previously pure white) */
-  --color-surface-100: #f1f3f5; /* Very light gray */
-  --color-surface-200: #e9ecef; /* Light pearl gray */
-  --color-surface-300: #dee2e6; /* Soft gray */
-  --color-surface-400: #ced4da; /* Medium gray */
-  --color-surface-500: #adb5bd; /* Muted slate */
-  --color-surface-600: #6c757d; /* Darker slate */
-  --color-surface-700: #495057; /* Deep charcoal */
-  --color-surface-800: #343a40; /* Near-black */
-  --color-surface-900: #212529; /* Darkest gray */
+  --color-surface-50: #f8f9fa; 
+  --color-surface-100: #fcfcfc; /* Off-white for app canvas */
+  --color-surface-200: #f3f4f6; 
+  --color-surface-300: #e5e7eb; 
+  --color-surface-400: #d1d5db; 
+  --color-surface-500: #9ca3af; 
+  --color-surface-600: #6b7280; 
+  --color-surface-700: #4b5563; 
+  --color-surface-800: #374151; 
+  --color-surface-900: #1f2937; 
   --color-surface: var(--color-surface-50);
 
-  /* ========== Dark Mode Surface Colors (Graphite) ========== */
-  /* Cool neutral near-blacks — no warm/brown shift             */
-  --color-dark-surface-50: #08090a; /* True black */
-  --color-dark-surface-100: #0d0e10; /* App background */
-  --color-dark-surface-200: #121416; /* Card/panel bg */
-  --color-dark-surface-300: #1a1c1f; /* Elevated surface */
-  --color-dark-surface-400: #24262a; /* Borders, dividers */
-  --color-dark-surface-500: #2f3237; /* Subtle contrast */
-  --color-dark-surface-600: #3b3e44; /* Muted interactive */
-  --color-dark-surface-700: #4b4f56; /* Mid gray */
-  --color-dark-surface-800: #5f636b; /* Light slate */
-  --color-dark-surface-900: #757980; /* Lightest surface */
+  /* ========== Dark Mode Surface Colors (brand-matched cool graphite) ========== */
+  /* Matched to contenox.com: #08090a → #0d0e10 → #121416 progression */
+  --color-dark-surface-50: #08090a; 
+  --color-dark-surface-100: #0d0e10; 
+  --color-dark-surface-200: #121416; 
+  --color-dark-surface-300: #1a1c1f; 
+  --color-dark-surface-400: #24262a; 
+  --color-dark-surface-500: #2f3237; 
+  --color-dark-surface-600: #3b3e44; 
+  --color-dark-surface-700: #4b4f56; 
+  --color-dark-surface-800: #5f636b; 
+  --color-dark-surface-900: #757980; 
   --color-dark-surface: var(--color-dark-surface-200);
 
   /* ========== Fonts, Spacing, Radius, Easing ========== */
-  --font-display: "Geist", system-ui, sans-serif;
-  --font-body: "Geist", system-ui, sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, monospace;
+  --font-display: "Outfit", system-ui, sans-serif;
+  --font-body: "Outfit", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
   --spacing-18: 4.5rem;
   --spacing-22: 5.5rem;
   --spacing-30: 7.5rem;

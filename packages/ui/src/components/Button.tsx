@@ -34,10 +34,15 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ) => {
     const paletteStyles = {
       primary: cn(
-        "text-text-inverted dark:text-dark-text-inverted",
-        variant !== "text" && "bg-primary dark:bg-dark-primary",
-        "hover:bg-primary-600 dark:hover:bg-dark-primary-600",
-        "focus-visible:ring-primary-300 dark:focus-visible:ring-dark-primary-300",
+        "text-white dark:text-black font-medium",
+        "shadow-md shadow-primary-500/20 dark:shadow-none",
+        "ring-1 ring-inset ring-white/20 dark:ring-black/10",
+        variant !== "text" &&
+          "bg-gradient-to-b from-primary-500 to-primary-600 hover:from-primary-400 hover:to-primary-500 border border-transparent dark:from-primary-500 dark:to-primary-600 dark:hover:from-primary-400 dark:hover:to-primary-500",
+        "hover:shadow-lg active:scale-[0.98]",
+        "focus-visible:ring-2 focus-visible:ring-primary-400 focus-visible:ring-offset-2",
+        // When disabled, fade out the contrast rather than washing out a bright hue
+        "disabled:opacity-60 disabled:hover:from-primary-500 disabled:hover:to-primary-600",
       ),
       secondary: cn(
         "text-text-inverted dark:text-dark-text",
@@ -88,8 +93,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         className={cn(
           "inline-flex flex-row items-center justify-center",
-          "ease-fluid rounded-lg transition-all focus-visible:ring-2 focus-visible:ring-offset-2 focus:outline-none",
-          "disabled:cursor-not-allowed disabled:opacity-50",
+          "ease-out duration-200 rounded-lg transition-all focus-visible:ring-2 focus-visible:ring-offset-2 focus:outline-none hover:shadow-sm hover:scale-[1.02] active:scale-[0.98]",
+          "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100",
           {
             "h-7 px-2 text-xs": size === "xs",
             "h-8 px-3 text-xs": size === "sm",

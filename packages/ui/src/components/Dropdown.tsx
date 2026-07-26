@@ -211,7 +211,7 @@ export function Dropdown({
         <div
           ref={contentRef}
           className={cn(
-            "absolute z-50 mt-2 w-full rounded-lg border bg-surface-50 dark:bg-dark-surface-200 shadow-lg",
+            "absolute z-50 mt-2 w-full rounded-lg border shadow-lg backdrop-blur-md bg-surface-50/90 dark:bg-dark-surface-200/90",
             contentClassName,
           )}
           role={options && !children ? "listbox" : undefined}

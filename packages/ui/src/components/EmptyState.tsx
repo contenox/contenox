@@ -50,8 +50,9 @@ export function EmptyState({
   return (
     <Section
       title={title}
+      variant="body"
       className={cn(
-        "p-8 rounded-xl",
+        "p-8",
         orientation === "horizontal"
           ? "flex items-center gap-6 text-left"
           : "text-center",
@@ -62,16 +63,19 @@ export function EmptyState({
       {icon && (
         <div
           className={cn(
-            "text-primary dark:text-dark-primary",
-            orientation === "horizontal" ? "flex-shrink-0" : "mx-auto",
+            "relative flex items-center justify-center text-primary-500 dark:text-dark-primary-400",
+            orientation === "horizontal" ? "flex-shrink-0" : "mx-auto mb-6",
             {
-              "text-3xl": iconSize === "lg",
-              "text-2xl": iconSize === "md",
-              "text-xl": iconSize === "sm",
+              "w-20 h-20 text-4xl": iconSize === "lg",
+              "w-16 h-16 text-3xl": iconSize === "md",
+              "w-12 h-12 text-2xl": iconSize === "sm",
             },
           )}
         >
-          {icon}
+          <div className="absolute inset-0 bg-primary-500/20 dark:bg-dark-primary-500/20 blur-xl rounded-full" />
+          <div className="relative z-10 flex items-center justify-center w-full h-full bg-surface-50/50 dark:bg-dark-surface-200/50 rounded-full shadow-sm border border-surface-200/50 dark:border-dark-surface-600/50 backdrop-blur-md">
+            {icon}
+          </div>
         </div>
       )}
       {subtitle && (
@@ -82,9 +86,11 @@ export function EmptyState({
           {subtitle}
         </P>
       )}
-      <P variant={orientation === "horizontal" ? undefined : "cardSubtitle"}>
-        {description}
-      </P>
+      {description && (
+        <H3 className="text-text-secondary dark:text-dark-text-secondary font-medium mt-2">
+          {description}
+        </H3>
+      )}
     </Section>
   );
 }

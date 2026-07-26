@@ -2,7 +2,7 @@ import { cn } from "../utils";
 import { Panel } from "./Panel";
 import { H2, P } from "./Typography";
 
-type SectionVariant = "surface" | "bordered" | "body";
+type SectionVariant = "surface" | "bordered" | "body" | "empty";
 
 interface SectionProps extends React.HTMLAttributes<HTMLDivElement> {
   title?: string;

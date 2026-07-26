@@ -66,8 +66,8 @@ export function CodeBlockView({
   };
 
   return (
-    <div className="border-surface-200 dark:border-dark-surface-700 my-2 overflow-hidden rounded-lg border">
-      <div className="border-surface-200 bg-surface-100 dark:border-dark-surface-700 dark:bg-dark-surface-800 flex items-center justify-between gap-2 border-b px-3 py-1.5">
+    <div className="border-surface-200 dark:border-dark-surface-600 bg-surface-200 dark:bg-dark-surface-50 my-2 overflow-hidden rounded-lg border">
+      <div className="border-surface-200 bg-surface-100 dark:border-dark-surface-600 dark:bg-dark-surface-200 flex items-center justify-between gap-2 border-b px-3 py-1.5">
         <span className="text-text-muted dark:text-dark-text-muted font-mono text-xs">
           {language || "text"}
         </span>
@@ -85,7 +85,7 @@ export function CodeBlockView({
           <span>{copied ? copiedLabel : copyLabel}</span>
         </button>
       </div>
-      <pre className="bg-surface-200 text-text dark:bg-dark-surface-700 dark:text-dark-text m-0 overflow-auto p-3 text-sm sm:p-4">
+      <pre className="bg-transparent text-text dark:bg-transparent dark:text-dark-text m-0 overflow-auto p-3 text-sm sm:p-4">
         <code
           className={cn("hljs", language && `language-${language}`)}
           dangerouslySetInnerHTML={{ __html: html }}

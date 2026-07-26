@@ -32,16 +32,16 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(
       <div
         ref={ref}
         className={cn(
-          "rounded-xl border p-6 transition-colors shadow-sm dark:shadow-none",
-          "dark:border-dark-surface-700",
+          "rounded-xl border p-6 transition-all duration-300 shadow-sm backdrop-blur-sm",
+          "hover:-translate-y-1 hover:border-indigo-500/30 hover:shadow-lg hover:shadow-indigo-500/10 dark:hover:border-indigo-400/30",
           {
-            "bg-surface-50 border-surface-200 dark:bg-dark-surface-200":
+            "bg-white/80 border-neutral-200/60 dark:bg-neutral-950/80 dark:border-neutral-800/60":
               variant === "default",
-            "bg-secondary-100 border-secondary-200 dark:bg-dark-surface-600":
+            "bg-surface-100/80 border-surface-200/60 dark:bg-dark-surface-300/80 dark:border-dark-surface-400/60":
               variant === "filled",
-            "bg-surface-100 border-surface-300 dark:bg-dark-surface-300 dark:border-dark-surface-600":
+            "bg-surface-200/80 border-surface-300/60 dark:bg-dark-surface-400/80 dark:border-dark-surface-500/60":
               variant === "surface",
-            "bg-error-50 dark:bg-dark-error-100 text-error dark:text-dark-error-700":
+            "bg-error-50 dark:bg-dark-error-50 text-error dark:text-dark-error-800":
               variant === "error",
             "border border-surface-400 dark:border-dark-surface-500":
               variant === "bordered",

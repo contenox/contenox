@@ -41,7 +41,7 @@ export const chatTranscriptMarkdownComponents: Components = {
     return (
       <code
         className={cn(
-          "bg-surface-200 text-text dark:bg-dark-surface-700 dark:text-dark-text rounded px-1.5 py-0.5 font-mono text-xs",
+          "bg-surface-200 text-text dark:bg-dark-surface-500 dark:text-dark-text rounded px-1.5 py-0.5 font-mono text-xs",
           className,
         )}
         {...rest}
@@ -196,7 +196,7 @@ export const chatTranscriptMarkdownComponents: Components = {
     ...props
   }: React.ComponentPropsWithoutRef<"blockquote">) => (
     <blockquote
-      className="border-primary-400 dark:border-dark-primary-500 bg-surface-50/50 text-text dark:bg-dark-surface-300/20 dark:text-dark-text rounded-r-lg border-l-4 py-2 pl-4"
+      className="border-primary-400 dark:border-dark-primary-500 bg-surface-50 shadow-sm text-text dark:bg-dark-surface-300/20 dark:text-dark-text rounded-r-lg border-l-4 py-2 pl-4"
       {...props}
     >
       {children}

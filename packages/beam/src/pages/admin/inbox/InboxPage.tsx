@@ -194,6 +194,7 @@ export default function InboxPage() {
         {/* 1 — Pending asks, loudest, grouped by mission. */}
         {approvals.length > 0 && (
           <Section
+            variant="empty"
             title={t('inbox.approvals_title')}
             description={t('inbox.approvals_description')}>
             <div className="mt-4 space-y-6">
@@ -216,7 +217,7 @@ export default function InboxPage() {
 
         {/* 2 — Stalled / failed units. */}
         {stalled.length > 0 && (
-          <Section title={t('inbox.stalled_title')} description={t('inbox.stalled_description')}>
+          <Section variant="empty" title={t('inbox.stalled_title')} description={t('inbox.stalled_description')}>
             <div className="mt-4 space-y-2">
               {stalled.map(unit => (
                 <StalledUnitRow
@@ -239,7 +240,7 @@ export default function InboxPage() {
         )}
 
         {/* 3 — What came back, grouped by mission, newest-first. */}
-        <Section title={t('inbox.reports_title')} description={t('inbox.reports_description')}>
+        <Section variant="empty" title={t('inbox.reports_title')} description={t('inbox.reports_description')}>
           <div className="mt-4 space-y-6">
             {reports.isLoading ? (
               <LoadingState message={t('inbox.reports_loading')} />

@@ -33,7 +33,7 @@
 
 @layer base {
   html, body, #root {
-    @apply h-screen overflow-hidden bg-surface-50 text-text m-0 p-0;
+    @apply h-screen overflow-hidden bg-surface-100 text-text m-0 p-0;
   }
   
   .dark body {

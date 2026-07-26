@@ -60,9 +60,9 @@ export type ChatComposerProps = {
 };
 
 const baseTextarea =
-  "border rounded-md " +
-  "bg-surface-50 text-text placeholder:text-secondary-400 border-surface-200 " +
-  "dark:bg-dark-surface-600 dark:text-dark-text dark:placeholder:text-dark-secondary-400 dark:border-dark-surface-700";
+  "w-full border-0 bg-transparent text-text placeholder:text-surface-400 " +
+  "dark:text-dark-text dark:placeholder:text-dark-surface-600 " +
+  "focus:outline-none focus:ring-0 transition-colors p-3 sm:p-4";
 
 export function ChatComposer({
   value,
@@ -252,9 +252,9 @@ export function ChatComposer({
     return (
       <div
         className={cn(
-          "border-surface-200 dark:border-dark-surface-600 bg-surface-50/80 dark:bg-dark-surface-100/80 border-t px-3 py-3 transition-all duration-200 sm:px-4",
+          "border-surface-200 dark:border-dark-surface-600 bg-surface-50/80 dark:bg-dark-surface-100/80 border-t px-3 py-3 transition-all duration-300 sm:px-4",
           isFocused &&
-            "ring-primary-100 dark:ring-dark-primary-500 ring-2 ring-inset",
+            "ring-primary-500/40 dark:ring-primary-500/40 ring-2 ring-inset shadow-[0_0_15px_rgba(99,102,241,0.1)] dark:shadow-[0_0_15px_rgba(99,102,241,0.2)]",
           className,
         )}
       >
@@ -264,15 +264,17 @@ export function ChatComposer({
   }
 
   return (
-    <Panel
-      variant="default"
+    <div
       className={cn(
-        "transition-all duration-200",
-        isFocused && "ring-primary-100 dark:ring-dark-primary-500 ring-2",
+        "rounded-2xl border transition-all duration-300 backdrop-blur-md p-2 sm:p-3 shadow-xl shadow-black/5 dark:shadow-black/20",
+        "bg-surface-50/70 border-surface-200/50 dark:bg-dark-surface-100/70 dark:border-dark-surface-300/30",
+        isFocused
+          ? "border-primary-500/50 dark:border-primary-500/50 ring-2 ring-primary-500/20 dark:ring-primary-500/20 shadow-[0_0_20px_rgba(99,102,241,0.15)] dark:shadow-[0_0_20px_rgba(99,102,241,0.25)]"
+          : "hover:border-surface-300/60 dark:hover:border-dark-surface-400/50",
         className,
       )}
     >
       {formInner}
-    </Panel>
+    </div>
   );
 }
