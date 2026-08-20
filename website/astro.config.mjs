@@ -1,0 +1,125 @@
+import { defineConfig } from "astro/config";
+import tailwindcss from "@tailwindcss/vite";
+import sitemap from "@astrojs/sitemap";
+
+export default defineConfig({
+  site: "https://contenox.com",
+  output: "static",
+  integrations: [
+    sitemap({
+      // Development docs (contributor docs and blueprint design records) stay
+      // browsable and searchable on-site, but are kept out of the SEO surface.
+      filter: (page) => !page.includes('/docs/development/'),
+    }),
+  ],
+  markdown: {
+    remarkPlugins: [(await import("./src/lib/remark-md-links.mjs")).default],
+    shikiConfig: {
+      themes: { light: "github-light", dark: "github-dark" },
+      defaultColor: false,
+    },
+  },
+  vite: {
+    plugins: [tailwindcss()],
+  },
+  // contenox.com was heavily indexed as a Next.js app. Every route the old
+  // site served (or redirected) must keep resolving on the static site: known
+  // routes get explicit redirect pages here; everything else (tokened invites,
+  // /bob/*, /api/*) is caught by the 404 page, which forwards to the homepage.
+  redirects: {
+    // 2026-07 docs restructure: guide/ was split into pillar sections.
+    "/docs/guide/providers/anthropic": "/docs/integrations/providers/anthropic/",
+    "/docs/guide/providers/bedrock": "/docs/integrations/providers/bedrock/",
+    "/docs/guide/providers/gemini": "/docs/integrations/providers/gemini/",
+    "/docs/guide/providers/mistral": "/docs/guide/quickstart/",
+    "/docs/guide/providers/ollama": "/docs/integrations/providers/ollama/",
+    "/docs/guide/providers/openai": "/docs/integrations/providers/openai/",
+    "/docs/guide/providers/openrouter": "/docs/guide/quickstart/",
+    "/docs/guide/providers/vertex": "/docs/integrations/providers/vertex/",
+    "/docs/guide/local-models": "/docs/rnd/modeld/",
+    // The VS Code extension is retired again; both old URLs now land on its
+    // lab retrospective, same as the local-models -> modeld redirect above.
+    "/docs/guide/vscode-vscodium": "/docs/rnd/editor-agent/",
+    "/docs/rnd/vscode-extension": "/docs/rnd/editor-agent/",
+    "/docs/integrations/editors/vscode-vscodium": "/docs/rnd/editor-agent/",
+    "/docs/guide/zed": "/docs/integrations/editors/zed/",
+    "/docs/guide/jetbrains": "/docs/integrations/editors/jetbrains/",
+    "/docs/guide/aionui": "/docs/integrations/editors/aionui/",
+    "/docs/guide/openclaw": "/docs/integrations/editors/openclaw/",
+    "/docs/guide/mcp": "/docs/integrations/tools/mcp/",
+    // Routing is chain-level detail; you author it as a directory.
+    "/docs/guide/request-routing": "/docs/guide/chains/routing/",
+    // The hard parts is contributor material, not a guide.
+    "/docs/guide/hard-parts": "/docs/development/hard-parts/",
+    // Confinement and chains became folders; the prefixes were categories.
+    "/docs/guide/agent-threat-model": "/docs/guide/confinement/why/",
+    "/docs/guide/guardrails": "/docs/guide/confinement/guardrails/",
+    "/docs/guide/agent-sandbox": "/docs/guide/confinement/sandbox/",
+    "/docs/guide/trusted-binaries": "/docs/guide/confinement/trusted-binaries/",
+    "/docs/guide/environment-scrubbing": "/docs/guide/confinement/environment/",
+    "/docs/guide/first-chain": "/docs/guide/chains/writing-a-chain/",
+    "/docs/guide/chain-naming": "/docs/guide/chains/naming/",
+    "/docs/guide/agentic-loop": "/docs/guide/chains/agentic-loop/",
+    // Tutorials became a folder; the prefix was a category, not a title.
+    "/docs/guide/tutorial-first-agent": "/docs/guide/tutorials/first-agent/",
+    "/docs/guide/tutorial-mission-agent": "/docs/guide/tutorials/mission-agent/",
+    "/docs/guide/tutorial-vault-agent": "/docs/guide/tutorials/vault-agent/",
+    "/docs/guide/tutorial-recurring-work": "/docs/guide/tutorials/recurring-work/",
+    // The event tier is R&D, not a shipped use case.
+    "/docs/use-cases/event-driven-chains": "/docs/rnd/event-driven-chains/",
+    // cookbook/ and stories/ merged into docs/use-cases/.
+    "/cookbook": "/docs/use-cases/",
+    "/stories": "/docs/use-cases/",
+    "/cookbook/codebase-docs": "/docs/use-cases/codebase-docs/",
+    "/cookbook/git-devops": "/docs/use-cases/git-devops/",
+    "/cookbook/hubspot-mcp": "/docs/use-cases/hubspot-mcp/",
+    "/cookbook/leads-to-hubspot": "/docs/use-cases/leads-to-hubspot/",
+    "/cookbook/notion-mcp": "/docs/use-cases/notion-mcp/",
+    "/cookbook/playwright-mcp": "/docs/use-cases/playwright-mcp/",
+    "/cookbook/release-notes": "/docs/use-cases/release-notes/",
+    "/cookbook/stateful-agents-mcp": "/docs/use-cases/stateful-agents-mcp/",
+    "/stories/any-api-as-a-tool": "/docs/use-cases/any-api-as-a-tool/",
+    "/stories/authored-approval": "/docs/use-cases/authored-approval/",
+    "/stories/moderation-gate": "/docs/use-cases/moderation-gate/",
+    "/stories/multi-provider-fallback": "/docs/use-cases/multi-provider-fallback/",
+    "/stories/nested-permission-bomb": "/docs/use-cases/nested-permission-bomb/",
+    "/stories/openapi-subset": "/docs/use-cases/openapi-subset/",
+    // chains/ was live at /docs/chains/ before its rename to specification/.
+    "/docs/chains": "/docs/specification/",
+    "/docs/chains/handlers": "/docs/specification/handlers/",
+    "/docs/chains/transitions": "/docs/specification/transitions/",
+    "/docs/chains/examples": "/docs/specification/examples/",
+    // tools/ was live at /docs/tools/ before nesting under integrations/.
+    "/docs/tools": "/docs/integrations/tools/",
+    "/docs/tools/local": "/docs/integrations/tools/local/",
+    "/docs/tools/remote": "/docs/integrations/tools/remote/",
+    // 2026-08 reshape: contenox chat/index/search are retired. Workspace search
+    // has no replacement — external retrieval is an MCP server now — so this
+    // one stays. The four use-case pages that redirected here alongside it are
+    // live again, rewritten against `contenox run` as the scripting shape.
+    "/docs/guide/search": "/docs/integrations/tools/mcp/",
+    // Old marketing/docs aliases the Next config carried.
+    "/features": "/docs/guide/quickstart/",
+    "/docs/beam": "/docs/rnd/beam-web/",
+    "/docs/guide/introduction": "/docs/guide/quickstart/",
+    // Retired EE/commerce surfaces.
+    "/pricing": "/",
+    "/services": "/",
+    "/cloud": "/",
+    "/login": "/",
+    "/signup": "/",
+    "/forgot-password": "/",
+    "/reset-password": "/",
+    "/invite": "/",
+    "/admin": "/",
+    "/admin/login": "/",
+    "/admin/bob": "/",
+    "/bob": "/",
+    "/pilot": "/",
+    "/pilot/managed-mcp": "/",
+    "/pilot/success": "/",
+    "/pilot/cancel": "/",
+    // Pages that return with the content pass; keep the URLs alive meanwhile.
+    "/about": "/",
+  },
+});

@@ -1,0 +1,565 @@
+{
+  "$schema": "https://contenox.com/schema/hitl-policy-v1.schema.json",
+  "//compute": "Tighter than the default preset's, matching this policy's default_action \"deny\": a mission is fire-and-detach, so these bounds guard against an unwatched runaway spend.",
+  "//compute-fields": "maxToolCalls is validated but not enforced by the shipped hosts; maxTokens is best-effort and inert if the unit's provider reports no usage. maxTurns is omitted; only 1 has an effect (it drops the runtime nudge turn), since the dispatcher never issues more than two. modelAllowlist/backendAllowlist are enforced only when set; onExhausted supports only \"finish_stuck\".",
+  "compute": {
+    "maxToolCalls": 150,
+    "maxTokens": 1000000,
+    "onExhausted": "finish_stuck"
+  },
+  "default_action": "deny",
+  "rules": [
+    {
+      "tools": "local_fs",
+      "tool": "*",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/{.ssh,.gnupg,.aws,.azure,.kube,.config/gcloud,.config/doctl,.oci}/**"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "*",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/{.password-store,.local/share/keyrings,Library/Keychains,.config/1Password,.config/Bitwarden,.config/keepassxc}/**"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "*",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/{.electrum,.bitcoin,.ethereum/keystore}/**"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "*",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/{wallet.dat,*.kdbx}"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "*",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/{.mozilla,.config/google-chrome,.config/chromium,.config/BraveSoftware}/**"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "*",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/Library/Application Support/{Google/Chrome,Firefox,BraveSoftware}/**"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "*",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/{.bash_history,.zsh_history,.python_history,.netrc,.git-credentials,.npmrc,.pypirc}"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "*",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/.docker/config.json"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "*",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/{id_rsa,id_dsa,id_ecdsa,id_ed25519}*"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "write_file",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/{.ssh,.gnupg}/**"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "sed",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/{.ssh,.gnupg}/**"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "edit_file",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/{.ssh,.gnupg}/**"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "write_file",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/{.config/autostart,.config/systemd/user,Library/LaunchAgents,Library/LaunchDaemons}/**"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "sed",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/{.config/autostart,.config/systemd/user,Library/LaunchAgents,Library/LaunchDaemons}/**"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "edit_file",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/{.config/autostart,.config/systemd/user,Library/LaunchAgents,Library/LaunchDaemons}/**"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "write_file",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/{.bashrc,.zshrc,.profile,.bash_profile,.zprofile,.bash_login,.zshenv,.kshrc,crontab,.crontab}"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "sed",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/{.bashrc,.zshrc,.profile,.bash_profile,.zprofile,.bash_login,.zshenv,.kshrc,crontab,.crontab}"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "edit_file",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/{.bashrc,.zshrc,.profile,.bash_profile,.zprofile,.bash_login,.zshenv,.kshrc,crontab,.crontab}"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "write_file",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/.config/fish/config.fish"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "sed",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/.config/fish/config.fish"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "edit_file",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/.config/fish/config.fish"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "write_file",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "/{etc,usr,bin,sbin,boot,lib,lib64,opt,System}/**"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "sed",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "/{etc,usr,bin,sbin,boot,lib,lib64,opt,System}/**"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "edit_file",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "/{etc,usr,bin,sbin,boot,lib,lib64,opt,System}/**"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "write_file",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/hitl-policy*.json"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "sed",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/hitl-policy*.json"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "edit_file",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/hitl-policy*.json"
+        }
+      ]
+    },
+    {
+      "//": "Config keys and hooks under .git are commands, not project files, so writes are denied; the typed git toolset is unaffected since it never goes through local_fs.",
+      "tools": "local_fs",
+      "tool": "write_file",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "{**/.git/**,.git/**}"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "sed",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "{**/.git/**,.git/**}"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "edit_file",
+      "action": "deny",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "{**/.git/**,.git/**}"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "read_file",
+      "action": "approve",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/{*.pem,*.key,.env,.env.*}"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "read_file_range",
+      "action": "approve",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/{*.pem,*.key,.env,.env.*}"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "grep",
+      "action": "approve",
+      "when": [
+        {
+          "key": "path",
+          "op": "glob",
+          "value": "**/{*.pem,*.key,.env,.env.*}"
+        }
+      ]
+    },
+    {
+      "tools": "local_fs",
+      "tool": "read_file",
+      "action": "allow"
+    },
+    {
+      "tools": "local_fs",
+      "tool": "read_file_range",
+      "action": "allow"
+    },
+    {
+      "tools": "local_fs",
+      "tool": "list_dir",
+      "action": "allow"
+    },
+    {
+      "tools": "local_fs",
+      "tool": "find_files",
+      "action": "allow"
+    },
+    {
+      "tools": "local_fs",
+      "tool": "grep",
+      "action": "allow"
+    },
+    {
+      "tools": "local_fs",
+      "tool": "stat_file",
+      "action": "allow"
+    },
+    {
+      "tools": "local_fs",
+      "tool": "count_stats",
+      "action": "allow"
+    },
+    {
+      "tools": "local_fs",
+      "tool": "write_file",
+      "action": "approve"
+    },
+    {
+      "tools": "local_fs",
+      "tool": "sed",
+      "action": "approve"
+    },
+    {
+      "tools": "local_fs",
+      "tool": "edit_file",
+      "action": "approve"
+    },
+    {
+      "tools": "local_shell",
+      "tool": "local_shell",
+      "action": "deny",
+      "when": [
+        {
+          "key": "command",
+          "op": "command_blacklist",
+          "value": "mkfs,mke2fs,fdisk,shred,wipefs"
+        }
+      ]
+    },
+    {
+      "tools": "local_shell",
+      "tool": "local_shell",
+      "action": "approve",
+      "when": [
+        {
+          "key": "command",
+          "op": "command_ask_always",
+          "value": "rm,sudo,dd,chmod,chown,mv,cp,>:,>>"
+        }
+      ]
+    },
+    {
+      "tools": "local_shell",
+      "tool": "local_shell",
+      "action": "approve",
+      "when": [
+        {
+          "key": "args",
+          "op": "no_command_substitution",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "tools": "local_shell",
+      "tool": "local_shell",
+      "action": "approve"
+    },
+    {
+      "tools": "shell_session",
+      "tool": "shell_session_read",
+      "action": "allow"
+    },
+    {
+      "tools": "webtools",
+      "tool": "web_get",
+      "action": "allow"
+    },
+    {
+      "tools": "webtools",
+      "tool": "web_head",
+      "action": "allow"
+    },
+    {
+      "tools": "webtools",
+      "tool": "web_post",
+      "action": "approve"
+    },
+    {
+      "tools": "webtools",
+      "tool": "web_put",
+      "action": "approve"
+    },
+    {
+      "tools": "webtools",
+      "tool": "web_patch",
+      "action": "approve"
+    },
+    {
+      "tools": "webtools",
+      "tool": "web_delete",
+      "action": "approve"
+    },
+    {
+      "//": "native-fs-browse read tools: the files.read floor, same allow tier as the local_fs reads above. Contained by internal/services/vfs like local_fs; a workspace outside the secret trees is the boundary.",
+      "tools": "native-fs-browse",
+      "tool": "grep",
+      "action": "allow"
+    },
+    {
+      "tools": "native-fs-browse",
+      "tool": "find_files",
+      "action": "allow"
+    },
+    {
+      "tools": "native-fs-browse",
+      "tool": "stat_file",
+      "action": "allow"
+    },
+    {
+      "tools": "native-fs-browse",
+      "tool": "count_stats",
+      "action": "allow"
+    },
+    {
+      "tools": "native-fs-browse",
+      "tool": "list_dir",
+      "action": "allow"
+    }
+  ],
+  "attention": {
+    "allowAgentAnswers": false
+  }
+}

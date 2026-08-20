@@ -1,0 +1,63 @@
+{
+  "$schema": "https://contenox.com/schema/hitl-policy-v1.schema.json",
+  "//compute": "The widest shipped ceilings, not their absence: default_action \"allow\" gates almost nothing, so an unbounded mission here would have nothing stopping a runaway spend.",
+  "//compute-fields": "maxTokens does the real work here since default_action \"allow\" gates almost nothing; it's best-effort and inert without provider usage reporting. maxTurns is omitted; only 1 has an effect (it drops the runtime nudge turn), since the dispatcher never issues more than two; onExhausted supports only \"finish_stuck\".",
+  "compute": {
+    "maxToolCalls": 500,
+    "maxTokens": 4000000,
+    "onExhausted": "finish_stuck"
+  },
+  "default_action": "allow",
+  "rules": [
+    {
+      "tools": "local_shell",
+      "tool": "local_shell",
+      "action": "deny",
+      "when": [
+        {
+          "key": "command",
+          "op": "command_blacklist",
+          "value": "mkfs,mke2fs,fdisk,shred,wipefs"
+        }
+      ]
+    },
+    {
+      "tools": "local_shell",
+      "tool": "local_shell",
+      "action": "approve",
+      "when": [
+        {
+          "key": "command",
+          "op": "command_ask_always",
+          "value": "rm,sudo,dd,chmod,chown"
+        }
+      ]
+    },
+    {
+      "tools": "local_shell",
+      "tool": "local_shell",
+      "action": "approve",
+      "when": [
+        {
+          "key": "args",
+          "op": "no_command_substitution",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "tools": "local_shell",
+      "tool": "local_shell",
+      "action": "approve"
+    },
+    {
+      "tools": "shell_session",
+      "tool": "shell_session_read",
+      "action": "allow"
+    }
+  ],
+  "attention": {
+    "allowAgentAnswers": true,
+    "maxAgentAnswers": 5
+  }
+}

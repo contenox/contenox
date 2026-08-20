@@ -1,0 +1,17 @@
+---
+import { buildDocsTree } from '../lib/tree';
+import SidebarNode from './SidebarNode.astro';
+
+interface Props {
+  current: string;
+}
+const { current } = Astro.props;
+const tree = await buildDocsTree();
+---
+<nav aria-label="Documentation tree" class="text-sm">
+  <ul class="space-y-0.5">
+    {tree.children.map((node) => (
+      <SidebarNode node={node} current={current} />
+    ))}
+  </ul>
+</nav>

@@ -1,0 +1,215 @@
+package acpsvc
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+
+	"github.com/contenox/contenox/internal/kernel/taskengine"
+	"github.com/contenox/contenox/internal/services/chatservice"
+	"github.com/contenox/contenox/internal/store/runtimetypes"
+	libacp "github.com/contenox/contenox/libacp"
+)
+
+const compactDefaultKeep = 8
+
+func (t *Transport) handleClear(ctx context.Context, _ libacp.SessionID, sess *sessionEntry) (string, error) {
+	mgr := chatservice.NewManager(sess.WorkspaceID)
+
+	exec, commit, release, err := t.deps.DB.WithTransaction(ctx)
+	if err != nil {
+		return "", fmt.Errorf("start transaction: %w", err)
+	}
+	defer release()
+	if err := mgr.ClearSession(ctx, exec, sess.InternalSessionID); err != nil {
+		return "", err
+	}
+	if err := commit(ctx); err != nil {
+		return "", fmt.Errorf("commit: %w", err)
+	}
+	return "Conversation history cleared.", nil
+}
+
+// handleRename sets the session's display title; no argument reports the current
+// one and "-" clears the override.
+func (t *Transport) handleRename(ctx context.Context, sess *sessionEntry, args string) (string, error) {
+	if t.deps.DB == nil {
+		return "", fmt.Errorf("renaming is unavailable without a database")
+	}
+	internalID := sess.InternalSessionID
+	if internalID == "" {
+		return "", fmt.Errorf("this session has no durable record to rename")
+	}
+	store := runtimetypes.New(t.deps.DB.WithoutTransaction())
+
+	title := truncateSessionListTitle(strings.TrimSpace(args))
+	if title == "" {
+		current := t.sessionInfoTitle(ctx, internalID)
+		if current == "" {
+			return "This session has no title yet — set one with /rename <title>.", nil
+		}
+		return fmt.Sprintf("Title: %s\nChange it with /rename <title>, or /rename - to reset it.", current), nil
+	}
+	if title == "-" {
+		if err := setSessionTitleOverride(ctx, store, internalID, ""); err != nil {
+			return "", fmt.Errorf("reset title: %w", err)
+		}
+		return "Title reset — it follows the first message again.", nil
+	}
+	if err := setSessionTitleOverride(ctx, store, internalID, title); err != nil {
+		return "", fmt.Errorf("set title: %w", err)
+	}
+	return fmt.Sprintf("Session renamed to %s.", title), nil
+}
+
+// handleNewSessionCommand starts a second session in this workspace and reports
+// its id. ACP has no agent-to-client switch message, so moving onto it stays the
+// client's act.
+func (t *Transport) handleNewSessionCommand(ctx context.Context, sess *sessionEntry) (string, error) {
+	if t.deps.DB == nil || t.deps.Engine == nil {
+		return "", errSetupRequired()
+	}
+	cwd := strings.TrimSpace(sess.Cwd)
+	if cwd == "" {
+		return "", fmt.Errorf("this session has no workspace directory to start another session in")
+	}
+	resp, err := t.NewSession(ctx, libacp.NewSessionRequest{Cwd: cwd, McpServers: []libacp.McpServer{}})
+	if err != nil {
+		return "", fmt.Errorf("could not start a session: %w", err)
+	}
+	return fmt.Sprintf("Started session %s in %s.\nOpen it from your editor's session picker (ACP session/load %s); /sessions lists every session here. This session is untouched.",
+		resp.SessionID, cwd, resp.SessionID), nil
+}
+
+// handleSessions renders session/list's roster for a client with no session UI
+// of its own.
+func (t *Transport) handleSessions(ctx context.Context, sess *sessionEntry) (string, error) {
+	if t.deps.DB == nil {
+		return "", fmt.Errorf("listing sessions is unavailable without a database")
+	}
+	cwd := strings.TrimSpace(sess.Cwd)
+	resp, err := t.ListSessions(ctx, libacp.ListSessionsRequest{Cwd: cwd})
+	if err != nil {
+		return "", err
+	}
+	if len(resp.Sessions) == 0 {
+		return "No sessions recorded here yet — /new starts one.", nil
+	}
+	current, _ := t.acpSessionForContenoxID(sess.InternalSessionID)
+
+	var b strings.Builder
+	if cwd != "" {
+		fmt.Fprintf(&b, "Sessions in %s (newest first):\n", cwd)
+	} else {
+		b.WriteString("Sessions (newest first):\n")
+	}
+	for _, info := range resp.Sessions {
+		marker := "  "
+		if info.SessionID == current {
+			marker = "* "
+		}
+		// session/list falls back to the id as the title.
+		title := info.Title
+		if title == string(info.SessionID) {
+			title = "(no title yet)"
+		}
+		fmt.Fprintf(&b, "%s%s  %s", marker, info.SessionID, title)
+		if info.UpdatedAt != "" {
+			fmt.Fprintf(&b, "  (%s)", info.UpdatedAt)
+		}
+		if info.SessionID == current {
+			b.WriteString("  — this session")
+		}
+		b.WriteString("\n")
+	}
+	if resp.NextCursor != "" {
+		b.WriteString("\nMore sessions exist than are shown; session/list pages through the rest.")
+	}
+	b.WriteString("\nOpen one from your editor's session picker (ACP session/load <id>); /new starts a fresh one.")
+	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+// handleCompact summarizes older history into a single message, keeping the last
+// `keep` messages verbatim.
+func (t *Transport) handleCompact(ctx context.Context, _ libacp.SessionID, sess *sessionEntry, args string) (string, error) {
+	keep := compactDefaultKeep
+	if s := strings.TrimSpace(args); s != "" {
+		n, err := strconv.Atoi(s)
+		if err != nil || n < 0 {
+			return "", fmt.Errorf("invalid keep count %q: expected a non-negative integer", s)
+		}
+		keep = n
+	}
+
+	mgr := chatservice.NewManager(sess.WorkspaceID)
+	history, err := mgr.ListMessages(ctx, t.deps.DB.WithoutTransaction(), sess.InternalSessionID)
+	if err != nil {
+		return "", fmt.Errorf("load history: %w", err)
+	}
+	if len(history) == 0 {
+		return "", fmt.Errorf("no history to compact")
+	}
+
+	chain, err := t.loadCompactChain()
+	if err != nil {
+		return "", err
+	}
+
+	templateVars := t.chainTemplateVars(sess)
+	templateVars["chain"] = chain.ID
+	execCtx := taskengine.WithTemplateVars(ctx, templateVars)
+
+	compacted, err := chatservice.CompactHistory(execCtx, t.deps.Engine.TaskService, chain, history, keep)
+	if err != nil {
+		return "", err
+	}
+
+	exec, commit, release, err := t.deps.DB.WithTransaction(ctx)
+	if err != nil {
+		return "", fmt.Errorf("start transaction: %w", err)
+	}
+	defer release()
+	if err := mgr.ClearSession(ctx, exec, sess.InternalSessionID); err != nil {
+		return "", err
+	}
+	if err := mgr.PersistDiff(ctx, exec, sess.InternalSessionID, compacted); err != nil {
+		return "", fmt.Errorf("persist compacted history: %w", err)
+	}
+	if err := commit(ctx); err != nil {
+		return "", fmt.Errorf("commit: %w", err)
+	}
+
+	return fmt.Sprintf("Compacted %d messages to %d (kept last %d).", len(history), len(compacted), keep), nil
+}
+
+// loadCompactChain reads chain-compact-default.json from the active .contenox
+// directory, falling back to ~/.contenox.
+func (t *Transport) loadCompactChain() (*taskengine.TaskChainDefinition, error) {
+	const name = "chain-compact-default.json"
+	var candidates []string
+	if t.deps.ContenoxDir != "" {
+		candidates = append(candidates, filepath.Join(t.deps.ContenoxDir, name))
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		candidates = append(candidates, filepath.Join(home, ".contenox", name))
+	}
+	for _, p := range candidates {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		var chain taskengine.TaskChainDefinition
+		if err := json.Unmarshal(data, &chain); err != nil {
+			return nil, fmt.Errorf("invalid chain JSON at %q: %w", p, err)
+		}
+		if chain.ID == "" {
+			return nil, fmt.Errorf("chain at %q has empty ID", p)
+		}
+		return &chain, nil
+	}
+	return nil, fmt.Errorf("%s not found in %q or ~/.contenox; run 'contenox init' to populate it", name, t.deps.ContenoxDir)
+}

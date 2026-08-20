@@ -1,0 +1,249 @@
+---
+import Base from "../layouts/Base.astro";
+import Landing from "../components/Landing.astro";
+import type { LandingStrings } from "../components/Landing.astro";
+
+const rulesCode = `{
+  "default_action": "approve",
+  "compute": { "maxToolCalls": 300, "maxTokens": 2000000, "onExhausted": "finish_stuck" },
+  "rules": [
+    { "tools": "local_fs", "tool": "*", "action": "deny",
+      "when": [{ "key": "path", "op": "glob",
+                 "value": "**/{.ssh,.aws,.kube,.config/gcloud}/**" }] },
+    { "tools": "local_fs", "tool": "read_file", "action": "allow" },
+    { "tools": "local_fs", "tool": "write_file", "action": "approve" },
+    { "tools": "local_shell", "tool": "local_shell", "action": "allow",
+      "when": [{ "key": "command", "op": "command_prefix_allowlist",
+                 "value": "go test,go vet,ls,cat,grep,npm test,pytest" }] },
+    { "tools": "local_shell", "tool": "local_shell", "action": "approve" }
+  ],
+  "attention": { "allowAgentAnswers": false }
+}`;
+
+const t: LandingStrings = {
+  h1a: "Declare an agent in one Markdown file.",
+  h1b: "Run it in your terminal.",
+  lede: "Every action it takes is checked against policy you wrote — and when it needs you, it waits, durably: answer from your terminal or your phone, days later, and the run resumes exactly once.",
+  declareH2: "You don't build an agent. You declare one.",
+  declareTree: [
+    [".contenox/", ""],
+    ["  agents/", ""],
+    ["    reviewer.md               ", "# one agent, one file"],
+    ["    triage.md                 ", "# another"],
+    ["  agents.toml                 ", "# the knobs a declaration cannot reach"],
+    ["", ""],
+    [".claude/agents/               ", "# already have agents? read where they are"],
+  ],
+  declareNote:
+    "Markdown with a YAML frontmatter header — the same file Claude Code reads, and the same one Copilot, Cursor, OpenCode and Antigravity keep. Drop it in and the next run picks it up: no build step, no plugin API, nothing to convert.",
+  ctaRecipe: "Run a recipe",
+  copyLabel: "Copy",
+  installTabPosix: "macOS / Linux",
+  installTabWindows: "Windows",
+  ctaGithub: "View on GitHub",
+  installNote:
+    'Installs <code class="font-mono">contenox</code>. Then <code class="font-mono">contenox setup</code> to pick a model, and <code class="font-mono">contenox beam</code> to start working.',
+  trustChips: [
+    "any model",
+    "one binary",
+    "no account",
+    "your rules in a file you can read",
+  ],
+
+  apacheEyebrow: "The argument",
+  apacheH2: "Apache made serving something you install. HTML became something you author.",
+  apacheP1:
+    "In 1994 you did not serve a website, you wrote a server: parse the request, hold the connection, decide what to send — all of it welded to the content it was there to deliver. Then the server became a thing you installed, and the two came apart. HTML was authored by people who never touched a socket, and the web that followed was built by them.",
+  apacheP2:
+    "Every team building agents today is back on the wrong side of that line, hand-rolling the same machine: the loop, the tool gate, the approval flow, session persistence — welded to one prompt, rewritten at the next company. contenox makes that machine infrastructure and the declaration the artifact. The engine is not the interesting part; who holds its controls is.",
+  apacheThenLabel: "Apache, 1995",
+  apacheNowLabel: "contenox, now",
+  apacheRows: [
+    ["You install the server.", "You install the runtime."],
+    [
+      "You author HTML. The server never writes a page for you.",
+      "You declare agents in Markdown. The server ships no agent of yours.",
+    ],
+    [
+      "Modules extend it. Apache shipped no websites.",
+      "MCP servers and the editor's own capabilities supply tools. You bring the ones you need.",
+    ],
+    [
+      "It served whatever HTML you already had.",
+      "It reads the declarations you already keep — Claude Code, Copilot, Cursor, OpenCode, Antigravity.",
+    ],
+    [
+      "Connection handling is infrastructure. Nobody writes their own.",
+      "The durable ask is infrastructure: a run stops, checkpoints, survives a restart, resumes when a human answers.",
+    ],
+  ],
+  apacheOutro:
+    "Five agents ship in the box. They are the default page, not the product — an example of the artifact, there to be replaced by yours. And where the analogy stops: Apache shipped no browser, and contenox ships one. contenox beam is it, first-party and in-tree, so the front door is never somebody else's product. It is still a client — the policy it renders is enforced underneath it rather than by it.",
+
+  treeEyebrow: "The artifact",
+  treeH2: "An agent is a file. A workflow is a directory.",
+  treeLede:
+    "A declaration is Markdown with a YAML frontmatter header: a name, the tools it may call, the model, and a body that becomes its system prompt. Put declarations in a directory and the directory is the workflow — the agent.md at the top reads the request, answers with one label, and the branch of that name takes it from there, with its own instruction, its own tools, its own budget.",
+  treeListing: [
+    [".contenox/agents/", ""],
+    ["  triage/", ""],
+    ["    agent.md              ", "# reads the request, answers with one label"],
+    ["    code/", ""],
+    ["      agent.md            ", "# the branch that label routes to"],
+    ["      recovery.md         ", "# its second attempt, when the first stops short"],
+    ["    docs/", ""],
+    ["      agent.md            ", "# tools: Read, Glob, Grep — it cannot write"],
+    ["    failure.md            ", "# what it says when every branch has given up"],
+  ],
+  treeOutro:
+    "default: in the router's frontmatter names the branch an unrecognised answer falls to — the narrowest one, never the most capable. contenox compiles the directory into the chain that runs it and the policy it runs under, into .generated/, on the next run. Both are JSON Schema-validated, both are yours to read, and neither is yours to maintain.",
+  treePoints: [
+    "A branch is a specialist because of what it holds, not how it is phrased: name its tools and every other tool is withheld where calls execute, rather than merely left out of what the model was offered.",
+    "A support desk sends billing questions to a read-only branch holding the billing API, and account changes to one that may write but stops for a person.",
+    "A back office sends “summarise this” and “extract these fields” to branches with different output contracts, so callers get parseable output without asking for it every time.",
+    "A regulated deployment sends anything touching regulated data to a branch under a stricter envelope, however the request was phrased.",
+  ],
+  treeCtas: [
+    ["Declaring agents", "/docs/guide/agents/"],
+    ["How request routing works", "/docs/guide/request-routing/"],
+  ],
+
+  rulesEyebrow: "You write the rules",
+  rulesH2: "How much agency? You decide — in writing.",
+  rulesLede:
+    "Every run is bounded by an envelope: a JSON policy naming what passes silently, what pauses for a human, and what is denied outright — plus hard ceilings on tool calls and tokens, and a pin on which models and backends the run may use. No hidden prompt decides for you. The file lives in your repo and gets reviewed like any other change.",
+  rulesCode,
+  rulesOutro:
+    "Trimmed from the shipped default preset. Anything no rule matches fails closed — it asks a human: the approval card in beam, your editor's own permission prompt, or your phone. Six presets ship with contenox init, and contenox vet checks your policy before anything runs under it.",
+  rulesCta: ["The full policy format", "/docs/guide/hitl/"],
+  hitlDemoAlt:
+    "Terminal demo: a destructive rm command stops at a human approval gate before it runs",
+
+  missionEyebrow: "The durable ask",
+  missionH2: "The run stops. The process exits. Days later, one answer resumes it.",
+  missionLede:
+    "Any harness can pause for a human while it holds the connection open. Holding a connection is not the hard part — surviving the wait is. A run under contenox checkpoints where it stopped, releases the process, and picks up from that exact point when someone answers, from anywhere.",
+  missionLines: [
+    ["note", "# at your desk, in beam — the agent reaches a gated call"],
+    ["cmd", "contenox beam"],
+    [
+      "out",
+      "the agent reads the ledger and the flagged invoices — allowed rules pass silently",
+    ],
+    [
+      "out",
+      "⏸ approve · three invoices disputed, credit notes drafted — send them?",
+    ],
+    ["note", "# you don't answer. you close the laptop."],
+    ["out", "run checkpointed · ask saved · process released"],
+    [
+      "note",
+      "# days later — from another terminal, or the app on your phone:",
+    ],
+    ["cmd", "contenox approvals list"],
+    ["out", "ask 8f3c · send the drafted credit notes? · session billing"],
+    ["cmd", 'contenox approvals respond 8f3c --answer "yes, send them"'],
+    ["out", "checkpoint resumed — exactly once. the turn finished."],
+  ],
+  missionOutro:
+    "No babysitting a terminal, no approval that expires because you were asleep, no silent change while you were away. The same mechanism is what makes unattended work safe to start: contenox run puts a program in the caller's seat — CI, cron, another agent — and prints the report to stdout with an exit code to branch on, while a mission fires a one-line intent under a named envelope and leaves a durable record behind it. Neither needs you watching, because neither can pass a gate you did not write.",
+  missionCta: [
+    "How missions, approvals, and the inbox work",
+    "/docs/guide/missions/",
+  ],
+
+  toolsEyebrow: "Tools",
+  toolsH2: "Bring the tools you need. Nothing else.",
+  toolsLede:
+    "contenox ships no tools of its own. It owns the tool boundary, and you decide what stands on the other side of it. Every tool you do not need is tokens burned on every turn, and one more thing to govern. Tools cross that boundary two ways, and both of them are yours to choose.",
+  toolsWays: [
+    [
+      "From the client",
+      "beam and every editor carry fs/* and terminal/* as capabilities. contenox forwards the call and the client performs it, in the workspace already open. local_fs is five tools: read_file, write_file, edit_file, sed, read_file_range. Listing and search go through the shell, on the client's side of the line — and contenox serve, having no such client, has neither toolset at all.",
+    ],
+    [
+      "From the operator",
+      "Attach any MCP server — stdio, SSE or HTTP — or any HTTP service with an OpenAPI spec. It registers once and its tools become policy-scoped tools an agent names like any other. A declaration can also bring its own, reachable by no other agent and retired when you delete the file.",
+    ],
+  ],
+  toolsNote:
+    "Whichever side a call comes from, it crosses one boundary and is checked against one envelope before it runs.",
+  toolsCtas: [
+    ["Connect an MCP server", "/docs/integrations/tools/mcp/"],
+    ["Wrap an HTTP API as a tool", "/docs/integrations/tools/remote/"],
+    ["Agent Client Protocol", "https://agentclientprotocol.com"],
+  ],
+
+  shapesEyebrow: "Ways in",
+  shapesH2: "Your terminal first. Your editor if you'd rather. A host when nobody is at the machine.",
+  shapesLede:
+    "Same runtime, same declarations, same envelope, same session state. What changes between them is only who is accountable for the machine it runs on.",
+  shapes: [
+    [
+      "contenox beam",
+      "The front door: you, at the keyboard, on your own device. The transcript is your native terminal scrollback, the composer takes / for commands and @ to put a file in front of the agent, and a gated call raises an approval card you answer with one keystroke. Filesystem and terminal work natively. Bare contenox on a terminal opens it.",
+    ],
+    [
+      "Your editor",
+      "Zed, JetBrains, AionUi or OpenClaw spawn contenox as an ACP subprocess over stdio — no plugin lock-in, and approvals route through the editor's own permission UI. Per the protocol the editor owns the workspace, so the session works in the project you already have open.",
+    ],
+    [
+      "contenox serve, and the app",
+      "The organization's shape: a standing host serving one workspace, fixed at launch, with no filesystem and no terminal tools at all — every capability it has is an MCP server you attached. Connectors and event triggers drive it, and the app reaches it through the relay. There is no workspace picker anywhere: a client discovers instances and the sessions they already hold.",
+    ],
+  ],
+  guides: [
+    ["Start in the terminal", "/docs/guide/quickstart/"],
+    ["Run a standing host", "/docs/guide/serve/"],
+    ["Read the Zed guide", "/docs/integrations/editors/zed/"],
+    ["Read the JetBrains guide", "/docs/integrations/editors/jetbrains/"],
+    ["Read the AionUi guide", "/docs/integrations/editors/aionui/"],
+    ["Read the OpenClaw guide", "/docs/integrations/editors/openclaw/"],
+  ],
+
+  yoursEyebrow: "Yours by default",
+  yoursH2: "Your machine, your state, your models.",
+  yoursPoints: [
+    "Sessions, config, run logs, and captured execution state live on your machine. No account, no contenox service in the loop — unless you pair with the optional relay below. Telemetry is opt-in and off by default.",
+    "Inference is configuration: local Ollama or vLLM when nothing may leave your network, or OpenAI, Anthropic, Gemini, Bedrock, and Vertex on your own keys, pinned to a region you choose. Swapping later is a config change, not a rewrite.",
+    "Secrets resolve from your environment at request time and never land in config on disk. Every envelope denies .ssh, .aws and .kube under every permission setting, including the loosest one.",
+  ],
+  yoursCta: ["AI sovereignty & the EU AI Act", "/docs/guide/sovereignty/"],
+
+  relayEyebrow: "Optional: the hosted relay",
+  relayH2: "Your session, on your phone.",
+  relayP:
+    "Everything above runs without an account. When you want a running session reachable from elsewhere, pair the machine with the hosted relay: one typed key from the contenox app, no browser on the machine. The machine dials out and sends exactly two things — the key and its hostname — and from then on you read the transcript and answer approvals from your phone. Free for you and three teammates, one machine each — and an install that never pairs contacts no relay at all.",
+  relayCta: ["How pairing works — and how to undo it", "/docs/guide/pairing/"],
+  invite: {
+    lead: "We also provision and run contenox agents for you, managed and on your terms. Tell us what the work is and we will get you set up:",
+    contactLabel: "talk to us",
+    contactHref: "mailto:hello@contenox.com",
+    appLabel: "see the hosted app",
+    appHref: "https://app.contenox.com",
+  },
+
+  bottomEyebrow: "Get started",
+  bottomH2: "Declare an agent. Then open beam.",
+  bottomCta: "Read the Quickstart",
+  bottomContact:
+    'Questions? <a href="mailto:hello@contenox.com" class="underline hover:text-black dark:hover:text-white">hello@contenox.com</a> · Issues and PRs on <a href="https://github.com/contenox/contenox" class="underline hover:text-black dark:hover:text-white">GitHub</a>',
+  builtOnEyebrow: "Built on",
+  builtOnNote:
+    "Local models connect through Ollama or vLLM over their local APIs; hosted providers over their public APIs. No bundled inference runtime, no GPU drivers to ship.",
+  builtOn: [
+    ["Go", "the implementation", "https://go.dev"],
+    ["SQLite", "local state", "https://sqlite.org"],
+    ["Ollama", "local models", "https://ollama.com"],
+    ["vLLM", "local models", "https://github.com/vllm-project/vllm"],
+  ],
+};
+---
+
+<Base
+  title="Contenox — Declare an agent in one Markdown file. Run it in your terminal."
+  description="Declare an agent in one Markdown file and run it in your terminal with contenox beam. Every action it takes is checked against policy you wrote — and when it needs you, it waits durably: answer from your terminal or your phone, days later, and the run resumes exactly once. Open source, on your machine, any model."
+  alternates={{ en: "/", de: "/de/" }}
+>
+  <Landing t={t} />
+</Base>

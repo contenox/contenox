@@ -1,0 +1,499 @@
+# Task (go-task) is the build system: https://taskfile.dev
+# Install: go install github.com/go-task/task/v3/cmd/task@latest
+# Run `task --list` for the target overview.
+version: '3'
+
+vars:
+  BIN_DIR: '{{.ROOT_DIR}}/bin'
+  # Windows refuses to execute a file whose extension is not in PATHEXT, so the
+  # native build must carry .exe there — an extensionless binary is not merely
+  # unconventional on Windows, it is unrunnable. Every task that names the built
+  # binary goes through BIN so the suffix cannot drift between them.
+  EXE: '{{if eq OS "windows"}}.exe{{end}}'
+  BIN: '{{.BIN_DIR}}/contenox{{.EXE}}'
+  # ACP peers default to their in-repo builds when present, so the harness
+  # targets run with zero manual env on a checkout that has built them
+  # (tools/acp-validator README, rust-sdk at tools/rust-sdk). Explicit env
+  # overrides; a missing binary keeps the clear set-this-var failure/skip.
+  ACP_VALIDATOR_BIN:
+    sh: ls {{.ROOT_DIR}}/tools/acp-validator/target/debug/acp-validator 2>/dev/null || true
+  ACP_YOPO_BIN:
+    sh: ls {{.ROOT_DIR}}/tools/rust-sdk/target/debug/yopo 2>/dev/null || true
+  ACP_TESTY_BIN:
+    sh: ls {{.ROOT_DIR}}/tools/rust-sdk/target/debug/testy 2>/dev/null || true
+  ACP_MCP_ECHO_BIN:
+    sh: ls {{.ROOT_DIR}}/tools/rust-sdk/target/debug/mcp-echo-server 2>/dev/null || true
+  # The black-box CLI suite is Rust too (tools/contenox-e2e/README.md explains
+  # why it cannot be Go). Detected rather than required: a checkout without a
+  # Rust toolchain still runs every other gate.
+  CARGO_BIN:
+    sh: command -v cargo 2>/dev/null || true
+  # The test-name convention CONTRIBUTING publishes, written down once so the
+  # gates below and CI select by it instead of by hand-copied -run strings:
+  # TestUnit_ is the isolated fast loop, TestIntegration_ takes real
+  # dependencies, TestSystem_/TestE2E_ drive whole workflows. The optional
+  # infix is load-bearing — it is what also selects the TestHostE2E_ and
+  # TestFleetE2E_ names already in the tree, which a plain '^TestE2E_' drops.
+  SYSTEM_TESTS: '^Test([A-Za-z0-9]+)?(System|E2E)_'
+  INTEGRATION_TESTS: '^TestIntegration_'
+
+tasks:
+  default:
+    desc: List available tasks
+    silent: true
+    cmds:
+      - task --list
+
+  build:
+    desc: Build the contenox CLI (pure Go, static)
+    cmds:
+      - CGO_ENABLED=0 go build -o {{.BIN}} {{.ROOT_DIR}}/cmd/contenox
+
+  build-windows:
+    desc: Cross-build the Windows CLI binary
+    cmds:
+      - CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o {{.BIN_DIR}}/contenox-windows-amd64.exe {{.ROOT_DIR}}/cmd/contenox
+
+  lint:
+    desc: The formatting and static gates CI enforces (gofmt, vet)
+    cmds:
+      - cmd: |
+          # Skip gitignored paths so this agrees with CI, which lints a clean
+          # checkout; a local scratch dir must not fail a gate CI would pass.
+          unformatted=$(gofmt -l . | while read -r f; do git check-ignore -q "$f" || echo "$f"; done)
+          if [ -n "$unformatted" ]; then
+            echo "$unformatted"
+            echo "gofmt found unformatted files (above). Fix with, gofmt -w ."
+            exit 1
+          fi
+      - go vet ./...
+
+  vuln:
+    desc: Known vulnerabilities in reachable code (the same gate CI runs)
+    cmds:
+      # Deliberately unpinned: a scanner's value is the freshness of its
+      # database, and it is fetched through the module proxy and verified
+      # against sum.golang.org.
+      - go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  test:
+    desc: Full serial Go test suite, every test whatever its name
+    cmds:
+      - GOMAXPROCS=1 go test -timeout 30m ./...
+
+  # -short is not a gate. It means "unit only": it switches off every case that
+  # needs a container, a kernel feature, a peer binary or a spawned contenox,
+  # which is most of what the product is. Shipping on this task alone is how a
+  # green suite hid a product that failed a ten-second manual test. The release
+  # claim is test-system; this one is the inner loop.
+  test-unit:
+    desc: 'Fast inner loop: TestUnit_ under -short. NOT a release gate — that is test-system.'
+    cmds:
+      - GOMAXPROCS=4 go test -short -timeout 15m -run '^TestUnit_' ./...
+
+  # Every backend suite runs through this wrapper, because a suite that skipped
+  # for want of Docker is indistinguishable from one that passed: `go test`
+  # prints a skip only under -v, so the plain command ended in a green `ok`.
+  # Two things fix that here. The suites run under -v, so an in-suite skip
+  # ("Postgres store NOT exercised: ...") is on screen. And a missing container
+  # engine is reported before the run in the shape acp-suites uses — SKIPPED,
+  # not passed — rather than as a pass.
+  #
+  # REQUIRE lists the suite's own require-env variables (.github/workflows/ci.yml
+  # sets them). With one of them set the suite runs even when the probe finds no
+  # engine, so a broken engine on a CI runner fails the job instead of skipping
+  # it. Unset, which is the normal local state, nothing here needs Docker.
+  #
+  # Every suite runs with -count=1. A cached `ok` from an earlier run with Docker
+  # up is the same false green in a different disguise: nothing would touch a
+  # container, and the smoke exists to touch one.
+  backend-suite:
+    internal: true
+    silent: true
+    cmds:
+      - |
+        set -e
+        required=""
+        for name in {{.REQUIRE}}; do
+          eval "value=\${$name:-}"
+          if [ -n "$value" ]; then required=1; fi
+        done
+        if [ -z "$required" ] && ! docker info >/dev/null 2>&1 && ! podman info >/dev/null 2>&1; then
+          printf '\n==> SKIPPED, not passed: %s\n' '{{.NAME}}'
+          printf '    %s\n' '{{.WHAT}}'
+          printf '    No container engine answered (tried: docker info, podman info). Start one to run it,\n'
+          printf '    or set any of [%s] to 1 to turn this skip into a failure.\n\n' '{{.REQUIRE}}'
+          exit 0
+        fi
+        {{.RUN}}
+
+  test-store-postgres:
+    desc: The store suite against a throwaway Postgres container (needs Docker; says SKIPPED without it)
+    cmds:
+      - task: backend-suite
+        vars:
+          NAME: test-store-postgres
+          WHAT: 'The store suite did not run against Postgres; its Postgres DDL and every $N query are unproven.'
+          REQUIRE: CONTENOX_TEST_REQUIRE_POSTGRES
+          RUN: CONTENOX_TEST_STORE_BACKEND=postgres go test -v -count=1 -timeout 15m ./internal/store/...
+
+  test-bus-nats:
+    desc: The libbus conformance suite, whose NATS backend runs in a throwaway container (needs Docker; says SKIPPED without it)
+    cmds:
+      # The whole conformance suite, not a NATS-only -run filter: the suite's
+      # contract is that every backend passes the same matrix, and `go test
+      # -run` splits on '/', so no single pattern selects the NATS leaf of both
+      # the three-level TestConformance_* names and the two-level
+      # TestConformanceDivergence_* ones. The InMem and SQLite halves are the
+      # cheap ones anyway.
+      - task: backend-suite
+        vars:
+          NAME: test-bus-nats
+          WHAT: 'The NATS half of the libbus conformance matrix did not run.'
+          REQUIRE: LIBBUS_REQUIRE_NATS
+          RUN: go test -v -count=1 -timeout 10m -run '^TestConformance' ./libbus/...
+
+  test-kv-valkey:
+    desc: libkvstore against a throwaway Valkey container (needs Docker; says SKIPPED without it)
+    cmds:
+      - task: backend-suite
+        vars:
+          NAME: test-kv-valkey
+          WHAT: 'The Valkey KVExecutor did not run against a server.'
+          REQUIRE: LIBKVSTORE_REQUIRE_VALKEY
+          RUN: go test -v -count=1 -timeout 10m -run '^TestUnit_Valkey' ./libkvstore/...
+
+  # internal/substrate is the opt-in wiring itself: which backend each of
+  # CONTENOX_POSTGRES_URL / CONTENOX_NATS_URL / CONTENOX_VALKEY_URL selects, and
+  # that a set-but-unreachable setting is refused by name instead of silently
+  # degrading to the SQLite file. Its container-backed cases skip under -short,
+  # so the -short unit gate alone never proves any of it.
+  test-substrate:
+    desc: The opt-in substrate wiring against real Postgres, NATS and Valkey containers (needs Docker; says SKIPPED without it)
+    cmds:
+      - task: backend-suite
+        vars:
+          NAME: test-substrate
+          WHAT: 'The substrate wiring did not run against any real backend, only against the SQLite default.'
+          REQUIRE: CONTENOX_TEST_REQUIRE_POSTGRES LIBBUS_REQUIRE_NATS LIBKVSTORE_REQUIRE_VALKEY
+          RUN: go test -v -count=1 -timeout 10m ./internal/substrate/...
+
+  # The opt-in backends a CONTENOX_POSTGRES_URL / CONTENOX_NATS_URL /
+  # CONTENOX_VALKEY_URL install lands on, plus the wiring that selects them.
+  # This capability decayed once because nothing ran it; CI runs these same
+  # tasks, with each suite's require-env set so an absent Docker fails instead
+  # of skipping.
+  test-backends:
+    desc: 'Smoke the opt-in backends: Postgres, NATS, Valkey, and the wiring that selects them (needs Docker; each suite says SKIPPED without it)'
+    cmds:
+      - task: test-store-postgres
+      - task: test-bus-nats
+      - task: test-kv-valkey
+      - task: test-substrate
+
+  # Shared body of test-system and test-integration. `go test` prints a skip
+  # only under -v and still ends the package in `ok`, so a suite whose every
+  # case skipped for want of Docker, a kernel feature or a peer binary is
+  # indistinguishable from one that proved every case. That is the same false
+  # green backend-suite exists to stop, one level up, so the census here names
+  # every case that did not run: "141 selected" must never be read as "141
+  # proved". -count=1 for the same reason — a cached ok from an earlier,
+  # better-equipped run is a false green in a third disguise.
+  named-suite:
+    internal: true
+    silent: true
+    cmds:
+      - |
+        set -o pipefail
+        mkdir -p {{.BIN_DIR}}
+        log={{.BIN_DIR}}/{{.NAME}}.log
+        # `|| status=$?` rather than a bare pipeline: task runs these scripts
+        # under errexit, so a failing run would abort before the census that
+        # explains it. The status is re-raised at the end, unchanged.
+        status=0
+        GOMAXPROCS=1 go test -v -count=1 -timeout {{.TIMEOUT}} -run '{{.PATTERN}}' {{if .SKIP}}-skip '{{.SKIP}}' {{end}}./... 2>&1 | tee "$log" || status=$?
+        passed=$(grep -c '^--- PASS: ' "$log" || true)
+        skipped=$(grep -c '^--- SKIP: ' "$log" || true)
+        printf '\n==> %s: %s passed, %s SKIPPED (not passed)\n' '{{.NAME}}' "$passed" "$skipped"
+        if [ "$skipped" != "0" ]; then
+          grep '^--- SKIP: ' "$log" | sed 's/^--- SKIP: /    did not run: /'
+          printf '    A skip is not a pass: each line above is a case this run did not prove.\n'
+        fi
+        exit $status
+
+  # The release claim. Never -short — these are precisely the cases -short
+  # switches off. SKIP=<regexp> excludes cases by name: CI passes it to keep the
+  # multi-GB model pulls out of the per-push run, the nightly gate passes
+  # nothing so everything is attempted.
+  test-system:
+    desc: 'The release gate: every TestSystem_/TestE2E_ case, with a census of what skipped (SKIP=<regexp> excludes)'
+    cmds:
+      - task: named-suite
+        vars:
+          NAME: test-system
+          PATTERN: '{{.SYSTEM_TESTS}}'
+          TIMEOUT: 45m
+          SKIP: '{{.SKIP}}'
+
+  # Cross-package cases against real dependencies. Kept a separate task from
+  # test-system because its dependencies differ: internal/libsandbox needs a
+  # Landlock kernel and unprivileged user namespaces, which a stock Ubuntu
+  # refuses until the sysctl in docs/guide/confinement/sandbox.md is set.
+  test-integration:
+    desc: 'TestIntegration_ against real dependencies, with a census of what skipped (SKIP=<regexp> excludes)'
+    cmds:
+      - task: named-suite
+        vars:
+          NAME: test-integration
+          PATTERN: '{{.INTEGRATION_TESTS}}'
+          TIMEOUT: 20m
+          SKIP: '{{.SKIP}}'
+
+  # Several hundred tests still carry names that predate the convention
+  # (TestLoopback_, TestManager_, TestFleetService_, TestConformance_, …). They
+  # are real tests and neither named gate selects them, so test-all runs this
+  # complement rather than a second full ./... pass. Between the three gates
+  # every test in the tree runs; only TestUnit_ runs twice, once under -short in
+  # the fast gate and once here with -short off.
+  test-rest:
+    desc: Everything the named gates do not select (test names that predate the convention)
+    cmds:
+      - GOMAXPROCS=1 go test -timeout 30m -skip '{{.SYSTEM_TESTS}}|{{.INTEGRATION_TESTS}}' ./...
+
+  test-cli-verbose:
+    desc: Verbose CLI package tests
+    cmds:
+      - GOMAXPROCS=4 go test -v ./internal/surfaces/contenoxcli/...
+
+  test-cli-help:
+    desc: Verify CLI help output against the golden script
+    deps: [build]
+    cmds:
+      - chmod +x {{.ROOT_DIR}}/scripts/verify_cli_help.sh
+      - CONTENOX_BIN={{.BIN_DIR}}/contenox {{.ROOT_DIR}}/scripts/verify_cli_help.sh
+
+  acp-conformance:
+    desc: Validate libacp agent-side wire dispatch against the Rust reference ACP clients
+    preconditions:
+      - sh: test -n "{{.ACP_VALIDATOR_BIN}}"
+        msg: 'set ACP_VALIDATOR_BIN=/path/to/acp-validator (build tools/acp-validator; see its README)'
+    cmds:
+      - ACP_VALIDATOR_BIN={{.ACP_VALIDATOR_BIN}} ACP_YOPO_BIN={{.ACP_YOPO_BIN}} ACP_STUB_ADVERTISE_MODES=1 go test -run '^TestConformance_' -v ./libacp/...
+
+  acp-client-e2e:
+    desc: Validate libacp client-side wire dispatch against the Rust reference testy agent
+    preconditions:
+      - sh: test -n "{{.ACP_TESTY_BIN}}"
+        msg: 'set ACP_TESTY_BIN=/path/to/testy (build the agentclientprotocol rust-sdk test agent)'
+    cmds:
+      - ACP_TESTY_BIN={{.ACP_TESTY_BIN}} ACP_MCP_ECHO_BIN={{.ACP_MCP_ECHO_BIN}} go test -run '^TestTesty_' -v ./libacp/acpexec/...
+
+  # Invoked by name, the two Rust-backed suites above fail when their binary is
+  # unset — you asked for them. Inside test-all they are skipped instead, loudly:
+  # a missing external toolchain is not a failing gate, and a hard stop there
+  # makes the one-command gate unrunnable on a fresh clone. A suite that RUNS
+  # still fails the gate.
+  acp-suites:
+    desc: 'The ACP suites: self-loopback always, the Rust-backed ones when their binaries are set'
+    silent: true
+    cmds:
+      - |
+        set -e
+        skipped=""
+        if [ -n "{{.ACP_VALIDATOR_BIN}}" ]; then
+          task acp-conformance
+        else
+          skipped="${skipped}\n  - acp-conformance   set ACP_VALIDATOR_BIN (tools/acp-validator/README.md: needs Rust and a sibling rust-sdk checkout)"
+        fi
+        if [ -n "{{.ACP_TESTY_BIN}}" ]; then
+          task acp-client-e2e
+        else
+          skipped="${skipped}\n  - acp-client-e2e    set ACP_TESTY_BIN (the agentclientprotocol rust-sdk test agent)"
+        fi
+        task acp-host-e2e
+        if [ -n "$skipped" ]; then
+          printf "\n==> SKIPPED, not passed:%b\n\n" "$skipped"
+        fi
+
+  # A gate beside test-system, not below it. This is the only suite that proves
+  # anything about the product a user actually meets: it execs the SHIPPED binary
+  # and reads state back through the product's own commands, so it cannot
+  # construct an internal, reach an unexported field, or swap a fake in — there
+  # is no `internal/` to import from Rust. tools/contenox-e2e/README.md has the
+  # full rule set and the reason the language is not Go.
+  #
+  # --no-fail-fast, because cargo stops at the first failing test BINARY: one
+  # broken file otherwise hides every green file after it, and a fix lands
+  # against a census nobody has seen. And a quarantine census for the same
+  # reason named-suite prints a skip census one gate up. A case marked
+  # `#[ignore = "confirmed defect: ..."]` is a documented promise the product
+  # does not keep, written as if it did; it is the opposite of a pass, and
+  # "N passed" must never be read as "N+M proved".
+  e2e-cli:
+    desc: 'Black-box CLI e2e: a Rust suite driving the shipped binary from outside the Go module, with a census of what is quarantined'
+    deps: [build]
+    dir: '{{.ROOT_DIR}}/tools/contenox-e2e'
+    silent: true
+    preconditions:
+      - sh: test -n "{{.CARGO_BIN}}"
+        msg: 'install Rust (https://rustup.rs) — see tools/contenox-e2e/README.md'
+    cmds:
+      - cargo fmt --check
+      # CONTENOX_BIN hands the suite the binary the deps step just built, so no
+      # case shells out to `go build`. Without it the harness builds its own.
+      - |
+        set -o pipefail
+        mkdir -p {{.BIN_DIR}}
+        log={{.BIN_DIR}}/e2e-cli.log
+        # `|| status=$?` rather than a bare pipeline: task runs these scripts
+        # under errexit, so a failing run would abort before the census that
+        # explains it. The status is re-raised at the end, unchanged.
+        status=0
+        CONTENOX_BIN={{.BIN}} cargo test --no-fail-fast {{.CLI_ARGS}} 2>&1 | tee "$log" || status=$?
+        passed=$(grep -cE '^test .+ \.\.\. ok$' "$log" || true)
+        quarantined=$(grep -cE '^test .+ \.\.\. ignored' "$log" || true)
+        printf '\n==> e2e-cli: %s passed, %s QUARANTINED (not passed)\n' "$passed" "$quarantined"
+        if [ "$quarantined" != "0" ]; then
+          grep -E '^test .+ \.\.\. ignored' "$log" | sed -E 's/^test ([^ ]+) \.\.\. ignored,? ?/    did not run: \1 — /'
+          printf '    Each line above is a documented promise this run did not prove.\n'
+          printf "    Reproduce every one of them with: task e2e-cli -- -- --ignored\n"
+        fi
+        exit $status
+
+  # Same contract as acp-suites: named by hand it fails when Rust is missing,
+  # because you asked for it; inside test-all it skips loudly instead.
+  e2e-cli-optional:
+    desc: 'The black-box CLI suite when a Rust toolchain is present, a loud skip when it is not'
+    silent: true
+    cmds:
+      - |
+        set -e
+        if [ -n "{{.CARGO_BIN}}" ]; then
+          task e2e-cli
+        else
+          printf "\n==> SKIPPED, not passed:\n  - e2e-cli   install Rust (tools/contenox-e2e/README.md)\n\n"
+        fi
+
+  acp-host-e2e:
+    desc: 'Registry→resolve→spawn→session host path, end to end (every case needs a binary or a non-sandboxed spawn path — all skip on a bare checkout)'
+    cmds:
+      - ACP_TESTY_BIN={{.ACP_TESTY_BIN}} ACP_MCP_ECHO_BIN={{.ACP_MCP_ECHO_BIN}} ACP_CLAUDE_ACP_BIN=$ACP_CLAUDE_ACP_BIN go test -run '^TestHostE2E_' -v ./internal/services/agenthost/...
+
+  test-all:
+    desc: 'The one-command release gate: build, then every suite, fast gates first'
+    deps: [build, 'website:build']
+    cmds:
+      # Cheapest gates first, and in CI's order, so a release run fails on a
+      # formatting or vulnerability regression before spending 30m on tests.
+      - task: lint
+      - task: vuln
+      - task: test-unit
+      - task: test-cli-help
+      - task: spec:verify
+      - task: acp-suites
+      - task: e2e-cli-optional
+      # The release claim, named rather than implied: the system and e2e cases
+      # run as their own gates so a failure here reads as "the product broke",
+      # not as one line inside a 4000-test sweep. test-rest then picks up the
+      # names that predate the convention, so the whole tree still runs.
+      - task: test-system
+      - task: test-integration
+      - task: test-rest
+      - 'echo "==> test-all: every gate that ran is green — re-read every SKIPPED notice above before releasing"'
+
+  dev-install:
+    desc: Build and put the CLI on your PATH (~/.local/bin, or %LOCALAPPDATA%\Programs\contenox on Windows)
+    deps: [build]
+    cmds:
+      - task: dev-link
+
+  # POSIX symlinks into ~/.local/bin; Windows copies into a directory it also
+  # registers on the user PATH, because Windows has no conventional bin dir
+  # that is already there. See scripts/dev-install.ps1 for why it copies.
+  dev-link:
+    desc: Put bin/contenox on your PATH
+    deps: [build]
+    cmds:
+      - cmd: mkdir -p $HOME/.local/bin
+        platforms: [linux, darwin]
+      - cmd: ln -sf {{.BIN}} $HOME/.local/bin/contenox
+        platforms: [linux, darwin]
+      - cmd: 'echo "Linked $HOME/.local/bin/contenox -> {{.BIN}} (ensure ~/.local/bin precedes other installs on PATH)"'
+        platforms: [linux, darwin]
+      - cmd: powershell -NoProfile -ExecutionPolicy Bypass -File {{.ROOT_DIR}}/scripts/dev-install.ps1 -Source {{.BIN}}
+        platforms: [windows]
+
+  dev-unlink:
+    desc: Remove the installed CLI from your PATH
+    cmds:
+      - cmd: rm -f $HOME/.local/bin/contenox
+        platforms: [linux, darwin]
+      - cmd: powershell -NoProfile -ExecutionPolicy Bypass -File {{.ROOT_DIR}}/scripts/dev-install.ps1 -Uninstall
+        platforms: [windows]
+
+  website:deps:
+    desc: Install website dependencies
+    dir: website
+    cmds:
+      - npm ci
+
+  website:dev:
+    desc: Run the website dev server
+    dir: website
+    cmds:
+      - npm run dev
+
+  website:build:
+    desc: Build the static website
+    dir: website
+    cmds:
+      - npm run build
+
+  website:preview:
+    desc: Preview the built website
+    deps: ['website:build']
+    dir: website
+    cmds:
+      - npm run preview
+
+
+  spec:generate:
+    desc: Regenerate schema/*.schema.json from the Go types users author against
+    cmds:
+      - go run {{.ROOT_DIR}}/tools/schema-gen -project {{.ROOT_DIR}} -output schema
+
+  spec:verify:
+    desc: Regenerate the JSON schemas to a temp dir and fail on drift
+    cmds:
+      - defer: rm -rf {{.ROOT_DIR}}/.verify
+      - go run {{.ROOT_DIR}}/tools/schema-gen -project {{.ROOT_DIR}} -output .verify
+      # `git diff --no-index` rather than `diff`: it ships wherever git does,
+      # including a Windows checkout with no diff(1) on PATH, and prints a
+      # reviewable patch instead of a byte offset.
+      - cmd: |
+          if ! git --no-pager diff --no-index --exit-code {{.ROOT_DIR}}/schema {{.ROOT_DIR}}/.verify; then
+            echo
+            echo "schema/ no longer matches the Go types it is generated from (patch above)."
+            echo "Every emitted policy stamps these schemas by URL, so the drift is published."
+            echo "Fix: run 'task spec:generate' and commit schema/."
+            exit 1
+          fi
+
+  # Releases are not cut from this repository. The tree is developed upstream
+  # and published here by source drop: every commit on main is one release and
+  # every tag a signed release that .github/workflows/release.yml turns into
+  # binaries (CONTRIBUTING.md, "How this repository is maintained"). The only
+  # version task left is the stamp for a local build — without it `task build`
+  # reports the last release's version.
+  version:set:
+    desc: Stamp internal/version/version.txt from `git describe` for a local build
+    cmds:
+      - go run {{.ROOT_DIR}}/tools/version/main.go set
+
+  clean:
+    desc: Remove build outputs
+    cmds:
+      - cmd: rm -rf {{.BIN_DIR}}
+        platforms: [linux, darwin]
+      - cmd: powershell -NoProfile -Command "if (Test-Path -LiteralPath '{{.BIN_DIR}}') { Remove-Item -LiteralPath '{{.BIN_DIR}}' -Recurse -Force }"
+        platforms: [windows]

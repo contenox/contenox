@@ -1,0 +1,26 @@
+{
+  "$schema": "https://contenox.com/schema/hitl-policy-v1.schema.json",
+  "//": "Envelope for the oracle adjudication chain (chain-oracle-*.json), mounted by `config set default-oracle-chain` or --oracle. Two capabilities, both in-process: oracle.submit_verdict (the one model-facing verdict tool; delivery runs through the service layer under the SUBAGENT envelope's own attention bounds) and oracle.verdict_state (the deterministic chain gate). Everything else is denied — deny, not approve, because nobody watches this chain to answer an ask, and an ask it raised would be offered back to itself. No shell, no filesystem, no network: the oracle executes nothing and no command/prefix rule exists to be subverted via PATH.",
+  "default_action": "deny",
+  "rules": [
+    {
+      "//": "The verdict tool. A wait verdict executes nothing; an answer or approve/deny verdict is still bounded by the subagent envelope's attention.allowAgentAnswers / maxAgentAnswers and attention.allowAgentApprovals / maxAgentApprovals, enforced in the service layer.",
+      "tools": "oracle",
+      "tool": "submit_verdict",
+      "action": "allow"
+    },
+    {
+      "//": "The deterministic corrective gate — a pure in-process read of the bound contract's state; never advertised to the model.",
+      "tools": "oracle",
+      "tool": "verdict_state",
+      "action": "allow"
+    }
+  ],
+  "compute": {
+    "onExhausted": "finish_stuck"
+  },
+  "attention": {
+    "allowAgentAnswers": false,
+    "allowAgentApprovals": false
+  }
+}

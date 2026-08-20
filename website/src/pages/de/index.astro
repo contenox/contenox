@@ -1,0 +1,258 @@
+---
+import Base from "../../layouts/Base.astro";
+import Landing from "../../components/Landing.astro";
+import type { LandingStrings } from "../../components/Landing.astro";
+
+const rulesCode = `{
+  "default_action": "approve",
+  "compute": { "maxToolCalls": 300, "maxTokens": 2000000, "onExhausted": "finish_stuck" },
+  "rules": [
+    { "tools": "local_fs", "tool": "*", "action": "deny",
+      "when": [{ "key": "path", "op": "glob",
+                 "value": "**/{.ssh,.aws,.kube,.config/gcloud}/**" }] },
+    { "tools": "local_fs", "tool": "read_file", "action": "allow" },
+    { "tools": "local_fs", "tool": "write_file", "action": "approve" },
+    { "tools": "local_shell", "tool": "local_shell", "action": "allow",
+      "when": [{ "key": "command", "op": "command_prefix_allowlist",
+                 "value": "go test,go vet,ls,cat,grep,npm test,pytest" }] },
+    { "tools": "local_shell", "tool": "local_shell", "action": "approve" }
+  ],
+  "attention": { "allowAgentAnswers": false }
+}`;
+
+const t: LandingStrings = {
+  h1a: "Deklariere einen Agenten in einer Markdown-Datei.",
+  h1b: "Führ ihn in deinem Terminal aus.",
+  lede: "Jede Aktion, die er ausführt, wird gegen die Policy geprüft, die du geschrieben hast — und wenn er dich braucht, wartet er, dauerhaft: Antworte aus deinem Terminal oder vom Handy, Tage später, und der Lauf setzt genau einmal fort.",
+  declareH2: "Du baust keinen Agenten. Du deklarierst einen.",
+  declareTree: [
+    [".contenox/", ""],
+    ["  agents/", ""],
+    ["    reviewer.md               ", "# ein Agent, eine Datei"],
+    ["    triage.md                 ", "# noch einer"],
+    ["  agents.toml                 ", "# die Stellschrauben, die eine Deklaration nicht kennt"],
+    ["", ""],
+    [".claude/agents/               ", "# schon Agenten? werden dort gelesen, wo sie liegen"],
+  ],
+  declareNote:
+    "Markdown mit YAML-Frontmatter — dieselbe Datei, die Claude Code liest, und dieselbe, die Copilot, Cursor, OpenCode und Antigravity führen. Reinlegen genügt, der nächste Lauf nimmt sie auf: kein Build-Schritt, keine Plugin-API, nichts zu konvertieren.",
+  ctaRecipe: "Rezept ausführen",
+  copyLabel: "Kopieren",
+  installTabPosix: "macOS / Linux",
+  installTabWindows: "Windows",
+  ctaGithub: "Auf GitHub ansehen",
+  installNote:
+    'Installiert <code class="font-mono">contenox</code>. Dann <code class="font-mono">contenox setup</code> für Provider und Modell — und <code class="font-mono">contenox beam</code>, um loszulegen.',
+  trustChips: [
+    "jedes Modell",
+    "eine Binärdatei",
+    "kein Konto",
+    "deine Regeln in einer Datei, die du lesen kannst",
+  ],
+
+  apacheEyebrow: "Das Argument",
+  apacheH2: "Apache machte Ausliefern zu etwas, das man installiert. HTML wurde zu etwas, das man schreibt.",
+  apacheP1:
+    "1994 hat man keine Website ausgeliefert, man hat einen Server geschrieben: Request parsen, Verbindung halten, entscheiden, was rausgeht — alles verschweißt mit genau dem Inhalt, für den es da war. Dann wurde der Server zu etwas, das man installiert, und beides fiel auseinander. HTML schrieben Leute, die nie einen Socket angefasst haben — und das Web danach haben sie gebaut.",
+  apacheP2:
+    "Wer heute Agenten baut, steht wieder auf der falschen Seite dieser Linie und zimmert dieselbe Maschine von Hand: die Schleife, das Tool-Gate, den Freigabe-Fluss, die Sitzungspersistenz — verschweißt mit einem Prompt, im nächsten Unternehmen neu geschrieben. contenox macht diese Maschine zur Infrastruktur und die Deklaration zum Artefakt. Die Maschine ist nicht das Interessante. Wer ihre Kontrollen hält, schon.",
+  apacheThenLabel: "Apache, 1995",
+  apacheNowLabel: "contenox, heute",
+  apacheRows: [
+    ["Du installierst den Server.", "Du installierst die Runtime."],
+    [
+      "Du schreibst HTML. Der Server schreibt dir nie eine Seite.",
+      "Du deklarierst Agenten in Markdown. Der Server liefert keinen deiner Agenten mit.",
+    ],
+    [
+      "Module erweitern ihn. Apache lieferte keine Websites.",
+      "MCP-Server und die Fähigkeiten deines Editors liefern die Tools. Du bringst die mit, die du brauchst.",
+    ],
+    [
+      "Er lieferte das HTML aus, das du schon hattest.",
+      "Es liest die Deklarationen, die du schon führst — Claude Code, Copilot, Cursor, OpenCode, Antigravity.",
+    ],
+    [
+      "Verbindungsverwaltung ist Infrastruktur. Niemand schreibt sie sich selbst.",
+      "Der dauerhafte Ask ist Infrastruktur: Ein Lauf hält an, checkpointet, überlebt einen Neustart, läuft weiter, wenn ein Mensch antwortet.",
+    ],
+  ],
+  apacheOutro:
+    "Fünf Agenten liegen bei. Sie sind die Standardseite, nicht das Produkt — ein Beispiel für das Artefakt, dazu da, durch deines ersetzt zu werden. Und da hört die Analogie auf: Apache lieferte keinen Browser mit, contenox liefert einen. contenox beam ist er — erste Hand, im selben Repository, damit die Vordertür nie das Produkt von jemand anderem ist. Ein Client bleibt er trotzdem: Die Policy, die er anzeigt, wird unter ihm durchgesetzt, nicht von ihm.",
+
+  treeEyebrow: "Das Artefakt",
+  treeH2: "Ein Agent ist eine Datei. Ein Workflow ist ein Verzeichnis.",
+  treeLede:
+    "Eine Deklaration ist Markdown mit YAML-Frontmatter: ein Name, die Tools, die sie aufrufen darf, das Modell — und ein Rumpf, der zum System-Prompt wird. Leg Deklarationen in ein Verzeichnis, und das Verzeichnis ist der Workflow: Die agent.md an der Spitze liest die Anfrage, antwortet mit einem Label, und der Zweig dieses Namens übernimmt — mit eigener Instruktion, eigenen Tools, eigenem Budget.",
+  treeListing: [
+    [".contenox/agents/", ""],
+    ["  triage/", ""],
+    ["    agent.md              ", "# liest die Anfrage, antwortet mit einem Label"],
+    ["    code/", ""],
+    ["      agent.md            ", "# der Zweig, auf den dieses Label zeigt"],
+    ["      recovery.md         ", "# sein zweiter Versuch, wenn der erste steckenbleibt"],
+    ["    docs/", ""],
+    ["      agent.md            ", "# tools: Read, Glob, Grep — schreiben kann er nicht"],
+    ["    failure.md            ", "# was es sagt, wenn jeder Zweig aufgegeben hat"],
+  ],
+  treeOutro:
+    "default: im Frontmatter des Routers benennt den Zweig, in den ein unbekanntes Label fällt — den engsten, nie den mächtigsten. contenox kompiliert das Verzeichnis beim nächsten Lauf in die Chain, die es ausführt, und die Policy, unter der sie läuft — nach .generated/. Beide sind JSON-Schema-validiert, beide darfst du lesen, keine musst du pflegen.",
+  treePoints: [
+    "Ein Zweig ist Spezialist durch das, was er hält, nicht durch seine Formulierung: Benenne seine Tools, und jedes andere wird dort entzogen, wo Aufrufe ausgeführt werden — nicht dadurch, dass man es dem Modell bloß nicht anbietet.",
+    "Ein Support-Desk schickt Abrechnungsfragen an einen lesenden Zweig mit der Billing-API und Kontoänderungen an einen, der schreiben darf, aber für einen Menschen anhält.",
+    "Ein Backoffice schickt „fasse das zusammen“ und „extrahiere diese Felder“ an Zweige mit unterschiedlichen Ausgabe-Kontrakten — der Aufrufer bekommt parsebare Ausgabe, ohne jedes Mal darum zu bitten.",
+    "Eine regulierte Installation schickt alles, was regulierte Daten berührt, an einen Zweig unter strengerem Envelope — unabhängig davon, wie die Anfrage formuliert war.",
+  ],
+  treeCtas: [
+    ["Agenten deklarieren", "/docs/guide/agents/"],
+    ["Wie Request-Routing funktioniert", "/docs/guide/request-routing/"],
+  ],
+
+  rulesEyebrow: "Du schreibst die Regeln",
+  rulesH2: "Wie viel Agency? Das entscheidest du — schriftlich.",
+  rulesLede:
+    "Jeder Lauf ist durch einen Envelope begrenzt: eine JSON-Policy, die benennt, was still durchläuft, was für einen Menschen pausiert und was verweigert wird — plus harte Obergrenzen für Tool-Aufrufe und Tokens und eine Festlegung, welche Modelle und Backends der Lauf nutzen darf. Kein versteckter Prompt entscheidet für dich. Die Datei liegt in deinem Repo und wird reviewt wie jede andere Änderung.",
+  rulesCode,
+  rulesOutro:
+    "Gekürzt aus dem mitgelieferten Default-Preset. Was keine Regel trifft, schlägt geschlossen fehl — es fragt einen Menschen. Sechs Presets kommen mit contenox init, und contenox vet prüft deine Policy, bevor irgendetwas unter ihr läuft.",
+  rulesCta: ["Das vollständige Policy-Format", "/docs/guide/hitl/"],
+  hitlDemoAlt:
+    "Terminal-Demo: Ein destruktives rm-Kommando stoppt vor der Ausführung an einem Freigabe-Gate",
+
+  missionEyebrow: "Der dauerhafte Ask",
+  missionH2: "Der Lauf hält an. Der Prozess endet. Tage später setzt eine Antwort ihn fort.",
+  missionLede:
+    "Jedes Harness kann für einen Menschen pausieren, solange es die Verbindung offen hält. Die Verbindung zu halten ist nicht der schwere Teil — das Warten zu überleben schon. Ein contenox-Lauf checkpointet an der Stelle, an der er anhielt, gibt den Prozess frei und nimmt genau dort wieder auf, sobald jemand antwortet — von überall.",
+  missionLines: [
+    ["note", "# deklarierten Agenten unter strengem Envelope abfeuern"],
+    [
+      "cmd",
+      'contenox mission fire billing "reconcile the vendor invoices flagged this week"',
+    ],
+    ["out", "Mission gestartet · Envelope hitl-policy-strict.json"],
+    [
+      "out",
+      "Der Agent zieht Buchungen und Rechnungen — erlaubte Regeln laufen still durch",
+    ],
+    [
+      "out",
+      "⏸ Der Agent fragt: drei Rechnungen strittig, Gutschriften entworfen — verschicken?",
+    ],
+    ["out", "keine Antwort: Lauf checkpointet, Ask gespeichert, Prozess freigegeben"],
+    ["note", "# Laptop zu. Rechner neu starten. Tage vergehen. Dann, von überall:"],
+    ["cmd", "contenox approvals list"],
+    ["out", "Ask 8f3c · entworfene Gutschriften verschicken? · Mission 01jm…"],
+    ["cmd", 'contenox approvals respond 8f3c --answer "ja, verschicken"'],
+    ["out", "Checkpoint fortgesetzt — genau einmal. Mission gelandet."],
+    ["cmd", "contenox inbox list"],
+    [
+      "out",
+      "Report · billing: drei Streitfälle, Gutschriften verschickt — warten auf dich",
+    ],
+  ],
+  missionOutro:
+    "Kein Babysitten am Terminal, keine Freigabe, die verfällt, weil du geschlafen hast, keine stille Änderung, während du weg warst. Der Envelope hat entschieden, was unbeaufsichtigt laufen darf, die Deklaration nichts darüber hinaus, und eine Antwort hat den Lauf genau einmal fortgesetzt.",
+  missionCta: [
+    "Wie Missionen, Freigaben und die Inbox funktionieren",
+    "/docs/guide/missions/",
+  ],
+
+  toolsEyebrow: "Tools",
+  toolsH2: "Bring die Tools mit, die du brauchst. Sonst nichts.",
+  toolsLede:
+    "contenox liefert keine eigenen Tools mit. Es besitzt die Tool-Grenze — was auf der anderen Seite steht, entscheidest du. Jedes Tool, das du nicht brauchst, sind Tokens auf jedem Turn und eine Sache mehr zu regeln. Tools überqueren diese Grenze auf zwei Wegen — und beide wählst du.",
+  toolsWays: [
+    [
+      "Vom Client",
+      "beam und jeder Editor führen fs/* und terminal/* als Capabilities. contenox reicht den Aufruf weiter, der Client führt ihn aus, in dem Workspace, der ohnehin offen ist. local_fs sind fünf Tools: read_file, write_file, edit_file, sed, read_file_range. Auflisten und Suchen laufen über die Shell — auf der Client-Seite der Grenze. Und contenox serve hat keinen solchen Client, also auch keines dieser beiden Toolsets.",
+    ],
+    [
+      "Vom Operator",
+      "Häng jeden MCP-Server an — stdio, SSE oder HTTP — oder jeden HTTP-Dienst mit OpenAPI-Spec. Er registriert sich einmal, und seine Tools werden policy-begrenzte Tools, die ein Agent benennt wie jedes andere. Eine Deklaration darf auch eigene mitbringen: für keinen anderen Agenten erreichbar, stillgelegt, sobald du die Datei löschst.",
+    ],
+  ],
+  toolsNote:
+    "Von welcher Seite ein Aufruf auch kommt: Er überquert eine Grenze und wird gegen einen Envelope geprüft, bevor er läuft.",
+  toolsCtas: [
+    ["MCP-Server anbinden", "/docs/integrations/tools/mcp/"],
+    ["HTTP-API als Tool einbinden", "/docs/integrations/tools/remote/"],
+    ["Agent Client Protocol", "https://agentclientprotocol.com"],
+  ],
+
+  shapesEyebrow: "Wege hinein",
+  shapesH2: "Zuerst dein Terminal. Dein Editor, wenn dir das lieber ist. Ein Host, wenn niemand an der Maschine sitzt.",
+  shapesLede:
+    "Dieselbe Runtime, dieselben Deklarationen, derselbe Envelope, derselbe Sitzungszustand. Unterschiedlich ist nur, wer für die Maschine geradesteht, auf der es läuft.",
+  shapes: [
+    [
+      "contenox beam",
+      "Die Vordertür: du, an der Tastatur, auf deinem eigenen Gerät. Das Transkript steht in deinem normalen Terminal-Scrollback, der Composer nimmt / für Kommandos und @, um dem Agenten eine Datei vorzulegen, und ein gegateter Aufruf öffnet eine Freigabekarte, die ein Tastendruck beantwortet. Dateisystem und Terminal laufen nativ. Ein blankes contenox im Terminal öffnet beam.",
+    ],
+    [
+      "Dein Editor",
+      "Zed, JetBrains, AionUi oder OpenClaw startet contenox als ACP-Subprozess über stdio — kein Plugin-Lock-in, und Freigaben laufen über die Oberfläche des Editors. Laut Protokoll gehört der Workspace dem Editor: Die Session arbeitet in dem Projekt, das du ohnehin offen hast.",
+    ],
+    [
+      "contenox serve, und die App",
+      "Die Form für Organisationen: ein stehender Host mit genau einem Workspace, festgelegt beim Start, ganz ohne Dateisystem- und Terminal-Tools — jede Fähigkeit ist ein MCP-Server, den du angehängt hast. Angetrieben wird er von Konnektoren und Event-Triggern, und die App erreicht ihn über das Relay. Eine Workspace-Auswahl gibt es nirgends: Ein Client entdeckt Instanzen und die Sessions, die sie schon halten.",
+    ],
+  ],
+  guides: [
+    ["Im Terminal anfangen", "/docs/guide/quickstart/"],
+    ["Einen stehenden Host betreiben", "/docs/guide/serve/"],
+    ["Zed-Anleitung lesen", "/docs/integrations/editors/zed/"],
+    ["JetBrains-Anleitung lesen", "/docs/integrations/editors/jetbrains/"],
+    ["AionUi-Anleitung lesen", "/docs/integrations/editors/aionui/"],
+    ["OpenClaw-Anleitung lesen", "/docs/integrations/editors/openclaw/"],
+  ],
+
+  yoursEyebrow: "Standardmäßig deins",
+  yoursH2: "Dein Rechner, dein Zustand, deine Modelle.",
+  yoursPoints: [
+    "Sessions, Konfiguration, Run-Logs und erfasster Ausführungszustand liegen auf deinem Rechner. Kein Konto, kein contenox-Dienst dazwischen — außer du pairst mit dem optionalen Relay unten. Telemetrie ist opt-in und standardmäßig aus.",
+    "Inferenz ist Konfiguration: lokales Ollama oder vLLM, wenn nichts dein Netzwerk verlassen darf — oder OpenAI, Anthropic, Gemini, Bedrock und Vertex mit deinen eigenen Schlüsseln, gepinnt auf eine Region deiner Wahl. Ein späterer Wechsel ist eine Konfigurationsänderung, kein Umbau.",
+    "Secrets werden zur Anfragezeit aus deiner Umgebung aufgelöst und landen nie in einer Config auf der Platte. Jeder Envelope verweigert .ssh, .aws und .kube unter jeder Berechtigungsstufe, auch der lockersten.",
+  ],
+  yoursCta: ["KI-Souveränität & KI-Verordnung", "/de/ki-souveraenitaet/"],
+
+  relayEyebrow: "Optional: das gehostete Relay",
+  relayH2: "Deine Session, auf deinem Handy.",
+  relayP:
+    "Alles oben läuft ohne Konto. Wenn eine laufende Session von woanders erreichbar sein soll, pairst du den Rechner mit dem gehosteten Relay: ein getippter Schlüssel aus der contenox-App, kein Browser auf der Maschine. Der Rechner baut die Verbindung selbst nach außen auf und sendet genau zwei Dinge — den Schlüssel und seinen Hostnamen. Danach liest du das Transkript und beantwortest Freigaben vom Handy. Kostenlos für dich und drei Teamkollegen, je eine Maschine — und eine Installation, die nie pairt, kontaktiert kein Relay.",
+  relayCta: [
+    "Wie Pairing funktioniert — und wie man es zurücknimmt",
+    "/docs/guide/pairing/",
+  ],
+  invite: {
+    lead: "Wir provisionieren und betreiben contenox-Agenten auch für dich — managed, zu deinen Bedingungen. Sag uns, worum es geht, und wir richten es ein:",
+    contactLabel: "sprich mit uns",
+    contactHref: "mailto:hello@contenox.com",
+    appLabel: "die gehostete App ansehen",
+    appHref: "https://app.contenox.com",
+  },
+
+  bottomEyebrow: "Loslegen",
+  bottomH2: "Deklariere einen Agenten. Feuere deine erste Mission ab.",
+  bottomCta: "Quickstart lesen",
+  bottomContact:
+    'Fragen? <a href="mailto:hello@contenox.com" class="underline hover:text-black dark:hover:text-white">hello@contenox.com</a> · Issues und PRs auf <a href="https://github.com/contenox/contenox" class="underline hover:text-black dark:hover:text-white">GitHub</a>',
+  builtOnEyebrow: "Baut auf",
+  builtOnNote:
+    "Lokale Modelle laufen über Ollama oder vLLM und deren lokale APIs; gehostete Provider über ihre öffentlichen APIs. Keine mitgelieferte Inferenz-Runtime, keine GPU-Treiber im Paket.",
+  builtOn: [
+    ["Go", "die Implementierung", "https://go.dev"],
+    ["SQLite", "lokaler Zustand", "https://sqlite.org"],
+    ["Ollama", "lokale Modelle", "https://ollama.com"],
+    ["vLLM", "lokale Modelle", "https://github.com/vllm-project/vllm"],
+  ],
+};
+---
+
+<Base
+  title="Contenox — Deklariere einen Agenten in einer Markdown-Datei. Führ ihn in deinem Terminal aus."
+  description="Deklariere einen Agenten in einer Markdown-Datei und führ ihn mit contenox beam im Terminal aus. Jede Aktion wird gegen die Policy geprüft, die du geschrieben hast — und wenn er dich braucht, wartet er dauerhaft: Antworte aus deinem Terminal oder vom Handy, Tage später, und der Lauf setzt genau einmal fort. Quelloffen, auf deiner Maschine, mit jedem Modell."
+  lang="de"
+  alternates={{ en: "/", de: "/de/" }}
+>
+  <Landing t={t} />
+</Base>

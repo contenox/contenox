@@ -1,0 +1,106 @@
+package contenoxcli
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/contenox/contenox/internal/libsandbox"
+	"github.com/contenox/contenox/internal/services/shellenvservice"
+	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/libtracker"
+)
+
+const shellEnvCacheTTL = 3 * time.Second
+
+// resolvedSandboxEnv is the composition every agent-shell spawn root and the
+// `sandbox env` preview share.
+func resolvedSandboxEnv(db libdb.DBManager, tracker libtracker.ActivityTracker, warnW io.Writer) (shell, terminal func([]string) []string, err error) {
+	config := &sandboxEnvConfig{}
+	if err := loadEnvConfig(config); err != nil {
+		return nil, nil, fmt.Errorf("load sandbox env config: %w", err)
+	}
+	injectGlobal := newLiveGlobalShellEnv(shellenvservice.New(db), shellEnvCacheTTL, tracker)
+	shell, terminal = resolveSandboxScrubs(config, injectGlobal, warnW)
+	return shell, terminal, nil
+}
+
+// resolveSandboxScrubs turns SANDBOX_* config into the env-scrub hooks for
+// agent-reachable shells and the interactive terminal panel; a nil hook means
+// inherit everything. warnW receives one line per misspelled value.
+func resolveSandboxScrubs(config *sandboxEnvConfig, injectGlobal func() map[string]string, warnW io.Writer) (shell, terminal func([]string) []string) {
+	extraAllow := libsandbox.ParseEnvList(config.SandboxEnvAllow)
+	extraDeny := libsandbox.ParseEnvList(config.SandboxEnvDeny)
+	shellFilter := libsandbox.EnvScrub(resolveScrubMode(config.SandboxShellScrub, libsandbox.ScrubDenySecrets, warnW), extraAllow, extraDeny)
+	terminalFilter := libsandbox.EnvScrub(resolveScrubMode(config.SandboxTerminalScrub, libsandbox.ScrubOff, warnW), extraAllow, extraDeny)
+	return composeShellEnv(shellFilter, injectGlobal), composeShellEnv(terminalFilter, injectGlobal)
+}
+
+// composeShellEnv runs the scrub filter, if any, then overlays the operator's
+// global shell-env variables. It returns nil when both are absent.
+func composeShellEnv(filter func([]string) []string, injectGlobal func() map[string]string) func([]string) []string {
+	if filter == nil && injectGlobal == nil {
+		return nil
+	}
+	return func(parent []string) []string {
+		env := parent
+		if filter != nil {
+			env = filter(env)
+		}
+		if injectGlobal != nil {
+			env = libsandbox.OverlayEnv(env, injectGlobal())
+		}
+		return env
+	}
+}
+
+// newLiveGlobalShellEnv returns a getter for the operator's global shell-env
+// variables, cached for ttl. A read error keeps the last known value; a nil
+// tracker degrades to Noop.
+func newLiveGlobalShellEnv(svc shellenvservice.Service, ttl time.Duration, tracker libtracker.ActivityTracker) func() map[string]string {
+	if tracker == nil {
+		tracker = libtracker.NoopTracker{}
+	}
+	var (
+		mu     sync.Mutex
+		at     time.Time
+		val    map[string]string
+		loaded bool
+	)
+	return func() map[string]string {
+		mu.Lock()
+		defer mu.Unlock()
+		if loaded && time.Since(at) < ttl {
+			return val
+		}
+		ctx := context.Background()
+		vars, err := svc.Get(ctx)
+		if err != nil {
+			reportErr, _, end := tracker.Start(ctx, "read", "global_shell_env")
+			reportErr(err)
+			end()
+			return val
+		}
+		val, at, loaded = vars, time.Now(), true
+		return val
+	}
+}
+
+// resolveScrubMode returns raw when it names a recognized posture, else def. An
+// unrecognized non-empty value is warned on warnW; nil silences it.
+func resolveScrubMode(raw, def string, warnW io.Writer) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return def
+	}
+	if !libsandbox.ScrubModeValid(raw) {
+		if warnW != nil {
+			fmt.Fprintf(warnW, "warning: %q is not a sandbox scrub mode; using %q instead — fix the SANDBOX_*_SCRUB value or unset it.\n", raw, def)
+		}
+		return def
+	}
+	return raw
+}

@@ -1,0 +1,55 @@
+name: Contribution Proposal
+description: Coordinate before starting a non-trivial PR, integration, refactor, or project task.
+labels: ["needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this when you want maintainer feedback before investing time. Small typo fixes and obvious bug fixes do not need a proposal.
+
+  - type: textarea
+    id: work
+    attributes:
+      label: What would you like to work on?
+      placeholder: I would like to add... / refactor... / integrate... / investigate...
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why is it worth doing?
+      placeholder: This helps because...
+    validations:
+      required: false
+
+  - type: textarea
+    id: plan
+    attributes:
+      label: Rough plan
+      description: Optional. A few bullets are enough; this can change after discussion.
+      placeholder: |
+        - Touch ...
+        - Add tests for ...
+        - Update docs ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: questions
+    attributes:
+      label: What do you need from maintainers?
+      placeholder: Design feedback / ownership check / pointers to code / review expectations / permission to proceed...
+    validations:
+      required: false
+
+  - type: dropdown
+    id: size
+    attributes:
+      label: Expected size
+      options:
+        - Small
+        - Medium
+        - Large or uncertain
+    validations:
+      required: false

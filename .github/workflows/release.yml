@@ -1,0 +1,178 @@
+# Release: cross-compile four targets, publish them with a SHA256SUMS manifest
+# and GitHub-native build provenance.
+#
+# Runs on the tag a source drop pushes (CONTRIBUTING.md, "How this repository
+# is maintained"): every tag is a release, its annotation is the release notes,
+# and internal/version/version.txt was stamped upstream before the drop — the
+# verify job refuses a tag that disagrees with it.
+#
+# Third-party actions are pinned to a commit SHA with a trailing version comment.
+# This workflow holds a contents:write token — a compromised floating tag would
+# run arbitrary code with permission to rewrite published releases.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.vars.outputs.TAG }}
+      extension_version: ${{ steps.vars.outputs.EXTENSION_VERSION }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Extract tag
+        id: vars
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          echo "TAG=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "EXTENSION_VERSION=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify version matches tag
+        run: |
+          TAG="${{ steps.vars.outputs.TAG }}"
+          VERSION_IN_FILE=$(cat internal/version/version.txt | tr -d '\n' | tr -d '\r')
+          if [ "$VERSION_IN_FILE" != "$TAG" ]; then
+            echo "ERROR: Version in file ($VERSION_IN_FILE) does NOT match tag ($TAG)"
+            echo "The tag must point at a release commit whose version.txt names it;"
+            echo "the upstream release task stamps the file before the drop."
+            exit 1
+          fi
+          echo "✓ Version verification passed: $VERSION_IN_FILE matches tag"
+
+  build:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # contenox is pure Go (CGO_ENABLED=0); every target cross-compiles from
+          # one Linux runner with no C toolchain.
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: "1.25"
+          check-latest: true
+
+      - name: Install zip (Windows packaging)
+        if: matrix.goos == 'windows'
+        run: sudo apt-get update -qq && sudo apt-get install -y zip
+
+      - name: Build contenox binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          TAG="${{ needs.verify.outputs.tag }}"
+          LDFLAGS="-X github.com/contenox/contenox/internal/surfaces/contenoxcli.Version=${TAG}"
+          mkdir -p bin
+          EXT=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            EXT=".exe"
+          fi
+          go build -ldflags="${LDFLAGS}" -o "bin/contenox-${{ matrix.goos }}-${{ matrix.goarch }}${EXT}" ./cmd/contenox
+
+      # The ACP registry consumes an archive whose `cmd` is the executable inside
+      # it (see opencode/codex-acp manifests: cmd "./<name>"). Package a .tar.gz
+      # holding a binary named plainly `contenox` on Unix, or a .zip holding
+      # `contenox.exe` on Windows, alongside the raw binary that install.sh keeps
+      # fetching by its goos-goarch name.
+      - name: Package ACP registry archive
+        run: |
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            cp bin/contenox-${{ matrix.goos }}-${{ matrix.goarch }}.exe bin/contenox.exe
+            (cd bin && zip contenox-${{ matrix.goos }}-${{ matrix.goarch }}.zip contenox.exe)
+            rm bin/contenox.exe
+          else
+            cp bin/contenox-${{ matrix.goos }}-${{ matrix.goarch }} bin/contenox
+            tar -czf bin/contenox-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz -C bin contenox
+            rm bin/contenox
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: contenox-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: bin/contenox-${{ matrix.goos }}-${{ matrix.goarch }}*
+
+  release:
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # attest-build-provenance signs through Sigstore with the job's OIDC
+      # identity and writes the attestation to this repo's attestation store.
+      id-token: write
+      attestations: write
+    steps:
+      # fetch-depth 0 brings the annotated tag object, whose message is the
+      # release notes.
+      - name: Checkout source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Download runtime artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: contenox-*
+          merge-multiple: true
+          path: release-assets
+
+      # install.sh fetches SHA256SUMS and refuses to install on a mismatch, so
+      # this manifest is the only thing standing between a tampered release
+      # asset and a `curl | sh` install. Format is plain `sha256sum -c` input.
+      - name: Generate SHA256SUMS
+        working-directory: release-assets
+        run: |
+          # Sorted for a stable, diffable manifest. The glob never matches
+          # SHA256SUMS itself, so the file cannot checksum its own output.
+          # shellcheck disable=SC2046
+          sha256sum $(ls contenox-* | LC_ALL=C sort) > SHA256SUMS
+          echo "--- SHA256SUMS ---"
+          cat SHA256SUMS
+          sha256sum -c SHA256SUMS
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: "release-assets/*"
+
+      - name: Create GitHub Release and upload assets
+        run: |
+          TAG="${{ needs.verify.outputs.tag }}"
+          # The notes are the tag's annotation body — subject line and PGP
+          # signature excluded. A lightweight tag yields empty notes.
+          git fetch --force --quiet origin "refs/tags/${TAG}:refs/tags/${TAG}"
+          git for-each-ref "refs/tags/${TAG}" --format='%(contents:body)' > /tmp/release-notes.md
+          cd release-assets
+          gh release create "$TAG" \
+            contenox-linux-* contenox-darwin-* contenox-windows-* SHA256SUMS \
+            --title "$TAG" \
+            --notes-file /tmp/release-notes.md \
+            --latest \
+            --verify-tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

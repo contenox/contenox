@@ -1,0 +1,125 @@
+.zed
+.bench/
+.playwright-mcp
+
+# ==============================
+# Go
+# ==============================
+
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binaries (built with `go test -c`)
+*.test
+
+# Coverage and profiling
+*.out
+coverage.*
+*.coverprofile
+profile.cov
+
+# Go workspace
+go.work
+go.work.sum
+
+vendor/
+
+# ==============================
+# Python
+# ==============================
+
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# ==============================
+# General / OS / IDE
+# ==============================
+
+# Secrets & config
+.env
+.envrc
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Certificates / keys
+*.pem
+*.key
+*.crt
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.suo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary / local
+*.local
+tmp/
+temp/
+.build/
+node_modules/
+.air.serve.toml
+
+# ==============================
+# Project-specific
+# ==============================
+
+# Contenox CLI build output and local config. Root-anchored: an unanchored
+# bin/ also swallowed tools/contenox-e2e/src/bin/ — cargo's auto-discovered
+# test-stub binaries — which compiled locally and broke CI as untracked files.
+/bin/
+.contenox/
+
+/dist/
+
+# Local AI context control
+.cursorignore
+.cursorindexingignore
+
+# Ollama local data
+.ollama/
+
+.apikey.txt
+
+# Locally built binaries at the repo root (use bin/ for build outputs).
+# These exact names were once committed by accident and purged from history —
+# keep the list so it cannot happen again. (`runtime` and `beam` cannot be
+# listed: they collide with source directories; build into bin/ instead.)
+/contenox
+/contenox-cli
+/contenox-runtime
+/vibe
+/version
+/acp-stub-agent
+
+.notes/
+.claude
+website/dist/
+website/.astro/
+tools/rust-sdk/
+tools/acp-validator/target/
+tools/acp-validator/Cargo.lock
+tools/contenox-e2e/target/
+tools/contenox-e2e/Cargo.lock
+tmp-askprobe2

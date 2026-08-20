@@ -1,0 +1,34 @@
+---
+// contenox.com was heavily indexed under its previous stack (Next.js app
+// routes, tokened URLs, .html suffixes). Anything not covered by an explicit
+// redirect lands here and is forwarded to the homepage instead of dead-ending.
+import '../styles/global.css';
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Contenox</title>
+    <meta name="robots" content="noindex" />
+    <meta http-equiv="refresh" content="0;url=/" />
+    <link rel="canonical" href="https://contenox.com/" />
+    <script is:inline>
+      // Legacy .html URLs map 1:1 onto current routes; try the clean route
+      // before falling back to the homepage.
+      (() => {
+        const p = location.pathname;
+        if (p.endsWith('.html')) {
+          location.replace(p.slice(0, -'.html'.length) + '/');
+          return;
+        }
+        location.replace('/');
+      })();
+    </script>
+  </head>
+  <body class="bg-surface-50 text-text dark:bg-dark-surface-100 dark:text-dark-text font-sans antialiased">
+    <main class="mx-auto max-w-xl px-5 py-24 text-center">
+      <p>This page has moved. <a href="/" class="underline">Continue to contenox.com</a>.</p>
+    </main>
+  </body>
+</html>

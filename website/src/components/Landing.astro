@@ -1,0 +1,332 @@
+---
+export interface LandingStrings {
+  h1a: string;
+  h1b: string;
+  lede: string;
+  /** Hero sub-headline: the declare-don't-build claim. */
+  declareH2: string;
+  /** [path, comment] — the `.contenox/` listing shown in the hero. A blank comment renders the path alone. */
+  declareTree: [string, string][];
+  /** Caption under the hero tree. */
+  declareNote: string;
+  ctaRecipe: string;
+  ctaGithub: string;
+  copyLabel: string;
+  /** OS tab labels on the install command. */
+  installTabPosix: string;
+  installTabWindows: string;
+  installNote: string;
+  trustChips: string[];
+
+  apacheEyebrow: string;
+  apacheH2: string;
+  apacheP1: string;
+  apacheP2: string;
+  /** Column headers over the analogy table. */
+  apacheThenLabel: string;
+  apacheNowLabel: string;
+  /** [then, now] — one row per line of the analogy. */
+  apacheRows: [string, string][];
+  apacheOutro: string;
+
+  treeEyebrow: string;
+  treeH2: string;
+  treeLede: string;
+  /** [path, comment] — the workflow directory. Same shape as declareTree. */
+  treeListing: [string, string][];
+  treeOutro: string;
+  /** One line per domain the same directory shape serves. */
+  treePoints: string[];
+  /** [label, href] — reading paths out of the declaration section. */
+  treeCtas: [string, string][];
+
+  rulesEyebrow: string;
+  rulesH2: string;
+  rulesLede: string;
+  rulesCode: string;
+  rulesOutro: string;
+  rulesCta: [string, string];
+  hitlDemoAlt: string;
+
+  missionEyebrow: string;
+  missionH2: string;
+  missionLede: string;
+  /** [kind, text] — kind is 'cmd' (operator input), 'out' (runtime output), or 'note' (narrative comment). */
+  missionLines: [string, string][];
+  missionOutro: string;
+  missionCta: [string, string];
+
+  toolsEyebrow: string;
+  toolsH2: string;
+  toolsLede: string;
+  /** [title, body] — the two ways a tool reaches an agent. */
+  toolsWays: [string, string][];
+  toolsNote: string;
+  /** [label, href] — protocol and tool references. */
+  toolsCtas: [string, string][];
+
+  shapesEyebrow: string;
+  shapesH2: string;
+  shapesLede: string;
+  /** [title, body] — the ways in, front door first. */
+  shapes: [string, string][];
+  guides: [string, string][];
+
+  yoursEyebrow: string;
+  yoursH2: string;
+  yoursPoints: string[];
+  yoursCta: [string, string];
+
+  relayEyebrow: string;
+  relayH2: string;
+  relayP: string;
+  relayCta: [string, string];
+  /** The invitation under the relay: the managed option, the contact link, and the app. */
+  invite: {
+    lead: string;
+    contactLabel: string;
+    contactHref: string;
+    appLabel: string;
+    appHref: string;
+  };
+
+  bottomEyebrow: string;
+  bottomH2: string;
+  bottomCta: string;
+  bottomContact: string;
+  builtOnEyebrow: string;
+  builtOnNote: string;
+  builtOn: [string, string, string][];
+}
+interface Props {
+  t: LandingStrings;
+}
+import InstallCommand from './InstallCommand.astro';
+const { t } = Astro.props;
+// Large media (gifs, screenshots) is served from the website's S3 bucket.
+const media = 'https://contenox-website-assets-573643652148.s3.amazonaws.com/media/';
+const card = 'rounded-xl border border-neutral-200/60 bg-white/80 p-5 shadow-sm backdrop-blur-sm transition-all hover:-translate-y-1 hover:border-primary-500/30 hover:shadow-lg hover:shadow-primary-500/10 dark:border-neutral-800/60 dark:bg-neutral-950/80 dark:hover:border-primary-400/30';
+const btnGhost = 'rounded-lg border border-neutral-200 px-4 py-2 text-sm font-semibold transition-all hover:bg-neutral-50 hover:shadow-sm dark:border-neutral-800 dark:hover:bg-neutral-900';
+const ctaLink = 'font-semibold text-primary-700 hover:text-primary-600 dark:text-primary-400 dark:hover:text-primary-300';
+const listing = 'mx-auto mt-8 max-w-2xl overflow-x-auto rounded-xl border border-neutral-200/60 bg-white/60 p-5 text-left font-mono text-xs leading-6 shadow-sm backdrop-blur-md sm:text-sm dark:border-neutral-800/60 dark:bg-neutral-950/60';
+---
+<section class="hero-grid border-b border-neutral-200 px-5 py-20 text-center dark:border-neutral-800">
+  <h1 class="mx-auto max-w-3xl bg-gradient-to-br from-neutral-900 to-neutral-500 bg-clip-text text-4xl font-bold tracking-tight text-transparent sm:text-5xl dark:from-white dark:to-neutral-500">
+    {t.h1a}
+    <span class="text-neutral-500 dark:text-neutral-400">{t.h1b}</span>
+  </h1>
+  <p class="mx-auto mt-6 max-w-2xl text-neutral-600 dark:text-neutral-400">{t.lede}</p>
+  <p class="mx-auto mt-10 max-w-2xl text-xl font-bold tracking-tight sm:text-2xl">{t.declareH2}</p>
+  <div class="mx-auto mt-6 max-w-xl overflow-x-auto rounded-xl border border-neutral-200/60 bg-white/60 p-5 text-left font-mono text-xs leading-6 shadow-sm backdrop-blur-md sm:text-sm dark:border-neutral-800/60 dark:bg-neutral-950/60">
+    {t.declareTree.map(([path, comment]) => (
+      <div class="whitespace-pre">
+        <span class="text-neutral-700 dark:text-neutral-300">{path}</span>
+        {comment && <span class="text-neutral-400 dark:text-neutral-500">{comment}</span>}
+      </div>
+    ))}
+  </div>
+  <p class="mx-auto mt-4 max-w-xl text-sm text-neutral-500">{t.declareNote}</p>
+  <div class="mt-8 flex flex-wrap justify-center gap-3">
+    <a href="/docs/use-cases/" class="rounded-lg bg-gradient-to-r from-primary-500 to-primary-700 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-primary-500/20 transition-all hover:scale-105 hover:shadow-primary-500/40">{t.ctaRecipe}</a>
+    <a href="https://github.com/contenox/contenox" class={btnGhost}>{t.ctaGithub}</a>
+  </div>
+  <div class="mt-10">
+    <InstallCommand posixLabel={t.installTabPosix} windowsLabel={t.installTabWindows} copyLabel={t.copyLabel} />
+  </div>
+  <p class="mt-3 text-xs text-neutral-500" set:html={t.installNote} />
+  <div class="mx-auto mt-4 flex max-w-lg flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs text-neutral-500 dark:text-neutral-500">
+    {t.trustChips.map((chip, i) => (
+      <>
+        {i > 0 && <span class="text-neutral-300 dark:text-neutral-700" aria-hidden="true">&middot;</span>}
+        <span>{chip}</span>
+      </>
+    ))}
+  </div>
+  <div class="mt-6 flex flex-wrap items-center justify-center gap-2">
+    <a href="https://github.com/contenox/contenox"><img src="https://img.shields.io/github/stars/contenox/contenox?style=flat&logo=github&color=444" alt="GitHub stars" loading="lazy" /></a>
+    <a href="https://github.com/contenox/contenox/releases"><img src="https://img.shields.io/github/v/release/contenox/contenox?label=version&color=444" alt="Latest release" loading="lazy" /></a>
+    <img src="https://img.shields.io/badge/License-Apache%202.0-444" alt="Apache-2.0" loading="lazy" />
+  </div>
+</section>
+
+<section class="border-b border-neutral-200 px-5 py-16 dark:border-neutral-800">
+  <p class="text-center text-xs font-semibold tracking-widest text-neutral-500 uppercase">{t.shapesEyebrow}</p>
+  <h2 class="mt-2 text-center text-2xl font-bold tracking-tight sm:text-3xl">{t.shapesH2}</h2>
+  <p class="mx-auto mt-6 max-w-2xl text-center text-neutral-600 dark:text-neutral-400">{t.shapesLede}</p>
+  <div class="mx-auto mt-8 grid max-w-5xl gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    {t.shapes.map(([title, body]) => (
+      <div class={card}>
+        <h3 class="font-semibold">{title}</h3>
+        <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-400">{body}</p>
+      </div>
+    ))}
+  </div>
+  <div class="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm">
+    {t.guides.map(([label, href]) => (
+      <a href={href} class="text-neutral-600 hover:text-black dark:text-neutral-400 dark:hover:text-white">{label} →</a>
+    ))}
+  </div>
+</section>
+
+<section class="border-b border-neutral-200 px-5 py-16 dark:border-neutral-800">
+  <p class="text-center text-xs font-semibold tracking-widest text-neutral-500 uppercase">{t.rulesEyebrow}</p>
+  <h2 class="mt-2 text-center text-2xl font-bold tracking-tight sm:text-3xl">{t.rulesH2}</h2>
+  <p class="mx-auto mt-6 max-w-2xl text-center text-neutral-600 dark:text-neutral-400">{t.rulesLede}</p>
+  <div class="mx-auto mt-8 max-w-3xl overflow-x-auto rounded-xl border border-neutral-200/60 bg-white/60 p-5 text-left font-mono text-xs leading-6 text-neutral-700 shadow-sm backdrop-blur-md sm:text-sm dark:border-neutral-800/60 dark:bg-neutral-950/60 dark:text-neutral-300">
+    <pre class="m-0">{t.rulesCode}</pre>
+  </div>
+  <p class="mx-auto mt-4 max-w-2xl text-center text-sm text-neutral-500">{t.rulesOutro}</p>
+  <img
+    src={`${media}hitl-approve.gif`}
+    alt={t.hitlDemoAlt}
+    loading="lazy"
+    class="mx-auto mt-8 w-full max-w-3xl rounded-xl border border-neutral-200/60 shadow-lg dark:border-neutral-800/60"
+  />
+  <div class="mt-6 text-center text-sm">
+    <a href={t.rulesCta[1]} class={ctaLink}>{t.rulesCta[0]} →</a>
+  </div>
+</section>
+
+<section class="border-b border-neutral-200 px-5 py-16 dark:border-neutral-800">
+  <p class="text-center text-xs font-semibold tracking-widest text-neutral-500 uppercase">{t.missionEyebrow}</p>
+  <h2 class="mt-2 text-center text-2xl font-bold tracking-tight sm:text-3xl">{t.missionH2}</h2>
+  <p class="mx-auto mt-6 max-w-2xl text-center text-neutral-600 dark:text-neutral-400">{t.missionLede}</p>
+  <div class="mx-auto mt-8 max-w-3xl overflow-x-auto rounded-xl border border-neutral-200/60 bg-white/60 p-5 text-left font-mono text-sm leading-7 shadow-lg backdrop-blur-md dark:border-neutral-800/60 dark:bg-neutral-950/70">
+    {t.missionLines.map(([kind, text]) => (
+      kind === 'cmd' ? (
+        <div class="whitespace-nowrap text-neutral-800 dark:text-neutral-100"><span class="mr-2 select-none text-neutral-400 dark:text-neutral-500">$</span>{text}</div>
+      ) : kind === 'note' ? (
+        <div class="whitespace-nowrap text-neutral-400 italic dark:text-neutral-500">{text}</div>
+      ) : (
+        <div class="whitespace-nowrap pl-5 text-neutral-500 dark:text-neutral-400">{text}</div>
+      )
+    ))}
+  </div>
+  <p class="mx-auto mt-6 max-w-2xl text-center text-neutral-600 dark:text-neutral-400">{t.missionOutro}</p>
+  <div class="mt-6 text-center text-sm">
+    <a href={t.missionCta[1]} class={ctaLink}>{t.missionCta[0]} →</a>
+  </div>
+</section>
+
+<section class="border-b border-neutral-200 px-5 py-16 dark:border-neutral-800">
+  <p class="text-center text-xs font-semibold tracking-widest text-neutral-500 uppercase">{t.treeEyebrow}</p>
+  <h2 class="mt-2 text-center text-2xl font-bold tracking-tight sm:text-3xl">{t.treeH2}</h2>
+  <p class="mx-auto mt-6 max-w-2xl text-center text-neutral-600 dark:text-neutral-400">{t.treeLede}</p>
+  <div class={listing}>
+    {t.treeListing.map(([path, comment]) => (
+      <div class="whitespace-pre">
+        <span class="text-neutral-700 dark:text-neutral-300">{path}</span>
+        {comment && <span class="text-neutral-400 dark:text-neutral-500">{comment}</span>}
+      </div>
+    ))}
+  </div>
+  <p class="mx-auto mt-4 max-w-2xl text-center text-sm text-neutral-500">{t.treeOutro}</p>
+  <ul class="mx-auto mt-8 max-w-2xl space-y-2 text-sm text-neutral-600 dark:text-neutral-400">
+    {t.treePoints.map((line) => (
+      <li class="flex gap-3"><span class="text-neutral-400 dark:text-neutral-600">→</span><span>{line}</span></li>
+    ))}
+  </ul>
+  <div class="mt-6 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm">
+    {t.treeCtas.map(([label, href]) => (
+      <a href={href} class={ctaLink}>{label} →</a>
+    ))}
+  </div>
+</section>
+
+<section class="border-b border-neutral-200 px-5 py-16 dark:border-neutral-800">
+  <p class="text-center text-xs font-semibold tracking-widest text-neutral-500 uppercase">{t.toolsEyebrow}</p>
+  <h2 class="mt-2 text-center text-2xl font-bold tracking-tight sm:text-3xl">{t.toolsH2}</h2>
+  <p class="mx-auto mt-6 max-w-2xl text-center text-neutral-600 dark:text-neutral-400">{t.toolsLede}</p>
+  <div class="mx-auto mt-8 grid max-w-4xl gap-4 sm:grid-cols-2">
+    {t.toolsWays.map(([title, body]) => (
+      <div class={card}>
+        <h3 class="font-semibold">{title}</h3>
+        <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-400">{body}</p>
+      </div>
+    ))}
+  </div>
+  <p class="mx-auto mt-6 max-w-2xl text-center text-sm text-neutral-500">{t.toolsNote}</p>
+  <div class="mt-6 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm">
+    {t.toolsCtas.map(([label, href]) => (
+      <a href={href} class={ctaLink}>{label} →</a>
+    ))}
+  </div>
+</section>
+
+<section class="border-b border-neutral-200 px-5 py-16 dark:border-neutral-800">
+  <p class="text-center text-xs font-semibold tracking-widest text-neutral-500 uppercase">{t.apacheEyebrow}</p>
+  <h2 class="mt-2 text-center text-2xl font-bold tracking-tight sm:text-3xl">{t.apacheH2}</h2>
+  <div class="mx-auto mt-6 max-w-2xl space-y-4 text-neutral-600 dark:text-neutral-400">
+    <p>{t.apacheP1}</p>
+    <p>{t.apacheP2}</p>
+  </div>
+  <div class="mx-auto mt-8 max-w-3xl overflow-hidden rounded-xl border border-neutral-200/60 bg-white/60 backdrop-blur-md dark:border-neutral-800/60 dark:bg-neutral-950/60">
+    <div class="grid sm:grid-cols-2">
+      <p class="px-5 pt-4 pb-1 text-xs font-semibold tracking-widest text-neutral-500 uppercase sm:border-r sm:border-neutral-200/60 sm:pb-4 dark:sm:border-neutral-800/60">{t.apacheThenLabel}</p>
+      <p class="px-5 pb-4 text-xs font-semibold tracking-widest text-neutral-500 uppercase sm:pt-4">{t.apacheNowLabel}</p>
+    </div>
+    {t.apacheRows.map(([then, now]) => (
+      <div class="grid border-t border-neutral-200/60 sm:grid-cols-2 dark:border-neutral-800/60">
+        <p class="px-5 pt-4 pb-1 text-sm text-neutral-500 sm:border-r sm:border-neutral-200/60 sm:pb-4 dark:sm:border-neutral-800/60">{then}</p>
+        <p class="px-5 pb-4 text-sm text-neutral-700 sm:pt-4 dark:text-neutral-300">{now}</p>
+      </div>
+    ))}
+  </div>
+  <p class="mx-auto mt-6 max-w-2xl text-center text-neutral-600 dark:text-neutral-400">{t.apacheOutro}</p>
+</section>
+
+<section class="border-b border-neutral-200 px-5 py-16 dark:border-neutral-800">
+  <p class="text-center text-xs font-semibold tracking-widest text-neutral-500 uppercase">{t.yoursEyebrow}</p>
+  <h2 class="mt-2 text-center text-2xl font-bold tracking-tight sm:text-3xl">{t.yoursH2}</h2>
+  <ul class="mx-auto mt-8 max-w-2xl space-y-4 text-neutral-600 dark:text-neutral-400">
+    {t.yoursPoints.map((item) => (
+      <li class="flex gap-3"><span class="text-neutral-400 dark:text-neutral-600">→</span><span>{item}</span></li>
+    ))}
+  </ul>
+  <div class="mt-6 text-center text-sm">
+    <a href={t.yoursCta[1]} class={ctaLink}>{t.yoursCta[0]} →</a>
+  </div>
+</section>
+
+<section class="border-b border-neutral-200 px-5 py-16 dark:border-neutral-800">
+  <p class="text-center text-xs font-semibold tracking-widest text-neutral-500 uppercase">{t.relayEyebrow}</p>
+  <h2 class="mt-2 text-center text-2xl font-bold tracking-tight sm:text-3xl">{t.relayH2}</h2>
+  <p class="mx-auto mt-6 max-w-2xl text-center text-neutral-600 dark:text-neutral-400">{t.relayP}</p>
+  <div class="mt-6 text-center text-sm">
+    <a href={t.relayCta[1]} class={ctaLink}>{t.relayCta[0]} →</a>
+  </div>
+  <p class="mx-auto mt-6 max-w-2xl text-center text-sm text-neutral-500">
+    {t.invite.lead}
+    <a href={t.invite.contactHref} class="underline hover:text-black dark:hover:text-white">{t.invite.contactLabel}</a>
+    <span class="mx-1.5 text-neutral-300 dark:text-neutral-700" aria-hidden="true">&middot;</span>
+    <a href={t.invite.appHref} class="underline hover:text-black dark:hover:text-white">{t.invite.appLabel}</a>
+  </p>
+</section>
+
+<section class="hero-grid border-t border-neutral-200 px-5 py-16 text-center dark:border-neutral-800">
+  <p class="text-xs font-semibold tracking-widest text-neutral-500 uppercase">{t.bottomEyebrow}</p>
+  <h2 class="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">{t.bottomH2}</h2>
+  <div class="mt-8">
+    <InstallCommand posixLabel={t.installTabPosix} windowsLabel={t.installTabWindows} copyLabel={t.copyLabel} />
+  </div>
+  <div class="mt-6 flex flex-wrap justify-center gap-3">
+    <a href="/docs/guide/quickstart/" class="rounded-lg bg-gradient-to-r from-primary-500 to-primary-700 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-primary-500/20 transition-all hover:scale-105 hover:shadow-primary-500/40">{t.bottomCta}</a>
+  </div>
+  <p class="mt-6 text-sm text-neutral-500" set:html={t.bottomContact} />
+
+  <p class="mt-14 text-xs font-semibold tracking-widest text-neutral-500 uppercase">{t.builtOnEyebrow}</p>
+  <div class="mx-auto mt-4 flex max-w-3xl flex-wrap items-baseline justify-center gap-x-8 gap-y-3">
+    {t.builtOn.map(([name, role, href]) => (
+      <a href={href} rel="noopener noreferrer" class="group text-sm no-underline">
+        <span class="font-semibold text-neutral-700 group-hover:text-black dark:text-neutral-300 dark:group-hover:text-white">{name}</span>
+        <span class="ml-1.5 text-neutral-500">{role}</span>
+      </a>
+    ))}
+  </div>
+  <p class="mx-auto mt-4 max-w-2xl text-center text-xs text-neutral-500">{t.builtOnNote}</p>
+
+  <div class="mt-20 flex justify-center pointer-events-none select-none overflow-hidden">
+    <img src="/logo-wide-colored-light.svg" alt="" aria-hidden="true" class="w-full max-w-5xl opacity-40 dark:hidden" />
+    <img src="/logo-wide-colored-dark.svg" alt="" aria-hidden="true" class="hidden w-full max-w-5xl opacity-40 dark:block" />
+  </div>
+</section>

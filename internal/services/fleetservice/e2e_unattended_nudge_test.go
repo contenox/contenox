@@ -1,0 +1,145 @@
+package fleetservice
+
+import (
+	"context"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/contenox/contenox/internal/kernel/agentinstance"
+	"github.com/contenox/contenox/internal/services/agentregistryservice"
+	"github.com/contenox/contenox/internal/services/chainagents"
+	"github.com/contenox/contenox/internal/services/missionservice"
+	"github.com/contenox/contenox/internal/services/operatorinbox"
+	"github.com/contenox/contenox/internal/services/reportrouter"
+	"github.com/contenox/contenox/internal/store/runtimetypes"
+	"github.com/contenox/contenox/libacp"
+	libbus "github.com/contenox/contenox/libbus"
+	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/libtracker"
+	"github.com/stretchr/testify/require"
+)
+
+// TestFleetE2E_UnattendedNudge_MuteUnitHeartbeatsNudgedAndBlocked: a
+// print-only unit that never calls a mission tool gets liveness stamped,
+// one nudged turn, then a blocker report in the operator inbox, no third
+// prompt, and stays open (not terminal).
+func TestFleetE2E_UnattendedNudge_MuteUnitHeartbeatsNudgedAndBlocked(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping unattended-nudge e2e: builds and boots the full contenox binary")
+	}
+
+	bin := buildContenoxBinary(t)
+	home := t.TempDir()
+
+	t.Setenv("HOME", home)
+	for _, k := range []string{
+		"CONTENOX_DEFAULT_MODEL", "CONTENOX_DEFAULT_PROVIDER",
+		"CONTENOX_DEFAULT_ALT_MODEL", "CONTENOX_DEFAULT_ALT_PROVIDER",
+		"CONTENOX_DEFAULT_MAX_TOKENS", "CONTENOX_DEFAULT_THINK",
+		"CONTENOX_ACP_CHAIN_PATH",
+	} {
+		t.Setenv(k, "")
+	}
+	runContenoxCLI(t, bin, home, "config", "set", "default-model", "chain-unit-fixture-model")
+	runContenoxCLI(t, bin, home, "config", "set", "update-check", "false")
+
+	contenoxDir := filepath.Join(home, ".contenox")
+	require.DirExists(t, contenoxDir)
+	writeChainAgentFixture(t, contenoxDir)
+
+	ctx := context.Background()
+	db, err := libdb.NewSQLiteDBManager(ctx, filepath.Join(t.TempDir(), "unattended-nudge-e2e.db"), runtimetypes.SchemaSQLite)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	agents := agentregistryservice.New(db)
+	bus := libbus.NewInMem()
+	t.Cleanup(func() { _ = bus.Close() })
+	missions := missionservice.New(db, missionservice.WithEventPublisher(bus))
+	inbox := operatorinbox.New(db)
+
+	res, err := chainagents.Discover(ctx, agents, contenoxDir)
+	require.NoError(t, err)
+	require.Equal(t, []string{"agent-fleet-fixture"}, res.Created)
+
+	stderr := &lockedBuffer{}
+	instances := agentinstance.New(agents,
+		agentinstance.WithSelfExecutable(bin),
+		agentinstance.WithStderr(stderr),
+	)
+	t.Cleanup(func() { _ = instances.Close() })
+
+	router, err := reportrouter.New(reportrouter.Deps{
+		Bus:      bus,
+		Sessions: instances,
+		Inbox:    inbox,
+		Tracker:  libtracker.NoopTracker{},
+	})
+	require.NoError(t, err)
+	stopRouter, err := router.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(stopRouter)
+
+	workDir := t.TempDir()
+	svc := New(instances, agents, missions, nil, workDir, libtracker.NoopTracker{})
+
+	dispatched, err := svc.Dispatch(ctx, DispatchRequest{
+		AgentName:      "agent-fleet-fixture",
+		Intent:         "do the mission and report in",
+		HITLPolicyName: "default",
+	})
+	require.NoError(t, err, "dispatch stderr:\n%s", stderr.String())
+	require.NotEmpty(t, dispatched.MissionID)
+
+	viewer := &recordingViewer{id: "nudge-observer"}
+	_, err = instances.Attach(ctx, dispatched.InstanceID, libacp.SessionID(dispatched.SessionID), viewer)
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		return strings.Count(viewer.messageText(), chainFixtureReply) >= 2
+	}, 120*time.Second, 100*time.Millisecond,
+		"the mute unit was never nudged into a second turn; transcript=%q\nstderr:\n%s",
+		viewer.messageText(), stderr.String())
+
+	m, err := missions.Get(ctx, dispatched.MissionID)
+	require.NoError(t, err)
+	require.NotNil(t, m.LastHeartbeat, "turn completion is liveness: the mission must carry a heartbeat")
+
+	require.Eventually(t, func() bool {
+		reps, lerr := missions.ListReports(ctx, dispatched.MissionID, 5)
+		return lerr == nil && len(reps) == 1 && reps[0].Kind == missionservice.ReportKindBlocker
+	}, 30*time.Second, 100*time.Millisecond,
+		"the runtime never filed its blocker for the mute unit\nstderr:\n%s", stderr.String())
+
+	require.Eventually(t, func() bool {
+		items, lerr := inbox.List(ctx, 100)
+		if lerr != nil {
+			return false
+		}
+		for _, it := range items {
+			if it.MissionID == dispatched.MissionID {
+				require.Equal(t, operatorinbox.ReasonOperatorFired, it.Reason,
+					"an operator-fired mission's blocker routes to the inbox as operator-fired")
+				require.Equal(t, missionservice.ReportKindBlocker, it.Report.Kind)
+				return true
+			}
+		}
+		return false
+	}, 30*time.Second, 100*time.Millisecond,
+		"the runtime blocker never reached the operator inbox")
+
+	m, err = missions.Get(ctx, dispatched.MissionID)
+	require.NoError(t, err)
+	require.Equal(t, missionservice.StatusOpen, m.Status, "a nudged-then-blocked mission stays open, not terminal")
+
+	require.Never(t, func() bool {
+		return strings.Count(viewer.messageText(), chainFixtureReply) > 2
+	}, 2*time.Second, 100*time.Millisecond,
+		"a third prompt ran — the nudge loop must be hard-capped at one")
+	require.Equal(t, 2, strings.Count(viewer.messageText(), chainFixtureReply),
+		"exactly two turns ran: the intent turn and one nudge")
+
+	require.NoError(t, svc.Stop(ctx, dispatched.InstanceID))
+}

@@ -1,0 +1,153 @@
+// Package chatservice persists the conversation thread. Terminal output, file reads, and agent steps are stored here so the thread survives restarts.
+package chatservice
+
+import (
+	"context"
+	"crypto/sha1"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/contenox/contenox/internal/kernel/taskengine"
+	"github.com/contenox/contenox/internal/store/runtimetypes"
+	libdb "github.com/contenox/contenox/libdbexec"
+)
+
+type Manager struct {
+	workspaceID string
+}
+
+func NewManager(workspaceID string) *Manager {
+	return &Manager{workspaceID: workspaceID}
+}
+
+// AddInstruction inserts a system message into an existing chat index.
+func (m *Manager) AddInstruction(ctx context.Context, tx libdb.Exec, id string, sendAt time.Time, message string) error {
+	msg := taskengine.Message{
+		Role:      "system",
+		Content:   message,
+		Timestamp: sendAt,
+	}
+	payload, err := json.Marshal(&msg)
+	if err != nil {
+		return err
+	}
+	messageID := msg.ID
+	if messageID == "" {
+		messageID = generateMessageID(id, &msg)
+	}
+	return runtimetypes.NewMessageStore(tx, m.workspaceID).AppendMessages(ctx, &runtimetypes.Message{
+		ID:      messageID,
+		IDX:     id,
+		Payload: payload,
+		AddedAt: sendAt,
+	})
+}
+
+// AppendMessage appends a message to messages in memory; call PersistDiff to persist it.
+func (m *Manager) AppendMessage(_ context.Context, messages []taskengine.Message, sendAt time.Time, message string, role string) ([]taskengine.Message, error) {
+	messages = append(messages, taskengine.Message{
+		Role:      role,
+		Content:   message,
+		Timestamp: sendAt,
+	})
+	return messages, nil
+}
+
+// ListMessages retrieves all stored messages for a given subject ID.
+func (m *Manager) ListMessages(ctx context.Context, tx libdb.Exec, subjectID string) ([]taskengine.Message, error) {
+	conversation, err := runtimetypes.NewMessageStore(tx, m.workspaceID).ListMessages(ctx, subjectID)
+	if err != nil {
+		return nil, err
+	}
+
+	var messages []taskengine.Message
+	for _, msg := range conversation {
+		var parsedMsg taskengine.Message
+		if err := json.Unmarshal(msg.Payload, &parsedMsg); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal message: %w", err)
+		}
+		messages = append(messages, parsedMsg)
+	}
+	return messages, nil
+}
+
+// PersistDiff surgically appends only new messages by comparing existing IDs.
+func (m *Manager) PersistDiff(ctx context.Context, tx libdb.Exec, subjectID string, hist []taskengine.Message) error {
+	if len(hist) == 0 {
+		return nil
+	}
+
+	conversation, err := runtimetypes.NewMessageStore(tx, m.workspaceID).ListMessages(ctx, subjectID)
+	if err != nil {
+		return err
+	}
+
+	existingIDs := make(map[string]bool)
+	for _, msg := range conversation {
+		existingIDs[msg.ID] = true
+	}
+
+	var newMessages []*runtimetypes.Message
+	for _, msg := range hist {
+		if msg.ID == "" {
+			msg.ID = generateMessageID(subjectID, &msg)
+		}
+		// Dedup against DB-stored rows and messages already queued this batch.
+		if existingIDs[msg.ID] {
+			continue
+		}
+		existingIDs[msg.ID] = true
+		if msg.Timestamp.IsZero() {
+			msg.Timestamp = time.Now().UTC()
+		}
+		payload, err := json.Marshal(msg)
+		if err != nil {
+			return fmt.Errorf("failed to marshal message: %w", err)
+		}
+		newMessages = append(newMessages, &runtimetypes.Message{
+			ID:      msg.ID,
+			IDX:     subjectID,
+			Payload: payload,
+			AddedAt: msg.Timestamp,
+		})
+	}
+
+	if len(newMessages) > 0 {
+		return runtimetypes.NewMessageStore(tx, m.workspaceID).AppendMessages(ctx, newMessages...)
+	}
+	return nil
+}
+
+// DeleteSession removes all messages and the index for a session.
+func (m *Manager) DeleteSession(ctx context.Context, tx libdb.Exec, sessionID string, identity string) error {
+	store := runtimetypes.NewMessageStore(tx, m.workspaceID)
+	// DeleteMessageIndex cascades to messages via ON DELETE CASCADE.
+	if err := store.DeleteMessageIndex(ctx, sessionID, identity); err != nil {
+		return fmt.Errorf("failed to delete session index: %w", err)
+	}
+	return nil
+}
+
+// ClearSession removes all messages for a session while keeping the index.
+func (m *Manager) ClearSession(ctx context.Context, tx libdb.Exec, sessionID string) error {
+	if err := runtimetypes.NewMessageStore(tx, m.workspaceID).DeleteMessages(ctx, sessionID); err != nil {
+		return fmt.Errorf("failed to clear session messages: %w", err)
+	}
+	return nil
+}
+
+// RenameSession updates the human-readable name of a session.
+func (m *Manager) RenameSession(ctx context.Context, tx libdb.Exec, sessionID string, name string) error {
+	return runtimetypes.NewMessageStore(tx, m.workspaceID).RenameMessageSession(ctx, sessionID, name)
+}
+
+func generateMessageID(subjectID string, msg *taskengine.Message) string {
+	h := sha1.New()
+	h.Write([]byte(subjectID))
+	h.Write([]byte(msg.Role))
+	h.Write([]byte(msg.ToolCallID))
+	h.Write([]byte(msg.Timestamp.Format(time.RFC3339Nano)))
+	h.Write([]byte(msg.Content))
+	return fmt.Sprintf("%x", h.Sum(nil))
+}

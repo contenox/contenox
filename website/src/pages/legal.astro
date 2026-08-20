@@ -1,0 +1,18 @@
+---
+import { getEntry, render } from 'astro:content';
+import Base from '../layouts/Base.astro';
+
+const entry = await getEntry('legal', 'legal');
+if (!entry) throw new Error('docs/legal.md is missing');
+const { Content } = await render(entry);
+---
+<Base
+  title={`${entry.data.title} — Contenox`}
+  description={entry.data.description}
+  alternates={{ en: '/legal', de: '/de/legal' }}
+>
+  <article class="prose prose-compact prose-neutral dark:prose-invert mx-auto max-w-3xl px-5 py-10">
+    <p class="text-xs font-semibold tracking-widest text-neutral-500 uppercase">Legal</p>
+    <Content />
+  </article>
+</Base>
