@@ -33,7 +33,7 @@ const dateLayout = "2006-01-02"
 type Config struct {
 	// Dir is the directory log files live in. Created if absent.
 	Dir string
-	// Name is the base name: "serve" yields serve-2026-08-15.log.
+	// Name is the base name: "beam" yields beam-2026-08-15.log.
 	Name string
 	// MaxBytes bounds one part. Non-positive means [DefaultMaxBytes].
 	MaxBytes int64

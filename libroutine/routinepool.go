@@ -120,3 +120,86 @@ func (p *group) GetManager(key string) *Routine {
 	log.Printf("Retrieving manager for key: %s", key)
 	return p.managers[key]
 }
+
+// Pool manages keyed Routines with a shared threshold and reset timeout.
+type Pool struct {
+	mu           sync.RWMutex
+	routines     map[string]*Routine
+	threshold    int
+	resetTimeout time.Duration
+}
+
+// NewPool creates a Pool that mints Routines configured with threshold and resetTimeout.
+func NewPool(threshold int, resetTimeout time.Duration) *Pool {
+	return &Pool{
+		routines:     make(map[string]*Routine),
+		threshold:    threshold,
+		resetTimeout: resetTimeout,
+	}
+}
+
+// Get returns the Routine for key, creating one if absent.
+func (p *Pool) Get(key string) *Routine {
+	if p == nil || key == "" {
+		return nil
+	}
+	p.mu.RLock()
+	r, ok := p.routines[key]
+	p.mu.RUnlock()
+	if ok {
+		return r
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if r, ok = p.routines[key]; ok {
+		return r
+	}
+	r = NewRoutine(p.threshold, p.resetTimeout)
+	p.routines[key] = r
+	return r
+}
+
+// Allow reports whether the circuit breaker for key permits an operation.
+func (p *Pool) Allow(key string) bool {
+	return p.AllowAt(key, time.Now())
+}
+
+// AllowAt reports whether the circuit breaker for key permits an operation at now.
+func (p *Pool) AllowAt(key string, now time.Time) bool {
+	if p == nil || key == "" {
+		return true
+	}
+	p.mu.RLock()
+	r, ok := p.routines[key]
+	p.mu.RUnlock()
+	if !ok {
+		return true
+	}
+	return r.AllowAt(now)
+}
+
+func (p *Pool) WouldAllowAt(key string, now time.Time) bool {
+	if p == nil || key == "" {
+		return true
+	}
+	p.mu.RLock()
+	r, ok := p.routines[key]
+	p.mu.RUnlock()
+	if !ok {
+		return true
+	}
+	return r.WouldAllowAt(now)
+}
+
+func (p *Pool) MarkSuccess(key string) {
+	if p == nil || key == "" {
+		return
+	}
+	p.mu.RLock()
+	r, ok := p.routines[key]
+	p.mu.RUnlock()
+	if ok {
+		r.ForceClose()
+	}
+}

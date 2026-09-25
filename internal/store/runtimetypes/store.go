@@ -276,6 +276,18 @@ type Store interface {
 	ScanWorkspaceChunks(ctx context.Context, configID string, limit int) ([]*WorkspaceChunk, error)
 	CountWorkspaceChunks(ctx context.Context, configID string) (int64, error)
 
+	RecordProxyKey(ctx context.Context, k ProxyKey) (*ProxyKey, error)
+	GetProxyKeyByHash(ctx context.Context, keyHash string) (*ProxyKey, error)
+	ListProxyKeys(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*ProxyKey, error)
+	RevokeProxyKey(ctx context.Context, keyHash string) (bool, error)
+	CountActiveProxyKeys(ctx context.Context, now time.Time) (int64, error)
+
+	SetLLMProviderModelFacts(ctx context.Context, providerID string, facts map[string]ModelFacts) error
+	SetLLMProviderModelFact(ctx context.Context, providerID, model string, facts ModelFacts) error
+	DeleteLLMProviderModelFacts(ctx context.Context, providerID string) error
+	DeleteLLMProviderModelFact(ctx context.Context, providerID, model string) error
+	GetLLMProviderModelFacts(ctx context.Context, providerID string) (map[string]ModelFacts, error)
+
 	EnforceMaxRowCount(ctx context.Context, count int64) error
 }
 
@@ -302,7 +314,7 @@ var countableTables = map[string]bool{
 	"job_queue_v2": true, "kv": true, "remote_tools": true,
 	"ollama_models": true, "llm_affinity_group": true, "llm_backends": true,
 	"mcp_servers": true, "llm_model_registry": true, "agents": true,
-	"hitl_approvals": true,
+	"hitl_approvals": true, "proxy_keys": true, "proxy_usage": true,
 }
 
 func (s *store) estimateCount(ctx context.Context, table string) (int64, error) {

@@ -1,13 +1,12 @@
-//! One declaration, four shapes. `tools:` is the same sentence everywhere, but
-//! what it can actually admit is bounded by the shape first: `local_fs` and
+//! One declaration, several shapes. `tools:` is the same sentence everywhere,
+//! but what it can actually admit is bounded by the shape first: `local_fs` and
 //! `local_shell` are forwarded to the connected client, so beam and an editor
-//! carry them, an unattended run does not, and a `contenox serve` host mounts
-//! neither.
+//! carry them while an unattended run does not.
 //!
 //! Testing one shape and assuming the rest is the assumption these cases exist
 //! to remove.
 
-use contenox_e2e::{Instance, Pty, Script, ToolCall, Turn};
+use contenox_e2e::{Instance, Script, ToolCall, Turn};
 use std::time::Duration;
 
 /// One declaration naming `Read`, which resolves to a tool in `local_fs`.
@@ -150,45 +149,4 @@ fn a_declaration_naming_read_reaches_the_file_under_beam() {
         "beam carries local_fs natively, so the declaration's grant is real:\n{screen}"
     );
     pty.send_ctrl('c').ok();
-}
-
-/// The host shape has no client at all, so a declaration's `Read` and `Bash`
-/// name toolsets this host does not mount. Absence is the shape, not a policy
-/// setting: the host says so at startup, per toolset, and keeps serving
-/// everything else. (`tests/serve_host.rs` proves the same for a hand-written
-/// chain; this is the declaration route to the same wall.)
-#[test]
-fn a_host_names_each_toolset_a_declaration_asked_for_and_cannot_serve() {
-    let mut cx = instance("shape-serve-declared");
-    cx.write_file(
-        ".contenox/agents/handy.md",
-        "---\nname: handy\ndescription: Wants a filesystem and a shell\ntools: Read, Bash\n---\n\
-         You edit and you run things.\n",
-    )
-    .expect("write the declaration");
-    cx.scripted(&Script::new().turn("a host is not asked anything by this case"))
-        .expect("scripted-test backend");
-    compile_and_point_at(&mut cx, "handy");
-
-    let mut pty = Pty::spawn_sized(cx.cmd(["serve", "."]), 40, 200).expect("spawn contenox serve");
-    let screen = pty
-        .wait_for("Running. Press Ctrl-C to stop.", Duration::from_secs(120))
-        .expect("the host never finished its status screen");
-    pty.send_ctrl('c').ok();
-
-    for toolset in ["local_fs", "local_shell"] {
-        assert!(
-            screen.contains(&format!(
-                "contenox serve: \"{toolset}\" is declared but not served"
-            )),
-            "the host must name {toolset} as declared and unserved:\n{screen}"
-        );
-    }
-    assert!(
-        screen.contains(
-            "declare an MCP tool for it (contenox mcp add), or run this agent from \
-             `contenox beam` or an ACP editor"
-        ),
-        "and say what to do instead:\n{screen}"
-    );
 }

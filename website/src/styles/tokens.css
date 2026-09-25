@@ -32,33 +32,31 @@
 }
 
 @theme {
-  /* Primary accent (focus rings, accents) — the brand accent: a warm
-     light-brand mint. Dark surfaces use the luminous 400; light surfaces the
-     700 for AA contrast. Mirrors the terminal UI's accent ladder. */
-  --color-primary-50: #ecfdf5;
-  --color-primary-100: #d1fae5;
-  --color-primary-200: #a7f3d0;
-  --color-primary-300: #6ee7b7;
-  --color-primary-400: #34d399;
-  --color-primary-500: #10b981;
-  --color-primary-600: #059669;
-  --color-primary-700: #047857;
-  --color-primary-800: #065f46;
-  --color-primary-900: #064e3b;
-  --color-primary-950: #022c22;
+  /* Signal yellow is the shared accent for controls, focus and live state. */
+  --color-primary-50: #fffbe6;
+  --color-primary-100: #fff4b8;
+  --color-primary-200: #ffe878;
+  --color-primary-300: #f8d84d;
+  --color-primary-400: #f2c94c;
+  --color-primary-500: #dcae18;
+  --color-primary-600: #9f7900;
+  --color-primary-700: #715600;
+  --color-primary-800: #4c3a00;
+  --color-primary-900: #302500;
+  --color-primary-950: #1b1500;
   --color-primary: var(--color-primary-600);
 
   /* Dark-mode primary is neutral-white; the gold accent stays CTA-only. */
   --color-dark-primary-500: #ededed;
 
   /* Typography */
-  --color-text: #2b2f33;
-  --color-dark-text: #e8eaed;
+  --color-text: #28271f;
+  --color-dark-text: #e8e4d6;
 
   /* Light surfaces */
-  --color-surface-50: #f8f9fa;
-  --color-surface-100: #fcfcfc;
-  --color-surface-200: #f3f4f6;
+  --color-surface-50: #f1efe6;
+  --color-surface-100: #f7f5ec;
+  --color-surface-200: #e9e5d8;
   --color-surface-300: #e5e7eb;
   --color-surface-400: #d1d5db;
   --color-surface-500: #9ca3af;
@@ -68,12 +66,12 @@
   --color-surface-900: #1f2937;
   --color-surface: var(--color-surface-50);
 
-  /* Dark surfaces (brand-matched cool graphite: #08090a → #0d0e10 → #121416) */
-  --color-dark-surface-50: #08090a;
-  --color-dark-surface-100: #0d0e10;
-  --color-dark-surface-200: #121416;
-  --color-dark-surface-300: #1a1c1f;
-  --color-dark-surface-400: #24262a;
+  /* Warm machine-black surfaces. */
+  --color-dark-surface-50: #080806;
+  --color-dark-surface-100: #0d0d0a;
+  --color-dark-surface-200: #13130f;
+  --color-dark-surface-300: #1b1a15;
+  --color-dark-surface-400: #28261e;
   --color-dark-surface-500: #2f3237;
   --color-dark-surface-600: #3b3e44;
   --color-dark-surface-700: #4b4f56;

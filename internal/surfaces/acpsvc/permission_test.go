@@ -41,7 +41,7 @@ func TestUnit_AskApproval_ForwardsPolicyNameAndPath(t *testing.T) {
 	require.NoError(t, err)
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	rule := 3
 	var approvalErr error

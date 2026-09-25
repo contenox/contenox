@@ -692,15 +692,25 @@ fn a_prefix_pattern_trigger_fires_on_every_type_under_it() {
 // Exactly once, and where the cursor stands
 // ===========================================================================
 
-/// Set up a workspace whose report_added trigger fires a chain that holds the
-/// process (a scripted `sleep`), and whose status_changed trigger fires the
-/// instant `noop` chain. Returns after one mission has put both events in the
-/// log.
 fn instance_with_a_holding_trigger(label: &str) -> Instance {
     let cx = opted_in(label);
     actuating_backend(&cx, &[shell_turn("sleep", "45"), shell_turn("sleep", "45")]);
-    cx.write_file(".contenox/chain-act.json", ACTUATING_CHAIN)
+    let mut chain: Value = serde_json::from_str(ACTUATING_CHAIN).expect("actuating chain");
+    chain["tasks"][1]["execute_config"]["tools_policies"] = serde_json::json!({
+        "local_shell": {"_allowed_commands": "sleep"}
+    });
+    cx.write_file(".contenox/chain-act.json", &chain.to_string())
         .expect("write the actuating chain");
+    std::fs::write(
+        cx.home_file("hitl-policy-hold.json"),
+        serde_json::json!({
+            "version": 1,
+            "default_action": "deny",
+            "rules": [{"tools": "local_shell", "tool": "local_shell", "action": "allow"}]
+        })
+        .to_string(),
+    )
+    .expect("write the holding command's policy");
     cx.write_file(".contenox/chain-note.json", NOOP_CHAIN)
         .expect("write the noop chain");
     cx.write_file(
@@ -709,7 +719,7 @@ fn instance_with_a_holding_trigger(label: &str) -> Instance {
             "hold-on-report",
             "missionservice.events.report_added",
             "chain-act.json",
-            None,
+            Some("hitl-policy-hold.json"),
         ),
     )
     .expect("write the holding trigger");
@@ -1155,13 +1165,6 @@ fn a_firing_without_a_named_policy_still_parks_its_gated_ask() {
 /// `--auto` buys unattended operation, not a bypass: the guide states the
 /// trigger's policy still applies, so a call its envelope denies must not run.
 #[test]
-#[ignore = "confirmed defect: `contenox events dispatch --auto` drops the HITL gate entirely, so a \
-fired chain's local_shell call runs even under a policy that denies it. Reproduced: trigger policy \
-hitl-policy-read_only.json (local_shell -> deny), chain calls local_shell `touch MARKER`, the marker \
-is created and the firing records status=ok. Seam: internal/surfaces/contenoxcli/engineopts.go sets \
-EffectiveHITL = !autoMode, which builds the engine with no policy gate at all. Promised in \
-docs/guide/events.md (\"the trigger's policy (or the default) still applies\", \"a trigger grants \
-timing, never capability\") and in the --auto flag help."]
 fn dispatch_auto_still_bounds_a_fired_chain_by_its_policy() {
     // read_only denies local_shell outright — no ask, no terminal, nothing to
     // answer: the call simply may not run.

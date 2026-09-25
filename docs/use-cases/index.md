@@ -8,7 +8,7 @@ Production-ready patterns for automating real work with contenox agents.
 
 Each recipe is a **pre-built solution**: a chain or agent declaration that does the work and hands back structured output.
 
-Most recipes here are written as chain files rather than [agent declarations](/docs/guide/agents/), because a recipe is a pipeline you point at — a fixed shape you can diff — rather than an agent you fire at an intent. Where a recipe needs branching, a per-step model, or a declared human gate, the chain is the only tier that says so.
+Most recipes here are written as chain files rather than [agent declarations](/docs/guide/declarations/), because a recipe is a pipeline you point at — a fixed shape you can diff — rather than an agent you fire at an intent. Where a recipe needs branching, a per-step model, or a declared human gate, the chain is the only tier that says so.
 
 The scripting recipes at the end are the other way round: one declaration under `.contenox/agents/`, fired by [`contenox run`](/docs/reference/contenox-cli/#contenox-run) from a Makefile, a git hook or a CI step, with the report on stdout and an exit code to branch on.
 

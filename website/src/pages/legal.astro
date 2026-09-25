@@ -11,8 +11,10 @@ const { Content } = await render(entry);
   description={entry.data.description}
   alternates={{ en: '/legal', de: '/de/legal' }}
 >
-  <article class="prose prose-compact prose-neutral dark:prose-invert mx-auto max-w-3xl px-5 py-10">
-    <p class="text-xs font-semibold tracking-widest text-neutral-500 uppercase">Legal</p>
-    <Content />
-  </article>
+  <div class="mx-auto w-full flex-1 max-w-7xl px-5 py-10">
+    <article class="prose prose-compact prose-neutral dark:prose-invert max-w-4xl prose-code:before:content-none prose-code:after:content-none">
+      <p class="text-xs font-semibold tracking-widest text-neutral-500 uppercase">Legal</p>
+      <Content />
+    </article>
+  </div>
 </Base>

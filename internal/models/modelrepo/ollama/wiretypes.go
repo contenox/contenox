@@ -23,6 +23,7 @@ const (
 	CapabilityVision     = Capability("vision")
 	CapabilityEmbedding  = Capability("embedding")
 	CapabilityThinking   = Capability("thinking")
+	CapabilityAudio      = Capability("audio")
 )
 
 // ImageData is the raw binary content of an image. encoding/json renders it as
@@ -200,8 +201,10 @@ type Message struct {
 	Content string `json:"content"`
 	// Thinking is the text the model emitted inside thinking tags when
 	// ChatRequest.Think is set.
-	Thinking   string      `json:"thinking,omitempty"`
-	Images     []ImageData `json:"images,omitempty"`
+	Thinking string      `json:"thinking,omitempty"`
+	Images   []ImageData `json:"images,omitempty"`
+	// Audios carries raw WAV bytes beside Content.
+	Audios     []ImageData `json:"audios,omitempty"`
 	ToolCalls  []ToolCall  `json:"tool_calls,omitempty"`
 	ToolName   string      `json:"tool_name,omitempty"`
 	ToolCallID string      `json:"tool_call_id,omitempty"`
@@ -393,6 +396,11 @@ type ChatRequest struct {
 	DebugRenderOnly bool           `json:"_debug_render_only,omitempty"`
 	Logprobs        bool           `json:"logprobs,omitempty"`
 	TopLogprobs     int            `json:"top_logprobs,omitempty"`
+	// Session names the conversation this turn belongs to, on the `session`
+	// extension. It is sent only to an endpoint that declared it: upstream
+	// Ollama has never seen the field, and a body it cannot parse is a turn it
+	// refuses.
+	Session string `json:"contenox_session,omitempty"`
 }
 
 // Metrics are the timing and token counters every completion response carries

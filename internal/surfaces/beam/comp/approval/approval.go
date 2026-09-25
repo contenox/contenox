@@ -126,7 +126,7 @@ type Card struct {
 // New builds a pending card from the bridge event, decoding RawInput once so
 // a resize re-lays-out the card without re-parsing the request.
 func New(ev enginebridge.PermissionRequested) *Card {
-	c := &Card{ev: ev, state: StatePending}
+	c := &Card{ev: ev, state: StatePending, detached: ev.Meta.Detached}
 	if len(ev.RawInput) > 0 {
 		var m map[string]any
 		if err := json.Unmarshal(ev.RawInput, &m); err == nil && m != nil {
@@ -249,6 +249,8 @@ func (c *Card) Ask(width int, ascii bool) []frame.Line {
 			frame.S(frame.StyleMuted, "  "),
 			frame.S(frame.StyleNone, summarizeValue(c.rawArgs, width-2, ascii)),
 		))
+	case c.ev.Meta.ArgsSummary != "":
+		add(frame.Styled(frame.StyleNone, "  "+sanitize.Line(c.ev.Meta.ArgsSummary)))
 	}
 
 	if p := policyText(c.ev.Meta, ascii); p != "" {
@@ -316,7 +318,7 @@ func (c *Card) Record(width int, ascii bool) frame.Line {
 // there is no honest one-word answer and the line simply omits it.
 func (c *Card) target() string {
 	if len(c.args) == 0 {
-		return ""
+		return sanitize.Line(c.ev.Meta.ArgsSummary)
 	}
 	return sanitize.Line(dialect.SummarizeToolCallArgs(c.ev.Meta.ToolName, c.args))
 }

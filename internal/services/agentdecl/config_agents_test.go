@@ -1,6 +1,7 @@
 package agentdecl
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,7 +20,7 @@ func TestForReturnsRootConfigForAnAgentWithoutASection(t *testing.T) {
 [agents.reviewer.chain]
 token_limit = 4096
 `)
-	cfg, err := Load(dir)
+	cfg, err := Load(context.Background(), rootOf(t, dir))
 	require.NoError(t, err)
 
 	other, err := cfg.For("triage")
@@ -33,7 +34,7 @@ func TestForAppliesOverlayAndInheritsOmittedKeys(t *testing.T) {
 [agents.reviewer.chain]
 token_limit = 4096
 `)
-	cfg, err := Load(dir)
+	cfg, err := Load(context.Background(), rootOf(t, dir))
 	require.NoError(t, err)
 	require.NotEqual(t, int64(4096), cfg.Chain.TokenLimit, "the root value must differ or the test proves nothing")
 
@@ -62,7 +63,7 @@ retry_on_failure = 0
 [agents.reviewer.routing]
 pin_model = false
 `)
-	cfg, err := Load(dir)
+	cfg, err := Load(context.Background(), rootOf(t, dir))
 	require.NoError(t, err)
 	require.Equal(t, 3, cfg.Chain.RetryOnFailure)
 	require.True(t, cfg.Routing.PinModel)
@@ -79,7 +80,7 @@ func TestForMergesToolsPoliciesPerKnob(t *testing.T) {
 [agents.reviewer.tools_policies.local_shell]
 _allowed_commands = "git,go"
 `)
-	cfg, err := Load(dir)
+	cfg, err := Load(context.Background(), rootOf(t, dir))
 	require.NoError(t, err)
 
 	got, err := cfg.For("reviewer")
@@ -102,7 +103,7 @@ _allowed_commands = "git"
 tools = "tavily"
 tool = "search"
 `)
-	cfg, err := Load(dir)
+	cfg, err := Load(context.Background(), rootOf(t, dir))
 	require.NoError(t, err)
 	rootShell := cfg.ToolsPolicies["local_shell"]["_allowed_commands"]
 	rootAllow := len(cfg.Policy.AlwaysAllow)
@@ -132,7 +133,7 @@ tool = "search"
 tools = "local_shell"
 tool = "local_shell"
 `)
-	cfg, err := Load(dir)
+	cfg, err := Load(context.Background(), rootOf(t, dir))
 	require.NoError(t, err)
 	rootDenies := len(cfg.Policy.AlwaysDeny)
 	require.NotZero(t, rootDenies, "the shipped credential deny must exist")
@@ -155,7 +156,7 @@ local_fs_read = "allow"
 local_fs_write = "allow"
 local_shell = "allow"
 `)
-	cfg, err := Load(dir)
+	cfg, err := Load(context.Background(), rootOf(t, dir))
 	require.NoError(t, err)
 
 	got, err := cfg.For("reviewer")
@@ -169,9 +170,9 @@ func TestForRejectsAnOverlayThatCannotRun(t *testing.T) {
 	dir := t.TempDir()
 	writeConfig(t, dir, `
 [agents.reviewer.chain]
-token_limit = 0
+token_limit = -1
 `)
-	cfg, err := Load(dir)
+	cfg, err := Load(context.Background(), rootOf(t, dir))
 	require.NoError(t, err)
 
 	_, err = cfg.For("reviewer")
@@ -194,7 +195,7 @@ token_limit = 2048
 [agents.reviewer.chain]
 token_limit = 8192
 `)
-	cfg, err := Load(home, workspace)
+	cfg, err := Load(context.Background(), rootOf(t, home), rootOf(t, workspace))
 	require.NoError(t, err)
 
 	reviewer, err := cfg.For("reviewer")
@@ -216,7 +217,7 @@ token_limit = 4096
 [agents.triage.chain]
 token_limit = 2048
 `)
-	cfg, err := Load(dir)
+	cfg, err := Load(context.Background(), rootOf(t, dir))
 	require.NoError(t, err)
 
 	require.Equal(t, []string{"reviewr"}, cfg.UnknownAgents(map[string]bool{"triage": true, "reviewer": true}))

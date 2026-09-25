@@ -17,6 +17,9 @@ import (
 )
 
 type Config struct {
+	// WrapModels decorates the shared model interface before any harness consumer receives it.
+	WrapModels func(llmrepo.ModelRepo, *runtimestate.State) (llmrepo.ModelRepo, error)
+
 	DefaultModel       string
 	DefaultProvider    string
 	AltDefaultModel    string

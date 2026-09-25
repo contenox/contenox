@@ -596,7 +596,6 @@ fn the_shipped_envelopes_survive_an_operator_config_that_declares_none() {
         "strict",
         "acpx",
         "oracle",
-        "serve",
     ] {
         let path = render_path(&cx, name);
         assert!(
@@ -1266,7 +1265,6 @@ fn the_credential_quarantine_leads_every_posture_that_can_touch_files() {
         "default",
         "strict",
         "acpx",
-        "serve",
     ] {
         let policy = rendered(&cx, posture);
         let rules = policy["rules"].as_array().expect("rules");

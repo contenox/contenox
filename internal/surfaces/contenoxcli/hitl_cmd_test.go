@@ -1,6 +1,7 @@
 package contenoxcli
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -74,7 +75,7 @@ func TestUnit_WriteTrustedBinaries_RefusesAnInvalidResult(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, original, 0o644))
 
 	bad := &hitlservice.TrustedBinaries{Hashes: map[string]string{"not/absolute": strings.Repeat("a", 64)}}
-	err := writeTrustedBinaries(path, original, bad)
+	err := writeTrustedBinaries(context.Background(), path, original, bad)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "refusing to write")
 

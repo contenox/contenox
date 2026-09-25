@@ -18,6 +18,10 @@ problems you can point at in what you actually read.
 Drop a file in, and the next run picks it up. There is no build step, and
 nothing to compile.
 
+A file you edit is yours: no later release replaces it. A file you leave as it
+was shipped is refreshed when a release changes it, so prompt fixes arrive
+without your having to track them.
+
 ## Frontmatter
 
 | Field | Meaning |

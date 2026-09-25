@@ -15,8 +15,8 @@ Install Ollama from [ollama.com](https://ollama.com), pull a model, then registe
 ollama pull qwen3:8b
 
 contenox backend add ollama --type ollama
-contenox config set default-model qwen3:8b
-contenox config set default-provider ollama
+contenox config set inference.model qwen3:8b
+contenox config set inference.provider ollama
 ```
 
 ## Ollama Cloud
@@ -28,8 +28,8 @@ export OLLAMA_API_KEY=your-key
 
 contenox backend add ollama-cloud --type ollama --url https://ollama.com/api --api-key-env OLLAMA_API_KEY
 contenox model list
-contenox config set default-model <name-from-list>
-contenox config set default-provider ollama
+contenox config set inference.model <name-from-list>
+contenox config set inference.provider ollama
 ```
 
 ## See also

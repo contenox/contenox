@@ -1,10 +1,6 @@
 package contenoxcli
 
 import (
-	"fmt"
-	"io"
-	"slices"
-
 	"github.com/contenox/contenox/internal/kernel/taskengine"
 	"github.com/contenox/contenox/internal/services/echotool"
 	"github.com/contenox/contenox/internal/services/fleetservice"
@@ -22,12 +18,9 @@ import (
 )
 
 // acpToolset is the CLI's full localToolset plus the ACP fs/shell wiring that
-// routes through the live Transport instead of a fixed cwd, plus this profile's
-// mission tools. Same tool names, so the seeded HITL policies gate it the same
-// way. The host profile mounts neither fs nor shell: a host is an
-// organization's shape, and every capability it has is an MCP server.
+// routes through the live Transport instead of a fixed cwd, plus the mission
+// tools. Same tool names, so the seeded HITL policies gate it the same way.
 func acpToolset(
-	profile acpProfile,
 	db libdb.DBManager,
 	tracker libtracker.ActivityTracker,
 	workspaceID string,
@@ -55,27 +48,30 @@ func acpToolset(
 			missiontools.WithSpawner(fleetSpawner{fleet: fleetFn}, missions, subagentDefaults(db)),
 		),
 	}
-	if profile.host {
-		return tools
-	}
-	tools[localtools.LocalFSToolsName] = acpsvc.ClientBackedToolset(localtools.NewLocalFSToolsWith(
-		"",
-		db,
-		acpsvc.NewACPFileIO(transportFn),
-		localtools.LocalFSToolsName,
-		cwdResolver,
+	// local_fs is one namespace with two reaches: the content half proxies to
+	// the attached client, the browse half runs here. The wrapper decides per
+	// tool which of the two a call needs, so a clientless session still gets
+	// list_dir and grep and loses only the reads and writes it cannot serve.
+	tools[localtools.LocalFSToolsName] = acpsvc.ClientBackedToolset(localtools.NewLocalFSToolsFromHalves(
+		localtools.NewLocalFSToolsWith(
+			"",
+			db,
+			acpsvc.NewACPFileIO(transportFn),
+			localtools.LocalFSToolsName,
+			cwdResolver,
+		),
+		localtools.NewLocalFSBrowseTools("", cwdResolver),
 	), transportFn)
 	tools[localtools.LocalExecToolsName] = acpsvc.ClientBackedToolset(localtools.NewLocalExecToolsWith(
 		acpsvc.NewACPCommandRunnerWithShell(transportFn, localtools.DetectPlatformShell()),
 	), transportFn)
-	// The native-* toolsets, carried by every profile except the host above.
+	// The native-* toolsets, carried by every profile.
 	// "native-" is a namespace, not a gate: a declaration's "*" admits them
 	// like anything else, "!native-git" removes one, and naming one grants it. Each contains its own reach through internal/services/vfs the
 	// way local_fs does; the ones that own a cwd take the session's, resolved per
 	// call. None is client-backed: they run on the machine contenox runs on, not
 	// through the editor's transport.
 	tools[localtools.GitToolsName] = localtools.NewGitToolsWith("", localtools.GitToolsName, cwdResolver)
-	tools[localtools.LocalFSBrowseToolsName] = localtools.NewLocalFSBrowseTools("", cwdResolver)
 	tools[localtools.WebToolsName] = localtools.NewWebCaller(tracker)
 	tools[jqtool.ToolsProviderName] = jqtool.NewToolsWith("", jqtool.ToolsProviderName, cwdResolver)
 	tools[echotool.ToolsProviderName] = echotool.NewTools()
@@ -94,37 +90,4 @@ func acpToolset(
 		tools[sshtool.ToolsProviderName] = ssh
 	}
 	return tools
-}
-
-// hostUnservedToolsets are the toolsets a host will never mount, whatever a declaration asks for.
-var hostUnservedToolsets = []string{localtools.LocalFSToolsName, localtools.LocalExecToolsName}
-
-const hostUnservedToolsetRefusal = "this host serves no filesystem and no terminal — every capability is an MCP server; declare an MCP tool for it (contenox mcp add), or run this agent from `contenox beam` or an ACP editor"
-
-// unservedToolsets names the toolsets chain asks for that mounted does not carry.
-func unservedToolsets(chain *taskengine.TaskChainDefinition, mounted map[string]taskengine.ToolsRepo) []string {
-	if chain == nil {
-		return nil
-	}
-	seen := map[string]bool{}
-	var out []string
-	for _, task := range chain.Tasks {
-		if task.ExecuteConfig == nil {
-			continue
-		}
-		for _, name := range task.ExecuteConfig.Tools {
-			if seen[name] || mounted[name] != nil || !slices.Contains(hostUnservedToolsets, name) {
-				continue
-			}
-			seen[name] = true
-			out = append(out, name)
-		}
-	}
-	return out
-}
-
-func printUnservedToolsets(w io.Writer, names []string) {
-	for _, name := range names {
-		fmt.Fprintf(w, "contenox serve: %q is declared but not served: %s\n", name, hostUnservedToolsetRefusal)
-	}
 }

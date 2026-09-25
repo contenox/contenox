@@ -45,9 +45,9 @@ when there is none; a path opens that directory instead.
 
 ` + askWaitLine + ` An ask is a durable row before the card
 appears and the turn waits on that row, so answering the card continues the turn
-right here — and the same ask stays answerable from another terminal or a phone,
+right here — and the same ask stays answerable from another terminal,
 or expires on its own if you walk away. Quit with an ask still open and the turn
-checkpoints beside it, so answering it later, from anywhere, picks the run up
+checkpoints beside it, so answering it after reopening the session picks the run up
 where it stopped. A card that outlives its turn stays answerable and says so:
 its key line reads 'answering resumes the run' instead of offering an Esc that
 would have no turn left to cancel.
@@ -88,6 +88,7 @@ func init() {
 	beamCmd.Flags().Bool("new", false, "Start a fresh session instead of reopening the newest one")
 	beamCmd.Flags().Bool("light", false, "Render for a light terminal background (overrides detection)")
 	beamCmd.Flags().Bool("plain", false, "Drop all colour and unicode: ASCII glyphs, no styling")
+	registerOracleFlags(beamCmd)
 	registerHITLPolicyFlag(beamCmd)
 	rootCmd.AddCommand(beamCmd)
 }
@@ -169,7 +170,7 @@ func runBeamSurface(ctx context.Context, cmd *cobra.Command, s beamSurface) erro
 	}
 	if !s.engineReady {
 		fmt.Fprintln(errW, "beam cannot start until LLM setup is ready.")
-		fmt.Fprintln(errW, "\nrun: contenox setup")
+		fmt.Fprintln(errW, "\nrun: contenox auto (local model) or contenox setup (existing server or hosted API)")
 		return ErrPreflightBlocked
 	}
 

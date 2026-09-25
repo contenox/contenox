@@ -288,7 +288,7 @@ func TestUnit_RefreshExistingHITLPolicies(t *testing.T) {
 		dir := t.TempDir()
 		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(`{"default_action":"approve","rules":[]}`), 0644))
 
-		written, err := refreshExistingHITLPolicies(dir)
+		written, err := refreshExistingHITLPolicies(context.Background(), dir)
 		require.NoError(t, err)
 		require.Equal(t, []string{filepath.Join(dir, name)}, written)
 
@@ -300,7 +300,7 @@ func TestUnit_RefreshExistingHITLPolicies(t *testing.T) {
 	t.Run("an empty dir stays empty", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		written, err := refreshExistingHITLPolicies(dir)
+		written, err := refreshExistingHITLPolicies(context.Background(), dir)
 		require.NoError(t, err)
 		require.Empty(t, written)
 		for _, p := range HITLPolicyPresets {

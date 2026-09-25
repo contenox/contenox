@@ -1,6 +1,7 @@
 package contenoxcli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/contenox/contenox/internal/services/agentdecl"
 	"github.com/contenox/contenox/internal/services/setupcheck"
+	"github.com/contenox/contenox/internal/services/vfs"
 )
 
 // RefreshPoliciesCommand rewrites the preset copies an operator already has and
@@ -155,17 +157,20 @@ func isRenderedPolicyPath(path string) bool {
 	return filepath.Base(filepath.Dir(path)) == agentdecl.GeneratedDirName
 }
 
-func readPolicyFile(dirs []string, name string) (path string, raw []byte, ok bool) {
+func readPolicyFile(ctx context.Context, dirs []string, name string) (path string, raw []byte, ok bool) {
 	for _, dir := range dirs {
 		if dir == "" {
 			continue
 		}
-		p := filepath.Join(dir, name)
-		data, err := os.ReadFile(p)
+		view, vErr := vfs.OpenPrivilegedView(dir)
+		if vErr != nil {
+			continue
+		}
+		data, err := view.ReadFile(ctx, name)
 		if err != nil {
 			continue
 		}
-		return p, data, true
+		return filepath.Join(dir, name), data, true
 	}
 	return "", nil, false
 }
@@ -181,7 +186,7 @@ func stalePolicyPresetNamed(name string, dirs []string, gated map[string]bool) (
 	if shipped == "" {
 		return stalePolicyPreset{}, false
 	}
-	path, raw, ok := readPolicyFile(dirs, name)
+	path, raw, ok := readPolicyFile(context.Background(), dirs, name)
 	if !ok {
 		return stalePolicyPreset{}, false
 	}
@@ -250,9 +255,9 @@ func stalePolicyPresetIssues(dirs []string, gated map[string]bool) []setupcheck.
 // refreshPoliciesOnSearchPath rewrites the preset copies already on the search
 // path. Nothing is created: a directory that holds no preset is served by the
 // rendered envelopes behind it.
-func refreshPoliciesOnSearchPath(out io.Writer, primaryDir string) error {
+func refreshPoliciesOnSearchPath(ctx context.Context, out io.Writer, primaryDir string) error {
 	for _, dir := range operatorPolicyDirs(primaryDir) {
-		written, refreshErr := refreshExistingHITLPolicies(dir)
+		written, refreshErr := refreshExistingHITLPolicies(ctx, dir)
 		for _, path := range written {
 			fmt.Fprintf(out, "  Refreshed %s\n", path)
 		}
@@ -264,7 +269,7 @@ func refreshPoliciesOnSearchPath(out io.Writer, primaryDir string) error {
 }
 
 func runRefreshPolicies(out io.Writer, primaryDir string, gated map[string]bool) error {
-	if err := refreshPoliciesOnSearchPath(out, primaryDir); err != nil {
+	if err := refreshPoliciesOnSearchPath(context.Background(), out, primaryDir); err != nil {
 		return err
 	}
 	if stale := stalePolicyPresets(operatorPolicyDirs(primaryDir), gated); len(stale) > 0 {

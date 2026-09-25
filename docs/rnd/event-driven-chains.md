@@ -88,8 +88,6 @@ The buzz is one-way, and that is the design: contenox accepts no inbound events,
 contenox approvals respond <askId> --answer "use the staging database"
 ```
 
-or, on a [machine paired with a relay](/docs/guide/pairing/), from the app.
-
 ## Story 2 — the shift report
 
 A mission that ends while you are elsewhere reaches one of four terminal statuses — `landed`, `derailed`, `stuck`, `abandoned` — and appends a `missionservice.events.status_changed` event whose `data` carries `missionId`, `intent`, `oldStatus`, `newStatus`, and the `reason`. A second trigger turns that into a file in the repo: the shift report you read the next morning.
@@ -168,4 +166,3 @@ The same honest edge closes all three stories. Triggers are **beta** — behind 
 - [`contenox events` reference](/docs/reference/contenox-cli/#contenox-events) — every flag
 - [HITL policies](/docs/guide/hitl/) — the envelopes fired chains run under
 - [Missions](/docs/guide/missions/) — the tier that produces every event above
-- [Pairing a machine with a relay](/docs/guide/pairing/) — answering from the app instead of the desk

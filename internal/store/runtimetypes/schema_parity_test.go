@@ -156,12 +156,6 @@ func TestUnit_Schema_Parity_CatchesEveryKindOfDrift(t *testing.T) {
 			to:      "    name VARCHAR(512) NOT NULL,\n    purpose_type",
 			expect:  "name",
 		},
-		"dropped_table_unique": {
-			dialect: "postgres",
-			from:    "    UNIQUE(type, base_url)",
-			to:      "    CHECK(type <> '')",
-			expect:  "llm_backends",
-		},
 		"dropped_references": {
 			dialect: "sqlite",
 			from:    "idx_id VARCHAR(255) NOT NULL REFERENCES message_indices(id) ON DELETE CASCADE",
@@ -484,8 +478,13 @@ func requireParserSane(t *testing.T, shape *schemaShape, file string) {
 	require.True(t, backends.Columns["id"].PrimaryKey)
 	require.True(t, backends.Columns["name"].NotNull)
 	require.True(t, backends.Columns["name"].Unique)
+	// An upstream is addressed by entry, not by address: one provider wired twice
+	// is two rows, each with its own name and its own credential.
 	require.Contains(t, backends.Columns, "base_url")
-	require.Contains(t, backends.Constraints, "UNIQUE(TYPE,BASE_URL)", "%s: table constraints must be parsed, not skipped", file)
+	require.Empty(t, backends.Constraints, "%s: llm_backends declares no table-level constraint", file)
+
+	groups := requireTable(t, shape, file, "llm_affinity_group")
+	require.True(t, groups.Columns["name"].Unique, "%s: a column UNIQUE must be parsed", file)
 
 	indices := requireTable(t, shape, file, "message_indices")
 	require.Contains(t, indices.Columns, "agent_id", "%s: columns introduced by ALTER TABLE must be picked up", file)

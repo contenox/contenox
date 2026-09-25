@@ -155,11 +155,17 @@ fn initialize_advertises_the_pickers_before_any_session_exists() {
     let cx = editor("acp-pickers", &Script::new().turn("hello"));
     let (mut acp, init) = handshake(&cx, &["acp"]);
 
-    assert_eq!(picker(&init, "model")["type"], json!("select"));
-    assert_eq!(picker(&init, "think")["type"], json!("select"));
-    assert_eq!(picker(&init, "token-limit")["type"], json!("select"));
+    assert_eq!(picker(&init, "inference.model")["type"], json!("select"));
+    assert_eq!(
+        picker(&init, "inference.reasoning.effort")["type"],
+        json!("select")
+    );
+    assert_eq!(
+        picker(&init, "inference.context.window_tokens")["type"],
+        json!("select")
+    );
 
-    let envelopes: Vec<&str> = picker(&init, "hitl-policy")["options"]
+    let envelopes: Vec<&str> = picker(&init, "execution.permissions.policy")["options"]
         .as_array()
         .expect("the hitl-policy picker lists its options")
         .iter()
@@ -442,7 +448,7 @@ fn acp_runs_under_the_default_envelope() {
     let (mut acp, init) = handshake(&cx, &["acp"]);
 
     assert_eq!(
-        picker(&init, "hitl-policy")["options"][0]["description"],
+        picker(&init, "execution.permissions.policy")["options"][0]["description"],
         json!("Use hitl-policy-default.json")
     );
 
@@ -459,7 +465,7 @@ fn acpx_runs_under_the_hardened_acpx_envelope() {
     let (mut acp, init) = handshake(&cx, &["acpx"]);
 
     assert_eq!(
-        picker(&init, "hitl-policy")["options"][0]["description"],
+        picker(&init, "execution.permissions.policy")["options"][0]["description"],
         json!("Use hitl-policy-acpx.json")
     );
 
@@ -498,7 +504,7 @@ fn hitl_policy_names_another_envelope_for_the_editor_profile() {
     let (mut acp, init) = handshake(&cx, &["acp", "--hitl-policy", "acpx"]);
 
     assert_eq!(
-        picker(&init, "hitl-policy")["options"][0]["description"],
+        picker(&init, "execution.permissions.policy")["options"][0]["description"],
         json!("Use hitl-policy-acpx.json"),
         "--hitl-policy replaces the profile's own envelope"
     );
@@ -561,21 +567,23 @@ fn the_editor_profile_offers_the_whole_command_menu() {
             "capability",
             "clear",
             "compact",
+            "context",
             "doctor",
             "help",
-            "link",
             "max-tokens",
             "mission",
             "model",
             "new",
-            "pair",
+            "output",
+            "permissions",
             "plan",
             "policy",
             "provider",
+            "reasoning",
             "rename",
             "sessions",
+            "settings",
             "think",
-            "unpair",
         ]
     );
 }
@@ -896,7 +904,7 @@ fn autocomplete_with_no_model_answers_on_the_protocol_instead_of_refusing_to_sta
         reply["error"]
             .as_str()
             .unwrap_or_default()
-            .contains("contenox config set default-autocomplete-model"),
+            .contains("contenox config set inference.autocomplete.model"),
         "the error names the command that fixes it: {reply:#}"
     );
 }

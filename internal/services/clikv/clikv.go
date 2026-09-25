@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/contenox/contenox/internal/services/settings"
 )
 
 // Prefix namespaces every CLI setting inside the KV table.
@@ -31,7 +33,7 @@ var workspaceScopedKeys = map[string]bool{
 
 // IsWorkspaceScoped reports whether key's row lives under a workspace rather
 // than under the global row.
-func IsWorkspaceScoped(key string) bool { return workspaceScopedKeys[key] }
+func IsWorkspaceScoped(key string) bool { return workspaceScopedKeys[settings.StorageKey(key)] }
 
 // WorkspaceScopedKeys returns the registered workspace-scoped keys, sorted.
 func WorkspaceScopedKeys() []string {
@@ -44,6 +46,7 @@ func WorkspaceScopedKeys() []string {
 }
 
 func scopeFor(key, workspaceID string) string {
+	key = settings.StorageKey(key)
 	if workspaceScopedKeys[key] {
 		return strings.TrimSpace(workspaceID)
 	}
@@ -74,6 +77,7 @@ type Writer interface {
 // workspace-scoped key this is only ReadConfig's fallback leg, never the
 // whole answer — read those through ReadConfig.
 func Read(ctx context.Context, store KVReader, key string) string {
+	key = settings.StorageKey(key)
 	var val string
 	if err := store.GetKV(ctx, Prefix+key, &val); err != nil {
 		return ""
@@ -85,6 +89,7 @@ func Read(ctx context.Context, store KVReader, key string) string {
 // came from ("workspace" or "global"), falling back to the global row when the
 // workspace row is unset.
 func ReadConfig(ctx context.Context, store Reader, workspaceID, key string) (string, string) {
+	key = settings.StorageKey(key)
 	if ws := scopeFor(key, workspaceID); ws != "" {
 		var val string
 		if err := store.GetWorkspaceKV(ctx, ws, Prefix+key, &val); err == nil {
@@ -103,9 +108,7 @@ func ReadHITLPolicy(ctx context.Context, store Reader, workspaceID string) strin
 	return val
 }
 
-// SetHITLPolicy writes the active HITL policy file name for workspaceID
-// through WriteConfig, so ACP's /policy lands in the row `contenox config set
-// hitl-policy-name` writes and the evaluator reads.
+// SetHITLPolicy writes the saved permission policy for workspaceID through WriteConfig.
 func SetHITLPolicy(ctx context.Context, store Writer, workspaceID, name string) error {
 	return WriteConfig(ctx, store, workspaceID, KeyHITLPolicyName, name)
 }
@@ -114,6 +117,7 @@ func SetHITLPolicy(ctx context.Context, store Writer, workspaceID, name string) 
 // than writing a row no workspace-aware reader would look at: those have one
 // door, WriteConfig, which names the workspace ("" for global) explicitly.
 func SetString(ctx context.Context, store Writer, key, value string) error {
+	key = settings.StorageKey(key)
 	if workspaceScopedKeys[key] {
 		return fmt.Errorf("clikv: %q is workspace-scoped; write it through WriteConfig with an explicit workspace", key)
 	}
@@ -127,6 +131,7 @@ func SetString(ctx context.Context, store Writer, key, value string) error {
 // WriteConfig writes key's value into the row scopeFor names for a caller in
 // workspaceID — the row ReadConfig reads back.
 func WriteConfig(ctx context.Context, store Writer, workspaceID, key, value string) error {
+	key = settings.StorageKey(key)
 	data, err := encode(value)
 	if err != nil {
 		return err

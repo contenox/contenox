@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/contenox/contenox/internal/services/agentdecl"
+	"github.com/contenox/contenox/internal/services/vfs"
 	"github.com/contenox/contenox/internal/surfaces/acpsvc"
 	"github.com/contenox/contenox/libtracker"
 	"github.com/stretchr/testify/require"
@@ -16,13 +17,16 @@ import (
 // declarations and only the fleet's discovery pass compiles them, both after the
 // chain load. Without this seam no surface could ever boot on a new machine.
 func TestUnit_EnsureProfileChain_RecoversAnEmptyContenoxDir(t *testing.T) {
-	for _, profile := range []acpProfile{acpProfileACP, acpProfileACPX, acpProfileServe, acpProfileBeam} {
+	for _, profile := range []acpProfile{acpProfileACP, acpProfileACPX, acpProfileBeam} {
 		t.Run(profile.name, func(t *testing.T) {
 			home := t.TempDir()
 			t.Setenv("HOME", home)
 			t.Setenv(profile.chainEnv, "")
 			contenoxDir, err := globalContenoxDir()
 			require.NoError(t, err)
+			previous := vfs.ControlPlaneDenied()
+			require.NoError(t, vfs.SetControlPlaneDenied(contenoxDir))
+			t.Cleanup(func() { require.NoError(t, vfs.SetControlPlaneDenied(previous...)) })
 			require.False(t, acpsvc.ChainFileResolves(contenoxDir, profile.chainFile),
 				"a temp home must start without %s", profile.chainFile)
 			_, err = acpsvc.LoadChainRegistryFrom(profile.chainFile, profile.chainEnv)

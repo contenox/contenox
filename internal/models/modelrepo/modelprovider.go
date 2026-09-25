@@ -38,4 +38,10 @@ type CapabilityConfig struct {
 	CanVision bool
 	// CanAudio marks models that accept audio input.
 	CanAudio bool
+	// AudioExtension marks an endpoint that declared the `audios` extension.
+	AudioExtension bool
+	// SessionExtension marks an endpoint that declared the `session` extension,
+	// so a conversation may be named on the request and the endpoint will keep
+	// its turns on one backend.
+	SessionExtension bool
 }

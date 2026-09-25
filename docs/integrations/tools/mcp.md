@@ -6,7 +6,7 @@ description: Connect any MCP server — local, SSE, or HTTP — with persistent,
 
 Contenox is a full native MCP client. Every session can connect to any MCP-compatible server — local child processes, remote SSE streams, or HTTP endpoints.
 
-> Servers you register here are available to every agent. An agent can also **bring its own**: `mcpServers:` in an [agent declaration](/docs/guide/agents/#tools-an-agent-brings-with-it) registers a server scoped to that one agent and retires it when the declaration is deleted. Both show in `contenox mcp list`, distinguished by an `OWNER` column.
+> Servers you register here are available to every agent. An agent can also **bring its own**: `mcpServers:` in an [agent declaration](/docs/guide/declarations/#tools-an-agent-brings-with-it) registers a server scoped to that one agent and retires it when the declaration is deleted. Both show in `contenox mcp list`, distinguished by an `OWNER` column.
 
 ## What is MCP?
 

@@ -11,6 +11,7 @@ import (
 // canonicalSuggestedModels is the single source of truth for the model names
 // the CLI suggests in help text, wizard defaults, and docs examples.
 var canonicalSuggestedModels = map[string]string{
+	"modeld":        "qwen2.5-coder-7b",
 	"ollama":        "qwen3:8b",
 	"ollama-cloud":  "gpt-oss:20b",
 	"openai":        "gpt-5-mini",

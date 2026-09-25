@@ -291,7 +291,7 @@ fn omitting_the_tools_line_reaches_a_toolset_the_declaration_never_named() {
     let said = transcript_of_one_run(&cx, "reacher", "look at the tree");
     assert!(
         said.contains("inherit-marker.txt"),
-        "native-fs-browse.list_dir must have run and returned the listing:\n{said}"
+        "local_fs.list_dir must have run and returned the listing:\n{said}"
     );
     assert!(
         !said.contains("tool list_dir not found"),
@@ -299,8 +299,6 @@ fn omitting_the_tools_line_reaches_a_toolset_the_declaration_never_named() {
     );
 }
 
-/// A bare name grants that toolset and stops there. The same run, the same
-/// tool, an agent that named `Read` instead of nothing: the call never lands.
 #[test]
 fn naming_one_toolset_grants_that_toolset_and_nothing_else() {
     let cx = instance("decl-narrow-reach");
@@ -310,7 +308,7 @@ fn naming_one_toolset_grants_that_toolset_and_nothing_else() {
          You reach only files.\n",
     )
     .expect("write the declaration");
-    cx.scripted(&tries(ToolCall::new("list_dir").arg("path", ".")))
+    cx.scripted(&tries(ToolCall::new("git_status")))
         .expect("scripted-test backend");
 
     assert_eq!(
@@ -321,7 +319,7 @@ fn naming_one_toolset_grants_that_toolset_and_nothing_else() {
 
     let said = transcript_of_one_run(&cx, "narrow", "look at the tree");
     assert!(
-        said.contains("tool list_dir not found"),
+        said.contains("tool git_status not found"),
         "a toolset the declaration did not name must not be reachable:\n{said}"
     );
 }
@@ -411,8 +409,8 @@ fn disallowed_tools_hides_one_tool_out_of_the_toolset_that_tools_admitted() {
     cx.write_file(
         ".contenox/agents/hidden.md",
         "---\nname: hidden\ndescription: Holds the browse toolset with one tool hidden\n\
-         tools: [\"native-fs-browse\"]\n\
-         disallowedTools: [\"native-fs-browse.list_dir\"]\n---\nYou browse.\n",
+         tools: [\"Read\"]\n\
+         disallowedTools: [\"local_fs.list_dir\"]\n---\nYou browse.\n",
     )
     .expect("write the declaration");
     cx.write_file("hidden-marker.txt", "stat me\n")
@@ -442,18 +440,18 @@ fn disallowed_tools_hides_one_tool_out_of_the_toolset_that_tools_admitted() {
 
     let chain = emitted_chain(&cx, "hidden");
     assert!(
-        granted(&chain, "hidden-agent").contains(&"native-fs-browse".to_string()),
+        granted(&chain, "hidden-agent").contains(&"local_fs".to_string()),
         "the toolset stays admitted"
     );
     assert_eq!(
         hidden(&chain, "hidden-agent"),
-        vec!["native-fs-browse.list_dir"],
+        vec!["local_fs.list_dir"],
         "and the single tool is hidden out of it"
     );
 
     let said = transcript_of_one_run(&cx, "hidden", "browse the tree");
     assert!(
-        said.contains("tool native-fs-browse.list_dir is hidden"),
+        said.contains("tool local_fs.list_dir is hidden"),
         "the hidden tool is refused by name:\n{said}"
     );
     assert!(
@@ -557,7 +555,7 @@ fn a_declaration_where_no_tool_resolves_is_refused_and_names_every_unresolved_on
             `tools: Read, Glob, Grep` — but the shipped [tools] table in \
             internal/services/agentdecl/agents.toml maps only Read/Write/Edit/Bash/PowerShell \
             (plus three foreign spellings). Glob, Grep and WebFetch are dropped and reported, \
-            though native-fs-browse.find_files, native-fs-browse.grep and native-web.web_get are \
+            though local_fs.find_files, local_fs.grep and native-web.web_get are \
             all mounted in-process. Seam: the [tools] table in agents.toml."]
 fn the_tool_names_the_guide_promises_out_of_the_box_all_resolve() {
     let cx = instance("decl-out-of-the-box");

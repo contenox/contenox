@@ -115,9 +115,10 @@ func TestUnit_AgentOptionListsOnlyEnabledAgents(t *testing.T) {
 	require.Equal(t, "", agentNativeValue,
 		"the native chain's wire value is the empty string, the spelling contenox.agent already uses and the client sends")
 
-	require.True(t, hasOption(tr.sessionConfigOptions(ctx, sess), configIDAgent))
+	require.False(t, hasOption(tr.sessionConfigOptions(ctx, sess), configIDAgent),
+		"a live session must not advertise the agent option: the agent is fixed at session/new and changing it errors")
 	require.True(t, hasOption(tr.workspaceConfigOptions(ctx), configIDAgent),
-		"the picker must also ride the initialize _meta snapshot, where a client chooses before any session exists")
+		"the picker must still ride the initialize _meta snapshot, where a client chooses before any session exists")
 }
 
 // TestUnit_AgentOptionReportsTheSessionsBoundAgent pins the "see what this

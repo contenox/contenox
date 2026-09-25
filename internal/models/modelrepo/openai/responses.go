@@ -86,6 +86,9 @@ type openAIResponsesUsage struct {
 	InputTokensDetails struct {
 		CachedTokens int `json:"cached_tokens"`
 	} `json:"input_tokens_details"`
+	OutputTokensDetails struct {
+		ReasoningTokens int `json:"reasoning_tokens"`
+	} `json:"output_tokens_details"`
 	// CacheWriteTokens is billed cache writes, reported by gpt-5.6+ models only.
 	CacheWriteTokens int `json:"cache_write_tokens"`
 }
@@ -101,6 +104,7 @@ func (u *openAIResponsesUsage) neutralUsage() *modelrepo.TokenUsage {
 	return &modelrepo.TokenUsage{
 		PromptTokens:     u.InputTokens,
 		CompletionTokens: u.OutputTokens,
+		ThinkingTokens:   u.OutputTokensDetails.ReasoningTokens,
 		TotalTokens:      total,
 		CacheReadTokens:  u.InputTokensDetails.CachedTokens,
 		CacheWriteTokens: u.CacheWriteTokens,

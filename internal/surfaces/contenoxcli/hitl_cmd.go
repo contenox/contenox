@@ -2,10 +2,10 @@ package contenoxcli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -14,6 +14,7 @@ import (
 	"github.com/contenox/contenox/internal/services/agentdecl"
 	"github.com/contenox/contenox/internal/services/hitlservice"
 	"github.com/contenox/contenox/internal/services/setupcheck"
+	"github.com/contenox/contenox/internal/services/vfs"
 	"github.com/spf13/cobra"
 )
 
@@ -81,7 +82,7 @@ func runHITLTrust(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to resolve .contenox dir: %w", err)
 	}
-	path, data, err := resolveTrustPolicyFile(contenoxDir, policyFlag)
+	path, data, err := resolveTrustPolicyFile(cmd.Context(), contenoxDir, policyFlag)
 	if err != nil {
 		return err
 	}
@@ -130,26 +131,30 @@ func runHITLTrust(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if err := writeTrustedBinaries(path, data, updated); err != nil {
+	if err := writeTrustedBinaries(cmd.Context(), path, data, updated); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "updated %s (%d declared binaries)\n", path, len(updated.Hashes))
 	return nil
 }
 
-func resolveTrustPolicyFile(contenoxDir, nameOrPath string) (string, []byte, error) {
+func resolveTrustPolicyFile(ctx context.Context, contenoxDir, nameOrPath string) (string, []byte, error) {
 	nameOrPath = strings.TrimSpace(nameOrPath)
 	if nameOrPath == "" {
 		return "", nil, fmt.Errorf("--policy must name a policy file")
 	}
 	if strings.ContainsAny(nameOrPath, `/\`) || filepath.IsAbs(nameOrPath) {
-		data, err := os.ReadFile(nameOrPath)
+		view, vErr := vfs.OpenView(filepath.Dir(nameOrPath))
+		if vErr != nil {
+			return "", nil, fmt.Errorf("cannot read policy %q: %w", nameOrPath, vErr)
+		}
+		data, err := view.ReadFile(ctx, filepath.Base(nameOrPath))
 		if err != nil {
 			return "", nil, fmt.Errorf("cannot read policy %q: %w", nameOrPath, err)
 		}
 		return nameOrPath, data, nil
 	}
-	path, data, ok := readPolicyFile(policyDirs(contenoxDir), nameOrPath)
+	path, data, ok := readPolicyFile(context.Background(), policyDirs(contenoxDir), nameOrPath)
 	if !ok {
 		return "", nil, fmt.Errorf("policy %q not found on the search path (%s) — run 'contenox init' or pass an explicit path",
 			nameOrPath, strings.Join(policyDirs(contenoxDir), ", "))
@@ -277,7 +282,7 @@ const TrustBinariesRefreshCommand = "contenox hitl trust --refresh"
 func trustedBinaryDrift(dirs []string) []setupcheck.TrustedBinaryDrift {
 	var out []setupcheck.TrustedBinaryDrift
 	for _, p := range HITLPolicyPresets {
-		path, raw, ok := readPolicyFile(dirs, p.Name)
+		path, raw, ok := readPolicyFile(context.Background(), dirs, p.Name)
 		if !ok {
 			continue
 		}
@@ -323,7 +328,7 @@ func normalizeTrustPath(p string) string {
 	return p
 }
 
-func writeTrustedBinaries(path string, data []byte, tb *hitlservice.TrustedBinaries) error {
+func writeTrustedBinaries(ctx context.Context, path string, data []byte, tb *hitlservice.TrustedBinaries) error {
 	if len(tb.Dirs) == 0 {
 		tb.Dirs = nil
 	}
@@ -340,7 +345,11 @@ func writeTrustedBinaries(path string, data []byte, tb *hitlservice.TrustedBinar
 	if err := hitlservice.VetPolicy(updated); err != nil {
 		return fmt.Errorf("refusing to write %s: the result would not validate: %w", path, err)
 	}
-	if err := os.WriteFile(path, updated, 0o644); err != nil {
+	view, vErr := vfs.OpenView(filepath.Dir(path))
+	if vErr != nil {
+		return fmt.Errorf("write %s: %w", path, vErr)
+	}
+	if err := view.WriteFile(ctx, filepath.Base(path), updated); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil

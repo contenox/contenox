@@ -2,14 +2,18 @@ package agentdecl
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/contenox/contenox/internal/kernel/taskengine"
 	"io/fs"
-	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/contenox/contenox/internal/kernel/taskengine"
+	"github.com/contenox/contenox/internal/services/vfs"
 )
 
 // GeneratedDirName holds transpiled chains. Everything in it is derived and is
@@ -27,15 +31,8 @@ const NativeSourceDir = "agents"
 // ForeignSourceDirs are where other tools keep the same files, relative to a
 // workspace root.
 var ForeignSourceDirs = []string{
-	filepath.Join(".claude", "agents"),
-	filepath.Join(".agents", "agents"),
-}
-
-// SourceDir is one directory of declarations. Native directories keep their own
-// names; a foreign directory's are scoped by the product they came from.
-type SourceDir struct {
-	Path   string
-	Native bool
+	path.Join(".claude", "agents"),
+	path.Join(".agents", "agents"),
 }
 
 // SyncResult is what one pass did with one source file.
@@ -62,29 +59,29 @@ type syncRecord struct {
 
 // DiscoverSourceDirs returns the agent directories that exist, native ones
 // first so a workspace's own declarations precede those of other tools.
-func DiscoverSourceDirs(contenoxDirs []string, workspaceRoots []string) []SourceDir {
+func DiscoverSourceDirs(ctx context.Context, contenoxDirs []Root, workspaceRoots []Root) []SourceDir {
 	var found []SourceDir
 	seen := map[string]bool{}
-	add := func(dir string, native bool) {
-		if seen[dir] {
+	add := func(root Root, rel string, native bool) {
+		if root.FS == nil {
 			return
 		}
-		if info, err := os.Stat(dir); err == nil && info.IsDir() {
-			seen[dir] = true
-			found = append(found, SourceDir{Path: dir, Native: native})
+		dir, err := root.Child(filepath.ToSlash(rel))
+		if err != nil || seen[dir.Key] {
+			return
 		}
+		if info, err := dir.FS.Stat(ctx, "."); err != nil || !info.IsDir() {
+			return
+		}
+		seen[dir.Key] = true
+		found = append(found, SourceDir{Root: dir, Native: native})
 	}
-	for _, dir := range contenoxDirs {
-		if dir != "" {
-			add(filepath.Join(dir, NativeSourceDir), true)
-		}
+	for _, root := range contenoxDirs {
+		add(root, NativeSourceDir, true)
 	}
 	for _, root := range workspaceRoots {
-		if root == "" {
-			continue
-		}
 		for _, rel := range ForeignSourceDirs {
-			add(filepath.Join(root, rel), false)
+			add(root, rel, false)
 		}
 	}
 	return found
@@ -105,10 +102,13 @@ func WithSkills(skills []Skill) SyncOption {
 	return func(o *syncOptions) { o.skills = skills }
 }
 
-// Sync transpiles every declaration under sourceDirs into generatedDir and
-// retires chains whose source is gone. An unreadable or unmappable source is
-// reported and skipped rather than failing the pass.
-func Sync(sourceDirs []SourceDir, generatedDir string, cfg Config, opts ...SyncOption) ([]SyncResult, error) {
+// Sync transpiles every declaration under sourceDirs into generated and retires
+// chains whose source is gone. An unreadable or unmappable source is reported
+// and skipped rather than failing the pass.
+func Sync(ctx context.Context, sourceDirs []SourceDir, generated Root, cfg Config, opts ...SyncOption) ([]SyncResult, error) {
+	if generated.FS == nil {
+		return nil, fmt.Errorf("agentdecl: generated root %q holds no handle", generated.Key)
+	}
 	var options syncOptions
 	for _, opt := range opts {
 		opt(&options)
@@ -116,18 +116,18 @@ func Sync(sourceDirs []SourceDir, generatedDir string, cfg Config, opts ...SyncO
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	sources, err := collectSources(sourceDirs)
+	sources, err := collectSources(ctx, sourceDirs)
 	if err != nil {
 		return nil, err
 	}
 	if len(sources) == 0 {
-		return nil, retireAll(generatedDir)
+		return nil, retireAll(ctx, generated)
 	}
-	if err := os.MkdirAll(generatedDir, 0o750); err != nil {
-		return nil, fmt.Errorf("agentdecl: create %s: %w", generatedDir, err)
+	if err := generated.FS.MkdirAll(ctx, "."); err != nil {
+		return nil, fmt.Errorf("agentdecl: create %s: %w", generated.Key, err)
 	}
 
-	state := readSyncState(generatedDir)
+	state := readSyncState(ctx, generated.FS)
 	next := map[string]syncRecord{}
 	results := make([]SyncResult, 0, len(sources))
 	declared := map[string]bool{}
@@ -139,13 +139,18 @@ func Sync(sourceDirs []SourceDir, generatedDir string, cfg Config, opts ...SyncO
 		var tree *AgentTree
 		var err error
 		if src.tree {
-			tree, err = LoadTree(path, cfg)
+			dir, cErr := src.root.Child(src.rel)
+			if cErr == nil {
+				tree, err = LoadTree(ctx, dir, cfg)
+			} else {
+				err = cErr
+			}
 			if err == nil {
 				ir = tree.MergedIR()
 			}
 		} else {
 			var data []byte
-			data, err = os.ReadFile(path)
+			data, err = src.root.FS.ReadFile(ctx, src.rel)
 			if err == nil {
 				// A native declaration is the format itself, not a file to identify.
 				if src.native {
@@ -209,7 +214,7 @@ func Sync(sourceDirs []SourceDir, generatedDir string, cfg Config, opts ...SyncO
 		rec := syncRecord{
 			SourcePath:   path,
 			SourceSHA256: ir.Source.SHA256,
-			ChainFile:    "chain-agent-" + stem + ".json",
+			ChainFile:    ChainFileFor(chain.ID),
 			PolicyFile:   PolicyFileFor(stem),
 		}
 		// One namespace: an envelope of this name renders the same filename, and
@@ -223,7 +228,7 @@ func Sync(sourceDirs []SourceDir, generatedDir string, cfg Config, opts ...SyncO
 					stem, ConfigFilename, PolicyFileFor(stem)),
 			})
 		}
-		chainPath := filepath.Join(generatedDir, rec.ChainFile)
+		chainPath := generated.Path(rec.ChainFile)
 
 		chainJSON, err := marshalWithSchema(chain, ChainSchemaURL)
 		if err != nil {
@@ -237,23 +242,23 @@ func Sync(sourceDirs []SourceDir, generatedDir string, cfg Config, opts ...SyncO
 		policyPath := ""
 		policyCurrent := true
 		if rec.PolicyFile != "" {
-			policyPath = filepath.Join(generatedDir, rec.PolicyFile)
-			policyCurrent = fileHas(policyPath, policyJSON)
+			policyPath = generated.Path(rec.PolicyFile)
+			policyCurrent = fileHas(ctx, generated.FS, rec.PolicyFile, policyJSON)
 		}
-		// Compared against what is on disk, not the source hash alone: agents.toml
+		// Compared against what is stored, not the source hash alone: agents.toml
 		// is the other half of the input.
-		if _, ok := state[path]; ok && fileHas(chainPath, chainJSON) && policyCurrent {
+		if _, ok := state[path]; ok && fileHas(ctx, generated.FS, rec.ChainFile, chainJSON) && policyCurrent {
 			res.Action = ActionUnchanged
 			next[path] = rec
 			results = append(results, res)
 			continue
 		}
 
-		if err := os.WriteFile(chainPath, chainJSON, 0o644); err != nil {
+		if err := generated.FS.WriteFile(ctx, rec.ChainFile, chainJSON); err != nil {
 			return nil, fmt.Errorf("agentdecl: write %s: %w", chainPath, err)
 		}
 		if policyPath != "" {
-			if err := os.WriteFile(policyPath, policyJSON, 0o644); err != nil {
+			if err := generated.FS.WriteFile(ctx, rec.PolicyFile, policyJSON); err != nil {
 				return nil, fmt.Errorf("agentdecl: write %s: %w", policyPath, err)
 			}
 		}
@@ -271,9 +276,9 @@ func Sync(sourceDirs []SourceDir, generatedDir string, cfg Config, opts ...SyncO
 		if _, kept := next[src]; kept {
 			continue
 		}
-		_ = os.Remove(filepath.Join(generatedDir, rec.ChainFile))
+		_ = generated.FS.Remove(ctx, rec.ChainFile)
 		if rec.PolicyFile != "" {
-			_ = os.Remove(filepath.Join(generatedDir, rec.PolicyFile))
+			_ = generated.FS.Remove(ctx, rec.PolicyFile)
 		}
 	}
 	for _, name := range cfg.UnknownAgents(declared) {
@@ -284,32 +289,38 @@ func Sync(sourceDirs []SourceDir, generatedDir string, cfg Config, opts ...SyncO
 			Reason: "no declaration by that name; the section had no effect",
 		})
 	}
-	if err := writeSyncState(generatedDir, next); err != nil {
+	if err := writeSyncState(ctx, generated.FS, next); err != nil {
 		return results, err
 	}
 	return results, nil
 }
 
-func fileHas(path string, want []byte) bool {
-	got, err := os.ReadFile(path)
+func fileHas(ctx context.Context, fsys vfs.Files, name string, want []byte) bool {
+	got, err := fsys.ReadFile(ctx, name)
 	return err == nil && bytes.Equal(got, want)
 }
 
-func retireAll(generatedDir string) error {
-	state := readSyncState(generatedDir)
+func retireAll(ctx context.Context, generated Root) error {
+	state := readSyncState(ctx, generated.FS)
 	for _, rec := range state {
-		_ = os.Remove(filepath.Join(generatedDir, rec.ChainFile))
+		_ = generated.FS.Remove(ctx, rec.ChainFile)
 		if rec.PolicyFile != "" {
-			_ = os.Remove(filepath.Join(generatedDir, rec.PolicyFile))
+			_ = generated.FS.Remove(ctx, rec.PolicyFile)
 		}
 	}
 	if len(state) == 0 {
 		return nil
 	}
-	return writeSyncState(generatedDir, map[string]syncRecord{})
+	return writeSyncState(ctx, generated.FS, map[string]syncRecord{})
 }
 
 type sourceFile struct {
+	// root is the source directory the file was collected under, and rel its
+	// name inside that directory's handle.
+	root Root
+	rel  string
+	// path is the source as a human and the sync state read it: the root's key
+	// and the file inside it.
 	path   string
 	native bool
 	// tree marks a DIRECTORY that holds an agent.md: one chain for the whole
@@ -317,44 +328,46 @@ type sourceFile struct {
 	tree bool
 }
 
-func collectSources(dirs []SourceDir) ([]sourceFile, error) {
+func collectSources(ctx context.Context, dirs []SourceDir) ([]sourceFile, error) {
 	var found []sourceFile
 	for _, dir := range dirs {
-		native := dir.Native
-		err := filepath.WalkDir(dir.Path, func(p string, entry fs.DirEntry, walkErr error) error {
+		if dir.FS == nil {
+			continue
+		}
+		err := dir.FS.WalkDir(ctx, ".", func(rel string, entry fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
 			}
 			// A directory holding an agent.md is a tree: the whole subtree is one
 			// chain, so it is collected here and not descended into.
 			if entry.IsDir() {
-				if _, err := os.Stat(filepath.Join(p, AgentFilename)); err == nil {
-					found = append(found, sourceFile{path: p, native: native, tree: true})
+				if _, err := dir.FS.Stat(ctx, path.Join(rel, AgentFilename)); err == nil {
+					found = append(found, sourceFile{root: dir.Root, rel: rel, path: dir.Path(rel), native: dir.Native, tree: true})
 					return fs.SkipDir
 				}
 				return nil
 			}
-			if !strings.EqualFold(filepath.Ext(p), ".md") {
+			if !strings.EqualFold(path.Ext(rel), ".md") {
 				return nil
 			}
 			// A README beside the declarations is documentation, not a declaration.
 			if strings.EqualFold(entry.Name(), "README.md") {
 				return nil
 			}
-			found = append(found, sourceFile{path: p, native: native})
+			found = append(found, sourceFile{root: dir.Root, rel: rel, path: dir.Path(rel), native: dir.Native})
 			return nil
 		})
-		if err != nil && !os.IsNotExist(err) {
-			return nil, fmt.Errorf("agentdecl: scan %s: %w", dir.Path, err)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("agentdecl: scan %s: %w", dir.Key, err)
 		}
 	}
 	sort.Slice(found, func(i, j int) bool { return found[i].path < found[j].path })
 	return found, nil
 }
 
-func readSyncState(dir string) map[string]syncRecord {
+func readSyncState(ctx context.Context, fsys vfs.Files) map[string]syncRecord {
 	state := map[string]syncRecord{}
-	raw, err := os.ReadFile(filepath.Join(dir, SyncStateFilename))
+	raw, err := fsys.ReadFile(ctx, SyncStateFilename)
 	if err != nil {
 		return state
 	}
@@ -362,12 +375,12 @@ func readSyncState(dir string) map[string]syncRecord {
 	return state
 }
 
-func writeSyncState(dir string, state map[string]syncRecord) error {
+func writeSyncState(ctx context.Context, fsys vfs.Files, state map[string]syncRecord) error {
 	raw, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return fmt.Errorf("agentdecl: marshal sync state: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, SyncStateFilename), raw, 0o644); err != nil {
+	if err := fsys.WriteFile(ctx, SyncStateFilename, raw); err != nil {
 		return fmt.Errorf("agentdecl: write sync state: %w", err)
 	}
 	return nil

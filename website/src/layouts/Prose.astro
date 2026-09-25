@@ -24,19 +24,19 @@ const editUrl = `https://github.com/contenox/contenox/blob/main/${docPath}`;
 const noindex = current.startsWith('/docs/development/blueprints/');
 ---
 <Base {...Astro.props} ogType="article" noindex={noindex}>
-  <div class="mx-auto flex max-w-6xl gap-8 px-5">
-    <aside class="sticky top-13 hidden max-h-[calc(100vh-3.25rem)] w-64 shrink-0 overflow-y-auto py-10 lg:block">
+  <div class="mx-auto flex w-full flex-1 max-w-7xl gap-8 px-5">
+    <aside class="sticky top-13 hidden max-h-[calc(100vh-3.25rem)] w-64 shrink-0 overflow-y-auto border-r border-neutral-200/70 py-10 pr-6 lg:block dark:border-neutral-800/70">
       <Sidebar current={current} />
     </aside>
-    <div class="min-w-0 flex-1">
-      <details class="mt-6 rounded-lg border border-neutral-200 px-3 py-2 lg:hidden dark:border-neutral-800">
+    <div class="min-w-0 flex-1 py-10 lg:pl-2">
+      <details class="mb-6 rounded border border-neutral-200/80 bg-neutral-100/50 p-3 lg:hidden dark:border-neutral-800/80 dark:bg-neutral-900/50">
         <summary class="cursor-pointer text-sm font-semibold select-none">Browse docs/</summary>
         <div class="pt-3"><Sidebar current={current} /></div>
       </details>
-      <article data-pagefind-body class="prose prose-compact prose-neutral dark:prose-invert max-w-3xl py-10 prose-img:rounded-lg prose-img:border prose-img:border-neutral-200 dark:prose-img:border-neutral-800 prose-code:before:content-none prose-code:after:content-none">
+      <article data-pagefind-body class="prose prose-compact prose-neutral dark:prose-invert max-w-4xl pb-10 prose-img:rounded-lg prose-img:border prose-img:border-neutral-200 dark:prose-img:border-neutral-800 prose-code:before:content-none prose-code:after:content-none">
         <slot />
       </article>
-      <div class="max-w-3xl border-t border-neutral-100 pt-4 pb-10 dark:border-neutral-800/60">
+      <div class="max-w-4xl border-t border-neutral-100 pt-4 pb-10 dark:border-neutral-800/60">
         <a
           href={editUrl}
           target="_blank"

@@ -8,6 +8,8 @@ import (
 	"github.com/contenox/contenox/internal/kernel/clientfsterm"
 	"github.com/contenox/contenox/internal/kernel/enginesvc"
 	"github.com/contenox/contenox/internal/kernel/taskengine"
+	"github.com/contenox/contenox/internal/models/llmrepo"
+	"github.com/contenox/contenox/internal/models/runtimestate"
 	"github.com/contenox/contenox/internal/services/agentservice"
 	"github.com/contenox/contenox/internal/services/eventlog"
 	"github.com/contenox/contenox/internal/services/hitlservice"
@@ -18,6 +20,7 @@ import (
 	"github.com/contenox/contenox/internal/services/vfs"
 	"github.com/contenox/contenox/internal/store/runtimetypes"
 	"github.com/contenox/contenox/internal/substrate"
+	"github.com/contenox/contenox/internal/surfaces/gateway"
 	"github.com/contenox/contenox/libdbexec"
 	"github.com/contenox/contenox/libtracker"
 )
@@ -99,6 +102,7 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 
 	reportChange("phase", "tools_prepared")
 	engine, err := enginesvc.Build(ctx, db, enginesvc.Config{
+		WrapModels:               localMeter(db, tracker),
 		DefaultModel:             opts.EffectiveDefaultModel,
 		DefaultProvider:          opts.EffectiveDefaultProvider,
 		AltDefaultModel:          opts.EffectiveAltDefaultModel,
@@ -160,8 +164,10 @@ func localToolset(opts chatOpts, db libdbexec.DBManager, tracker libtracker.Acti
 	if root, err := os.Getwd(); err == nil && root != "" {
 		if fsterm, ferr := clientfsterm.New(root); ferr == nil {
 			cwd := func(context.Context) string { return root }
-			tools[localtools.LocalFSToolsName] = localtools.NewLocalFSToolsWith(
-				"", db, fsterm.FileIO(), localtools.LocalFSToolsName, cwd)
+			tools[localtools.LocalFSToolsName] = localtools.NewLocalFSToolsFromHalves(
+				localtools.NewLocalFSToolsWith(
+					"", db, fsterm.FileIO(), localtools.LocalFSToolsName, cwd),
+				localtools.NewLocalFSBrowseTools("", cwd))
 			tools[localtools.LocalExecToolsName] = localtools.NewLocalExecToolsWith(
 				fsterm.CommandRunner())
 		}
@@ -201,4 +207,10 @@ func newHITLService(ctx context.Context, contenoxDir string, store runtimetypes.
 	// raises an ask waits the same way.
 	applyApprovalCeiling(ctx, svc, store)
 	return svc
+}
+
+func localMeter(db libdbexec.DBManager, tracker libtracker.ActivityTracker) func(llmrepo.ModelRepo, *runtimestate.State) (llmrepo.ModelRepo, error) {
+	return func(models llmrepo.ModelRepo, state *runtimestate.State) (llmrepo.ModelRepo, error) {
+		return gateway.NewLocalRepo(db, models, state, tracker)
+	}
 }

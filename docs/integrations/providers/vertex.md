@@ -64,8 +64,8 @@ contenox backend add vertex --type vertex-google \
   --url "https://aiplatform.googleapis.com/v1/projects/$GOOGLE_CLOUD_PROJECT/locations/global" \
   --api-key-env VERTEX_SA_JSON
 
-contenox config set default-model gemini-3.6-flash
-contenox config set default-provider vertex-google
+contenox config set inference.model gemini-3.6-flash
+contenox config set inference.provider vertex-google
 ```
 
 Contenox reads the JSON from the named env var at request time, so the key never lands in the config file on disk.
@@ -86,8 +86,8 @@ gcloud auth application-default set-quota-project YOUR_PROJECT_ID
 contenox backend add vertex --type vertex-google \
   --url "https://aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/global"
 
-contenox config set default-model gemini-3.6-flash
-contenox config set default-provider vertex-google
+contenox config set inference.model gemini-3.6-flash
+contenox config set inference.provider vertex-google
 ```
 
 Omit `--api-key-env` and Contenox falls back to ADC.
@@ -101,7 +101,7 @@ contenox backend add vertex --type vertex-google \
   --url "https://europe-west4-aiplatform.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/europe-west4"
 
 contenox model list                       # what THIS location serves
-contenox config set default-model <id-from-that-list>
+contenox config set inference.model <id-from-that-list>
 ```
 
 > **Important:**

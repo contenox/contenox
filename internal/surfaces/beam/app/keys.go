@@ -2,11 +2,14 @@ package app
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/contenox/contenox/internal/surfaces/beam/comp/composer"
 	"github.com/contenox/contenox/internal/surfaces/beam/comp/fileaddr"
 	"github.com/contenox/contenox/internal/surfaces/beam/comp/palette"
+	"github.com/contenox/contenox/internal/surfaces/beam/dialect"
 	"github.com/contenox/contenox/internal/surfaces/beam/frame"
 	"github.com/contenox/contenox/internal/surfaces/beam/input"
 	"github.com/contenox/contenox/internal/surfaces/beam/keymap"
@@ -72,7 +75,24 @@ const (
 	localQuit     = "quit"
 	localNew      = "new"
 	localSessions = "sessions"
+	localEditor   = "editor"
+	localQueue    = "queue"
+	localWithdraw = "withdraw"
+	localStats    = "stats"
 )
+
+// bareAnswerAskID reports the ask a lone "/answer" names, and whether the
+// buffer is that lone command at all. Only the exact one-token shape counts:
+// "/answer <id> text" is the operator's own line and is never rewritten.
+func (a *app) bareAnswerAskID(draft string) (string, bool) {
+	if strings.TrimSpace(draft) != "/"+dialect.CommandAnswer {
+		return "", false
+	}
+	if a.pendingAsk == "" {
+		return "", false
+	}
+	return a.pendingAsk, true
+}
 
 // registerBindings declares every chord beam answers, once, at startup.
 // MustRegister panics on a collision, naming both owners.
@@ -231,6 +251,10 @@ func registerLocalCommands(p *palette.Palette) {
 	p.MustRegisterLocal(localQuit, "Leave beam.", "")
 	p.MustRegisterLocal(localNew, "Start a fresh session.", "")
 	p.MustRegisterLocal(localSessions, "Switch to another session (ctrl+s).", "")
+	p.MustRegisterLocal(localEditor, "Compose the draft in $EDITOR.", "")
+	p.MustRegisterLocal(localQueue, "Show queued turns.", "")
+	p.MustRegisterLocal(localWithdraw, "Withdraw the last queued prompt into composer.", "")
+	p.MustRegisterLocal(localStats, "Show token usage and prompt cache efficiency.", "")
 }
 
 // helpScopes is every scope the `?` overlay and /keys list — the whole
@@ -571,10 +595,15 @@ func (a *app) submit(ctx context.Context) {
 	if strings.TrimSpace(draft) == "" {
 		return
 	}
-	// Checked before Submit so a refused submission keeps the operator's
-	// text. A `!` line needs no turn, so it is allowed alongside one.
-	if a.inFlight && composer.Classify(draft).Kind != composer.KindShell {
-		a.notice(frame.StyleWarn, "a turn is already running — ctrl+c interrupts it")
+
+	// A bare "/answer" is the operator reaching for the ask on screen, whose
+	// id is a uuid nobody can retype. Complete the command with the newest
+	// unanswered ask and hand the line back rather than sending it: the reply
+	// is the operator's to type, and /answer with no argument is a question,
+	// not an instruction to the agent.
+	if id, ok := a.bareAnswerAskID(draft); ok {
+		a.comp.SetDraft(dialect.AnswerCommandPrefix + id + " ")
+		a.syncOverlays(ctx)
 		return
 	}
 
@@ -602,6 +631,13 @@ func (a *app) submit(ctx context.Context) {
 		}
 	}
 
+	// When a turn is already running, queue the prompt in FIFO order.
+	if a.inFlight {
+		a.queuedPrompts = append(a.queuedPrompts, sub.Text)
+		a.noticef(frame.StyleMuted, "queued #%d for next turn (/withdraw to cancel)", len(a.queuedPrompts))
+		return
+	}
+
 	// Everything else is a turn. The bridge never echoes the operator's own
 	// line back, so the echo is fed to the transcript here.
 	a.echo(sub.Text)
@@ -627,7 +663,69 @@ func (a *app) runLocal(ctx context.Context, name string) {
 		a.newSession(ctx)
 	case localSessions:
 		a.openSessions(ctx)
+	case localQueue:
+		if len(a.queuedPrompts) == 0 {
+			a.notice(frame.StyleMuted, "no prompts queued")
+			return
+		}
+		a.noticef(frame.StyleMuted, "%d prompt(s) in queue:", len(a.queuedPrompts))
+		for i, q := range a.queuedPrompts {
+			a.noticef(frame.StyleMuted, "  #%d: %s", i+1, q)
+		}
+	case localWithdraw:
+		if len(a.queuedPrompts) == 0 {
+			a.notice(frame.StyleWarn, "no prompts in queue to withdraw")
+			return
+		}
+		last := a.queuedPrompts[len(a.queuedPrompts)-1]
+		a.queuedPrompts = a.queuedPrompts[:len(a.queuedPrompts)-1]
+		if a.comp.Empty() {
+			a.comp.SetDraft(last)
+		}
+		a.noticef(frame.StyleDone, "withdrew queued prompt: %s", last)
+	case localStats:
+		a.showStats()
+	case localEditor:
+		// The command line is not a draft: opening the editor with "/editor"
+		// as its seed would hand the operator their own command back.
+		a.comp.SetDraft("")
+		a.openEditor()
 	}
+}
+
+func (a *app) showStats() {
+	if a.stats == nil || (a.stats.InputTokens == 0 && a.stats.CacheReadTokens == 0 && a.stats.OutputTokens == 0) {
+		a.notice(frame.StyleMuted, "no token statistics recorded for this session yet")
+		return
+	}
+	s := a.stats
+	totalPrompt := s.InputTokens
+	hitRate := 0.0
+	if totalPrompt > 0 {
+		hitRate = float64(s.CacheReadTokens) / float64(totalPrompt) * 100
+	}
+	a.noticef(frame.StyleBrand, "Session Vitals (%s):", a.sessionLabel())
+	a.noticef(frame.StyleMuted, "  Turns: %d · Tool Steps: %d · Model Calls: %d", s.Turns, s.Steps, s.ModelCalls)
+	a.noticef(frame.StyleActive, "  Prompt Cache Hit Rate: %.1f%% (%s cached / %s total prompt)",
+		hitRate, formatTokens(s.CacheReadTokens), formatTokens(totalPrompt))
+	a.noticef(frame.StyleMuted, "  Tokens: %s input (%s cached) + %s output (%s thinking), total: %s",
+		formatTokens(s.InputTokens), formatTokens(s.CacheReadTokens), formatTokens(s.OutputTokens),
+		formatTokens(s.ThinkingTokens), formatTokens(s.InputTokens+s.OutputTokens))
+	if s.TtftSamples > 0 && s.StreamMs > 0 && s.OutputTokens > 0 {
+		avgTtft := s.TtftMs / s.TtftSamples
+		tps := float64(s.OutputTokens) / (float64(s.StreamMs) / 1000.0)
+		a.noticef(frame.StyleMuted, "  Latency & Speed: %dms avg TTFT · %.1f tokens/sec", avgTtft, tps)
+	}
+}
+
+func formatTokens(n int64) string {
+	if n >= 1_000_000 {
+		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+	}
+	if n >= 1_000 {
+		return fmt.Sprintf("%.1fk", float64(n)/1_000)
+	}
+	return strconv.FormatInt(n, 10)
 }
 
 // paletteAccept is Enter with the command menu open: complete the selection

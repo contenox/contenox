@@ -185,6 +185,7 @@ type loopbackHarness struct {
 	lc     *loopbackClient
 	bus    libbus.Messenger
 	router *SessionRouter
+	db     libdb.DBManager
 }
 
 // newLoopbackHarness builds one client wired to one transport over a pipe.
@@ -255,7 +256,7 @@ func newLoopbackHarness(t *testing.T, withDeps ...func(*Deps, libdb.DBManager)) 
 		require.NoError(t, db.Close())
 	})
 
-	return &loopbackHarness{t: t, tr: tr, client: clientConn, lc: lc, bus: bus, router: router}
+	return &loopbackHarness{t: t, tr: tr, client: clientConn, lc: lc, bus: bus, router: router, db: db}
 }
 
 // swapAgent installs a into sid's live sessionEntry, replacing the real
@@ -308,7 +309,7 @@ func TestLoopback_Prompt_StreamsUpdatesThroughRealClient(t *testing.T) {
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
 	require.NotEmpty(t, newResp.SessionID)
-	h.lc.drain(t, 1) // deferred available_commands_update
+	h.lc.drain(t, 2) // command menu and initial context gauge
 
 	fake := &loopbackAgent{}
 	fake.promptFunc = func(ctx context.Context, req agentservice.PromptRequest) (*agentservice.PromptResponse, error) {
@@ -374,7 +375,7 @@ func TestLoopback_Prompt_PushesDerivedTitleInSessionInfo(t *testing.T) {
 
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1) // deferred available_commands_update
+	h.lc.drain(t, 2) // command menu and initial context gauge
 
 	// Persisted against the internal id, distinct from the ACP session id.
 	h.tr.sessionMu.Lock()
@@ -418,7 +419,7 @@ func TestLoopback_CancelPrompt_ResolvesStopReasonCancelled(t *testing.T) {
 	require.NoError(t, err)
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	started := make(chan struct{})
 	var startOnce sync.Once
@@ -472,7 +473,7 @@ func TestLoopback_ServerCancel_AbortsEngineCtxAndResolvesCancelled(t *testing.T)
 	require.NoError(t, err)
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	started := make(chan struct{})
 	var startOnce sync.Once
@@ -563,7 +564,7 @@ func TestLoopback_Prompt_PermissionRoundTripThroughRealClient(t *testing.T) {
 	require.NoError(t, err)
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	var approvalErr error
 	var allowed bool
@@ -616,7 +617,7 @@ func TestLoopback_SessionRouter_RoutesToOwningTransport(t *testing.T) {
 	require.NoError(t, err)
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	h.tr.sessionMu.Lock()
 	internalID := h.tr.sessions[newResp.SessionID].InternalSessionID
@@ -665,7 +666,7 @@ func TestLoopback_Prompt_FSReadWriteThroughRealClient(t *testing.T) {
 	require.NoError(t, err)
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	h.lc.mu.Lock()
 	h.lc.files["/tmp/loopback-fs/note.txt"] = "hello from the client"
@@ -706,7 +707,7 @@ func TestLoopback_SetSessionConfigOption_RoundTripThroughRealClient(t *testing.T
 	require.NoError(t, err)
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	thinkOption := func(options []libacp.SessionConfigOption) libacp.SessionConfigOption {
 		t.Helper()
@@ -743,7 +744,7 @@ func TestLoopback_UnknownSlashCommand_AnsweredLocally(t *testing.T) {
 	require.NoError(t, err)
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1) // deferred available_commands_update
+	h.lc.drain(t, 2) // command menu and initial context gauge
 
 	var promptCalls int32
 	h.swapAgent(newResp.SessionID, &loopbackAgent{
@@ -790,7 +791,7 @@ func TestLoopback_PastedPathStillReachesTheModel(t *testing.T) {
 	require.NoError(t, err)
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	seen := make(chan string, 4)
 	h.swapAgent(newResp.SessionID, &loopbackAgent{
@@ -825,7 +826,7 @@ func TestLoopback_LoadSession_ReplaysFailedToolsAndRealUsage(t *testing.T) {
 	cwd := t.TempDir()
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: cwd, McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	h.tr.sessionMu.Lock()
 	internalID := h.tr.sessions[newResp.SessionID].InternalSessionID
@@ -898,6 +899,49 @@ func TestUnit_SessionTokenSize_MirrorsTheEnginesOwnBudgetArithmetic(t *testing.T
 		"a larger session override does NOT widen the chain's budget")
 	require.Equal(t, 4096, newTransport(0, 4096).sessionTokenSize(context.Background(), sid),
 		"a chain with no declared budget leaves the session override standing alone")
-	require.Zero(t, newTransport(0, 0).sessionTokenSize(context.Background(), sid),
-		"with no budget anywhere and no model context length, there is no honest denominator")
+	require.Equal(t, defaultContextWindowFallback, newTransport(0, 0).sessionTokenSize(context.Background(), sid),
+		"unknown capacity uses the same bounded fallback as the engine")
+}
+
+// secondRig is a second client + Transport wired to the SAME bus, DB and
+// SessionRouter as the harness's first pair — the shape of a reconnecting
+// client, so a resume(sinceSeq) can be exercised against the shared journal.
+type secondRig struct {
+	tr     *Transport
+	client *libacp.ClientSideConnection
+	lc     *loopbackClient
+}
+
+func (h *loopbackHarness) addSecondTransport(t *testing.T) *secondRig {
+	t.Helper()
+	agentR, clientW := io.Pipe()
+	clientR, agentW := io.Pipe()
+	agentSide := &wirePipe{r: agentR, w: agentW}
+	clientSide := &wirePipe{r: clientR, w: clientW}
+	deps := h.tr.deps
+	factory := New(deps)
+	var tr2 *Transport
+	agentConn := libacp.NewAgentSideConnection(agentSide, func(c *libacp.AgentSideConnection) libacp.Agent {
+		a := factory(c)
+		tr2 = a.(*Transport)
+		return a
+	})
+	lc2 := newLoopbackClient()
+	clientConn := libacp.NewClientSideConnection(clientSide, func(*libacp.ClientSideConnection) libacp.Client {
+		return lc2
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 2)
+	go func() { done <- agentConn.Run(ctx) }()
+	go func() { done <- clientConn.Run(ctx) }()
+	t.Cleanup(func() {
+		cancel()
+		for i := 0; i < 2; i++ {
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+			}
+		}
+	})
+	return &secondRig{tr: tr2, client: clientConn, lc: lc2}
 }

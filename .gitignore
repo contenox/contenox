@@ -117,9 +117,18 @@ node_modules/
 .claude
 website/dist/
 website/.astro/
+website/.hero/
+website/.screenshots/
+website/playwright-report/
+website/test-results/
 tools/rust-sdk/
 tools/acp-validator/target/
 tools/acp-validator/Cargo.lock
 tools/contenox-e2e/target/
 tools/contenox-e2e/Cargo.lock
 tmp-askprobe2
+
+# Native inference build inputs and outputs.
+/.llamacpp-runtime/
+/.openvino/
+/lib/llamacpp/

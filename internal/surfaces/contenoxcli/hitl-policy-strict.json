@@ -533,28 +533,28 @@
       "action": "approve"
     },
     {
-      "//": "native-fs-browse read tools: the files.read floor, same allow tier as the local_fs reads above. Contained by internal/services/vfs like local_fs; a workspace outside the secret trees is the boundary.",
-      "tools": "native-fs-browse",
+      "//": "local_fs read tools: the files.read floor, same allow tier as the local_fs reads above. Contained by internal/services/vfs like local_fs; a workspace outside the secret trees is the boundary.",
+      "tools": "local_fs",
       "tool": "grep",
       "action": "allow"
     },
     {
-      "tools": "native-fs-browse",
+      "tools": "local_fs",
       "tool": "find_files",
       "action": "allow"
     },
     {
-      "tools": "native-fs-browse",
+      "tools": "local_fs",
       "tool": "stat_file",
       "action": "allow"
     },
     {
-      "tools": "native-fs-browse",
+      "tools": "local_fs",
       "tool": "count_stats",
       "action": "allow"
     },
     {
-      "tools": "native-fs-browse",
+      "tools": "local_fs",
       "tool": "list_dir",
       "action": "allow"
     }

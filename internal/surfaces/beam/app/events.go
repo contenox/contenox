@@ -45,6 +45,11 @@ func (a *app) onBridge(ev enginebridge.Event) {
 	case enginebridge.UsageUpdated:
 		a.used, a.size = e.Used, e.Size
 
+	case enginebridge.StatsUpdated:
+		if e.SessionID == a.sessionID {
+			a.stats = &e.Stats
+		}
+
 	case enginebridge.CommandsUpdated:
 		a.pal.SetRemote(e.Commands)
 
@@ -72,11 +77,6 @@ func (a *app) onBridge(ev enginebridge.Event) {
 
 	case enginebridge.PermissionRequested:
 		a.card = approval.New(e)
-		// A card arriving with no turn of ours in flight is NOT assumed
-		// detached: the session's other attachment may be running the turn
-		// this gates, and cancelling that is exactly what Esc should still
-		// offer. Only a turn ending under the card proves otherwise.
-
 		// The ask settles into scrollback whole and immediately: it is
 		// complete on arrival, and the live region can neither hold a card
 		// this tall (its over-tall tail is what survives, clipping the
@@ -105,6 +105,7 @@ func (a *app) onBridge(ev enginebridge.Event) {
 		}
 
 	case enginebridge.MissionAsk:
+		a.trackAsk(e.AskID)
 		// A unit is blocked until this is answered, same rule as a
 		// permission gate: rings always, focus or not.
 		a.bell(now, true)
@@ -190,6 +191,17 @@ func (a *app) trackMission(id, status string) {
 	a.missions[id] = true
 }
 
+// trackAsk remembers the newest mission ask still waiting on an operator, so a
+// bare "/answer" can complete itself with an id the operator never has to read.
+// An ask that carried no id is not remembered: nothing could complete against
+// it.
+func (a *app) trackAsk(id string) {
+	if id == "" {
+		return
+	}
+	a.pendingAsk = id
+}
+
 // startTurn opens the turn activity. There is no TurnStarted event — the
 // submitted prompt IS the start, and the bridge answers only when it ends.
 func (a *app) startTurn() {
@@ -199,13 +211,25 @@ func (a *app) startTurn() {
 
 // endTurn closes the turn and every tool call it left open. A tool call whose
 // terminal status never arrived would otherwise keep the ticker armed and the
-// spinner spinning over work that has stopped.
+// spinner spinning over work that has stopped. If any prompts were queued while
+// the turn was in flight, the next one is immediately dispatched in FIFO order.
 func (a *app) endTurn(now time.Time) {
 	a.inFlight = false
 	a.live.Close(turnActivityID, now)
 	for id := range a.openTools {
 		a.live.Close(toolActivityPrefix+id, now)
 		delete(a.openTools, id)
+	}
+	if len(a.queuedPrompts) > 0 {
+		next := a.queuedPrompts[0]
+		a.queuedPrompts = a.queuedPrompts[1:]
+		a.echo(next)
+		if err := a.deps.Bridge.SubmitPrompt(a.sessionID, next); err != nil {
+			a.noticef(frame.StyleError, "queued send failed: %v", err)
+			return
+		}
+		a.lastPrompt, a.hasLastPrompt = next, true
+		a.startTurn()
 	}
 }
 

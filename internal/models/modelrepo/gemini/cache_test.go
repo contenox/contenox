@@ -7,7 +7,7 @@ import (
 
 func TestUnit_GeminiUsage_CachedContentTokenCount(t *testing.T) {
 	// cachedContentTokenCount must not be added on top of promptTokenCount.
-	body := `{"promptTokenCount":2100,"candidatesTokenCount":40,"totalTokenCount":2140,"cachedContentTokenCount":2048}`
+	body := `{"promptTokenCount":2100,"candidatesTokenCount":40,"thoughtsTokenCount":30,"totalTokenCount":2170,"cachedContentTokenCount":2048}`
 	var meta geminiUsageMetadata
 	if err := json.Unmarshal([]byte(body), &meta); err != nil {
 		t.Fatal(err)
@@ -16,7 +16,7 @@ func TestUnit_GeminiUsage_CachedContentTokenCount(t *testing.T) {
 	if u.PromptTokens != 2100 || u.CacheReadTokens != 2048 || u.CacheWriteTokens != 0 {
 		t.Fatalf("gemini usage extraction wrong: %+v", u)
 	}
-	if u.CompletionTokens != 40 || u.TotalTokens != 2140 {
+	if u.CompletionTokens != 70 || u.ThinkingTokens != 30 || u.TotalTokens != 2170 {
 		t.Fatalf("completion/total wrong: %+v", u)
 	}
 

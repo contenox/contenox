@@ -30,6 +30,9 @@ type NewSessionResponse struct {
 type LoadSessionRequest struct {
 	SessionID SessionID `json:"sessionId"`
 	Cwd       string    `json:"cwd"`
+	// SinceSeq, when > 0, replays only the session updates the caller has not
+	// seen (its last received sequence) instead of the full history.
+	SinceSeq uint64 `json:"sinceSeq,omitempty"`
 	// AdditionalDirectories are extra workspace roots on top of Cwd; each path
 	// must be absolute.
 	AdditionalDirectories []string        `json:"additionalDirectories,omitempty"`
@@ -345,6 +348,10 @@ type SetSessionConfigOptionResponse struct {
 type ResumeSessionRequest struct {
 	SessionID SessionID `json:"sessionId"`
 	Cwd       string    `json:"cwd"`
+	// SinceSeq, when > 0, resumes by replaying only the session updates newer
+	// than the caller's last received sequence (its cursor). 0 keeps the old
+	// contract: the client kept its transcript and no replay is sent.
+	SinceSeq uint64 `json:"sinceSeq,omitempty"`
 	// AdditionalDirectories are extra workspace roots on top of Cwd; each path
 	// must be absolute.
 	AdditionalDirectories []string        `json:"additionalDirectories,omitempty"`

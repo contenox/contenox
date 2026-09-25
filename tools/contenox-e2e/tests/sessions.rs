@@ -775,7 +775,7 @@ fn an_editor_is_offered_no_workspace_picker() {
         .collect();
 
     assert!(
-        options.iter().any(|id| id == "model"),
+        options.iter().any(|id| id == "inference.model"),
         "sanity check: {options:?}"
     );
     for id in &options {

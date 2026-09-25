@@ -54,6 +54,7 @@ type geminiGenerateContentResponse struct {
 type geminiUsageMetadata struct {
 	PromptTokenCount        int `json:"promptTokenCount"`
 	CandidatesTokenCount    int `json:"candidatesTokenCount"`
+	ThoughtsTokenCount      int `json:"thoughtsTokenCount"`
 	TotalTokenCount         int `json:"totalTokenCount"`
 	CachedContentTokenCount int `json:"cachedContentTokenCount"`
 }
@@ -64,11 +65,12 @@ func (u *geminiUsageMetadata) neutralUsage() *modelrepo.TokenUsage {
 	}
 	total := u.TotalTokenCount
 	if total == 0 {
-		total = u.PromptTokenCount + u.CandidatesTokenCount
+		total = u.PromptTokenCount + u.CandidatesTokenCount + u.ThoughtsTokenCount
 	}
 	return &modelrepo.TokenUsage{
 		PromptTokens:     u.PromptTokenCount,
-		CompletionTokens: u.CandidatesTokenCount,
+		CompletionTokens: u.CandidatesTokenCount + u.ThoughtsTokenCount,
+		ThinkingTokens:   u.ThoughtsTokenCount,
 		TotalTokens:      total,
 		CacheReadTokens:  u.CachedContentTokenCount,
 	}

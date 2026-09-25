@@ -1,6 +1,7 @@
 package contenoxcli
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,13 +40,13 @@ func TestUnit_ChatCommandIsWired(t *testing.T) {
 // are wired by filename alone, so a rename on either side is silent otherwise.
 func TestUnit_ChatChain_IsWhatTheShippedDeclarationCompilesTo(t *testing.T) {
 	dir := t.TempDir()
-	_, err := agentdecl.Preseed(dir)
+	_, err := agentdecl.Preseed(context.Background(), declRootForTest(t, dir))
 	require.NoError(t, err)
 
 	cfg, err := agentdecl.Shipped()
 	require.NoError(t, err)
 	generated := filepath.Join(dir, agentdecl.GeneratedDirName)
-	_, err = agentdecl.Sync(agentdecl.DiscoverSourceDirs([]string{dir}, nil), generated, cfg)
+	_, err = agentdecl.Sync(context.Background(), agentdecl.DiscoverSourceDirs(context.Background(), []agentdecl.Root{declRootForTest(t, dir)}, nil), declRootForTest(t, generated), cfg)
 	require.NoError(t, err)
 
 	_, err = os.Stat(filepath.Join(generated, chainAgentChatFilename))

@@ -238,7 +238,7 @@ func runEventsDispatch(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(errOut, "warning: trigger file skipped: %s (%s)\n", s.Path, s.Reason)
 	}
 	if !o.EffectiveOptInBeta {
-		fmt.Fprintln(errOut, "opt-in-beta is off: no triggers are loaded (contenox config set opt-in-beta true)")
+		fmt.Fprintln(errOut, "opt-in-beta is off: no triggers are loaded (contenox config set features.beta.enabled true)")
 	}
 	fmt.Fprintf(errOut, "Loaded %d trigger(s):\n", len(res.Triggers))
 	for _, t := range res.Triggers {
@@ -303,7 +303,7 @@ func (r *chainFiringRunner) RunChain(ctx context.Context, t eventtrigger.Trigger
 	if err != nil {
 		return err
 	}
-	chain, err := loadChainFromFile(path)
+	chain, err := loadChainFromFile(ctx, path)
 	if err != nil {
 		return err
 	}

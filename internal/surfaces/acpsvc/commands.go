@@ -11,44 +11,43 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/google/uuid"
-
 	"github.com/contenox/contenox/internal/kernel/reasoning"
 	"github.com/contenox/contenox/internal/kernel/taskengine"
 	"github.com/contenox/contenox/internal/models/modelcapability"
 	"github.com/contenox/contenox/internal/services/chatservice"
-	"github.com/contenox/contenox/internal/services/clikv"
 	"github.com/contenox/contenox/internal/services/missiontools"
-	"github.com/contenox/contenox/internal/services/setupcheck"
+	"github.com/contenox/contenox/internal/services/settings"
 	"github.com/contenox/contenox/internal/store/runtimetypes"
 	"github.com/contenox/contenox/internal/version"
 	libacp "github.com/contenox/contenox/libacp"
-	"github.com/contenox/contenox/libtracker"
+	"github.com/google/uuid"
 )
 
 // allACPCommands is the full, capability-unfiltered admin command set. Use
 // (*Transport).acpCommands for anything reaching a client.
 func allACPCommands() []libacp.AvailableCommand {
 	return []libacp.AvailableCommand{
+		{Name: "settings", Description: "Inspect session settings, their limits and where to save defaults.", Input: &libacp.AvailableCommandInput{Hint: "[setting [value|inherit]]"}},
+		{Name: "context", Description: "Session context window in tokens; auto follows model capacity, inherit uses saved defaults.", Input: &libacp.AvailableCommandInput{Hint: "[tokens|auto|inherit]"}},
+		{Name: "output", Description: "Maximum output tokens per call for this session; auto uses the backend default.", Input: &libacp.AvailableCommandInput{Hint: "[tokens|auto|inherit]"}},
+		{Name: "reasoning", Description: "Reasoning effort for this session; auto uses the backend default.", Input: &libacp.AvailableCommandInput{Hint: "[auto|off|minimal|low|medium|high|xhigh]"}},
+		{Name: "permissions", Description: "Tool permission policy for this session.", Input: &libacp.AvailableCommandInput{Hint: "[policy-name]"}},
 		{Name: "help", Description: "List the available commands."},
 		{Name: "doctor", Description: "Check provider/model/backend readiness, this build's provenance, and the tools this session holds (read-only — no test prompt is sent)."},
 		{Name: "clear", Description: "Clear this session's conversation history."},
 		{Name: "compact", Description: "Summarize older history into a single message to reclaim context.", Input: &libacp.AvailableCommandInput{Hint: "[keep]"}},
 		{Name: "rename", Description: "Show or set this session's title: /rename <title> (- resets it).", Input: &libacp.AvailableCommandInput{Hint: "[title|-]"}},
-		{Name: "model", Description: "Show the current model, or set it: /model <name>.", Input: &libacp.AvailableCommandInput{Hint: "[model-name]"}},
-		{Name: "provider", Description: "Show the current provider, or set it: /provider <name>.", Input: &libacp.AvailableCommandInput{Hint: "[provider-name]"}},
-		{Name: "max-tokens", Description: "Show or set the default response token cap: /max-tokens <count>.", Input: &libacp.AvailableCommandInput{Hint: "[count]"}},
+		{Name: "model", Description: "Show or choose this session’s model: /model <name> or <provider/model>.", Input: &libacp.AvailableCommandInput{Hint: "[model-name]"}},
+		{Name: "provider", Description: "Show or choose this session’s model provider.", Input: &libacp.AvailableCommandInput{Hint: "[provider-name]"}},
+		{Name: "max-tokens", Description: "Alias of /output; changes this session only.", Input: &libacp.AvailableCommandInput{Hint: "[count]"}},
 		{Name: "think", Description: "Show or set this session's reasoning level: /think <level|off|auto>.", Input: &libacp.AvailableCommandInput{Hint: "[level|off|auto]"}},
 		{Name: "capability", Description: "Show or set persistent provider/model capability overrides.", Input: &libacp.AvailableCommandInput{Hint: "set|show|unset <provider> <model> [--think true|false]"}},
-		{Name: "policy", Description: "Show the active HITL policy, or switch it: /policy <name>.", Input: &libacp.AvailableCommandInput{Hint: "[policy-name]"}},
+		{Name: "policy", Description: "Alias of /permissions; changes this session only.", Input: &libacp.AvailableCommandInput{Hint: "[policy-name]"}},
 		{Name: "mission", Description: "Fire a mission from this session; alone, lists the envelopes it can run under.", Input: &libacp.AvailableCommandInput{Hint: "[--policy <envelope>] [agent-name] <intent>"}},
 		{Name: planCommandName, Description: "Plan a piece of work, then run each step as a subagent.", Input: &libacp.AvailableCommandInput{Hint: "<what you want done>"}},
 		{Name: "answer", Description: "Answer a question one of this session's subagents is waiting on; alone, lists them.", Input: &libacp.AvailableCommandInput{Hint: "[ask-id <answer>]"}},
 		{Name: "new", Description: "Start a new session in this workspace and report its id."},
 		{Name: "sessions", Description: "List the sessions in this workspace, newest first."},
-		{Name: "pair", Description: "Attach this machine to a relay with a key from the app; alone, shows what it is attached to.", Input: &libacp.AvailableCommandInput{Hint: "[key] [relay-endpoint]"}},
-		{Name: "unpair", Description: "Forget this machine's relay pairing (local only — revoke in the app)."},
-		{Name: "link", Description: "Print the app link that opens this session on another device (sign-in required)."},
 	}
 }
 
@@ -162,17 +161,21 @@ func (t *Transport) dispatchCommand(ctx context.Context, sid libacp.SessionID, s
 	case "doctor":
 		out, err = t.handleDoctor(ctx, sess)
 	case "model":
-		out, err = t.handleModel(ctx, args)
+		out, err = t.handleSessionSetting(ctx, sess, settings.Model, args)
 	case "provider":
-		out, err = t.handleProvider(ctx, args)
-	case "max-tokens":
-		out, err = t.handleMaxTokens(ctx, args)
-	case "think":
+		out, err = t.handleSessionSetting(ctx, sess, "inference.provider", args)
+	case "max-tokens", "output":
+		out, err = t.handleSessionSetting(ctx, sess, settings.MaxOutputTokens, args)
+	case "think", "reasoning":
 		out, err = t.handleThink(sess, args)
 	case "capability":
 		out, err = t.handleCapability(ctx, args)
-	case "policy":
-		out, err = t.handlePolicy(ctx, args)
+	case "policy", "permissions":
+		out, err = t.handleSessionSetting(ctx, sess, settings.PermissionPolicy, args)
+	case "context":
+		out, err = t.handleSessionSetting(ctx, sess, settings.ContextWindowTokens, args)
+	case "settings":
+		out, err = t.handleSettings(ctx, sess, args)
 	case "mission":
 		out, err = t.handleMission(ctx, sess, args)
 	case "answer":
@@ -181,12 +184,6 @@ func (t *Transport) dispatchCommand(ctx context.Context, sid libacp.SessionID, s
 		out, err = t.handleNewSessionCommand(ctx, sess)
 	case "sessions":
 		out, err = t.handleSessions(ctx, sess)
-	case "pair":
-		out, err = t.handlePair(ctx, args)
-	case "unpair":
-		out, err = t.handleUnpair(ctx)
-	case "link":
-		out, err = t.handleLink(sid)
 	case "clear":
 		out, err = t.handleClear(ctx, sid, sess)
 	case "compact":
@@ -226,11 +223,11 @@ func (t *Transport) dispatchCommand(ctx context.Context, sid libacp.SessionID, s
 			t.sendUpdate(ctx, libacp.SessionNotification{SessionID: sid, Update: update})
 		})
 	}
-	if commandUpdatesSessionModel(name) {
-		sess.setModelSelection(t.provider(), t.model())
-	}
 	if commandUpdatesConfigOptions(name) {
 		t.sendConfigOptionUpdate(ctx, sid, sess)
+		if t.conn != nil {
+			libacp.AfterResponse(ctx, func() { t.sendResumedUsageUpdate(ctx, sid, sess) })
+		}
 	}
 	return libacp.PromptResponse{StopReason: libacp.StopReasonEndTurn}, nil
 }
@@ -277,18 +274,9 @@ func commandUpdatesSessionInfo(name string) bool {
 	return name == "rename"
 }
 
-func commandUpdatesSessionModel(name string) bool {
-	switch name {
-	case "model", "provider":
-		return true
-	default:
-		return false
-	}
-}
-
 func commandUpdatesConfigOptions(name string) bool {
 	switch name {
-	case "model", "provider", "policy", "think":
+	case "model", "provider", "policy", "think", "reasoning", "context", "output", "max-tokens", "permissions", "settings":
 		return true
 	default:
 		return false
@@ -338,7 +326,7 @@ func (t *Transport) handleDoctor(ctx context.Context, sess *sessionEntry) (strin
 		if maxTok != "" {
 			if n, convErr := strconv.Atoi(maxTok); convErr == nil && n > ceiling {
 				summary += fmt.Sprintf(
-					"\n⚠️  Advisory: default-max-tokens=%d exceeds %s provider ceiling (%d). Requests will be clamped automatically.",
+					"\n⚠️  Advisory: inference.generation.max_output_tokens=%d exceeds %s provider ceiling (%d). Requests will be clamped automatically.",
 					n, t.provider(), ceiling)
 			}
 		}
@@ -432,7 +420,14 @@ func (t *Transport) sessionToolRoster(ctx context.Context, sess *sessionEntry) (
 		for _, tool := range tools {
 			origin := label
 			if kind == originClientCapability {
-				origin = "client capability " + RequiredClientCapability(name, tool.Function.Name)
+				// A toolset can be client-backed and still hold in-process tools
+				// (local_fs browses here and reads and writes through the client),
+				// so each tool states its own backing.
+				if cap := RequiredClientCapability(name, tool.Function.Name); cap != "" {
+					origin = "client capability " + cap
+				} else {
+					origin = "local (in-process)"
+				}
 			}
 			fmt.Fprintf(&b, "  %s — %s — %s\n", tool.Function.Name, name, origin)
 		}
@@ -467,73 +462,6 @@ func (t *Transport) toolsetOrigin(ctx context.Context, store runtimetypes.Store,
 		}
 	}
 	return originRemoteProvider, "remote tool provider (OpenAPI)"
-}
-
-func (t *Transport) handleModel(ctx context.Context, args string) (string, error) {
-	value := strings.TrimSpace(args)
-	if value == "" {
-		return fmt.Sprintf("Model: %s", t.model()), nil
-	}
-	if err := t.persistConfig(ctx, "default-model", value); err != nil {
-		return "", err
-	}
-	t.setModel(value)
-	return fmt.Sprintf("Model set to %s.", value), nil
-}
-
-func (t *Transport) handleProvider(ctx context.Context, args string) (string, error) {
-	value := strings.TrimSpace(args)
-	if value == "" {
-		current := t.provider()
-		if current == "" {
-			return "Provider: (default)", nil
-		}
-		return fmt.Sprintf("Provider: %s", current), nil
-	}
-	if err := t.persistConfig(ctx, "default-provider", value); err != nil {
-		return "", err
-	}
-	t.setProvider(value)
-	return fmt.Sprintf("Provider set to %s.", value), nil
-}
-
-func (t *Transport) handleMaxTokens(ctx context.Context, args string) (string, error) {
-	ceiling := t.maxOutputTokensCeiling(ctx)
-	value := strings.TrimSpace(args)
-	if value == "" {
-		current := t.maxTokens()
-		if current == "" {
-			return fmt.Sprintf("Max tokens: (chain default) | provider ceiling: %s", ceilingLabel(ceiling)), nil
-		}
-		return fmt.Sprintf("Max tokens: %s | provider ceiling: %s", current, ceilingLabel(ceiling)), nil
-	}
-	normalized, err := normalizeMaxTokensValue(value)
-	if err != nil {
-		return "", err
-	}
-	if err := t.persistConfig(ctx, "default-max-tokens", normalized); err != nil {
-		return "", err
-	}
-	t.setMaxTokens(normalized)
-	if normalized == "" {
-		return "Max tokens reset to chain default.", nil
-	}
-	msg := fmt.Sprintf("Max tokens set to %s.", normalized)
-	if ceiling > 0 {
-		n, _ := strconv.Atoi(normalized)
-		if n > ceiling {
-			msg += fmt.Sprintf(" ⚠️  Exceeds provider ceiling (%d) — requests will be clamped.", ceiling)
-		}
-	}
-	return msg, nil
-}
-
-func (t *Transport) maxOutputTokensCeiling(ctx context.Context) int {
-	if t.deps.Engine == nil || t.deps.Engine.State == nil {
-		return 0
-	}
-	states := setupcheck.StatesFromMap(t.deps.Engine.State.Get(ctx))
-	return setupcheck.ResolveMaxOutputTokens(states, t.provider(), t.model())
 }
 
 func ceilingLabel(ceiling int) string {
@@ -682,50 +610,91 @@ func parseCapabilitySetArgs(fields []string) (string, string, bool, error) {
 	return provider, model, canThink, nil
 }
 
-func (t *Transport) handlePolicy(ctx context.Context, args string) (string, error) {
-	store := runtimetypes.New(t.deps.DB.WithoutTransaction())
-	value := strings.TrimSpace(args)
-	if value == "" {
-		return t.policyStatus(clikv.ReadHITLPolicy(ctx, store, t.workspaceID())), nil
-	}
-	cfgCtx := libtracker.WithNewRequestID(ctx)
-	if err := clikv.SetHITLPolicy(cfgCtx, store, t.workspaceID(), value); err != nil {
-		return "", fmt.Errorf("set hitl policy: %w", err)
-	}
-	return fmt.Sprintf("HITL policy set to %s. Applies to the next gated tool call.", value), nil
-}
-
-func (t *Transport) policyStatus(active string) string {
-	effective := active
-	if effective == "" {
-		effective = t.deps.HITLDefaultPolicyName
-	}
-	var b strings.Builder
-	if active == "" {
-		fmt.Fprintf(&b, "Active HITL policy: %s (default)\n", effective)
-	} else {
-		fmt.Fprintf(&b, "Active HITL policy: %s\n", effective)
-	}
-	if len(t.deps.KnownPolicies) > 0 {
-		b.WriteString("Presets:\n")
-		for _, name := range t.deps.KnownPolicies {
-			marker := "  "
-			if name == effective {
-				marker = "* "
-			}
-			fmt.Fprintf(&b, "%s%s\n", marker, name)
+func (t *Transport) handleSettings(ctx context.Context, sess *sessionEntry, args string) (string, error) {
+	parts := strings.Fields(args)
+	if len(parts) > 0 {
+		value := ""
+		if len(parts) > 1 {
+			value = strings.Join(parts[1:], " ")
 		}
-		b.WriteString("Switch with: /policy <name>")
+		return t.handleSessionSetting(ctx, sess, settings.Canonical(parts[0]), value)
 	}
-	return strings.TrimRight(b.String(), "\n")
+	var out strings.Builder
+	out.WriteString("Session settings — changes apply to the next turn or tool call, without saving defaults.\n\n")
+	for _, option := range t.sessionConfigOptions(ctx, sess) {
+		fmt.Fprintf(&out, "%s = %s\n  %s\n", option.ID, option.CurrentValue, option.Description)
+	}
+	if t.deps.ChainRegistry != nil {
+		if chain := t.deps.ChainRegistry.Default(); chain != nil {
+			for _, task := range chain.Tasks {
+				if task.ExecuteConfig != nil && task.ExecuteConfig.MaxTokens != nil {
+					fmt.Fprintf(&out, "  Chain task %s has an explicit output cap: %d tokens.\n", task.ID, *task.ExecuteConfig.MaxTokens)
+				}
+			}
+		}
+	}
+	out.WriteString("\nChange here: /settings <setting> <value>; /context, /output, /model, /reasoning, /permissions are shortcuts.\nSave for future launches in your terminal: contenox config set <setting> <value>\nInspect saved inheritance: contenox config get <setting> --explain\nAgent limits: ~/.contenox/agents.toml, then .contenox/agents.toml, then [agents.<name>]; explicit custom chains retain their own limits.")
+	return out.String(), nil
 }
 
-// persistConfig writes a CLI config value at the scope clikv assigns the key.
-func (t *Transport) persistConfig(ctx context.Context, key, value string) error {
-	store := runtimetypes.New(t.deps.DB.WithoutTransaction())
-	cfgCtx := libtracker.WithNewRequestID(ctx)
-	if err := clikv.WriteConfig(cfgCtx, store, t.workspaceID(), key, value); err != nil {
-		return fmt.Errorf("persist %s: %w", key, err)
+func (t *Transport) handleSessionSetting(ctx context.Context, sess *sessionEntry, key, args string) (string, error) {
+	key = settings.Canonical(key)
+	value := strings.TrimSpace(args)
+	if key == "inference.provider" {
+		if value != "" {
+			sess.setModelSelection(value, sess.modelOrDefault(t.model()))
+		}
+		return fmt.Sprintf("Session inference.provider = %s. Choose a provider/model pair with /model. Save defaults with contenox config set inference.provider <provider>.", sess.providerOrDefault(t.provider())), nil
 	}
-	return nil
+	if key == settings.Model && value != "" {
+		option := t.modelConfigOption(ctx, sess)
+		if !configOptionHasValue(option, value) {
+			qualified := modelConfigValue(sess.providerOrDefault(t.provider()), value)
+			if configOptionHasValue(option, qualified) {
+				value = qualified
+			} else {
+				candidates := []string{}
+				for _, candidate := range option.Options.AllValues() {
+					_, model := splitModelConfigValue(candidate.Value)
+					if model == value {
+						candidates = append(candidates, candidate.Value)
+					}
+				}
+				if len(candidates) == 1 {
+					value = candidates[0]
+				} else if len(candidates) > 1 {
+					return "", fmt.Errorf("model %q is ambiguous; choose %s", value, strings.Join(candidates, " or "))
+				}
+			}
+		}
+	}
+	if key == settings.PermissionPolicy && value != "" {
+		if value == "inherit" {
+			value = hitlPolicyDefaultValue
+		}
+		option := t.hitlPolicyConfigOption(sess)
+		if !configOptionHasValue(option, value) {
+			for _, candidate := range option.Options.AllValues() {
+				if candidate.Name == value {
+					value = candidate.Value
+					break
+				}
+			}
+		}
+	}
+	if value != "" {
+		if err := t.setSessionConfigOption(ctx, sess, key, value); err != nil {
+			return "", err
+		}
+	}
+	for _, option := range t.sessionConfigOptions(ctx, sess) {
+		if option.ID == key {
+			save := fmt.Sprintf("Save a default for future launches: contenox config set %s <value>", key)
+			if key == settings.Model {
+				save = fmt.Sprintf("Save both defaults: contenox config set inference.provider %s; contenox config set inference.model %s", sess.providerOrDefault(t.provider()), sess.modelOrDefault(t.model()))
+			}
+			return fmt.Sprintf("Session %s = %s\n%s\n%s", key, option.CurrentValue, option.Description, save), nil
+		}
+	}
+	return "", fmt.Errorf("%q is not a session setting; use /settings to list the available settings", key)
 }

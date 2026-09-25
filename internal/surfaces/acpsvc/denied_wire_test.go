@@ -26,7 +26,7 @@ func TestLoopback_DeniedToolCall_WireShowsFailedExactlyOnce(t *testing.T) {
 
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1) // deferred available_commands_update
+	h.lc.drain(t, 2) // command menu and initial context gauge
 
 	fake := &loopbackAgent{}
 	fake.promptFunc = func(ctx context.Context, req agentservice.PromptRequest) (*agentservice.PromptResponse, error) {
@@ -148,4 +148,54 @@ func TestUnit_Mirror_ExactlyOncePerConnection(t *testing.T) {
 	other.unmarkNativeViewing("sid-b")
 	origin.sendUpdate(ctx, live)
 	require.Len(t, other.mirrorCh, 1)
+}
+
+type stubDriver struct{}
+
+func (s *stubDriver) Prompt(ctx context.Context, req libacp.PromptRequest, sess *sessionEntry) (libacp.PromptResponse, error) {
+	return libacp.PromptResponse{StopReason: libacp.StopReasonEndTurn}, nil
+}
+func (s *stubDriver) ConfigOptions(ctx context.Context, sess *sessionEntry) []libacp.SessionConfigOption {
+	return nil
+}
+func (s *stubDriver) SetConfigOption(ctx context.Context, sess *sessionEntry, configID string, value libacp.SessionConfigOptionValue) error {
+	return nil
+}
+func (s *stubDriver) AvailableCommands() []libacp.AvailableCommand { return nil }
+func (s *stubDriver) AgentName() string                            { return "" }
+func (s *stubDriver) Close() error                                 { return nil }
+
+// TestUnit_Mirror_PromptMirrorsUserMessageToOtherHolders pins that when connection A submits
+// a prompt, a user_message_chunk is mirrored to connection B so both surfaces reflect the same content.
+func TestUnit_Mirror_PromptMirrorsUserMessageToOtherHolders(t *testing.T) {
+	router := NewSessionRouter()
+
+	driver := &stubDriver{}
+	origin := &Transport{
+		connectionID:    "origin",
+		sessions:        map[libacp.SessionID]*sessionEntry{"sid-a": {InternalSessionID: "cx-1", driver: driver}},
+		contenoxToACPID: map[string]libacp.SessionID{"cx-1": "sid-a"},
+		deps:            Deps{SessionRouter: router},
+	}
+	origin.conn = libacp.NewAgentSideConnection(inertRWC{}, func(*libacp.AgentSideConnection) libacp.Agent {
+		return libacp.UnimplementedAgent{}
+	})
+	other := newMirrorProbeTransport("cx-1", "sid-b")
+
+	router.bind("cx-1", origin)
+	router.bind("cx-1", other)
+
+	textBlock := libacp.NewTextContent("build a test for mirror")
+	_, err := origin.Prompt(context.Background(), libacp.PromptRequest{
+		SessionID: "sid-a",
+		Prompt:    []libacp.ContentBlock{textBlock},
+	})
+	require.NoError(t, err)
+
+	require.Len(t, other.mirrorCh, 1, "other connection must receive the mirrored user message")
+	item := <-other.mirrorCh
+	require.Equal(t, libacp.SessionID("sid-b"), item.notif.SessionID)
+	require.Equal(t, libacp.SessionUpdateUserMessageChunk, item.notif.Update.SessionUpdate)
+	require.NotNil(t, item.notif.Update.Content)
+	require.Equal(t, "build a test for mirror", item.notif.Update.Content.Text)
 }

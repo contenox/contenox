@@ -2,6 +2,7 @@ package acpsvc
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,6 +15,11 @@ import (
 	"github.com/contenox/contenox/internal/services/agentservice"
 	"github.com/contenox/contenox/internal/services/chatservice"
 	"github.com/contenox/contenox/internal/services/clikv"
+	"github.com/contenox/contenox/internal/services/localfileservice"
+	"github.com/contenox/contenox/internal/services/missionservice"
+	"github.com/contenox/contenox/internal/services/operatorinbox"
+	"github.com/contenox/contenox/internal/services/settings"
+	"github.com/contenox/contenox/internal/services/shellsession"
 	"github.com/contenox/contenox/internal/services/vfs"
 	"github.com/contenox/contenox/internal/store/runtimetypes"
 	libacp "github.com/contenox/contenox/libacp"
@@ -27,14 +33,19 @@ type Deps struct {
 	ChainRegistry *ChainRegistry
 	// FIMChainRegistry supplies the fill-in-the-middle chain `_contenox/autocomplete`
 	// runs. Nil disables autocomplete.
-	FIMChainRegistry   *ChainRegistry
-	DefaultModel       string
-	DefaultProvider    string
-	DefaultAltModel    string
-	DefaultAltProvider string
-	DefaultMaxTokens   string
-	DefaultThink       string
-	WorkspaceID        string
+	FIMChainRegistry     *ChainRegistry
+	DefaultModel         string
+	DefaultProvider      string
+	DefaultAltModel      string
+	DefaultAltProvider   string
+	DefaultMaxTokens     string
+	DefaultContextTokens *int
+	// DefaultContextSource names where DefaultContextTokens came from, as
+	// settings.Resolve reports it. "invocation" is the one source that makes the
+	// window a request for this run rather than an inherited default.
+	DefaultContextSource string
+	DefaultThink         string
+	WorkspaceID          string
 	// ContenoxDir is the active .contenox directory for auxiliary chains
 	// (e.g. chain-compact-default.json for /compact).
 	ContenoxDir string
@@ -44,6 +55,17 @@ type Deps struct {
 	// cwd on session/new is authoritative and only control-plane paths are
 	// refused. Enforced in Transport.resolveWorkspaceCwd.
 	WorkspaceRoots *vfs.Factory
+
+	// Files is the vfs-rooted file service the _contenox/fs family serves.
+	// Nil is the editor-driven shape, which owns its filesystem client-side,
+	// so those methods answer MethodNotFound.
+	Files localfileservice.Service
+
+	// ShellSessions backs the `_contenox/terminal/run` `!` passthrough: one
+	// warm PTY-backed shell per session, rooted at the session's workspace.
+	// Nil answers MethodNotFound, the editor-driven shape whose terminal
+	// lives client-side.
+	ShellSessions shellsession.Manager
 
 	// KnownPolicies are the HITL policy preset names /policy lists. Display only.
 	KnownPolicies []string
@@ -89,6 +111,13 @@ type Deps struct {
 	// process's own hitlservice.Service.
 	Asks AskInbox
 
+	// Missions provides access to the durable mission store.
+	Missions missionservice.Service
+
+	// Inbox is the operator attention inbox, the store `_contenox/inbox/list`
+	// reads. Nil answers MethodNotFound.
+	Inbox operatorinbox.Service
+
 	// Supervision resolves which missions a session fired. With Asks it gates
 	// whether /answer is advertised.
 	Supervision MissionSupervision
@@ -112,8 +141,10 @@ type sessionEntry struct {
 	Provider          string
 	Model             string
 	Think             string
-	// EffectiveTokenLimit is the context budget; 0 means chain default.
+	// EffectiveTokenLimit is the requested window; ContextOverride distinguishes automatic zero from inheritance.
 	EffectiveTokenLimit int
+	ContextOverride     bool
+	OutputTokens        *string
 	// HITLPolicy is the per-session HITL policy ("" = the default sentinel). Must
 	// never touch the global cli.hitl-policy-name KV.
 	HITLPolicy string
@@ -160,6 +191,10 @@ type Transport struct {
 	sessions        map[libacp.SessionID]*sessionEntry
 	contenoxToACPID map[string]libacp.SessionID
 
+	// usageMu guards per-session usage records reduced from engine events.
+	usageMu sync.Mutex
+	usage   map[libacp.SessionID]*SessionUsage
+
 	// cfgMu guards the live model/provider, mutated by /model and /provider while
 	// concurrent prompts read them.
 	cfgMu              sync.Mutex
@@ -172,6 +207,10 @@ type Transport struct {
 
 	permMu      sync.Mutex
 	permPending map[string]struct{}
+
+	fsWatchMu     sync.Mutex
+	fsWatchCount  int
+	fsWatchCancel context.CancelFunc
 
 	// nativeViewMu guards nativeViewing: sessions whose in-flight native turn this
 	// connection watches via an attached viewer; the mirror skips them.
@@ -305,6 +344,7 @@ func New(deps Deps) libacp.AgentFactory {
 			connCancel:         connCancel,
 			sessions:           make(map[libacp.SessionID]*sessionEntry),
 			contenoxToACPID:    make(map[string]libacp.SessionID),
+			usage:              make(map[libacp.SessionID]*SessionUsage),
 			toolCallStatus:     make(map[string]libacp.ToolCallStatus),
 			defaultModel:       deps.DefaultModel,
 			defaultProvider:    deps.DefaultProvider,
@@ -323,6 +363,9 @@ func New(deps Deps) libacp.AgentFactory {
 			<-conn.Closed()
 			connCancel()
 			t.releaseSessionRouting()
+			// Subscriptions die with the connection; the shells they stream are
+			// manager state and survive for a reconnecting client (idle-reaped).
+			t.unsubscribeAllTerminals()
 		}()
 		return t
 	}
@@ -386,8 +429,16 @@ func (t *Transport) chainTemplateVars(sess *sessionEntry) map[string]string {
 	if altProvider := t.altProvider(); altProvider != "" {
 		vars["alt_provider"] = altProvider
 	}
-	if maxTokens := t.maxTokens(); maxTokens != "" {
+	if maxTokens := t.sessionOutputTokens(sess); maxTokens != "" {
 		vars["max_tokens"] = maxTokens
+	}
+	// The workspace root the session was opened in. Chain prompts state it, because
+	// the tool schemas say only "relative to the project root" and a model left to
+	// guess invents a path (observed: cd /project).
+	if sess != nil {
+		if cwd := strings.TrimSpace(sess.Cwd); cwd != "" {
+			vars["cwd"] = cwd
+		}
 	}
 	return vars
 }
@@ -510,6 +561,7 @@ func (s *sessionEntry) setEffectiveTokenLimit(v int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.EffectiveTokenLimit = v
+	s.ContextOverride = true
 }
 
 func (s *sessionEntry) setModelSelection(provider, model string) {
@@ -527,6 +579,24 @@ func (t *Transport) acpSessionForContenoxID(contenoxSessionID string) (libacp.Se
 	defer t.sessionMu.Unlock()
 	sid, ok := t.contenoxToACPID[contenoxSessionID]
 	return sid, ok
+}
+
+// InternalSessionID returns the durable session id an attached ACP session is
+// recorded under — the key its transcript, title and config live beneath.
+//
+// A caller that drives this transport directly, rather than through an ACP
+// client, needs the mapping for one reason: it has to be able to come back. The
+// durable id is what rehydrates a session on another connection or another
+// replica, so a caller persists it beside whatever session row it owns. It is
+// false when the session is not attached to this transport.
+func (t *Transport) InternalSessionID(sid libacp.SessionID) (string, bool) {
+	t.sessionMu.Lock()
+	defer t.sessionMu.Unlock()
+	entry, ok := t.sessions[sid]
+	if !ok || entry == nil || entry.InternalSessionID == "" {
+		return "", false
+	}
+	return entry.InternalSessionID, true
 }
 
 func (t *Transport) contenoxSessionForACPID(sid libacp.SessionID) (string, bool) {
@@ -652,11 +722,26 @@ func (t *Transport) workspaceID() string {
 // sendUpdate writes notif to this connection and mirrors it to every other
 // connection holding the same session. Normalization runs once, here, and the
 // mirror carries the result verbatim.
+//
+// The notification is journaled FIRST, before the conn guard: a survival turn
+// that outlives its only client keeps producing events with no connection to
+// write them to, and those events are exactly what a later resume(sinceSeq)
+// must deliver. Journaling before the guard is what makes the journal cover
+// the unattached gap, not just the moments somebody is listening.
 func (t *Transport) sendUpdate(ctx context.Context, notif libacp.SessionNotification) {
+	notif = t.normalizeToolCallNotification(notif)
+	if t.deps.SessionRouter != nil {
+		if contenoxSessionID, ok := t.contenoxSessionForACPID(notif.SessionID); ok {
+			// Journal first (covering the unattached gap), then stamp the live
+			// copy with the same sequence the journal stored — the client sees
+			// the cursor it must resume from.
+			seq := t.deps.SessionRouter.journalAppend(contenoxSessionID, notif)
+			notif = notif.WithSeq(seq)
+		}
+	}
 	if t.conn == nil {
 		return
 	}
-	notif = t.normalizeToolCallNotification(notif)
 	t.writeUpdate(ctx, notif)
 	if t.deps.SessionRouter != nil {
 		if contenoxSessionID, ok := t.contenoxSessionForACPID(notif.SessionID); ok {
@@ -877,49 +962,143 @@ func (t *Transport) sendResumedUsageUpdate(ctx context.Context, sid libacp.Sessi
 	t.sendUsageUpdate(ctx, sid, used)
 }
 
-// sessionTokenSize resolves the "size" half of a usage_update. It mirrors the
-// arithmetic taskengine uses to pick a turn's ctxLength so the gauge's
-// denominator matches the next turn's first token_usage event.
+// sessionTokenSize resolves the "size" half of a usage_update: the same budget
+// the next turn's first token_usage event reports, so the gauge's denominator
+// matches it.
 func (t *Transport) sessionTokenSize(ctx context.Context, sid libacp.SessionID) int {
 	t.sessionMu.Lock()
 	sess, hasSess := t.sessions[sid]
 	t.sessionMu.Unlock()
 
-	limit := 0
+	chainLimit := 0
 	if t.deps.ChainRegistry != nil {
 		if chain := t.deps.ChainRegistry.Default(); chain != nil {
-			limit = int(chain.TokenLimit)
+			chainLimit = int(chain.TokenLimit)
 		}
 	}
-	if hasSess && sess != nil {
-		if eff := sess.effectiveTokenLimit(); eff > 0 && (limit <= 0 || eff < limit) {
-			limit = eff
-		}
+	var entry *sessionEntry
+	if hasSess {
+		entry = sess
 	}
-	if limit > 0 {
-		return limit
-	}
+	return narrowContextLimit(chainLimit, t.turnContextLength(ctx, entry))
+}
 
-	preferredModel := t.model()
-	t.sessionMu.Lock()
-	if entry, ok := t.sessions[sid]; ok && entry != nil {
-		preferredModel = entry.modelOrDefault(t.model())
-	}
-	t.sessionMu.Unlock()
+func (t *Transport) turnContextLength(ctx context.Context, sess *sessionEntry) int {
+	requested, _ := t.requestedContextLength(ctx, sess)
+	chainLimit := t.chainContextLimit()
+	return settings.ContextBudget(requested, chainLimit, t.modelContextCap(ctx, sess))
+}
 
-	for _, state := range t.runtimeStates(ctx) {
-		for _, pulled := range state.PulledModels {
-			if preferredModel != "" && pulled.Model == preferredModel && pulled.ContextLength > 0 {
-				return pulled.ContextLength
-			}
+func (t *Transport) validatedTurnContextLength(ctx context.Context, sess *sessionEntry) (int, error) {
+	requested, explicit := t.requestedContextLength(ctx, sess)
+	chainLimit := t.chainContextLimit()
+	modelLimit := t.modelContextCap(ctx, sess)
+	if explicit && t.contextRequestIsThisTurn(sess) {
+		provider := sess.providerOrDefault(t.provider())
+		model := sess.modelOrDefault(t.model())
+		if err := validateExplicitContextCapacity(requested, chainLimit, modelLimit, provider, model); err != nil {
+			return 0, err
 		}
 	}
-	for _, state := range t.runtimeStates(ctx) {
-		for _, pulled := range state.PulledModels {
-			if pulled.ContextLength > 0 && (pulled.CanChat || pulled.CanPrompt) {
-				return pulled.ContextLength
-			}
+	return settings.ContextBudget(requested, chainLimit, modelLimit), nil
+}
+
+// contextRequestIsThisTurn reports whether the window being applied was asked for
+// now: an invocation flag or a session override, both of which name a number the
+// operator chose for this run and which must fail loudly when the model cannot
+// hold it. A stored default is a capacity mask for providers that report no
+// window of their own; the worker reports its own, so a stored mask that no
+// longer fits is followed down to the reported capacity instead of failing the
+// turn — a mask is not a promise the provider has to keep.
+func (t *Transport) contextRequestIsThisTurn(sess *sessionEntry) bool {
+	if sess != nil {
+		sess.mu.Lock()
+		override := sess.ContextOverride || sess.EffectiveTokenLimit > 0
+		sess.mu.Unlock()
+		if override {
+			return true
 		}
 	}
-	return 0
+	return t.deps.DefaultContextSource == contextSourceInvocation
+}
+
+// contextSourceInvocation marks a value the operator passed on this invocation,
+// as opposed to one inherited from stored configuration. settings.Resolve
+// records which it was, so the two are told apart wherever the window applies.
+const contextSourceInvocation = "invocation"
+
+func validateExplicitContextCapacity(requested, chainLimit, modelLimit int, provider, model string) error {
+	desired := settings.ContextBudget(requested, chainLimit, 0)
+	if modelLimit <= 0 || desired <= modelLimit {
+		return nil
+	}
+	return fmt.Errorf("configured context window %d tokens (chain ceiling %d) exceeds %s/%s reported capacity of %d tokens; set inference.context.window_tokens to auto or at most %d", requested, chainLimit, provider, model, modelLimit, modelLimit)
+}
+
+func (t *Transport) requestedContextLength(ctx context.Context, sess *sessionEntry) (int, bool) {
+	requested := t.defaultTokenLimit(ctx)
+	explicit := requested > 0
+	if sess != nil {
+		sess.mu.Lock()
+		if sess.ContextOverride || sess.EffectiveTokenLimit > 0 {
+			requested = sess.EffectiveTokenLimit
+			explicit = requested > 0
+		}
+		sess.mu.Unlock()
+	}
+	return requested, explicit
+}
+
+func (t *Transport) chainContextLimit() int {
+	chainLimit := 0
+	if t.deps.ChainRegistry != nil {
+		if chain := t.deps.ChainRegistry.Default(); chain != nil {
+			chainLimit = int(chain.TokenLimit)
+		}
+	}
+	return chainLimit
+}
+
+func (t *Transport) sessionOutputTokens(sess *sessionEntry) string {
+	if sess != nil {
+		sess.mu.Lock()
+		if sess.OutputTokens != nil {
+			value := *sess.OutputTokens
+			sess.mu.Unlock()
+			return value
+		}
+		sess.mu.Unlock()
+	}
+	if value := t.maxTokens(); value != "" {
+		return value
+	}
+	return settings.DefaultOutputTokens
+}
+
+func (t *Transport) defaultTokenLimit(ctx context.Context) int {
+	if t.deps.DefaultContextTokens != nil {
+		return *t.deps.DefaultContextTokens
+	}
+	if t.deps.DB == nil {
+		return 0
+	}
+	v := ReadConfigValue(ctx, t.deps.DB, defaultTokenLimitConfigKey)
+	if v == "" || v == "0" {
+		return 0
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
+}
+
+// narrowContextLimit applies the engine's ctxLength rule to a chain budget: a
+// smaller positive request — a session override, or the model's own context
+// length — wins, and a chain budget of zero defers to it entirely.
+func narrowContextLimit(chainLimit, requested int) int {
+	if requested > 0 && (chainLimit <= 0 || requested < chainLimit) {
+		return requested
+	}
+	return chainLimit
 }

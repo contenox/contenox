@@ -712,3 +712,27 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_DefaultBehavior(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "second", result)
 }
+
+type budgetExecutor struct{ budget int }
+
+func (e *budgetExecutor) TaskExec(_ context.Context, _ time.Time, budget int, _ *taskengine.ChainContext, _ *taskengine.TaskDefinition, _ any, _ taskengine.DataType) (any, taskengine.DataType, string, error) {
+	e.budget = budget
+	return "done", taskengine.DataTypeString, "", nil
+}
+
+func TestUnit_InheritedChainHasUsableToolBudget(t *testing.T) {
+	for _, requested := range []int{0, 65536} {
+		exec := &budgetExecutor{}
+		env, err := taskengine.NewEnv(t.Context(), libtracker.NoopTracker{}, exec, taskengine.NewSimpleInspector(), tools.NewMockToolsRegistry())
+		require.NoError(t, err)
+		chain := &taskengine.TaskChainDefinition{Tasks: []taskengine.TaskDefinition{{ID: "one", Handler: taskengine.HandleNoop}}}
+		ctx := taskengine.WithRequestedContextLength(libtracker.WithNewRequestID(t.Context()), requested)
+		_, _, _, err = env.ExecEnv(ctx, chain, "input", taskengine.DataTypeString)
+		require.NoError(t, err)
+		if requested == 0 {
+			require.Equal(t, 131072, exec.budget)
+		} else {
+			require.Equal(t, requested, exec.budget)
+		}
+	}
+}

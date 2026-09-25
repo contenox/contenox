@@ -9,16 +9,19 @@ import (
 
 	"github.com/contenox/contenox/internal/kernel/reasoning"
 	"github.com/contenox/contenox/internal/models/runtimestate"
+	"github.com/contenox/contenox/internal/services/settings"
+	"github.com/contenox/contenox/internal/services/setupcheck"
 	"github.com/contenox/contenox/internal/store/runtimetypes"
 	libacp "github.com/contenox/contenox/libacp"
 )
 
 const (
-	configIDModel      = "model"
-	configIDHITLPolicy = "hitl-policy"
-	configIDThink      = "think"
-	configIDTokenLimit = "token-limit"
-	configIDAgent      = "agent"
+	configIDModel        = settings.Model
+	configIDHITLPolicy   = settings.PermissionPolicy
+	configIDThink        = settings.ReasoningEffort
+	configIDTokenLimit   = settings.ContextWindowTokens
+	configIDOutputTokens = settings.MaxOutputTokens
+	configIDAgent        = "agent"
 
 	configCategoryModel      = "model"
 	configCategoryHITLPolicy = "_hitl_policy"
@@ -46,6 +49,18 @@ const (
 	WorkspaceConfigOptionsMetaKey = "contenox.workspaceConfigOptions"
 )
 
+// defaultContextWindowFallback is the assumed context window when a model's
+// context length is unknown (upstream reported 0 or omitted it): 128k tokens,
+// enough for tool definitions plus several turns. It keeps the usage meter's
+// denominator from blanking and the shifting guard from being silently disabled
+// by a 0 that reads as "unlimited".
+const defaultContextWindowFallback = settings.FallbackContextTokens
+
+// defaultTokenLimitConfigKey is the global config key holding the default
+// context budget a session inherits when it sets no session-level token-limit.
+// 0 (or unset) means automatic — the model's reported window.
+const defaultTokenLimitConfigKey = "default-token-limit"
+
 // workspaceConfigOptions builds the session-less config options advertised at
 // initialize time, reusing the per-session builders.
 func (t *Transport) workspaceConfigOptions(ctx context.Context) []libacp.SessionConfigOption {
@@ -55,7 +70,14 @@ func (t *Transport) workspaceConfigOptions(ctx context.Context) []libacp.Session
 		Think:    t.thinkDefault(),
 	}
 	seed.driver = &nativeDriver{t: t}
-	return t.sessionConfigOptions(ctx, seed)
+	opts := t.sessionConfigOptions(ctx, seed)
+	// The agent select is a session-creation choice, not a live-session one: a
+	// running session's agent is fixed, so the option is advertised only on the
+	// session-less initialize snapshot a client uses to stage a new session.
+	if opt, ok := t.agentConfigOption(ctx, seed); ok {
+		opts = append(opts, opt)
+	}
+	return opts
 }
 
 // sessionConfigOptions returns the config options advertised for a session,
@@ -155,7 +177,8 @@ func (t *Transport) modelConfigOption(ctx context.Context, sess *sessionEntry) l
 	current := modelConfigValue(currentProvider, currentModel)
 	return libacp.SessionConfigOption{
 		ID:           configIDModel,
-		Name:         "Model",
+		Name:         settings.Name(settings.Model),
+		Description:  "Model and provider for this session. Applies to the next turn; does not save the default. Agent-pinned routing still applies.",
 		Category:     configCategoryModel,
 		Type:         configTypeSelect,
 		CurrentValue: current,
@@ -166,8 +189,8 @@ func (t *Transport) modelConfigOption(ctx context.Context, sess *sessionEntry) l
 func (t *Transport) hitlPolicyConfigOption(sess *sessionEntry) libacp.SessionConfigOption {
 	return libacp.SessionConfigOption{
 		ID:           configIDHITLPolicy,
-		Name:         "HITL Policy",
-		Description:  "Approval policy used for gated tool calls",
+		Name:         settings.Name(settings.PermissionPolicy),
+		Description:  "Permission envelope for this session. Controls allow, approve and deny decisions on the next tool call. Does not save a workspace default.",
 		Category:     configCategoryHITLPolicy,
 		Type:         configTypeSelect,
 		CurrentValue: sess.hitlPolicy(),
@@ -178,8 +201,8 @@ func (t *Transport) hitlPolicyConfigOption(sess *sessionEntry) libacp.SessionCon
 func (t *Transport) thinkConfigOption(sess *sessionEntry) libacp.SessionConfigOption {
 	return libacp.SessionConfigOption{
 		ID:           configIDThink,
-		Name:         "Think",
-		Description:  "Reasoning level for this session",
+		Name:         settings.Name(settings.ReasoningEffort),
+		Description:  "Reasoning effort for this session where supported. Auto uses the backend default; off requests no reasoning. Explicit agent effort takes precedence.",
 		Category:     configCategoryThink,
 		Type:         configTypeSelect,
 		CurrentValue: sess.think(),
@@ -197,20 +220,19 @@ func (t *Transport) thinkConfigOption(sess *sessionEntry) libacp.SessionConfigOp
 
 func (t *Transport) tokenLimitConfigOption(ctx context.Context, sess *sessionEntry) libacp.SessionConfigOption {
 	limit := sess.effectiveTokenLimit()
-	current := "0"
-	if limit > 0 {
+	current := "inherit"
+	sess.mu.Lock()
+	if sess.ContextOverride || limit > 0 {
 		current = strconv.Itoa(limit)
 	}
+	sess.mu.Unlock()
 	cap := t.modelContextCap(ctx, sess)
-	desc := "Session context budget (token limit for history). Controls shifting and usage indicator size. 0 = chain default / unlimited."
-	if cap > 0 {
-		desc += fmt.Sprintf(" Capped to model max %d if larger.", cap)
-	}
+	desc := t.contextDescription(ctx, sess)
 	// ACP v1 has only "select" and "boolean", so offer a ladder of budgets clamped
 	// to the model cap.
 	return libacp.SessionConfigOption{
 		ID:           configIDTokenLimit,
-		Name:         "Token Limit",
+		Name:         settings.Name(settings.ContextWindowTokens),
 		Description:  desc,
 		Category:     "context",
 		Type:         configTypeSelect,
@@ -220,7 +242,7 @@ func (t *Transport) tokenLimitConfigOption(ctx context.Context, sess *sessionEnt
 }
 
 func tokenLimitConfigValues(cap, current int) libacp.SessionConfigValues {
-	values := []libacp.SessionConfigValue{{Value: "0", Name: "Chain default", Description: "Use the chain's token limit (or unlimited)"}}
+	values := []libacp.SessionConfigValue{{Value: "inherit", Name: "Use saved default", Description: "Inherit the invocation or saved context default; agent and model limits still apply"}, {Value: "0", Name: "Automatic", Description: "Follow the selected model capacity; agent limits still apply. Unknown capacity uses a bounded fallback, never unlimited"}}
 	seen := map[int]struct{}{0: {}}
 	add := func(n int, name, desc string) {
 		if n <= 0 {
@@ -232,7 +254,7 @@ func tokenLimitConfigValues(cap, current int) libacp.SessionConfigValues {
 		seen[n] = struct{}{}
 		values = append(values, libacp.SessionConfigValue{Value: strconv.Itoa(n), Name: name, Description: desc})
 	}
-	for _, n := range []int{4096, 8192, 16384, 32768, 65536, 131072, 262144} {
+	for _, n := range []int{32768, 65536, 131072, 262144, 524288, 1048576} {
 		if cap > 0 && n >= cap {
 			break
 		}
@@ -258,25 +280,11 @@ func (t *Transport) modelContextCap(ctx context.Context, sess *sessionEntry) int
 	}
 	prov := sess.providerOrDefault(t.provider())
 	mod := sess.modelOrDefault(t.model())
-	for _, st := range t.runtimeStates(ctx) {
-		for _, pm := range st.PulledModels {
-			if (pm.Model == mod || pm.Name == mod) && (prov == "" || strings.Contains(strings.ToLower(st.Backend.Type), strings.ToLower(prov)) || prov == "") {
-				if pm.ContextLength > 0 {
-					return pm.ContextLength
-				}
-			}
-		}
-	}
-	for _, st := range t.runtimeStates(ctx) {
-		for _, pm := range st.PulledModels {
-			if pm.Model == mod || pm.Name == mod {
-				if pm.ContextLength > 0 {
-					return pm.ContextLength
-				}
-			}
-		}
-	}
-	return 0
+	return minimumModelContext(t.runtimeStates(ctx), prov, mod)
+}
+
+func minimumModelContext(states []runtimestate.BackendRuntimeState, prov, mod string) int {
+	return setupcheck.ResolveContextLength(states, prov, mod)
 }
 
 func (t *Transport) modelConfigValues(ctx context.Context, currentProvider, currentModel string) libacp.SessionConfigValues {
@@ -322,17 +330,11 @@ func (t *Transport) modelConfigValues(ctx context.Context, currentProvider, curr
 	}
 
 	for _, state := range t.runtimeStates(ctx) {
-		if strings.TrimSpace(state.Error) != "" {
-			continue
-		}
 		provider := strings.TrimSpace(state.Backend.Type)
 		if provider == "" {
 			continue
 		}
-		for _, pulled := range state.PulledModels {
-			if !pulled.CanChat && !pulled.CanPrompt {
-				continue
-			}
+		for _, pulled := range offerableModels(state.PulledModels) {
 			model := strings.TrimSpace(pulled.Model)
 			if model == "" {
 				model = strings.TrimSpace(pulled.Name)
@@ -472,12 +474,27 @@ func (t *Transport) SetSessionConfigOption(ctx context.Context, req libacp.SetSe
 	}
 
 	reportChange(req.ConfigID, req.Value.AsString())
+	if _, native := sess.driver.(*nativeDriver); native && t.conn != nil {
+		libacp.AfterResponse(ctx, func() { t.sendResumedUsageUpdate(ctx, req.SessionID, sess) })
+	}
 	return libacp.SetSessionConfigOptionResponse{
 		ConfigOptions: t.sessionConfigOptions(ctx, sess),
 	}, nil
 }
 
 func (t *Transport) setSessionConfigOption(ctx context.Context, sess *sessionEntry, configID, value string) error {
+	switch configID {
+	case "model":
+		configID = configIDModel
+	case "hitl-policy":
+		configID = configIDHITLPolicy
+	case "think":
+		configID = configIDThink
+	case "token-limit":
+		configID = configIDTokenLimit
+	case "max-tokens":
+		configID = configIDOutputTokens
+	}
 	switch configID {
 	case configIDModel:
 		if !configOptionHasValue(t.modelConfigOption(ctx, sess), value) {
@@ -511,20 +528,39 @@ func (t *Transport) setSessionConfigOption(ctx context.Context, sess *sessionEnt
 		return nil
 
 	case configIDTokenLimit:
-		requested := 0
-		if strings.TrimSpace(value) != "" && value != "0" {
-			n, err := strconv.Atoi(strings.TrimSpace(value))
-			if err != nil || n < 0 {
-				return libacp.NewErrorf(libacp.ErrInvalidParams, "token-limit must be a non-negative integer, got %q", value)
-			}
-			requested = n
+		if value == "inherit" {
+			sess.mu.Lock()
+			sess.ContextOverride = false
+			sess.EffectiveTokenLimit = 0
+			sess.mu.Unlock()
+			return nil
 		}
-		cap := t.modelContextCap(ctx, sess)
-		eff := requested
-		if cap > 0 && (eff == 0 || eff > cap) {
-			eff = cap
+		if value == "auto" {
+			value = "0"
 		}
-		sess.setEffectiveTokenLimit(eff)
+		requested, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil || requested < 0 {
+			return libacp.NewErrorf(libacp.ErrInvalidParams, "%s requires inherit, auto, or a non-negative token count", configIDTokenLimit)
+		}
+		sess.setEffectiveTokenLimit(requested)
+		return nil
+	case configIDOutputTokens:
+		if value == "inherit" {
+			sess.mu.Lock()
+			sess.OutputTokens = nil
+			sess.mu.Unlock()
+			return nil
+		}
+		if value == "auto" {
+			value = "0"
+		}
+		normalized, err := normalizeMaxTokensValue(value)
+		if err != nil || normalized == "" {
+			return libacp.NewErrorf(libacp.ErrInvalidParams, "%s requires inherit, auto, or a non-negative token count", configIDOutputTokens)
+		}
+		sess.mu.Lock()
+		sess.OutputTokens = &normalized
+		sess.mu.Unlock()
 		return nil
 
 	case configIDAgent:
@@ -562,7 +598,20 @@ const (
 func CommandValueDomains(options []libacp.SessionConfigOption) map[string][]string {
 	out := map[string][]string{}
 	for _, option := range options {
+		if _, ok := settings.Lookup(option.ID); ok {
+			addCommandValues(out, "settings", option.ID)
+		}
 		switch option.ID {
+		case settings.ContextWindowTokens, "token-limit":
+			for _, value := range option.Options.AllValues() {
+				addCommandValues(out, "context", value.Value)
+			}
+		case settings.MaxOutputTokens, "max-tokens":
+			for _, value := range option.Options.AllValues() {
+				addCommandValues(out, "output", value.Value)
+				addCommandValues(out, "max-tokens", value.Value)
+			}
+
 		case configIDModel:
 			models, providers := modelCommandDomains(option)
 			addCommandValues(out, CommandModel, models...)
@@ -570,6 +619,7 @@ func CommandValueDomains(options []libacp.SessionConfigOption) map[string][]stri
 		case configIDThink:
 			for _, value := range option.Options.AllValues() {
 				addCommandValues(out, CommandThink, value.Value)
+				addCommandValues(out, "reasoning", value.Value)
 			}
 		case configIDHITLPolicy:
 			for _, value := range option.Options.AllValues() {
@@ -577,6 +627,7 @@ func CommandValueDomains(options []libacp.SessionConfigOption) map[string][]stri
 					continue
 				}
 				addCommandValues(out, CommandPolicy, value.Value)
+				addCommandValues(out, "permissions", value.Value)
 			}
 		}
 	}
@@ -642,6 +693,38 @@ func configOptionHasValue(option libacp.SessionConfigOption, value string) bool 
 	return false
 }
 
+// offerableModels returns the models a backend contributes to a session's model
+// list: the ones it reports as chat- or prompt-capable, and — when it reports
+// NONE of its models that way — the ones it does not describe at all.
+//
+// Every capability flag is a heuristic its catalogue maintains by hand, and a
+// provider reached through a catalogue that sets none of them used to contribute
+// an empty list: reachable in `contenox doctor`, absent from every model picker,
+// with nothing anywhere saying why. A model the engine then refuses is a visible
+// failure; a provider missing from the list is not.
+//
+// "Undescribed" is deliberately narrower than "not chat". A model the catalogue
+// positively marks as an embedding, a transcription or an image model is left
+// out — that catalogue answered the question — while one carrying no flags at
+// all is offered, because silence is not an answer.
+func offerableModels(models []runtimestate.ModelPullStatus) []runtimestate.ModelPullStatus {
+	capable := make([]runtimestate.ModelPullStatus, 0, len(models))
+	undescribed := make([]runtimestate.ModelPullStatus, 0, len(models))
+	for _, model := range models {
+		if model.CanChat || model.CanPrompt {
+			capable = append(capable, model)
+			continue
+		}
+		if !model.CanEmbed && !model.CanStream && !model.CanThink && !model.CanVision && !model.CanAudio {
+			undescribed = append(undescribed, model)
+		}
+	}
+	if len(capable) > 0 {
+		return capable
+	}
+	return undescribed
+}
+
 func modelConfigValue(provider, model string) string {
 	provider = strings.TrimSpace(provider)
 	model = strings.TrimSpace(model)
@@ -692,4 +775,53 @@ func describePulledModel(model runtimestate.ModelPullStatus) string {
 		parts = append(parts, "thinking")
 	}
 	return strings.Join(parts, ", ")
+}
+
+func (t *Transport) contextDescription(ctx context.Context, sess *sessionEntry) string {
+	chainLimit := 0
+	source := "no loaded chain"
+	if t.deps.ChainRegistry != nil {
+		source = t.deps.ChainRegistry.Source()
+		if chain := t.deps.ChainRegistry.Default(); chain != nil {
+			chainLimit = int(chain.TokenLimit)
+		}
+	}
+	modelLimit := t.modelContextCap(ctx, sess)
+	budget := settings.ContextBudget(t.turnContextLength(ctx, sess), chainLimit, modelLimit)
+	desc := fmt.Sprintf("Effective history window: %d tokens. Model capacity: %s. Chain limit: %d (0 inherits), from %s. Inherited context default: %d. Changes apply next turn, session only.", budget, ceilingLabel(modelLimit), chainLimit, source, t.defaultTokenLimit(ctx))
+	if t.deps.DefaultContextSource != "" {
+		desc += " Default source: " + t.deps.DefaultContextSource + "."
+	}
+	if modelLimit == 0 {
+		desc += fmt.Sprintf(" Model capacity is unknown: this is an application budget, not a capacity guarantee. With no positive budget, the fallback is %d tokens.", settings.FallbackContextTokens)
+	}
+	return desc
+}
+
+func (t *Transport) outputTokensConfigOption(ctx context.Context, sess *sessionEntry) libacp.SessionConfigOption {
+	current := "inherit"
+	sess.mu.Lock()
+	if sess.OutputTokens != nil {
+		current = *sess.OutputTokens
+	}
+	sess.mu.Unlock()
+	ceiling := setupcheck.ResolveMaxOutputTokens(t.runtimeStates(ctx), sess.providerOrDefault(t.provider()), sess.modelOrDefault(t.model()))
+	values := []libacp.SessionConfigValue{
+		{Value: "inherit", Name: "Use saved default", Description: "Inherit the invocation or saved generation cap"},
+		{Value: "0", Name: "Backend default", Description: "Do not send an explicit output cap; reserve one eighth of the context window for output"},
+	}
+	seen := map[string]bool{"inherit": true, "0": true}
+	for _, value := range []string{"1024", "2048", "4096", "8192", "16384", "32768", "65536", t.sessionOutputTokens(sess), current} {
+		n, _ := strconv.Atoi(value)
+		if seen[value] || (ceiling > 0 && n > ceiling && value != current && value != t.sessionOutputTokens(sess)) {
+			continue
+		}
+		seen[value] = true
+		values = append(values, libacp.SessionConfigValue{Value: value, Name: value + " tokens"})
+	}
+	return libacp.SessionConfigOption{
+		ID: configIDOutputTokens, Name: settings.Name(settings.MaxOutputTokens), Category: "generation", Type: configTypeSelect, CurrentValue: current,
+		Description: fmt.Sprintf("Requested output cap: %s tokens per model call; model ceiling: %s. Also reserves history headroom. An explicit chain max_tokens overrides this inherited setting. Applies next turn, session only.", t.sessionOutputTokens(sess), ceilingLabel(ceiling)),
+		Options:     libacp.NewSessionConfigValues(values),
+	}
 }

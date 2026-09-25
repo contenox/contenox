@@ -349,15 +349,15 @@ func newTestGitRepo(t *testing.T, dir string) {
 func generatedACPChain(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	_, err := agentdecl.Preseed(dir)
+	_, err := agentdecl.Preseed(context.Background(), declRootForTest(t, dir))
 	require.NoError(t, err)
 	cfg, err := agentdecl.Shipped()
 	require.NoError(t, err)
 	generated := filepath.Join(dir, agentdecl.GeneratedDirName)
-	_, err = agentdecl.Sync([]agentdecl.SourceDir{{
-		Path:   filepath.Join(dir, agentdecl.NativeSourceDir),
+	_, err = agentdecl.Sync(context.Background(), []agentdecl.SourceDir{{
+		Root:   declRootForTest(t, filepath.Join(dir, agentdecl.NativeSourceDir)),
 		Native: true,
-	}}, generated, cfg)
+	}}, declRootForTest(t, generated), cfg)
 	require.NoError(t, err)
 	return filepath.Join(generated, "chain-agent-acp.json")
 }

@@ -55,7 +55,7 @@ Reusing a human's own credentials for an automated workflow is a common shortcut
 4. Save it and activate it:
 
    ```bash
-   contenox config set hitl-policy-name hitl-policy-<name>.json
+   contenox config set execution.permissions.policy hitl-policy-<name>.json
    ```
 
 ## Expected outcome

@@ -28,21 +28,21 @@ const (
 	StyleFailed    StyleID = "failed"
 	StyleSkipped   StyleID = "skipped"
 	StyleHITL      StyleID = "hitl"    // approval-card chrome
-	StyleBrand     StyleID = "brand"   // brand mint; closed usage list only
+	StyleBrand     StyleID = "brand"   // brand signal yellow; closed usage list only
 	StyleHeading   StyleID = "heading" // markdown headings
 	StyleEmphasis  StyleID = "em"
 	StyleStrong    StyleID = "strong"
 	StyleCode      StyleID = "code" // inline code and code-block text
 
-	// The brand-mint luminance ramp: the three stops of the website
-	// logo-mark, lightest to deepest, so the mark's three mitered beam
+	// The signal-yellow brand ramp: the three stops of the website
+	// logo-mark, top to spine to bottom, so the mark's three mitered beam
 	// strokes keep their depth as block art. These belong to StyleBrand's
 	// closed usage list — today the fresh-session welcome header and
 	// nothing else. Never body text, never a semantic state, never a
 	// background.
-	StyleBrandRamp1 StyleID = "brand-ramp1" // lightest stop, top stroke
-	StyleBrandRamp2 StyleID = "brand-ramp2" // mid stop, spine (== brand)
-	StyleBrandRamp3 StyleID = "brand-ramp3" // deepest stop, bottom stroke
+	StyleBrandRamp1 StyleID = "brand-ramp1" // primary stop, top stroke
+	StyleBrandRamp2 StyleID = "brand-ramp2" // deep stop, spine
+	StyleBrandRamp3 StyleID = "brand-ramp3" // light stop, bottom stroke
 )
 
 // All lists every StyleID. The style package's completeness test fails when

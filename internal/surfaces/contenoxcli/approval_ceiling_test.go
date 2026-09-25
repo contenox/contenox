@@ -21,7 +21,7 @@ func ceilingOf(t *testing.T, svc hitlservice.Service) time.Duration {
 }
 
 // TestUnit_ApprovalCeiling_ConfigKeySetsTheFleetWideWait drives what an
-// operator does: `contenox config set approval-ceiling <value>`, then any
+// operator does: `contenox config set execution.approval.timeout <value>`, then any
 // command that raises an ask. Unset is the compiled-in fallback; "never" is
 // the wait that has no deadline at all.
 func TestUnit_ApprovalCeiling_ConfigKeySetsTheFleetWideWait(t *testing.T) {
@@ -45,7 +45,7 @@ func TestUnit_ApprovalCeiling_ConfigKeySetsTheFleetWideWait(t *testing.T) {
 			store := runtimetypes.New(db.WithoutTransaction())
 
 			if tc.value != "" {
-				// What `contenox config set approval-ceiling <value>` persists.
+				// What `contenox config set execution.approval.timeout <value>` persists.
 				normalized, err := normalizeApprovalCeiling(approvalCeilingKey, tc.value)
 				require.NoError(t, err)
 				require.NoError(t, clikv.SetString(ctx, store, approvalCeilingKey, normalized))

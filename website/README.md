@@ -5,11 +5,20 @@ every page under `/docs/` renders markdown from this repo's `docs/` tree
 (see `src/content.config.ts`). Editing a doc there is editing the website.
 
 ```bash
-task website:deps      # npm ci
-task website:dev       # local dev server with live reload
-task website:build     # static output -> website/dist
-task website:preview   # build + serve the built output
+task website:deps         # npm ci
+task website:dev          # local dev server with live reload
+task website:build        # static output -> website/dist
+task website:preview      # build + serve the built output
+task website:screenshots  # Playwright capture pass over every page
 ```
+
+`screenshots` walks every published route (`e2e/routes.ts`) across the desktop
+and mobile viewports, each in light and dark mode, and writes viewport captures
+to the gitignored `.screenshots/<viewport>-<theme>/<slug>.png`. Dark projects
+emulate `prefers-color-scheme: dark`, and each capture asserts the rendered
+theme matches its project — a wrong-theme capture fails instead of landing
+silently. Scope a run with `SCREENSHOT_FILTER=<substring>` or a single cell of
+the matrix with `--project=<viewport>-<theme>`.
 
 `docs/` is the site's whole content source: `guide/`, `specification/`,
 `integrations/`, `reference/`, `use-cases/` and `rnd/` publish; `development/`

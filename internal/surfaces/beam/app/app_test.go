@@ -263,15 +263,28 @@ func TestUnit_Submit_RecordsPrompt(t *testing.T) {
 		t.Fatal("liveness not ticking during a turn")
 	}
 
-	// A second submit while running is refused and keeps the text.
+	// A second submit while running is queued in FIFO order and leaves composer empty.
 	h.typeText("again")
 	h.press(input.KeyEnter)
-	requireContains(t, testkit.EncodeLines(h.last().Scrollback), "a turn is already running", "in-flight notice")
-	if h.a.comp.Draft() != "again" {
-		t.Fatalf("refused submit lost the draft: %q", h.a.comp.Draft())
+	requireContains(t, testkit.EncodeLines(h.last().Scrollback), "queued #1 for next turn", "in-flight queue notice")
+	if !h.a.comp.Empty() {
+		t.Fatalf("queued submit did not clear composer: %q", h.a.comp.Draft())
+	}
+	if len(h.a.queuedPrompts) != 1 || h.a.queuedPrompts[0] != "again" {
+		t.Fatalf("unexpected queued prompts: %#v", h.a.queuedPrompts)
 	}
 	if strings.Count(h.calls(), "SubmitPrompt") != 1 {
 		t.Fatalf("expected exactly one SubmitPrompt, got:\n%s", h.calls())
+	}
+
+	// Withdrawing the queued prompt restores it into the empty composer.
+	h.typeText("/withdraw")
+	h.press(input.KeyEnter)
+	if len(h.a.queuedPrompts) != 0 {
+		t.Fatalf("queued prompts not cleared after withdraw: %#v", h.a.queuedPrompts)
+	}
+	if h.a.comp.Draft() != "again" {
+		t.Fatalf("withdrawn prompt was not restored into composer: %q", h.a.comp.Draft())
 	}
 }
 
@@ -286,7 +299,7 @@ func TestUnit_ShellLine_RunsShell(t *testing.T) {
 	requireNotContains(t, h.calls(), "SubmitPrompt", "a shell line must never become a turn")
 }
 
-// TestUnit_Palette_QuitFlow pins the `/qu` journey: trigger opens, typing
+// TestUnit_Palette_QuitFlow pins the `/quit` journey: trigger opens, typing
 // filters, Enter completes, Enter again runs the local command.
 func TestUnit_Palette_QuitFlow(t *testing.T) {
 	h := newHarness(t).start()
@@ -295,7 +308,7 @@ func TestUnit_Palette_QuitFlow(t *testing.T) {
 	if !h.a.pal.IsOpen() {
 		t.Fatal("`/` on an empty buffer did not open the palette")
 	}
-	h.typeText("qu")
+	h.typeText("qui")
 	sel, ok := h.a.pal.Selected()
 	if !ok || sel.Name != "quit" {
 		t.Fatalf("filtered palette selected %+v (ok=%v), want quit", sel, ok)
@@ -858,6 +871,36 @@ func TestUnit_Editor_CarriesTheDraftBothWays(t *testing.T) {
 	}
 }
 
+// TestUnit_Editor_ReachableFromThePalette pins that the handoff is also a local
+// command, so a terminal that eats the second key of the chord still has a path
+// to the editor — and that the command line itself is not handed over as the
+// draft.
+func TestUnit_Editor_ReachableFromThePalette(t *testing.T) {
+	var seen []string
+	h := newHarness(t, func(d *Deps) {
+		d.Editor = func(seed string) (string, error) {
+			seen = append(seen, seed)
+			return "written in $EDITOR", nil
+		}
+	}).start()
+
+	h.typeText("/editor")
+	h.press(input.KeyEnter)
+
+	if h.term.suspends != 1 {
+		t.Fatalf("/editor did not hand the terminal over: suspends=%d", h.term.suspends)
+	}
+	if len(seen) != 1 {
+		t.Fatalf("the editor ran %d times, want once: %v", len(seen), seen)
+	}
+	if seen[0] != "" {
+		t.Fatalf("the command line was seeded into the editor: %q", seen[0])
+	}
+	if got := h.a.comp.Draft(); got != "written in $EDITOR" {
+		t.Fatalf("editor result was not carried back: %q", got)
+	}
+}
+
 // TestUnit_Editor_SuspendRepaintsTheLiveRegionOnly pins that Ctrl+X, Ctrl+E
 // hands the terminal over with an empty live region and never prints a
 // scrollback line twice, however many suspend cycles run.
@@ -928,15 +971,14 @@ func TestUnit_Editor_AbortKeepsTheDraft(t *testing.T) {
 }
 
 // TestUnit_Editor_WelcomeHintTracksWiring pins hint honesty at the surface:
-// the fresh-session welcome advertises the Ctrl+X, Ctrl+E chord exactly when
-// Deps.Editor is wired, and the chord itself stays a no-op notice when it is
-// not.
+// the fresh-session welcome advertises /editor exactly when Deps.Editor is
+// wired, and both the command and the chord stay no-op notices when it is not.
 func TestUnit_Editor_WelcomeHintTracksWiring(t *testing.T) {
 	wired := newHarness(t).start()
-	requireContains(t, wired.scrollback(), "Ctrl+X Ctrl+E", "welcome hint with an editor wired")
+	requireContains(t, wired.scrollback(), "/editor", "welcome hint with an editor wired")
 
 	bare := newHarness(t, func(d *Deps) { d.Editor = nil }).start()
-	requireNotContains(t, bare.scrollback(), "Ctrl+X Ctrl+E", "welcome hint with no editor")
+	requireNotContains(t, bare.scrollback(), "/editor", "welcome hint with no editor")
 	// The encoded frame carries style tags between the key and its label.
 	requireContains(t, bare.scrollback(), "?[muted] keys", "the other affordances survive")
 
@@ -1821,6 +1863,36 @@ func TestUnit_Usage_FeedsTheStatusBar(t *testing.T) {
 
 	h.deliver(enginebridge.UsageUpdated{SessionID: testSession, Used: 1200, Size: 128000})
 	requireContains(t, testkit.EncodeLines(h.last().Live), "1200/128000", "context gauge")
+}
+
+// TestUnit_Stats_ShowsCacheHitRateAndTokens pins that /stats displays prompt cache hit rate and token counts.
+func TestUnit_Stats_ShowsCacheHitRateAndTokens(t *testing.T) {
+	h := newHarness(t, func(d *Deps) { d.FreshSession = false }).start()
+	h.deliver(enginebridge.StatsUpdated{
+		SessionID: testSession,
+		Stats: libacp.SessionStats{
+			SessionID:        string(testSession),
+			Turns:            3,
+			Steps:            8,
+			ModelCalls:       10,
+			InputTokens:      10000,
+			CacheReadTokens:  7500,
+			OutputTokens:     1000,
+			ThinkingTokens:   300,
+			CacheWriteTokens: 500,
+			TtftSamples:      10,
+			TtftMs:           2000,
+			StreamMs:         20000,
+		},
+	})
+
+	h.typeText("/stats")
+	h.press(input.KeyEnter)
+
+	scrollback := testkit.EncodeLines(h.last().Scrollback)
+	requireContains(t, scrollback, "Prompt Cache Hit Rate: 75.0%", "stats cache hit rate")
+	requireContains(t, scrollback, "7.5k cached / 10.0k total prompt", "stats prompt breakdown")
+	requireContains(t, scrollback, "10.0k input (7.5k cached) + 1.0k output (300 thinking)", "stats token breakdown")
 }
 
 // TestUnit_Run_QuitsAndRestoresTheTerminal exercises the real select loop:

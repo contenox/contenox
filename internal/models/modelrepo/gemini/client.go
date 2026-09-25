@@ -187,6 +187,7 @@ func buildGeminiRequest(modelName string, messages []modelrepo.Message, args []m
 	}
 
 	contents := convertToGeminiMessages(messages)
+	contents = trimTrailingModelTurn(contents)
 	if len(contents) == 0 {
 		return geminiGenerateContentRequest{}, fmt.Errorf("gemini: refusing to send empty contents for model %s after filtering %d message(s); provide at least one non-empty user/model/tool message, tool call, or tool response", modelName, len(messages))
 	}
@@ -392,7 +393,7 @@ func convertToGeminiMessages(messages []modelrepo.Message) []geminiContent {
 		}
 
 		if len(out) > 0 && out[len(out)-1].Role == role {
-			out[len(out)-1].Parts = append(out[len(out)-1].Parts, parts...)
+			out[len(out)-1].Parts = mergeGeminiParts(out[len(out)-1].Parts, parts)
 		} else {
 			out = append(out, geminiContent{
 				Role:  role,
@@ -402,6 +403,47 @@ func convertToGeminiMessages(messages []modelrepo.Message) []geminiContent {
 	}
 
 	return out
+}
+
+// mergeGeminiParts appends one message's parts to the parts of the turn of the
+// same role that precedes it, keeping every functionResponse after that turn's
+// prose and media. Gemini wants one user turn per function-call cycle — two
+// user-role contents in a row fail its alternation check — so a tool result and
+// the operator's next prompt share a turn; text placed after a functionResponse
+// is the shape the provider answers with "Requests ending with a model turn are
+// not supported".
+func mergeGeminiParts(existing, incoming []geminiPart) []geminiPart {
+	responses := make([]geminiPart, 0, len(incoming))
+	merged := make([]geminiPart, 0, len(existing)+len(incoming))
+	keep := func(parts []geminiPart) {
+		for _, p := range parts {
+			if p.FunctionResponse != nil {
+				responses = append(responses, p)
+				continue
+			}
+			merged = append(merged, p)
+		}
+	}
+	keep(existing)
+	keep(incoming)
+	return append(merged, responses...)
+}
+
+// trimTrailingModelTurn drops trailing model-role contents. Gemini rejects a
+// request whose last content is a model turn ("Requests ending with a model turn
+// are not supported") — a recovery, summarise, or handoff history arrives with
+// the previous task's reply last — and a model content that called a tool is no
+// more sendable when it trails, because the functionResponse Gemini requires must
+// follow its functionCall and nothing follows a trailing turn.
+func trimTrailingModelTurn(contents []geminiContent) []geminiContent {
+	last := len(contents) - 1
+	for last >= 0 && contents[last].Role == "model" {
+		last--
+	}
+	if last == len(contents)-1 {
+		return contents
+	}
+	return contents[:last+1]
 }
 
 func geminiToolResponseMap(content string) map[string]interface{} {

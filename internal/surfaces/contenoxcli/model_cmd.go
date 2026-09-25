@@ -32,12 +32,12 @@ Examples:
   contenox model list
 
 Set the default model:
-  contenox config set default-model    gemini-flash-latest
-  contenox config set default-provider gemini`,
+  contenox config set inference.model    gemini-flash-latest
+  contenox config set inference.provider gemini`,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 0 {
-			return fmt.Errorf("unknown subcommand %q\n\nTo set a default model:\n  contenox config set default-model <model>\n  contenox config set default-provider <provider>", args[0])
+			return fmt.Errorf("unknown subcommand %q\n\nTo set a default model:\n  contenox config set inference.model <model>\n  contenox config set inference.provider <provider>", args[0])
 		}
 		return cmd.Help()
 	},
@@ -49,6 +49,7 @@ var modelListCmd = &cobra.Command{
 	Short:   "List models currently loadable from live backends.",
 	Long: `Query each registered backend in real time and show models that can be used now.
 
+For modeld this is the worker inventory and resolved device capabilities.
 For cloud/Ollama/vLLM providers this is the provider-advertised live catalog.
 
 Shows model name, backend, and effective capabilities observed at runtime plus
@@ -58,6 +59,9 @@ Examples:
   contenox model list`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if local, _ := cmd.Flags().GetBool("local"); local {
+			return printNativeModels(cmd)
+		}
 		ctx := libtracker.WithNewRequestID(context.Background())
 		db, _, err := openBackendDB(cmd)
 		if err != nil {
@@ -181,7 +185,7 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 		fmt.Fprintln(out, "\nNo loadable models found on any live backend.")
 	}
 	if preferredModel != "" {
-		fmt.Fprintln(out, "\n* = default model (contenox config set default-model <name>)")
+		fmt.Fprintln(out, "\n* = default model (contenox config set inference.model <name>)")
 	}
 	return nil
 }

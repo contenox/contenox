@@ -13,7 +13,7 @@ import (
 const ASCIISigil = "|"
 
 const (
-	// sigil is the mint beam-bar marking the composer, the same brand
+	// sigil is the signal-yellow beam-bar marking the composer, the same brand
 	// device as the welcome header and status segment, plus its
 	// separating space. Continuation rows keep the two cells so wrapped
 	// text stays in one column.
@@ -45,7 +45,7 @@ const MinWidth = 4
 
 // Render projects the buffer into terminal rows for width. Rows are the
 // buffer soft-wrapped to width-2, hung off the two-cell sigil column: the
-// first row carries the beam-bar (mint if focused, muted otherwise), other
+// first row carries the beam-bar (yellow if focused, muted otherwise), other
 // rows two muted spaces. Height is 1..MaxRows; a taller draft scrolls to
 // keep the caret's row visible, and the first continuation row's gutter
 // then counts what scrolled off the top (see prefixSpan). At or above
@@ -172,7 +172,7 @@ func locate(wrapped []string, off, contentW int) (row, col int) {
 }
 
 // prefixSpan is a row's sigil column: the beam-bar on the first row, two
-// spaces on continuations; mint marks focus, muted the resting state.
+// spaces on continuations; yellow marks focus, muted the resting state.
 //
 // When the draft is taller than MaxRows, the first continuation row spends
 // its two muted cells on a scroll marker ("↑3") instead, so a scrolled

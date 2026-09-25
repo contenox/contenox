@@ -122,6 +122,7 @@ func (t *Transcript) Apply(ev enginebridge.Event) {
 		t.push(missionUnit{
 			agent: sanitize.Line(e.AgentName),
 			text:  sanitize.Lines(text),
+			askID: sanitize.Line(e.AskID),
 			ask:   true,
 		})
 

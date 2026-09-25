@@ -70,6 +70,13 @@ func (t *Transport) offerParkedAsk(ctx context.Context, sid libacp.SessionID, ro
 
 	rpcReq := t.parkedAskCard(sid, row)
 	t.attachAskRecovery(ctx, &rpcReq, row.ID)
+	meta := approvalflow.Meta{ArgsSummary: row.ArgsSummary}
+	if t.deps.DB != nil {
+		checkpoint, err := runtimetypes.New(t.deps.DB.WithoutTransaction()).GetChainCheckpoint(ctx, row.ID)
+		meta.Detached = err == nil && checkpoint != nil && checkpoint.ClaimedAt == nil
+	}
+	rpcReq.ToolCall.Meta = mergeMetaFields(rpcReq.ToolCall.Meta, meta)
+	rpcReq.Meta = mergeMetaFields(rpcReq.Meta, meta)
 
 	resp, err := t.conn.RequestPermission(ctx, rpcReq)
 	if err != nil {

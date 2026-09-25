@@ -73,6 +73,7 @@ func (c *VLLMChatClient) Chat(ctx context.Context, messages []modelrepo.Message,
 		Usage: &modelrepo.TokenUsage{
 			PromptTokens:     response.Usage.PromptTokens,
 			CompletionTokens: response.Usage.CompletionTokens,
+			ThinkingTokens:   response.Usage.CompletionTokensDetails.ReasoningTokens,
 			TotalTokens:      response.Usage.TotalTokens,
 		},
 	}

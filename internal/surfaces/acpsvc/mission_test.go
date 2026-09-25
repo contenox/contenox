@@ -414,7 +414,7 @@ func TestUnit_AcpCommands_WithoutMissionCapability_ExcludesMission(t *testing.T)
 }
 
 // conditionalCommand reports whether name carries a gate of its own.
-// TestUnit_HandleMission_TeachingErrorWithoutCapability pins: without hasMissionCapability, /mission teaches the in-process fix, never serve.
+// TestUnit_HandleMission_TeachingErrorWithoutCapability pins: without hasMissionCapability, /mission teaches the in-process fix, never a different surface.
 func TestUnit_HandleMission_TeachingErrorWithoutCapability(t *testing.T) {
 	tr, _ := newMissionTestTransport(t, nil, nil)
 	_, err := tr.handleMission(context.Background(), &sessionEntry{}, "do something")
@@ -426,10 +426,8 @@ func TestUnit_HandleMission_TeachingErrorWithoutCapability(t *testing.T) {
 			t.Fatalf("teaching error missing %q: %q", want, err.Error())
 		}
 	}
-	for _, forbidden := range []string{"Beam", "contenox serve", "serve-hosted"} {
-		if strings.Contains(err.Error(), forbidden) {
-			t.Fatalf("in-process teaching error must not teach serve-as-center, but contains %q: %q", forbidden, err.Error())
-		}
+	if strings.Contains(err.Error(), "Beam") {
+		t.Fatalf("in-process teaching error must not teach a Beam-centered fix: %q", err.Error())
 	}
 }
 

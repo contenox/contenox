@@ -10,24 +10,28 @@ interface Props {
 const { posixLabel, windowsLabel, copyLabel } = Astro.props;
 const posixCmd = 'curl -fsSL https://contenox.com/install.sh | sh';
 const windowsCmd = 'irm https://contenox.com/install.ps1 | iex';
-const tab = 'rounded-md px-3 py-1 text-xs font-medium text-neutral-500 transition-colors hover:text-neutral-800 aria-selected:bg-white aria-selected:text-neutral-900 aria-selected:shadow-sm dark:hover:text-neutral-200 dark:aria-selected:bg-neutral-900 dark:aria-selected:text-white';
-const row = 'flex items-center gap-4 overflow-x-auto rounded-xl border border-neutral-200/50 bg-white/60 px-4 py-3 font-mono text-sm shadow-sm backdrop-blur-md whitespace-nowrap dark:border-neutral-800/50 dark:bg-neutral-950/60';
-const copyBtn = 'ml-auto shrink-0 rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-800 dark:border-neutral-800 dark:hover:bg-neutral-900 dark:hover:text-neutral-200';
+const tab = 'node-install-tab px-3 py-1 text-xs font-medium';
+const row = 'node-install-row flex items-center gap-2.5 border px-3 py-2 font-mono text-xs sm:px-4 sm:py-2.5 sm:text-sm';
+const copyBtn = 'node-copy ml-auto shrink-0 border px-2.5 py-1 text-xs cursor-pointer select-none';
 ---
-<div class="mx-auto max-w-lg" data-install>
-  <div role="tablist" hidden data-install-tabs class="mx-auto mb-3 inline-flex rounded-lg border border-neutral-200/60 bg-neutral-100/60 p-1 dark:border-neutral-800/60 dark:bg-neutral-900/60">
+<div class="w-full max-w-lg" data-install>
+  <div role="tablist" hidden data-install-tabs class="node-install-tabs mb-2.5 inline-flex border p-1">
     <button type="button" role="tab" data-install-tab="posix" aria-selected="true" class={tab}>{posixLabel}</button>
     <button type="button" role="tab" data-install-tab="windows" aria-selected="false" class={tab}>{windowsLabel}</button>
   </div>
   <div class="flex flex-col gap-2">
     <div data-install-row="posix" class={row}>
-      <span class="text-neutral-400 dark:text-neutral-500">$</span>
-      <span>{posixCmd}</span>
+      <span class="shrink-0 text-neutral-400 select-none dark:text-neutral-500">$</span>
+      <div class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap py-0.5">
+        <code>{posixCmd}</code>
+      </div>
       <button data-copy={posixCmd} class={copyBtn}>{copyLabel}</button>
     </div>
     <div data-install-row="windows" class={row}>
-      <span class="text-neutral-400 dark:text-neutral-500">PS&gt;</span>
-      <span>{windowsCmd}</span>
+      <span class="shrink-0 text-neutral-400 select-none dark:text-neutral-500">PS&gt;</span>
+      <div class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap py-0.5">
+        <code>{windowsCmd}</code>
+      </div>
       <button data-copy={windowsCmd} class={copyBtn}>{copyLabel}</button>
     </div>
   </div>

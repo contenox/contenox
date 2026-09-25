@@ -19,7 +19,7 @@ person.
   is refused:
 
   ```bash
-  contenox config set default-mission-policy hitl-policy-default.json
+  contenox config set execution.missions.permissions.policy hitl-policy-default.json
   ```
 
 Nothing else. `local_fs` and `local_shell` are hosted by contenox and carried by

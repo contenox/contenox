@@ -1,33 +1,12 @@
 ---
 title: Rechtliches
-description: Alle Rechtsdokumente von Contenox an einer Stelle — Nutzungsbedingungen, Datenschutzerklärung, Widerrufsbelehrung, Impressum, Sicherheit und Unterauftragsverarbeiter für den gehosteten Dienst, dazu die Angaben zu dieser Website und der quelloffenen Software.
+description: Rechtliche Hinweise, Impressum, Lizenz, Gewährleistung, Haftung und Datenschutz für die Open-Source-Software Contenox und diese Website.
 en: /legal
 ---
 
 # Rechtliches
 
-Alles Rechtliche an einer Stelle. Zwei Gruppen: die Dokumente für den
-**gehosteten Dienst**, für den Sie sich anmelden, und die Angaben zu **dieser
-Website und der quelloffenen Software**, für die es kein Konto braucht.
-
-## Der gehostete Dienst (app.contenox.com)
-
-| Dokument | Worum es geht |
-|---|---|
-| [Nutzungsbedingungen](/legal/terms) | Der Vertrag: die drei Ebenen, was wir schulden, die Haftung, und welche Vorschriften Sie wo treffen |
-| [Datenschutzerklärung](/legal/privacy) | Was verarbeitet wird, auf welcher Rechtsgrundlage, wie lange, wie es gesichert ist, und Ihre Rechte |
-| [Widerrufsbelehrung](/legal/withdrawal) | Für Verbraucher: das vierzehntägige Widerrufsrecht, das Musterformular und wann es erlischt |
-| [Impressum des Dienstes](/legal/imprint) | Anbieterkennzeichnung nach § 5 DDG für den Dienst |
-| [Sicherheit](/legal/security) | Wie Sie eine Schwachstelle melden und was damit geschieht |
-| [Unterauftragsverarbeiter](/legal/subprocessors) | Jeder Dritte, der Daten verarbeitet, und wie Änderungen angekündigt werden |
-
-Alle sechs werden hier veröffentlicht. Die Fassungen in der App sind Kopien
-davon.
-
-## Diese Website und die Software
-
-Der Rest dieser Seite. Für die Nutzung der quelloffenen Software braucht es
-kein Konto, und keines der obigen Dokumente gilt für sie.
+Rechtliche Angaben, Lizenzbedingungen, Haftung und Datenschutz zur Contenox-Open-Source-Software und dieser Website.
 
 ## Impressum gem. § 5 DDG
 
@@ -93,8 +72,6 @@ ist, entscheidet darüber, wofür wir billigerweise einstehen können.
   weiterlaufen;
 - das System der festgelegten Auslöser;
 - die Ablaufsteuerung sowie die Bedienoberflächen, die auf ihr aufsetzen;
-- das Verfahren, mit dem sich eine Maschine an das Relay koppelt, und dessen
-  fest hinterlegter Ausweis;
 - `modeld`, die Zwischenschicht zu Programmen, die KI-Modelle auf Ihrem eigenen
   Rechner ausführen.
 
@@ -183,27 +160,12 @@ Dies ist keine Rechtsberatung.
 
 ## Daten und Datenschutz
 
-**Die Software läuft auf Ihrer Maschine.** Contenox speichert seinen Zustand
-(Sitzungen, Abläufe, Konfiguration) lokal. Eingaben und Dateien, die Sie in eine
-Anfrage einbeziehen, gehen ausschließlich an den von Ihnen konfigurierten
-Anbieter des KI-Modells — kein Server von uns verarbeitet Ihre Arbeitslast. Die
-Nutzung der Software erfordert weder Konto noch Registrierung.
-
-**Das gehostete Relay ist ein davon getrennter, optionaler Dienst.** Wenn Sie
-ein Konto unter [app.contenox.com](https://app.contenox.com) anlegen, können
-Sie Ihre eigenen Maschinen aus dem Browser erreichen. Dieser Dienst hält Daten
-über Sie — ein Konto, welche Maschinen gekoppelt sind und, bei einem
-Abonnement, eine Abrechnungsreferenz. Sitzungsinhalte speichert er nicht: keine
-Eingaben, keine Antworten, keine Dateien. Was er hält, wie lange, und wie Sie es
-exportieren oder löschen, steht in seinen eigenen Dokumenten:
-[Datenschutzerklärung](/legal/privacy), [Nutzungsbedingungen](/legal/terms)
-und, für Verbraucher, [Widerrufsbelehrung](/legal/withdrawal) sowie das
-[Impressum des Dienstes](/legal/imprint). Wie der Dienst abgesichert ist und
-wie Sie eine Schwachstelle melden, steht auf der
-[Sicherheitsseite](/legal/security); die eingesetzten Dienstleister listet
-[Unterauftragsverarbeiter](/legal/subprocessors). Nichts auf dieser Seite gilt für
-jenen Dienst, und nichts dort wird für die Nutzung der quelloffenen Software
-benötigt.
+**Die Software läuft auf Infrastruktur unter Ihrer Kontrolle.** Contenox
+speichert seinen Zustand standardmäßig in SQLite oder in von Ihnen
+konfigurierten PostgreSQL-, NATS- und Valkey-Systemen. Eingaben und Dateien
+gehen nur an die von Ihnen konfigurierten Modell-Backends und Tools — kein
+Server von uns verarbeitet Ihre Arbeitslast. Die Nutzung der Software erfordert
+weder Konto noch Registrierung.
 
 **Diese Website ist statisch.** contenox.com setzt keine Cookies, führt keine
 Analyse durch und verlangt kein Konto. Ihre Farbschema-Einstellung wird lokal

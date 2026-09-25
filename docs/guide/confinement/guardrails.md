@@ -15,7 +15,7 @@ each is a file you write, diff and review like any other change.
 
 | What it decides | Where you declare it |
 |---|---|
-| Which model answers | `model:` in the [agent declaration](/docs/guide/agents/); `execute_config.model` / `provider` in an authored chain |
+| Which model answers | `model:` in the [agent declaration](/docs/guide/declarations/); `execute_config.model` / `provider` in an authored chain |
 | Which tools exist at all | `tools:` in the declaration; `execute_config.tools` allowlist in an authored chain |
 | Where it may act | the instance's one workspace, the [sandbox](/docs/guide/confinement/sandbox/), and the envelope's `files.*` path lists |
 | What runs, asks, or is refused | the envelope's capability axes — [HITL policy](/docs/guide/hitl/) |
@@ -65,7 +65,10 @@ something you write, not something the runtime does for you.
 
 There is also `hide_tools` to suppress specific tools from both the registry and
 any client-passed set, and `tools_policies` to constrain a provider before it
-runs — `local_shell: { "_allowed_commands": "git,go,ls" }`.
+runs — `local_shell: { "_allowed_commands": "git,go,ls" }`. That list is enforced
+per program on a whole command line: `git status && go test ./...` needs both
+`git` and `go`, and a step the list cannot vouch for refuses the call before
+anything runs.
 
 A tool the task was never granted is not a tool the model can be argued into
 calling.
@@ -150,7 +153,7 @@ files.write = { grant = "approve", timeout = "30m", on_timeout = "deny" }
 Nobody answers in thirty minutes, the ask is denied and the run moves on. Write
 `timeout = "never"` instead and the ask has no deadline at all: it waits, across
 restarts, until somebody answers it. Leave both out and the ask is bounded by
-this host's approval ceiling — `contenox config set approval-ceiling
+this host's approval ceiling — `contenox config set execution.approval.timeout
 <duration|never>`, seven days until you set it. `deny` is the only `on_timeout`
 there is: an ask that allowed itself when nobody answered would bypass the
 approval it exists to require, and beside `timeout = "never"` it is refused

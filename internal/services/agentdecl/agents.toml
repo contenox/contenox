@@ -30,18 +30,23 @@
 # tool's directory carry that tool's prefix there, so theirs is
 # [agents.claude-code-reviewer]. A section naming no agent is reported, not
 # silently ignored.
+#
+# _allowed_commands is enforced per program on a whole command line, so
+# "git status && go test ./..." needs both names. A step the policy cannot
+# check (a glob, a pipe, a substitution) refuses the call before it runs.
 
 version = 1
 
 [chain]
-# Context budget for the chat history, and the source of the per-call
-# tool-result cap. A zero budget reports every tool result as too large
-# regardless of its real size.
-token_limit = 131072
+# Additional agent context ceiling in tokens. Zero inherits the session window
+# (inference.context.window_tokens), bounded by the selected model capacity.
+# Set a positive value only when this agent needs a stricter ceiling.
+token_limit = 0
 
 # Output cap per model call. Template form is honoured, so a caller overrides
-# it per run without editing anything.
-max_tokens = "{{var:max_tokens|16384}}"
+# it per run without editing anything. The session inherits
+# inference.generation.max_output_tokens; a literal here pins this agent.
+max_tokens = "{{var:max_tokens}}"
 
 # Reasoning effort. A declaration's own `effort` overrides this; the
 # vocabularies coincide.
@@ -50,10 +55,27 @@ think = "{{var:think}}"
 # Bounds on the two-stage tool loop.
 # The main stage hands to recovery after this many traversals; recovery
 # summarises the failure rather than looping.
-main_rounds = 60
+main_rounds = 100
 recovery_rounds = 10
 
 retry_on_failure = 0
+
+# Slide the context window on overflow instead of failing the task: the oldest
+# messages are dropped, the system prompt and the most recent turns are kept.
+# Turning it off makes an over-budget call fail, and hands the failure handler
+# and the terminal summary the same over-budget history, so they fail with it.
+shift = true
+
+# Retry every model call of an emitted chain: a rate limit, a 5xx or a timeout
+# is retried with backoff, while an auth, context-length or cancelled call is
+# not. The hand-written system chains carry this shape. The fallback fields are
+# unset, so a retry re-asks the same model.
+[chain.retry_policy]
+max_attempts = 4
+initial_backoff = "1s"
+max_backoff = "30s"
+jitter = 0.25
+rate_limit_min_wait = "10s"
 
 [routing]
 # Templates by default, so routing stays your configured default
@@ -191,7 +213,7 @@ local_shell = "approve"
 # Seven axes. Each is an action — allow, approve or deny — or a table carrying
 # `grant` plus the refinements listed with it:
 #
-#   files.read       read_file, read_file_range, list_dir, and the native-fs-browse
+#   files.read       read_file, read_file_range, list_dir, and the local_fs
 #                    reads grep, find_files, stat_file, count_stats, list_dir
 #   files.write      write_file, edit_file, sed
 #   shell            local_shell
@@ -451,6 +473,26 @@ on_exhausted = "finish_stuck"
 allow_agent_answers = true
 max_agent_answers = 3
 
+# Attended default only. Introspection reads and sandboxed eval were observed
+# asking hundreds of times and never vetoed; they elevate to allow so the ask
+# gate stops nagging on reads. Every mutation stays approve, git_restore stays
+# ask, and the unattended acpx / strict / oracle envelopes are untouched. This
+# is a floor, not a ceiling: a shadow policy file still overrides it.
+[envelopes.default.tools]
+"native-git.git_status" = "allow"
+"native-git.git_diff" = "allow"
+"native-git.git_log" = "allow"
+"native-git.git_show" = "allow"
+"native-git.git_branch_list" = "allow"
+"native-git.git_blame" = "allow"
+"native-go.go_definition" = "allow"
+"native-go.go_references" = "allow"
+"native-go.go_symbols" = "allow"
+"native-go.go_describe" = "allow"
+"native-go.go_implementations" = "allow"
+"native-go.go_diagnostics" = "allow"
+"native-goja.goja_eval" = "allow"
+
 # The deliberate step up from default, and the one to name when a session should
 # refuse rather than ask. Two things earn it a name of its own: anything unnamed
 # is denied instead of offered for approval, and the shell loses its allowlist
@@ -542,39 +584,6 @@ missions.answer = "deny"
 
 [envelopes.oracle.compute]
 on_exhausted = "finish_stuck"
-
-# `contenox serve` is the MCP host, and this envelope is the shape of the host
-# rather than a tightening of it. The host mounts missions and the MCP servers you
-# configured; it mounts no filesystem and no shell at all, and a declaration
-# asking for one is refused at mount time rather than at approval time. Saying so
-# here is the point: an operator reads why the refusal happened without reading
-# the source.
-#
-# default_action stays at approve because the capabilities that do arrive are the
-# ones you connected, and nothing here can know what they do. Name them — an MCP
-# server appears under its own name, so `"github.*" = "approve"` or
-# `"tavily.search" = "allow"` in a [envelopes.serve.tools] block of your own is
-# how a connected tool stops asking.
-[envelopes.serve]
-extends = "read_only"
-description = "The MCP host: missions and the servers you connected, nothing local."
-default_action = "approve"
-files.read = "deny"
-files.write = "deny"
-shell = "deny"
-network.read = "deny"
-network.write = "deny"
-missions.fire = "allow"
-missions.answer = "allow"
-
-[envelopes.serve.compute]
-max_tool_calls = 300
-max_tokens = 2000000
-on_exhausted = "finish_stuck"
-
-[envelopes.serve.attention]
-allow_agent_answers = true
-max_agent_answers = 3
 
 [naming]
 # Prefix an agent read from another tool's directory with that tool's name, so

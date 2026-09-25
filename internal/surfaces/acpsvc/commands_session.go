@@ -2,7 +2,7 @@ package acpsvc
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,7 +10,9 @@ import (
 	"strings"
 
 	"github.com/contenox/contenox/internal/kernel/taskengine"
+	"github.com/contenox/contenox/internal/models/llmrepo"
 	"github.com/contenox/contenox/internal/services/chatservice"
+	"github.com/contenox/contenox/internal/services/vfs"
 	"github.com/contenox/contenox/internal/store/runtimetypes"
 	libacp "github.com/contenox/contenox/libacp"
 )
@@ -162,6 +164,8 @@ func (t *Transport) handleCompact(ctx context.Context, _ libacp.SessionID, sess 
 	templateVars := t.chainTemplateVars(sess)
 	templateVars["chain"] = chain.ID
 	execCtx := taskengine.WithTemplateVars(ctx, templateVars)
+	execCtx = llmrepo.WithSessionKey(execCtx, llmrepo.DeriveSessionKey(sess.InternalSessionID))
+	execCtx = llmrepo.WithUsageSession(execCtx, sess.InternalSessionID)
 
 	compacted, err := chatservice.CompactHistory(execCtx, t.deps.Engine.TaskService, chain, history, keep)
 	if err != nil {
@@ -186,30 +190,31 @@ func (t *Transport) handleCompact(ctx context.Context, _ libacp.SessionID, sess 
 	return fmt.Sprintf("Compacted %d messages to %d (kept last %d).", len(history), len(compacted), keep), nil
 }
 
-// loadCompactChain reads chain-compact-default.json from the active .contenox
-// directory, falling back to ~/.contenox.
 func (t *Transport) loadCompactChain() (*taskengine.TaskChainDefinition, error) {
 	const name = "chain-compact-default.json"
 	var candidates []string
 	if t.deps.ContenoxDir != "" {
-		candidates = append(candidates, filepath.Join(t.deps.ContenoxDir, name))
+		candidates = append(candidates, ChainSearchPath(t.deps.ContenoxDir, name)...)
 	}
 	if home, err := os.UserHomeDir(); err == nil {
-		candidates = append(candidates, filepath.Join(home, ".contenox", name))
+		candidates = append(candidates, ChainSearchPath(filepath.Join(home, ".contenox"), name)...)
 	}
 	for _, p := range candidates {
-		data, err := os.ReadFile(p)
+		view, err := vfs.OpenPrivilegedView(filepath.Dir(p))
 		if err != nil {
-			continue
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return nil, fmt.Errorf("open compaction chain directory %q: %w", filepath.Dir(p), err)
 		}
-		var chain taskengine.TaskChainDefinition
-		if err := json.Unmarshal(data, &chain); err != nil {
-			return nil, fmt.Errorf("invalid chain JSON at %q: %w", p, err)
+		data, err := view.ReadFile(context.Background(), filepath.Base(p))
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return nil, fmt.Errorf("read compaction chain %q: %w", p, err)
 		}
-		if chain.ID == "" {
-			return nil, fmt.Errorf("chain at %q has empty ID", p)
-		}
-		return &chain, nil
+		return parseChain(data, p)
 	}
-	return nil, fmt.Errorf("%s not found in %q or ~/.contenox; run 'contenox init' to populate it", name, t.deps.ContenoxDir)
+	return nil, fmt.Errorf("%s not found in %q or ~/.contenox (including generated and system chains); run 'contenox init' to populate it", name, t.deps.ContenoxDir)
 }

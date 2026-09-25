@@ -479,3 +479,37 @@ func TestUnit_PolicyNameFromContext_RoundTrips(t *testing.T) {
 	unchanged := hitlservice.WithPolicyName(context.Background(), "   ")
 	require.Empty(t, hitlservice.PolicyNameFromContext(unchanged), "a blank name pins nothing")
 }
+
+// TestUnit_RecordPendingApproval_IsIdempotentForOneToolCall pins that a
+// repeat gate on the same tool call (a task retry or a resume replay re-enters
+// with the original call id) adopts the existing row instead of failing a
+// UNIQUE insert and dropping the ask to the non-durable fallback.
+func TestUnit_RecordPendingApproval_IsIdempotentForOneToolCall(t *testing.T) {
+	ctx, store, _ := setupHITLDB(t)
+	svc := newDurableService(t, store)
+	rec, ok := svc.(hitlservice.ApprovalRecorder)
+	require.True(t, ok, "the durable service must record pending approvals")
+
+	approvalID := uuid.NewString()
+	req := hitlservice.ApprovalRequest{
+		ToolsName:  "local_fs",
+		ToolName:   "write_file",
+		PolicyName: "hitl-policy-default.json",
+	}
+
+	require.NoError(t, rec.RecordPendingApproval(ctx, approvalID, req))
+	require.NoError(t, rec.RecordPendingApproval(ctx, approvalID, req),
+		"a repeat record of the same pending ask must adopt, not duplicate-create")
+
+	pending, err := store.GetHITLApproval(ctx, approvalID)
+	require.NoError(t, err)
+	require.Equal(t, runtimetypes.HITLApprovalPending, pending.State)
+
+	// A terminal row is authoritative too: re-recording must not resurrect it.
+	require.NoError(t, svc.Respond(ctx, approvalID, true))
+	require.NoError(t, rec.RecordPendingApproval(ctx, approvalID, req))
+
+	got, err := store.GetHITLApproval(ctx, approvalID)
+	require.NoError(t, err)
+	require.Equal(t, runtimetypes.HITLApprovalApproved, got.State, "a repeat record must not overwrite a verdict")
+}

@@ -30,8 +30,8 @@ contenox backend add bedrock --type bedrock \
   --url "https://bedrock-runtime.us-east-1.amazonaws.com"          # the region lives in the URL
 
 contenox model list                                                 # live: Converse-capable models in your account/region
-contenox config set default-model us.anthropic.claude-3-5-sonnet-20241022-v2:0   # example — use an enabled id
-contenox config set default-provider bedrock
+contenox config set inference.model us.anthropic.claude-3-5-sonnet-20241022-v2:0   # example — use an enabled id
+contenox config set inference.provider bedrock
 ```
 
 The `--url` carries the region (`bedrock-runtime.<region>.amazonaws.com`); a bare region like `us-east-1` also works. The IAM principal needs `bedrock:InvokeModel` (and `bedrock:InvokeModelWithResponseStream` for streaming).
@@ -54,7 +54,7 @@ contenox backend add bedrock --type bedrock \
 Most current Claude/Llama models can't be invoked on-demand by their bare foundation id — they require a **regional inference profile**. If a call fails with `ValidationException: ... on-demand throughput isn't supported ... use an inference profile`, prefix the id with your region group — `us.`, `eu.`, or `apac.`:
 
 ```bash
-contenox config set default-model us.anthropic.claude-3-5-sonnet-20241022-v2:0
+contenox config set inference.model us.anthropic.claude-3-5-sonnet-20241022-v2:0
 ```
 
 ## EU regions
@@ -69,7 +69,7 @@ contenox backend add bedrock-eu --type bedrock \
 For models that require an inference profile, use the `eu.` prefix — an EU (geography-tied) profile routes requests only among its EU destination regions, listed on the model's detail page in the AWS docs:
 
 ```bash
-contenox config set default-model eu.anthropic.claude-3-5-sonnet-20240620-v1:0   # example — use an enabled id
+contenox config set inference.model eu.anthropic.claude-3-5-sonnet-20240620-v1:0   # example — use an enabled id
 ```
 
 Model access is granted **per region**: enable the models you want in the Bedrock console → **Model access** for that region, then run `contenox model list` to see what your account can invoke there. See [AI sovereignty & the EU AI Act](/docs/guide/sovereignty/) for how region pinning fits the larger deployment posture.

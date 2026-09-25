@@ -11,7 +11,7 @@ name = "acp-validator"
 path = "src/main.rs"
 
 [dependencies]
-agent-client-protocol = { path = "../rust-sdk/src/agent-client-protocol", version = "1.2.0", default-features = false }
+agent-client-protocol = { path = "../rust-sdk/src/agent-client-protocol", version = "2.2.0", default-features = false }
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }

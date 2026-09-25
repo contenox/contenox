@@ -83,7 +83,7 @@ hubspot: authenticated successfully.
 
 ## 4. Use it
 
-Once attached, HubSpot's tools are available like any other MCP server's — to an agent session with this server in scope, or to a `contenox serve` deployment with it registered. Ask about your CRM and the model reaches for `search_crm_objects`, `get_crm_objects`, and friends as needed, subject to your active HITL policy.
+Once attached, HubSpot's tools are available like any other MCP server's — to an agent session with this server in scope, or to a `contenox run` task with it registered. Ask about your CRM and the model reaches for `search_crm_objects`, `get_crm_objects`, and friends as needed, subject to your active HITL policy.
 
 ---
 

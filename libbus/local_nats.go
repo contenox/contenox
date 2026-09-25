@@ -27,6 +27,8 @@ func quiet() func() {
 	}
 }
 
+// SetupNatsInstance starts a NATS container and returns its URL, the container,
+// and a cleanup func.
 func SetupNatsInstance(ctx context.Context) (string, testcontainers.Container, func(), error) {
 	defer quiet()()
 	cleanup := func() {}

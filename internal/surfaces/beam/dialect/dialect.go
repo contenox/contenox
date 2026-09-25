@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/contenox/contenox/internal/services/settings"
 	libacp "github.com/contenox/contenox/libacp"
 )
 
@@ -19,22 +20,26 @@ const (
 )
 
 const (
-	configIDModel      = "model"
-	configIDHITLPolicy = "hitl-policy"
-	configIDThink      = "think"
+	configIDModel      = settings.Model
+	configIDHITLPolicy = settings.PermissionPolicy
+	configIDThink      = settings.ReasoningEffort
 
 	hitlPolicyDefaultValue  = "__contenox_default__"
 	modelConfigDefaultGroup = "default"
 )
 
 type Meta struct {
-	ToolsName  string `json:"toolsName,omitempty"`
-	ToolName   string `json:"toolName,omitempty"`
-	PolicyName string `json:"policyName,omitempty"`
-	PolicyPath string `json:"policyPath,omitempty"`
-	Diff       string `json:"diff,omitempty"`
-	DiffOld    string `json:"diffOld,omitempty"`
-	DiffNew    string `json:"diffNew,omitempty"`
+	// Detached identifies an approval backed by an unclaimed suspended checkpoint.
+	Detached bool `json:"detached,omitempty"`
+	// ArgsSummary describes persisted arguments when their original input is unavailable.
+	ArgsSummary string `json:"argsSummary,omitempty"`
+	ToolsName   string `json:"toolsName,omitempty"`
+	ToolName    string `json:"toolName,omitempty"`
+	PolicyName  string `json:"policyName,omitempty"`
+	PolicyPath  string `json:"policyPath,omitempty"`
+	Diff        string `json:"diff,omitempty"`
+	DiffOld     string `json:"diffOld,omitempty"`
+	DiffNew     string `json:"diffNew,omitempty"`
 
 	// MatchedRule is the 0-based index, in the active policy's rule list, of
 	// the rule that gated this call; nil when no rule matched and the
@@ -172,12 +177,22 @@ func SummarizeToolCallArgs(toolName string, args map[string]any) string {
 }
 
 // Command names whose single argument has a value domain — the keys
-// CommandValueDomains returns, matching the wire names from allACPCommands.
+// The core's slash commands a client completes arguments for, by wire name.
 const (
 	CommandModel    = "model"
 	CommandProvider = "provider"
 	CommandThink    = "think"
 	CommandPolicy   = "policy"
+	CommandAnswer   = "answer"
+)
+
+// AnswerCommandPrefix is the spelling with which a client reaches the core's
+// answer command, and AskAnswerHint is the one line a rendered ask carries so
+// an operator can reply to it: the ask id is a uuid nothing else on screen
+// shows, and asking a human to retype one is asking them not to answer.
+const (
+	AnswerCommandPrefix = "/" + CommandAnswer + " "
+	AskAnswerHint       = "answer this: " + AnswerCommandPrefix + "%s <your reply>"
 )
 
 // CommandValueDomains projects a client's already-handed session config
@@ -190,21 +205,36 @@ const (
 func CommandValueDomains(options []libacp.SessionConfigOption) map[string][]string {
 	out := map[string][]string{}
 	for _, option := range options {
+		if _, ok := settings.Lookup(option.ID); ok {
+			addCommandValues(out, "settings", option.ID)
+		}
 		switch option.ID {
-		case configIDModel:
+		case settings.ContextWindowTokens, "token-limit":
+			for _, value := range option.Options.AllValues() {
+				addCommandValues(out, "context", value.Value)
+			}
+		case settings.MaxOutputTokens, "max-tokens":
+			for _, value := range option.Options.AllValues() {
+				addCommandValues(out, "output", value.Value)
+				addCommandValues(out, "max-tokens", value.Value)
+			}
+
+		case configIDModel, "model":
 			models, providers := modelCommandDomains(option)
 			addCommandValues(out, CommandModel, models...)
 			addCommandValues(out, CommandProvider, providers...)
-		case configIDThink:
+		case configIDThink, "think":
 			for _, value := range option.Options.AllValues() {
 				addCommandValues(out, CommandThink, value.Value)
+				addCommandValues(out, "reasoning", value.Value)
 			}
-		case configIDHITLPolicy:
+		case configIDHITLPolicy, "hitl-policy":
 			for _, value := range option.Options.AllValues() {
 				if value.Value == hitlPolicyDefaultValue {
 					continue
 				}
 				addCommandValues(out, CommandPolicy, value.Value)
+				addCommandValues(out, "permissions", value.Value)
 			}
 		}
 	}

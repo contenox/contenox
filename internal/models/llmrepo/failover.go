@@ -38,9 +38,11 @@ func (e *modelManager) reportBackendRefusal(ctx context.Context, req Request, op
 	)
 	defer end()
 	reportChange("backend_excluded", map[string]any{
-		"backend_id": sel.Backend,
-		"model":      sel.Provider.ModelName(),
-		"reason":     refusalErr.Error(),
+		"backend_id":   sel.Backend,
+		"model":        sel.Provider.ModelName(),
+		"reason":       refusalErr.Error(),
+		"terminal":     libmodelprovider.IsBackendTerminal(refusalErr),
+		"rate_limited": errors.Is(refusalErr, libmodelprovider.ErrRateLimited),
 	})
 }
 
@@ -65,7 +67,10 @@ func (e *modelManager) runChatSelections(
 	for _, sel := range selections {
 		provider, backend := sel.Provider, sel.Backend
 
-		// Envelope allowlist, checked before anything is sent (see bounds.go).
+		if !e.backendAllowedByHealth(ctx, req, backend) {
+			continue
+		}
+
 		if err := e.enforceResolutionBounds(ctx, "chat", provider, backend); err != nil {
 			if failErr := skipOrFail(&refusals, sel, err); failErr != nil {
 				return libmodelprovider.ChatResult{}, Meta{}, failErr

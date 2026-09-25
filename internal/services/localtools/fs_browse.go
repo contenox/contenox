@@ -14,13 +14,11 @@ import (
 	"github.com/contenox/contenox/internal/services/vfs"
 )
 
-// LocalFSBrowseToolsName is the registered toolset name an allowlist addresses;
-// the native- scope is a namespace, so a declared MCP source cannot mint the
-// same key.
-const LocalFSBrowseToolsName = "native-fs-browse"
-
 // LocalFSBrowseTools walks the host filesystem directly rather than through
-// FileIO, so it is only ever registered on a profile that owns the machine.
+// FileIO, so it is only ever registered on a profile that owns the machine. It
+// serves the local_fs namespace's browsing half; the namespace itself is bound
+// together in fs_combined.go, because one toolset name carrying two repos is a
+// silent substitution waiting to happen.
 type LocalFSBrowseTools struct {
 	allowedDir  string
 	name        string
@@ -28,12 +26,12 @@ type LocalFSBrowseTools struct {
 }
 
 func NewLocalFSBrowseTools(allowedDir string, cwdResolver func(context.Context) string) taskengine.ToolsRepo {
-	return newLocalFSBrowseTools(allowedDir, LocalFSBrowseToolsName, cwdResolver)
+	return newLocalFSBrowseTools(allowedDir, LocalFSToolsName, cwdResolver)
 }
 
 func newLocalFSBrowseTools(allowedDir, name string, cwdResolver func(context.Context) string) *LocalFSBrowseTools {
 	if name == "" {
-		name = LocalFSBrowseToolsName
+		name = LocalFSToolsName
 	}
 	cleaned := allowedDir
 	if cleaned != "" {

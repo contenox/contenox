@@ -127,16 +127,18 @@ func TestUnit_backendService_delete(t *testing.T) {
 	require.Empty(t, list)
 }
 
-func TestUnit_backendService_sameTypeAndURL_rejected(t *testing.T) {
+func TestUnit_backendService_sameTypeAndURL_allowed(t *testing.T) {
 	ctx, db, _ := setupSQLiteStore(t)
 	svc := backendservice.New(db)
 
-	b1 := &runtimetypes.Backend{ID: uuid.NewString(), Name: "a", Type: "ollama", BaseURL: "http://127.0.0.1:11434"}
-	b2 := &runtimetypes.Backend{ID: uuid.NewString(), Name: "b", Type: "ollama", BaseURL: "http://127.0.0.1:11434"}
+	b1 := &runtimetypes.Backend{ID: uuid.NewString(), Name: "acct-a", Type: "ollama", BaseURL: "http://127.0.0.1:11434"}
+	b2 := &runtimetypes.Backend{ID: uuid.NewString(), Name: "acct-b", Type: "ollama", BaseURL: "http://127.0.0.1:11434"}
 
 	require.NoError(t, svc.Create(ctx, b1))
-	err := svc.Create(ctx, b2)
-	require.Error(t, err)
+	require.NoError(t, svc.Create(ctx, b2), "a second entry over one upstream is the point")
+
+	same := &runtimetypes.Backend{ID: uuid.NewString(), Name: "acct-a", Type: "ollama", BaseURL: "http://127.0.0.1:9999"}
+	require.Error(t, svc.Create(ctx, same), "the name still identifies a backend to a human")
 }
 
 func TestUnit_backendService_differentType_sameURL_allowed(t *testing.T) {

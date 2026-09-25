@@ -247,6 +247,9 @@ func (s *service) driveUnattendedMission(ctx context.Context, run missionRun) {
 		return
 	}
 	reportChange(string(run.sessionID), string(stop))
+	if stop == libacp.StopReasonCancelled {
+		return
+	}
 	if s.missionReached(ctx, run.missionID) {
 		return
 	}
@@ -264,6 +267,9 @@ func (s *service) driveUnattendedMission(ctx context.Context, run missionRun) {
 		return
 	}
 	reportChange(string(run.sessionID), string(stop))
+	if stop == libacp.StopReasonCancelled {
+		return
+	}
 	if s.missionReached(ctx, run.missionID) {
 		return
 	}

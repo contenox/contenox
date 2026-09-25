@@ -2,7 +2,10 @@ package ollama
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,6 +15,71 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestUnit_Stream_SendsAudioOnTheAudiosField(t *testing.T) {
+	bodies := make(chan []byte, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		assert.NoError(t, err)
+		bodies <- body
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		fmt.Fprintln(w, `{"model":"m","message":{"role":"assistant","content":"transcribed"},"done":true,"done_reason":"stop"}`)
+	}))
+	defer srv.Close()
+
+	provider := NewOllamaProvider("m", []string{srv.URL}, srv.Client(), modelrepo.CapabilityConfig{
+		CanChat: true, CanStream: true, CanAudio: true, AudioExtension: true,
+	}, "", nil)
+	conn, err := provider.GetStreamConnection(context.Background(), srv.URL)
+	require.NoError(t, err)
+
+	audio := []byte("RIFF\x24\x00\x00\x00WAVEfmt ")
+	stream, err := conn.Stream(context.Background(), []modelrepo.Message{
+		{Role: "user", Content: "transcribe this", Audio: []modelrepo.AudioPart{{Data: audio, MimeType: modelrepo.WAVMimeType}}},
+	})
+	require.NoError(t, err)
+	asm := modelrepo.NewStreamAssembler("ollama", "m")
+	for parcel := range stream {
+		require.NoError(t, asm.Consume(parcel))
+	}
+	result, err := asm.Result()
+	require.NoError(t, err)
+	require.Equal(t, "transcribed", result.Content)
+
+	var sent struct {
+		Stream   bool `json:"stream"`
+		Messages []struct {
+			Images []string `json:"images"`
+			Audios []string `json:"audios"`
+		} `json:"messages"`
+	}
+	require.NoError(t, json.Unmarshal(<-bodies, &sent))
+	require.True(t, sent.Stream)
+	require.Len(t, sent.Messages, 1)
+	require.Empty(t, sent.Messages[0].Images)
+	require.Equal(t, []string{base64.StdEncoding.EncodeToString(audio)}, sent.Messages[0].Audios)
+}
+
+func TestUnit_Stream_RefusesAudioWithoutTheExtension(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("no request may reach a peer that does not speak the extension")
+	}))
+	defer srv.Close()
+
+	provider := NewOllamaProvider("m", []string{srv.URL}, srv.Client(), modelrepo.CapabilityConfig{
+		CanChat: true, CanStream: true, CanAudio: true, AudioExtension: false,
+	}, "", nil)
+	conn, err := provider.GetStreamConnection(context.Background(), srv.URL)
+	require.NoError(t, err)
+
+	stream, err := conn.Stream(context.Background(), []modelrepo.Message{
+		{Role: "user", Content: "transcribe this", Audio: []modelrepo.AudioPart{{
+			Data: []byte("RIFF\x24\x00\x00\x00WAVEfmt "), MimeType: modelrepo.WAVMimeType,
+		}}},
+	})
+	require.ErrorIs(t, err, modelrepo.ErrAudioNotSupported)
+	require.Nil(t, stream)
+}
 
 func TestUnit_OllamaStreamClient_StreamsThinkingDeltas(t *testing.T) {
 	t.Parallel()

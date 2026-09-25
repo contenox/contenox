@@ -2,6 +2,7 @@ package contenoxcli
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,7 +20,7 @@ func TestUnit_GlobalInit_LeavesNoChainJSONAtTheTopLevel(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	var out bytes.Buffer
-	require.NoError(t, RunGlobalInit(&out))
+	require.NoError(t, RunGlobalInit(context.Background(), &out))
 
 	contenoxDir := filepath.Join(home, ".contenox")
 	entries, err := os.ReadDir(contenoxDir)
@@ -51,7 +52,7 @@ func TestUnit_ShippedAgentsStillRegisterFromSystemDir(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	var out bytes.Buffer
-	require.NoError(t, RunGlobalInit(&out))
+	require.NoError(t, RunGlobalInit(context.Background(), &out))
 	contenoxDir := filepath.Join(home, ".contenox")
 
 	dbPath := filepath.Join(t.TempDir(), "agents.db")
@@ -70,7 +71,7 @@ func TestUnit_LookupSystemFile_PrefersAnOperatorCopyOverTheShippedOne(t *testing
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	var out bytes.Buffer
-	require.NoError(t, RunGlobalInit(&out))
+	require.NoError(t, RunGlobalInit(context.Background(), &out))
 	contenoxDir := filepath.Join(home, ".contenox")
 
 	shipped, err := lookupSystemFile("", chainPlannerDefaultFilename)
@@ -118,7 +119,7 @@ func TestUnit_GlobalInit_LeavesACustomisedChainOwningItsName(t *testing.T) {
 	require.NoError(t, os.WriteFile(mine, []byte(`{"id":"chain-planner","tasks":[]}`), 0o644))
 
 	var out bytes.Buffer
-	require.NoError(t, RunGlobalInit(&out))
+	require.NoError(t, RunGlobalInit(context.Background(), &out))
 
 	body, err := os.ReadFile(mine)
 	require.NoError(t, err)

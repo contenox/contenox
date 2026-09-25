@@ -158,6 +158,8 @@ func TestFleet_AttachingToAParkedSessionIsShownTheApproval(t *testing.T) {
 
 	meta, ok := approvalflow.ParseMeta(card.Meta)
 	require.True(t, ok)
+	require.True(t, meta.Detached)
+	require.Equal(t, "find home/naro -name go.mod", meta.ArgsSummary)
 	require.Equal(t, "local_shell", meta.ToolsName)
 	require.Equal(t, "hitl-policy-acp.json", meta.PolicyName)
 	require.Nil(t, card.ToolCall.RawInput,

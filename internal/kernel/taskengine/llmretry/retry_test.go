@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/contenox/contenox/internal/kernel/taskengine/llmretry"
+	"github.com/contenox/contenox/internal/models/modelrepo"
 )
 
 func TestUnit_ClassifyError(t *testing.T) {
@@ -28,6 +29,17 @@ func TestUnit_ClassifyError(t *testing.T) {
 		{"capacity exceeded", fmt.Errorf("input token count 200000 exceeds context length 128000"), llmretry.ClassCapacity},
 		{"timeout", fmt.Errorf("Post \"https://api/x\": net/http: request canceled (i/o timeout)"), llmretry.ClassTimeout},
 		{"unknown", fmt.Errorf("totally unexpected provider error"), llmretry.ClassPermanent},
+
+		// The provider clients classify with typed sentinels, and that decision
+		// outranks the text. Each of these messages matches no marker below, so
+		// the text path would call them permanent and never retry.
+		{"typed rate limit", fmt.Errorf("provider refused: %w", modelrepo.ErrRateLimited), llmretry.ClassRateLimit},
+		{"typed auth", fmt.Errorf("provider refused: %w", modelrepo.ErrModelAccessDenied), llmretry.ClassAuth},
+		{"typed capacity", fmt.Errorf("provider refused: %w", modelrepo.ErrContextLengthExceeded), llmretry.ClassCapacity},
+		{"typed model missing", fmt.Errorf("provider refused: %w", modelrepo.ErrModelNotFoundOnBackend), llmretry.ClassPermanent},
+		// And a sentinel outranks text that would classify the other way: this
+		// message says 503, the typed decision says the key is dead.
+		{"sentinel over text", fmt.Errorf("upstream returned 503: %w", modelrepo.ErrModelAccessDenied), llmretry.ClassAuth},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -256,5 +268,27 @@ func TestUnit_Do_ZeroPolicyMakesOneAttempt(t *testing.T) {
 	})
 	if err == nil || calls != 1 || out.Attempts != 1 {
 		t.Fatalf("zero policy should make 1 attempt; calls=%d attempts=%d err=%v", calls, out.Attempts, err)
+	}
+}
+
+func TestUnit_NoRetryVetoesARetryableClass(t *testing.T) {
+	cause := fmt.Errorf("status: 503 service unavailable")
+	if got := llmretry.ClassifyError(llmretry.NoRetry(cause)); got != llmretry.ClassPermanent {
+		t.Fatalf("NoRetry(503) classified %q, want %q", got, llmretry.ClassPermanent)
+	}
+	if got := llmretry.NoRetry(cause).Error(); got != cause.Error() {
+		t.Fatalf("NoRetry message = %q, want the cause's %q", got, cause.Error())
+	}
+
+	calls := 0
+	_, out, err := llmretry.Do(context.Background(), llmretry.RetryPolicy{MaxAttempts: 3}, "primary", func(model string) (any, error) {
+		calls++
+		return nil, llmretry.NoRetry(cause)
+	})
+	if err == nil || calls != 1 || out.Attempts != 1 {
+		t.Fatalf("a vetoed error should stop after 1 attempt; calls=%d attempts=%d err=%v", calls, out.Attempts, err)
+	}
+	if !errors.Is(err, cause) {
+		t.Fatalf("a vetoed error should still unwrap to its cause, got %v", err)
 	}
 }

@@ -1,12 +1,14 @@
 package agentdecl
 
 import (
+	"context"
 	_ "embed"
+	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
+	"io/fs"
 	"sort"
 
+	"github.com/contenox/contenox/internal/kernel/taskengine/llmretry"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -50,6 +52,11 @@ type ChainDefaults struct {
 	MainRounds     int `toml:"main_rounds"`
 	RecoveryRounds int `toml:"recovery_rounds"`
 	RetryOnFailure int `toml:"retry_on_failure"`
+	// Shift slides the context window on overflow instead of failing the task.
+	Shift bool `toml:"shift"`
+	// RetryPolicy wraps every model call of an emitted chain: transient
+	// provider failures are retried with backoff instead of failing the task.
+	RetryPolicy *llmretry.RetryPolicy `toml:"retry_policy"`
 }
 
 // RoutingDefaults hold model routing, as templates unless the operator pins them.
@@ -142,18 +149,18 @@ func Shipped() (Config, error) {
 // Load returns the shipped defaults with each root's overlay applied in order,
 // weakest first. A root without the file is skipped; an unreadable or malformed
 // one is an error.
-func Load(roots ...string) (Config, error) {
+func Load(ctx context.Context, roots ...Root) (Config, error) {
 	d, err := Shipped()
 	if err != nil {
 		return Config{}, err
 	}
 	for _, root := range roots {
-		if root == "" {
+		if root.FS == nil {
 			continue
 		}
-		path := filepath.Join(root, ConfigFilename)
-		raw, err := os.ReadFile(path)
-		if os.IsNotExist(err) {
+		path := root.Path(ConfigFilename)
+		raw, err := root.FS.ReadFile(ctx, ConfigFilename)
+		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
 		if err != nil {
@@ -241,8 +248,8 @@ func (cfg Config) UnknownAgents(known map[string]bool) []string {
 
 // Validate reports defaults that would emit a chain that cannot run.
 func (cfg Config) Validate() error {
-	if cfg.Chain.TokenLimit <= 0 {
-		return fmt.Errorf("agentdecl: chain.token_limit must be positive, got %d", cfg.Chain.TokenLimit)
+	if cfg.Chain.TokenLimit < 0 {
+		return fmt.Errorf("agentdecl: chain.token_limit must be non-negative (0 inherits the session window), got %d", cfg.Chain.TokenLimit)
 	}
 	if cfg.Chain.MainRounds <= 0 {
 		return fmt.Errorf("agentdecl: chain.main_rounds must be positive, got %d", cfg.Chain.MainRounds)

@@ -3,9 +3,9 @@ package hitlservice
 import (
 	"context"
 	"strconv"
-	"strings"
 	"testing"
 
+	"github.com/contenox/contenox/internal/services/shellline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -20,7 +20,7 @@ func TestUnit_ShellAnalyzer_RedirectTargetIsCaptured(t *testing.T) {
 	require.True(t, r.parsed)
 
 	require.Len(t, r.commands, 1)
-	assert.Equal(t, "cat", r.commands[0].base)
+	assert.Equal(t, "cat", r.commands[0].Base)
 	require.Len(t, r.redirects, 1, "the redirect must not be dropped")
 	assert.Equal(t, ">", r.redirects[0].op)
 	assert.Equal(t, "/etc/passwd", r.redirects[0].target, "the TARGET is a first-class policy input")
@@ -65,7 +65,7 @@ func TestUnit_ShellAnalyzer_EnumeratesEveryCommand(t *testing.T) {
 		require.Truef(t, r.parsed, "%q must parse", tc.src)
 		var got []string
 		for _, c := range r.commands {
-			got = append(got, c.base)
+			got = append(got, c.Base)
 		}
 		assert.ElementsMatchf(t, tc.want, got, "%q", tc.src)
 	}
@@ -74,8 +74,8 @@ func TestUnit_ShellAnalyzer_EnumeratesEveryCommand(t *testing.T) {
 func commandBases(r shellReading) []string {
 	var out []string
 	for _, c := range r.commands {
-		if c.base != "" {
-			out = append(out, c.base)
+		if c.Base != "" {
+			out = append(out, c.Base)
 		}
 	}
 	return out
@@ -188,28 +188,6 @@ func TestUnit_ShellAnalyzer_RevealIsBounded(t *testing.T) {
 	assert.Contains(t, commandBases(r), "sh")
 }
 
-// TestUnit_ShellAnalyzer_EscapeDecoding pins the printf/echo -e decoding a
-// revealed payload goes through.
-func TestUnit_ShellAnalyzer_EscapeDecoding(t *testing.T) {
-	t.Parallel()
-	for in, want := range map[string]string{
-		`rm -rf /`:      `rm -rf /`,
-		`\162\155`:      `rm`,
-		`\0162\0155`:    `rm`,
-		`\x72\x6d`:      `rm`,
-		`a\nb`:          "a\nb",
-		`a\tb`:          "a\tb",
-		`back\\slash`:   `back\slash`,
-		`\q`:            `\q`,
-		`trailing\`:     `trailing\`,
-		`\x`:            `\x`,
-		`\400`:          "\040" + "0", // 3 octal digits max, 0400 > 0xff so \40 is taken
-		`no escapes at`: `no escapes at`,
-	} {
-		assert.Equalf(t, want, decodeShellEscapes(in), "decoding %q", in)
-	}
-}
-
 // TestUnit_ShellAnalyzer_BashOnlyLineNeverUpgrades pins that the wider second parse only ever tightens.
 func TestUnit_ShellAnalyzer_BashOnlyLineNeverUpgrades(t *testing.T) {
 	t.Parallel()
@@ -237,8 +215,8 @@ func TestUnit_ShellAnalyzer_LiteralWordsRule(t *testing.T) {
 		r := analyzeShellArgs(ShellKindPOSIX, shArgs(src))
 		require.Truef(t, r.parsed, "%q", src)
 		require.Lenf(t, r.commands, 1, "%q", src)
-		require.Truef(t, r.commands[0].literal, "%q must be fully literal", src)
-		assert.Equalf(t, []string{"echo", want}, r.commands[0].words, "%q", src)
+		require.Truef(t, r.commands[0].Literal, "%q must be fully literal", src)
+		assert.Equalf(t, []string{"echo", want}, r.commands[0].Words, "%q", src)
 	}
 
 	notLiteral := []string{
@@ -260,7 +238,7 @@ func TestUnit_ShellAnalyzer_LiteralWordsRule(t *testing.T) {
 		require.Truef(t, r.parsed, "%q", src)
 		require.NotEmptyf(t, r.commands, "%q", src)
 		// commands[0] is the outer command; a substitution contributes its own inner commands after it.
-		assert.Falsef(t, r.commands[0].literal, "%q carries a run-time value and must not be literal", src)
+		assert.Falsef(t, r.commands[0].Literal, "%q carries a run-time value and must not be literal", src)
 		assert.Falsef(t, r.upgradable, "%q must never be upgradable", src)
 	}
 }
@@ -280,14 +258,14 @@ func TestUnit_ShellAnalyzer_LenientNameResolvesEvasions(t *testing.T) {
 		r := analyzeShellArgs(ShellKindPOSIX, shArgs(src))
 		require.Truef(t, r.parsed, "%q", src)
 		require.Lenf(t, r.commands, 1, "%q", src)
-		assert.Equalf(t, want, r.commands[0].base, "%q resolves to %s", src, want)
+		assert.Equalf(t, want, r.commands[0].Base, "%q resolves to %s", src, want)
 	}
 
 	// A name that only exists at run time is not named at all.
 	r := analyzeShellArgs(ShellKindPOSIX, shArgs(`$CMD -rf /`))
 	require.True(t, r.parsed)
 	require.Len(t, r.commands, 1)
-	assert.Empty(t, r.commands[0].base)
+	assert.Empty(t, r.commands[0].Base)
 	assert.False(t, r.upgradable)
 }
 
@@ -364,7 +342,7 @@ func TestUnit_ShellAnalyzer_AssignmentAllowlistStartsEmpty(t *testing.T) {
 	r := analyzeShellArgs(ShellKindPOSIX, shArgs(`PATH=/tmp git status`))
 	require.True(t, r.parsed)
 	require.Len(t, r.commands, 1)
-	assert.Equal(t, []string{"PATH"}, r.commands[0].assigns)
+	assert.Equal(t, []string{"PATH"}, r.commands[0].Assigns)
 	assert.False(t, r.upgradable)
 }
 
@@ -394,14 +372,6 @@ func TestUnit_ShellAnalyzer_OnlyShellLinesAreRead(t *testing.T) {
 			"%v is an argv call and must not be read as shell syntax", args)
 	}
 
-	// The reconstruction for shell mode: command, then args joined with spaces.
-	src, ok := shellLineFromArgs(map[string]any{"command": "git", "args": []any{"status", "--short"}, "shell": true})
-	require.True(t, ok)
-	assert.Equal(t, "git status --short", src)
-
-	// An absurdly long line is not a command line.
-	_, ok = shellLineFromArgs(map[string]any{"command": strings.Repeat("x", maxShellLineBytes+1)})
-	assert.False(t, ok)
 }
 
 // TestUnit_ShellAnalyzer_PowerShellNeverReachesTheParser pins that a
@@ -415,20 +385,20 @@ func TestUnit_ShellAnalyzer_PowerShellNeverReachesTheParser(t *testing.T) {
 	}
 
 	for _, kind := range []ShellKind{ShellKindPowerShell, ShellKindCmd, ShellKindUnknown, "pwsh", "nushell"} {
-		before := structuralParses.Load()
+		before := shellline.Parses()
 		for _, src := range powershellLines {
 			r := analyzeShellArgs(kind, shArgs(src))
 			assert.Falsef(t, r.analyzed, "kind %q must not be analyzed", kind)
 			assert.Falsef(t, r.upgradable, "kind %q must never upgrade", kind)
 		}
-		assert.Equalf(t, before, structuralParses.Load(),
+		assert.Equalf(t, before, shellline.Parses(),
 			"kind %q reached the parser — mvdan would read a DIFFERENT program", kind)
 	}
 
 	// The POSIX kind does reach it.
-	before := structuralParses.Load()
+	before := shellline.Parses()
 	require.True(t, analyzeShellArgs(ShellKindPOSIX, shArgs(`git status && go build`)).parsed)
-	assert.Greater(t, structuralParses.Load(), before)
+	assert.Greater(t, shellline.Parses(), before)
 }
 
 // TestUnit_ShellAnalyzer_ShellKindGuardTable pins that the no-declaration
@@ -450,7 +420,7 @@ func TestUnit_ShellAnalyzer_ShellKindGuardTable(t *testing.T) {
 		{"no declaration, darwin host", "", "darwin", true},
 		{"no declaration, windows host", "", "windows", false},
 	} {
-		assert.Equalf(t, tc.want, structuralShellEnabled(tc.trusted, tc.goos), tc.name)
+		assert.Equalf(t, tc.want, shellline.Structural(tc.trusted, tc.goos), tc.name)
 	}
 }
 

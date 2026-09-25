@@ -1,6 +1,7 @@
 // Package llmretry wraps a single LLM call with classified retry, exponential
-// backoff, and an optional model fallback. The classifier matches substrings in
-// the formatted error, since provider clients return no typed errors.
+// backoff, and an optional model fallback. The classifier reads the typed
+// sentinels the provider clients attach, and falls back to substring matching for
+// errors that carry none.
 package llmretry
 
 import (
@@ -11,6 +12,8 @@ import (
 	"math/rand"
 	"strings"
 	"time"
+
+	"github.com/contenox/contenox/internal/models/modelrepo"
 )
 
 // ErrorClass is a coarse classification of an LLM call failure used for retry
@@ -48,10 +51,31 @@ func (c ErrorClass) IsRetryable() bool {
 	}
 }
 
+// NoRetry wraps cause so [ClassifyError] reports [ClassPermanent], vetoing a
+// retry the error's own class would have allowed; the message is unchanged.
+func NoRetry(cause error) error {
+	if cause == nil {
+		return nil
+	}
+	return &noRetryError{cause: cause}
+}
+
+type noRetryError struct {
+	cause error
+}
+
+func (e *noRetryError) Error() string { return e.cause.Error() }
+
+func (e *noRetryError) Unwrap() error { return e.cause }
+
 // ClassifyError inspects err for known transient classes.
 func ClassifyError(err error) ErrorClass {
 	if err == nil {
 		return ClassNone
+	}
+	var veto *noRetryError
+	if errors.As(err, &veto) {
+		return ClassPermanent
 	}
 	if errors.Is(err, context.Canceled) {
 		return ClassCanceled
@@ -59,6 +83,16 @@ func ClassifyError(err error) ErrorClass {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return ClassTimeout
 	}
+
+	// Typed sentinels first: modelrepo.ClassifyProviderError decides these in the
+	// provider clients, where the status is known, and a decision made there is
+	// not re-derived from the text here. A provider that reports a 429 with no
+	// number in the message, or a key failure without the word "unauthorized",
+	// otherwise needs a marker added below to be classified at all.
+	if class, ok := classOfSentinel(err); ok {
+		return class
+	}
+
 	s := strings.ToLower(err.Error())
 	switch {
 	case containsAny(s, "429", "too many requests", "rate limit", "rate-limit", "529", "overloaded"):
@@ -76,6 +110,24 @@ func ClassifyError(err error) ErrorClass {
 	return ClassPermanent
 }
 
+// classOfSentinel maps the typed provider sentinels onto retry classes. The text
+// heuristics below remain for errors that carry no sentinel: a transport failure,
+// a client still building its errors by hand, a wrapped third-party message.
+func classOfSentinel(err error) (ErrorClass, bool) {
+	switch {
+	case errors.Is(err, modelrepo.ErrRateLimited):
+		return ClassRateLimit, true
+	case errors.Is(err, modelrepo.ErrModelAccessDenied):
+		return ClassAuth, true
+	case errors.Is(err, modelrepo.ErrContextLengthExceeded):
+		return ClassCapacity, true
+	case errors.Is(err, modelrepo.ErrModelNotFoundOnBackend):
+		return ClassPermanent, true
+	default:
+		return ClassNone, false
+	}
+}
+
 func containsAny(s string, needles ...string) bool {
 	for _, n := range needles {
 		if strings.Contains(s, n) {
@@ -85,12 +137,34 @@ func containsAny(s string, needles ...string) bool {
 	return false
 }
 
-// Duration is a time.Duration that JSON-decodes from either a numeric nanosecond
-// value or a duration string ("1s", "500ms", "2m").
+// Duration is a time.Duration that decodes from either a numeric nanosecond
+// value or a duration string ("1s", "500ms", "2m"), in JSON and in text formats
+// such as TOML.
 type Duration time.Duration
 
 // D returns the underlying time.Duration.
 func (d Duration) D() time.Duration { return time.Duration(d) }
+
+// MarshalText writes the duration string form.
+func (d Duration) MarshalText() ([]byte, error) {
+	return []byte(time.Duration(d).String()), nil
+}
+
+// UnmarshalText parses a duration string, for formats that decode text rather
+// than JSON.
+func (d *Duration) UnmarshalText(b []byte) error {
+	s := strings.TrimSpace(string(b))
+	if s == "" {
+		*d = 0
+		return nil
+	}
+	v, err := time.ParseDuration(s)
+	if err != nil {
+		return fmt.Errorf("invalid duration %q: %w", s, err)
+	}
+	*d = Duration(v)
+	return nil
+}
 
 // MarshalJSON serializes as a duration string for readability.
 func (d Duration) MarshalJSON() ([]byte, error) {
@@ -131,22 +205,22 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 // disables retry (MaxAttempts = 0 → 1 attempt total).
 type RetryPolicy struct {
 	// MaxAttempts is the total attempts including the first. 0 or 1 disables retry.
-	MaxAttempts int `yaml:"max_attempts,omitempty" json:"max_attempts,omitempty"`
+	MaxAttempts int `yaml:"max_attempts,omitempty" json:"max_attempts,omitempty" toml:"max_attempts,omitempty"`
 	// InitialBackoff is the wait before the second attempt; doubled (capped at
 	// MaxBackoff) before each subsequent attempt. Defaults to 500ms when zero.
-	InitialBackoff Duration `yaml:"initial_backoff,omitempty" json:"initial_backoff,omitempty"`
+	InitialBackoff Duration `yaml:"initial_backoff,omitempty" json:"initial_backoff,omitempty" toml:"initial_backoff,omitempty"`
 	// MaxBackoff caps the exponential backoff. 0 = no cap.
-	MaxBackoff Duration `yaml:"max_backoff,omitempty" json:"max_backoff,omitempty"`
+	MaxBackoff Duration `yaml:"max_backoff,omitempty" json:"max_backoff,omitempty" toml:"max_backoff,omitempty"`
 	// Jitter is a 0..1 fraction added to backoff (uniform random).
-	Jitter float64 `yaml:"jitter,omitempty" json:"jitter,omitempty"`
+	Jitter float64 `yaml:"jitter,omitempty" json:"jitter,omitempty" toml:"jitter,omitempty"`
 	// RateLimitMinWait sets a floor for ClassRateLimit backoff.
-	RateLimitMinWait Duration `yaml:"rate_limit_min_wait,omitempty" json:"rate_limit_min_wait,omitempty"`
+	RateLimitMinWait Duration `yaml:"rate_limit_min_wait,omitempty" json:"rate_limit_min_wait,omitempty" toml:"rate_limit_min_wait,omitempty"`
 	// FallbackModelID is the alternate model id used after FallbackAfter
 	// consecutive failures. Empty disables fallback.
-	FallbackModelID string `yaml:"fallback_model_id,omitempty" json:"fallback_model_id,omitempty"`
+	FallbackModelID string `yaml:"fallback_model_id,omitempty" json:"fallback_model_id,omitempty" toml:"fallback_model_id,omitempty"`
 	// FallbackAfter is the consecutive-failure threshold that triggers the
 	// fallback swap. 0 disables fallback regardless of FallbackModelID.
-	FallbackAfter int `yaml:"fallback_after,omitempty" json:"fallback_after,omitempty"`
+	FallbackAfter int `yaml:"fallback_after,omitempty" json:"fallback_after,omitempty" toml:"fallback_after,omitempty"`
 }
 
 // Outcome reports what happened during Do. It is set even on error so callers

@@ -23,6 +23,7 @@ type oracleResolver struct {
 	missions missionservice.Service
 	store    runtimetypes.Store
 	out      io.Writer
+	approves bool
 }
 
 var _ oracletools.Resolver = oracleResolver{}
@@ -73,11 +74,16 @@ func (r oracleResolver) Decide(ctx context.Context, askID string, approve bool, 
 	if row.MissionID == nil || *row.MissionID == "" {
 		return r.refuse(askID, fmt.Sprintf("ask %s belongs to no subagent, so no envelope bounds it", askID))
 	}
-	bounds, err := r.boundsFor(ctx, *row.MissionID)
+	m, err := r.missions.Get(ctx, *row.MissionID)
+	if err != nil || m == nil {
+		return r.refuse(askID, fmt.Sprintf("read subagent %s: %v", *row.MissionID, err))
+	}
+	bounds, err := r.hitl.AttentionBoundsFor(ctx, m.HITLPolicyName)
 	if err != nil {
 		return r.refuse(askID, "the subagent's envelope could not be read")
 	}
-	if !bounds.AllowAgentApprovals {
+	allowApprovals := bounds.AllowAgentApprovals || (m.ParentSessionID == "" && r.approves)
+	if !allowApprovals {
 		return r.refuse(askID, "the subagent's envelope does not allow agent-decided tool calls")
 	}
 	err = r.hitl.RespondAsAgentBounded(ctx, askID, oracleAgentName, approve, guidance, bounds.EffectiveMaxAgentApprovals())

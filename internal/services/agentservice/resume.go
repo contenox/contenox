@@ -219,6 +219,7 @@ func ResumeFromCheckpoint(ctx context.Context, deps Deps, approvalID string) (*P
 	if cp.SessionID != "" {
 		ctx = context.WithValue(ctx, runtimetypes.SessionIDContextKey, cp.SessionID)
 		ctx = llmrepo.WithSessionKey(ctx, llmrepo.DeriveSessionKey(cp.SessionID))
+		ctx = llmrepo.WithUsageSession(ctx, cp.SessionID)
 	}
 	// restores the session's workspace root so a resumed relative path anchors correctly, independent of this process's own cwd
 	ctx = vfs.WithSessionCwd(ctx, workspaceRoot)

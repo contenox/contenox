@@ -396,7 +396,7 @@ func TestUnit_Initialize_AdvertisesWorkspaceConfigOptions(t *testing.T) {
 
 	var options []libacp.SessionConfigOption
 	require.NoError(t, json.Unmarshal(raw, &options))
-	require.Len(t, options, 4)
+	require.Len(t, options, 5)
 	require.Equal(t, "openai/gpt-5-mini", optionByID(t, options, configIDModel).CurrentValue)
 	require.Equal(t, "medium", optionByID(t, options, configIDThink).CurrentValue)
 }

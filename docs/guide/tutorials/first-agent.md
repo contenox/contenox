@@ -143,5 +143,5 @@ token_limit = 131072
 _allowed_commands = "ls,cat,git,go"
 ```
 
-Next: [Declaring agents](/docs/guide/agents/) for the full frontmatter, or
+Next: [Declaring agents](/docs/guide/declarations/) for the full frontmatter, or
 [HITL policies](/docs/guide/hitl/) for the other half.

@@ -167,6 +167,14 @@ func (c *ollamaHTTPClient) Embed(ctx context.Context, req *EmbedRequest) (*Embed
 	return &resp, nil
 }
 
+func (c *ollamaHTTPClient) Contenox(ctx context.Context) (*ContenoxResponse, error) {
+	var resp ContenoxResponse
+	if err := c.do(ctx, http.MethodGet, contenoxRoute, nil, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *ollamaHTTPClient) List(ctx context.Context) (*ListResponse, error) {
 	var resp ListResponse
 	if err := c.do(ctx, http.MethodGet, "/tags", nil, &resp); err != nil {
@@ -208,7 +216,7 @@ func ollamaAPIError(status int, raw []byte) error {
 	if body.SigninURL != "" {
 		msg = fmt.Sprintf("%s (signin: %s)", msg, body.SigninURL)
 	}
-	return fmt.Errorf("ollama API returned %d: %s", status, msg)
+	return modelrepo.ClassifyProviderError(fmt.Errorf("ollama API returned %d: %s", status, msg), status, "", msg)
 }
 
 func buildOllamaOptions(config *modelrepo.ChatConfig, maxOutputTokens int) map[string]any {

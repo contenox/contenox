@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/contenox/contenox/internal/services/agentdecl"
 	"os"
 	"path/filepath"
 
 	"github.com/contenox/contenox/internal/kernel/taskengine"
+	"github.com/contenox/contenox/internal/services/agentdecl"
 	"github.com/contenox/contenox/internal/services/chatservice"
 	"github.com/contenox/contenox/internal/store/runtimetypes"
 	libdb "github.com/contenox/contenox/libdbexec"
@@ -119,7 +119,7 @@ func summarizeForFork(ctx context.Context, cmd *cobra.Command, db libdb.DBManage
 		return nil, err
 	}
 	if model == "" {
-		return nil, fmt.Errorf("no default model configured; run 'contenox setup' (or 'contenox config set default-model <model>')")
+		return nil, fmt.Errorf("no default model configured; run 'contenox setup' (or 'contenox config set inference.model <model>')")
 	}
 
 	rootFlags := cmd.Root().PersistentFlags()

@@ -1,13 +1,18 @@
 ---
 title: Quickstart
-description: Install contenox, connect a model, declare an agent, and start working in the terminal with contenox beam.
+description: Install contenox, connect a model, and start working — in the terminal with contenox beam, or from your editor over ACP.
 order: 1
 ---
 
 # Quickstart
 
-Install, connect a model, declare an agent, and talk to it. Five steps, and the
-last one is the one that pays.
+Install, connect a model, and put an agent to work — in the terminal with
+`contenox beam`, or from the editor you already use. The shipped agent is ready
+to use; declaring your own agent is optional.
+
+To serve models to applications or other machines, follow
+[Gateway: day one](/docs/guide/tutorials/gateway-local/), then
+[Gateway operations](/docs/guide/gateway-operations/).
 
 ## 1. Install
 
@@ -27,7 +32,21 @@ The whole path — install, setup, first prompt — in one take:
 
 ## 2. Connect a model
 
-`contenox setup` is the entry point. For the local path, install [Ollama](https://ollama.com) and pull a model first:
+From your project directory, set up native local inference:
+
+```sh
+contenox auto
+```
+
+Contenox selects and downloads a model for available hardware, verifies tool
+calling, and opens the terminal interface. Selection prefers room for 128K–280K
+hot context over larger model weights. Use `contenox auto --dry-run` to inspect
+the choice first. See [local setup](/docs/integrations/providers/modeld/) for
+origin selection, download authentication and backend limitations.
+
+`contenox setup` offers manual provider and model selection, with modeld first.
+
+For an existing [Ollama](https://ollama.com) installation, pull a model first:
 
 ```bash
 ollama pull qwen3:8b
@@ -54,9 +73,36 @@ If it says `Ready: no`, the line under it names the one command that fixes it.
 
 ---
 
-## 3. Initialize a workspace
+## 3. Start working
 
-Run this once in each project directory you want Contenox to work in:
+```bash
+contenox beam
+```
+
+`contenox auto` already opens this interface after setup. Use `contenox beam`
+or bare `contenox` to return to your latest session.
+
+A first terminal conversation with a local model — backends listed, then a question answered in place:
+
+![contenox backend list showing local and hosted providers, then a first chat on a local model](/quickstart.gif)
+
+The transcript is your native terminal scrollback, so it scrolls, copies and searches the way everything else in that window does. The composer takes `/` for commands and `@` to put a file in front of the agent. The status line carries the live model, the session, and how much context is left.
+
+The first thirty seconds look like this:
+
+1. Type what you want — `@payments.go what breaks if the retry budget is exhausted mid-write?` — and read the answer as it lands. Reads run silently; the shipped envelope allows them.
+2. Ask for something that changes the world — a file written, a command run. The call stops in front of you as an **approval card**: the tool, the exact arguments, and the rule that gated it.
+3. Answer it with one keystroke. Approve and the call runs and the turn continues; deny and the agent is told so and works around it.
+
+Nothing about that card is beam being careful. The envelope decided it before the surface saw it, so the same call gates the same way in an editor, or in a mission. That is the whole idea: see [Human gates and envelopes](/docs/guide/hitl/).
+
+Answering the card continues the same turn: the gated tool runs and the reply carries on. The ask was a durable row before the card appeared, so it is equally answerable from another terminal, it resolves to its `on_timeout` verdict if the wait runs out, and quitting checkpoints the run so you can answer it after reopening the session. See [the durable ask](/docs/guide/hitl/#the-life-of-an-ask).
+
+---
+
+## Optional workspace configuration
+
+To create an explicit workspace marker and seed editable defaults:
 
 ```bash
 contenox init
@@ -66,7 +112,7 @@ This creates the project-local `.contenox/workspace.id` marker; `agents/` and `a
 
 ---
 
-## 4. Declare an agent
+## Optional custom agents
 
 An agent is one file. `.contenox/agents/reviewer.md`:
 
@@ -86,37 +132,11 @@ No build step — the next run picks it up:
 contenox agent list
 ```
 
-The frontmatter says how to run it, the body becomes its system prompt. Budgets, retries and shell allowlists go in [`agents.toml`](/docs/reference/agents-config/) beside it. See [Declaring agents](/docs/guide/agents/).
+The frontmatter says how to run it, the body becomes its system prompt. Budgets, retries and shell allowlists go in [`agents.toml`](/docs/reference/agents-config/) beside it. See [Declaring agents](/docs/guide/declarations/).
 
 ---
 
-## 5. Start working
-
-```bash
-contenox beam
-```
-
-That is the front door. `contenox` on its own opens the same thing.
-
-A first terminal conversation with a local model — backends listed, then a question answered in place:
-
-![contenox backend list showing local and hosted providers, then a first chat on a local model](/quickstart.gif)
-
-The transcript is your native terminal scrollback, so it scrolls, copies and searches the way everything else in that window does. The composer takes `/` for commands and `@` to put a file in front of the agent. The status line carries the live model, the session, and how much context is left.
-
-The first thirty seconds look like this:
-
-1. Type what you want — `@payments.go what breaks if the retry budget is exhausted mid-write?` — and read the answer as it lands. Reads run silently; the shipped envelope allows them.
-2. Ask for something that changes the world — a file written, a command run. The call stops in front of you as an **approval card**: the tool, the exact arguments, and the rule that gated it.
-3. Answer it with one keystroke. Approve and the call runs and the turn continues; deny and the agent is told so and works around it.
-
-Nothing about that card is beam being careful. The envelope decided it before the surface saw it, so the same call gates the same way in an editor, in a mission, or on your phone. That is the whole idea: see [Human gates and envelopes](/docs/guide/hitl/).
-
-Answering the card continues the same turn: the gated tool runs and the reply carries on. The ask was a durable row before the card appeared, so it is equally answerable from another terminal or your phone, it resolves to its `on_timeout` verdict if the wait runs out, and quitting checkpoints the run so you can answer it later from anywhere. See [the durable ask](/docs/guide/hitl/#the-life-of-an-ask).
-
----
-
-## 6. Scripted and background work
+## Scripted and background work
 
 Once the agent does what you want at the keyboard, the same declaration runs without you.
 
@@ -137,7 +157,7 @@ contenox mission fire reviewer "review the payment retry change" --wait
 
 ---
 
-## 7. Optional editor use
+## Optional editor use
 
 Contenox also runs inside editor or desktop clients that speak ACP. The same agents, model config, tools, and HITL policy are used either way; per the protocol the editor owns the workspace, so a session works in the project you already have open:
 
@@ -162,19 +182,32 @@ Contenox needs at least one model to work. Pick the option that fits:
 | [Vertex AI](/docs/integrations/providers/vertex/) | Gemini billed through your GCP project |
 | [vLLM / OpenAI-compatible](/docs/integrations/providers/openai/) | Any server speaking the OpenAI API (vLLM, LM Studio, …) |
 
-If you're not sure, start with [Ollama](/docs/integrations/providers/ollama/) for a fully local setup, or [Gemini](/docs/integrations/providers/gemini/) for a free hosted key.
+For automatic local setup, use `contenox auto`. Hosted providers remain available
+through `contenox setup`.
 
 ---
+
+## Upgrading an existing installation
+
+`contenox init --update` preserves your existing agent configuration. A v1
+`agents.toml` may therefore retain `[chain] token_limit = 131072` and the
+`max_tokens` template's `16384` fallback. Renaming settings does not remove
+those values.
+
+Use `/settings` in the session to inspect effective values. To let agents inherit
+the configured context window, set `[chain] token_limit = 0` in the applicable
+`agents.toml`; keep a positive value when you want an explicit agent ceiling.
+Workspace and per-agent overrides still apply. See [agent configuration](/docs/reference/agents-config/)
+and [configuration](/docs/reference/config/) before changing custom limits.
 
 ## Next steps
 
 - [**Your first agent**](/docs/guide/tutorials/first-agent/) — one file, what contenox builds behind it, and where the knobs are
 - [CLI reference](/docs/reference/contenox-cli/) — `beam`, `run`, `serve`, and every flag
 - [Missions](/docs/guide/missions/) — unattended runs, their envelopes, and the durable record they leave
-- [Declaring agents](/docs/guide/agents/) — the full frontmatter, skills, and the tools an agent brings with it
-- [Core concepts](/docs/guide/concepts/) — how agents, chains, tasks, and tools fit together
+- [Declaring agents](/docs/guide/declarations/) — the full frontmatter, skills, and the tools an agent brings with it
+- [Core concepts](/docs/guide/declarations/) — how agents, chains, tasks, and tools fit together
 - [Writing a chain by hand](/docs/guide/chains/writing-a-chain/) — for the agent that has outgrown a declaration
-- [How contenox compares](/docs/guide/comparison/) — what it shares with the coding agents, and the three things that are built differently
+- [How contenox compares](/docs/guide/comparison/) — working with existing APIs, declarations, and execution policy.
 - [MCP integration](/docs/integrations/tools/mcp/) — connect external tools
-- [Pairing a machine with a relay](/docs/guide/pairing/) — reach a running session from your phone: one typed key, optional always, free for you and three teammates (one machine each)
 - [AI sovereignty & the EU AI Act](/docs/guide/sovereignty/) — hosting, state, and oversight controls you own

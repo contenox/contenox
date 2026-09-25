@@ -1,11 +1,13 @@
 package contenoxcli
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/contenox/contenox/internal/kernel/taskengine"
@@ -53,6 +55,9 @@ func requireReadOnlyReviewLoop(t *testing.T, byID map[string]taskengine.TaskDefi
 
 func TestUnit_ACPChain_RoutesToSimpleBoundedLoops(t *testing.T) {
 	chain := chainFor(t, "acp")
+	cfg, err := agentdecl.Shipped()
+	require.NoError(t, err)
+	toolBudget := strconv.Itoa(cfg.Chain.MainRounds)
 	require.NotEmpty(t, chain.Tasks)
 	require.Equal(t, "chain-acp-route", chain.Tasks[0].ID)
 	require.Len(t, chain.Tasks, 12)
@@ -113,8 +118,8 @@ func TestUnit_ACPChain_RoutesToSimpleBoundedLoops(t *testing.T) {
 		require.Equal(t, "131072", tools.ExecuteConfig.ToolsPolicies["local_fs"]["_max_output_bytes"])
 	}
 
-	requireLoop("chain-acp-coding-agent", "chain-acp-coding-tools", "chain-acp-coding-recovery", "60")
-	requireLoop("chain-acp-general-agent", "chain-acp-general-tools", "chain-acp-general-recovery", "60")
+	requireLoop("chain-acp-coding-agent", "chain-acp-coding-tools", "chain-acp-coding-recovery", toolBudget)
+	requireLoop("chain-acp-general-agent", "chain-acp-general-tools", "chain-acp-general-recovery", toolBudget)
 
 	codingRecoveryTools := byID["chain-acp-coding-recovery-tools"]
 	require.Equal(t, taskengine.HandleExecuteToolCalls, codingRecoveryTools.Handler)
@@ -353,15 +358,15 @@ func chainFor(t *testing.T, name string) taskengine.TaskChainDefinition {
 		return chain
 	}
 	dir := t.TempDir()
-	_, err := agentdecl.Preseed(dir)
+	_, err := agentdecl.Preseed(context.Background(), declRootForTest(t, dir))
 	require.NoError(t, err)
 	cfg, err := agentdecl.Shipped()
 	require.NoError(t, err)
 	generated := filepath.Join(dir, agentdecl.GeneratedDirName)
-	_, err = agentdecl.Sync([]agentdecl.SourceDir{{
-		Path:   filepath.Join(dir, agentdecl.NativeSourceDir),
+	_, err = agentdecl.Sync(context.Background(), []agentdecl.SourceDir{{
+		Root:   declRootForTest(t, filepath.Join(dir, agentdecl.NativeSourceDir)),
 		Native: true,
-	}}, generated, cfg)
+	}}, declRootForTest(t, generated), cfg)
 	require.NoError(t, err)
 	raw, err := os.ReadFile(filepath.Join(generated, "chain-agent-"+name+".json"))
 	require.NoError(t, err)

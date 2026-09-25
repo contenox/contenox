@@ -1,6 +1,7 @@
 package agentdecl_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,7 +33,7 @@ func TestUnit_SkillsDiscoveredInBothLayouts(t *testing.T) {
 	writeSkill(t, root, "release/SKILL.md", "---\nname: release\ndescription: Cut a release\n---\n\nSteps.\n")
 	writeSkill(t, root, "notes.txt", "not a skill")
 
-	skills := agentdecl.DiscoverSkills([]string{root}, root)
+	skills := agentdecl.DiscoverSkills(context.Background(), rootsOf(t, root), root)
 	require.Len(t, skills, 2, "a flat .md and a folder SKILL.md both count; a .txt does not")
 	require.Equal(t, "release", skills[0].Name)
 	require.Equal(t, "timesheet", skills[1].Name)
@@ -46,7 +47,7 @@ func TestUnit_SkillWithoutFrontmatterGetsAFallbackDescription(t *testing.T) {
 	root := t.TempDir()
 	writeSkill(t, root, "deploy.md", "# Deploy\n\nPush the branch, wait for CI, then promote.\n")
 
-	skills := agentdecl.DiscoverSkills([]string{root}, root)
+	skills := agentdecl.DiscoverSkills(context.Background(), rootsOf(t, root), root)
 	require.Len(t, skills, 1)
 	require.Equal(t, "deploy", skills[0].Name, "the filename names it")
 	require.Equal(t, "Push the branch, wait for CI, then promote.", skills[0].Description,
@@ -59,7 +60,7 @@ func TestUnit_NearestSkillShadowsTheOneFurtherOut(t *testing.T) {
 	writeSkill(t, workspace, "timesheet.md", "---\nname: timesheet\ndescription: workspace version\n---\nBody.\n")
 	writeSkill(t, home, "timesheet.md", "---\nname: timesheet\ndescription: home version\n---\nBody.\n")
 
-	skills := agentdecl.DiscoverSkills([]string{workspace, home}, workspace)
+	skills := agentdecl.DiscoverSkills(context.Background(), rootsOf(t, workspace, home), workspace)
 	require.Len(t, skills, 1)
 	require.Equal(t, "workspace version", skills[0].Description)
 }
@@ -79,9 +80,9 @@ You help with recurring work.
 `)
 
 	gen := filepath.Join(root, agentdecl.GeneratedDirName)
-	_, err := agentdecl.Sync(
-		agentdecl.DiscoverSourceDirs([]string{root}, nil), gen, mustConfig(t),
-		agentdecl.WithSkills(agentdecl.DiscoverSkills([]string{root}, root)),
+	_, err := syncAt(t, context.Background(),
+		agentdecl.DiscoverSourceDirs(context.Background(), rootsOf(t, root), nil), gen, mustConfig(t),
+		agentdecl.WithSkills(agentdecl.DiscoverSkills(context.Background(), rootsOf(t, root), root)),
 	)
 	require.NoError(t, err)
 
@@ -102,7 +103,7 @@ func TestUnit_InventoryCarriesTheIndexNotTheBodies(t *testing.T) {
 	root := t.TempDir()
 	writeSkill(t, root, "timesheet.md", timesheetSkill)
 
-	rendered := agentdecl.RenderSkillInventory(agentdecl.DiscoverSkills([]string{root}, root))
+	rendered := agentdecl.RenderSkillInventory(agentdecl.DiscoverSkills(context.Background(), rootsOf(t, root), root))
 	require.Contains(t, rendered, "timesheet")
 	require.NotContains(t, rendered, "present them for approval",
 		"the body stays on disk until the agent reads it")
@@ -121,9 +122,9 @@ Just a prompt.
 `)
 
 	gen := filepath.Join(root, agentdecl.GeneratedDirName)
-	_, err := agentdecl.Sync(
-		agentdecl.DiscoverSourceDirs([]string{root}, nil), gen, mustConfig(t),
-		agentdecl.WithSkills(agentdecl.DiscoverSkills([]string{root}, root)),
+	_, err := syncAt(t, context.Background(),
+		agentdecl.DiscoverSourceDirs(context.Background(), rootsOf(t, root), nil), gen, mustConfig(t),
+		agentdecl.WithSkills(agentdecl.DiscoverSkills(context.Background(), rootsOf(t, root), root)),
 	)
 	require.NoError(t, err)
 
@@ -154,9 +155,9 @@ description: Does repeated office work
 `)
 	gen := filepath.Join(root, agentdecl.GeneratedDirName)
 	sync := func() []agentdecl.SyncResult {
-		res, err := agentdecl.Sync(
-			agentdecl.DiscoverSourceDirs([]string{root}, nil), gen, mustConfig(t),
-			agentdecl.WithSkills(agentdecl.DiscoverSkills([]string{root}, root)),
+		res, err := syncAt(t, context.Background(),
+			agentdecl.DiscoverSourceDirs(context.Background(), rootsOf(t, root), nil), gen, mustConfig(t),
+			agentdecl.WithSkills(agentdecl.DiscoverSkills(context.Background(), rootsOf(t, root), root)),
 		)
 		require.NoError(t, err)
 		return res
@@ -182,13 +183,13 @@ func TestUnit_InventoryPathIsRelativeToTheWorkspace(t *testing.T) {
 	root := t.TempDir()
 	writeSkill(t, root, "timesheet.md", timesheetSkill)
 
-	skills := agentdecl.DiscoverSkills([]string{filepath.Join(root, ".contenox")}, root)
+	skills := agentdecl.DiscoverSkills(context.Background(), rootsOf(t, filepath.Join(root, ".contenox")), root)
 	require.Empty(t, skills, "nothing under .contenox/skills here yet")
 
 	contenoxDir := filepath.Join(root, ".contenox")
 	writeSkill(t, contenoxDir, "release.md", "---\nname: release\ndescription: Cut a release\n---\nSteps.\n")
 
-	skills = agentdecl.DiscoverSkills([]string{contenoxDir}, root)
+	skills = agentdecl.DiscoverSkills(context.Background(), rootsOf(t, contenoxDir), root)
 	require.Len(t, skills, 1)
 	require.Equal(t, ".contenox/skills/release.md", skills[0].Path,
 		"relative to the project root, which is where the agent's file tool is rooted")
@@ -202,7 +203,7 @@ func TestUnit_SkillOutsideTheWorkspaceIsNotListed(t *testing.T) {
 	workspace, elsewhere := t.TempDir(), t.TempDir()
 	writeSkill(t, elsewhere, "global.md", "---\nname: global\ndescription: Applies everywhere\n---\nSteps.\n")
 
-	require.Empty(t, agentdecl.DiscoverSkills([]string{elsewhere}, workspace))
-	require.Empty(t, agentdecl.DiscoverSkills([]string{elsewhere}, ""),
+	require.Empty(t, agentdecl.DiscoverSkills(context.Background(), rootsOf(t, elsewhere), workspace))
+	require.Empty(t, agentdecl.DiscoverSkills(context.Background(), rootsOf(t, elsewhere), ""),
 		"with no workspace root there is nothing to be relative to")
 }

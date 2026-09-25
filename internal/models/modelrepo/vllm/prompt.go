@@ -81,6 +81,7 @@ func (c *vLLMClient) Prompt(ctx context.Context, systemInstruction string, tempe
 		usage := &modelrepo.TokenUsage{
 			PromptTokens:     response.Usage.PromptTokens,
 			CompletionTokens: response.Usage.CompletionTokens,
+			ThinkingTokens:   response.Usage.CompletionTokensDetails.ReasoningTokens,
 			TotalTokens:      response.Usage.TotalTokens,
 		}
 		return choice.Message.Content, usage, nil

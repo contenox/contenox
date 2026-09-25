@@ -19,15 +19,27 @@ var ErrNoBoundSession = errors.New("acpsvc: no ACP transport bound to contenox s
 // most-recent join first. A session is shared, not owned: joining evicts no one,
 // and updates and approvals reach every holder. Safe for concurrent use, and
 // every method is nil-safe.
+//
+// The router also owns the session's [SessionJournal]: every notification it
+// relays is recorded there with the session's monotonic sequence, so a holder
+// that reconnects can name its last sequence and be replayed exactly the
+// notifications it missed (SSE resume over the ACP channel).
 type SessionRouter struct {
 	mu       sync.RWMutex
 	bindings map[string][]*Transport
+	journals map[string]*SessionJournal
 }
 
 // NewSessionRouter returns an empty router ready to be shared across a serve
-// process's ACP WebSocket transports.
+// process's ACP WebSocket transports. A session journal retains the newest
+// 4096 notifications (capacity-trimmed from the oldest end).
+const sessionJournalCapacity = 4096
+
 func NewSessionRouter() *SessionRouter {
-	return &SessionRouter{bindings: make(map[string][]*Transport)}
+	return &SessionRouter{
+		bindings: make(map[string][]*Transport),
+		journals: make(map[string]*SessionJournal),
+	}
 }
 
 func (r *SessionRouter) bind(contenoxSessionID string, t *Transport) {
@@ -161,8 +173,14 @@ func (r *SessionRouter) AskApproval(ctx context.Context, req hitlservice.Approva
 
 // DeliverToContenoxSession routes an out-of-band mission report to every live
 // connection holding contenoxSessionID, returning ErrSessionNotLive when none
-// does. One holder succeeding is enough to call it delivered.
+// does. One holder succeeding is enough to call it delivered. The report is
+// journaled first, so a session that is unattached still records it and a
+// later resume delivers it.
 func (r *SessionRouter) DeliverToContenoxSession(ctx context.Context, contenoxSessionID string, n libacp.SessionNotification) error {
+	if r == nil || contenoxSessionID == "" {
+		return ErrNoBoundSession
+	}
+	r.journalAppend(contenoxSessionID, n)
 	held := r.transportsFor(contenoxSessionID)
 	if len(held) == 0 {
 		return ErrSessionNotLive
@@ -187,6 +205,9 @@ func (r *SessionRouter) DeliverToContenoxSession(ctx context.Context, contenoxSe
 // mirror copies notif to every holder of contenoxSessionID except origin. It
 // never blocks — each copy goes onto the target's own bounded queue — and
 // delivery is best-effort, since session/load replays the durable transcript.
+// Journaling already happened once at the origin (sendUpdate) or at
+// DeliverToContenoxSession; mirror must not journal again or every holder
+// would double the record.
 func (r *SessionRouter) mirror(origin *Transport, contenoxSessionID string, notif libacp.SessionNotification) {
 	if r == nil || contenoxSessionID == "" {
 		return
@@ -197,4 +218,37 @@ func (r *SessionRouter) mirror(origin *Transport, contenoxSessionID string, noti
 		}
 		t.mirrorUpdate(contenoxSessionID, notif)
 	}
+}
+
+// ReplaySince returns the journal entries newer than since for
+// contenoxSessionID, in send order, with the session's current highest
+// sequence. It is the resume answer: a holder that saw sequence `since` needs
+// exactly these notifications, no more and no fewer.
+func (r *SessionRouter) ReplaySince(contenoxSessionID string, since uint64) ([]JournalEntry, uint64) {
+	if r == nil {
+		return nil, 0
+	}
+	r.mu.RLock()
+	journal := r.journals[contenoxSessionID]
+	r.mu.RUnlock()
+	if journal == nil {
+		return nil, 0
+	}
+	return journal.After(since)
+}
+
+// journalAppend records one relayed notification under the session's next
+// sequence, creating the journal on first use, and returns that sequence so
+// the caller can stamp the live copy identically to the stored one. Safe for
+// concurrent callers.
+func (r *SessionRouter) journalAppend(contenoxSessionID string, notif libacp.SessionNotification) uint64 {
+	r.mu.Lock()
+	journal := r.journals[contenoxSessionID]
+	if journal == nil {
+		journal = NewSessionJournal(sessionJournalCapacity)
+		r.journals[contenoxSessionID] = journal
+	}
+	r.mu.Unlock()
+	seq, _ := journal.Append(notif)
+	return seq
 }

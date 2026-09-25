@@ -106,8 +106,8 @@ func TestUnit_WordmarkCopyIsExact(t *testing.T) {
 		ascii bool
 		want  string
 	}{
-		{false, "contenox — open agentic harness"},
-		{true, "contenox - open agentic harness"},
+		{false, "contenox — advance with excellence"},
+		{true, "contenox - advance with excellence"},
 	}
 	for _, c := range cases {
 		for _, w := range []int{60, 80, 120} {
@@ -160,19 +160,17 @@ func TestUnit_WelcomeUsesOnlyClosedStyleIDs(t *testing.T) {
 	}
 }
 
-// TestUnit_WelcomeEditorHintOnlyWhenWired pins hint honesty: the Ctrl+X,
-// Ctrl+E chord appears in the welcome hints — full and compact, unicode and
-// ASCII — exactly when the caller wired an editor, and the other affordances
-// stay regardless.
+// TestUnit_WelcomeEditorHintOnlyWhenWired pins hint honesty: the /editor
+// command appears in the welcome hints — full and compact, unicode and ASCII —
+// exactly when the caller wired an editor, and the other affordances stay
+// regardless.
 func TestUnit_WelcomeEditorHintOnlyWhenWired(t *testing.T) {
 	for _, ascii := range []bool{false, true} {
 		for _, w := range []int{CompactWidth - 6, 80, 120} {
 			for _, editor := range []bool{false, true} {
 				got := lineTexts(Welcome(w, Info{ASCII: ascii, Editor: editor}))
-				hasFull := strings.Contains(got, "Ctrl+X Ctrl+E")
-				hasCompact := strings.Contains(got, "^X^E")
-				if advertised := hasFull || hasCompact; advertised != editor {
-					t.Fatalf("ascii=%v width %d editor=%v: hint advertised=%v, want the chord shown exactly when wired:\n%s",
+				if advertised := strings.Contains(got, "/editor"); advertised != editor {
+					t.Fatalf("ascii=%v width %d editor=%v: hint advertised=%v, want /editor shown exactly when wired:\n%s",
 						ascii, w, editor, advertised, got)
 				}
 				for _, always := range []string{"shell", "files", "keys"} {

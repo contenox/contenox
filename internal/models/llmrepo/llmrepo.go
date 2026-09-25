@@ -28,12 +28,67 @@ type Request struct {
 	// lies; nil changes nothing.
 	CacheHints *CacheHints
 	Tracker    libtracker.ActivityTracker
+	// BackendHealth is the caller's view of which backends may be asked; nil
+	// asks every candidate. It is consulted for each candidate in turn, so a
+	// backend the caller has taken out of service is skipped rather than tried.
+	BackendHealth BackendHealth
+}
+
+func (e *modelManager) backendAllowedByHealth(ctx context.Context, req Request, endpoint string) bool {
+	if req.BackendHealth == nil || endpoint == "" {
+		return true
+	}
+	return req.BackendHealth(e.backendIDForEndpoint(ctx, endpoint))
+}
+
+func (e *modelManager) healthyResolver(ctx context.Context, health BackendHealth) func([]libmodelprovider.Provider) (libmodelprovider.Provider, string, error) {
+	if health == nil {
+		return llmresolver.Randomly
+	}
+	allowed := func(endpoint string) bool {
+		return health(e.backendIDForEndpoint(ctx, endpoint))
+	}
+	return func(candidates []libmodelprovider.Provider) (libmodelprovider.Provider, string, error) {
+		healthy := make([]libmodelprovider.Provider, 0, len(candidates))
+		for _, p := range candidates {
+			endpoint := ""
+			if ids := p.GetBackendIDs(); len(ids) > 0 {
+				endpoint = ids[0]
+			}
+			// The resolver names a candidate by its endpoint; a caller tracks a
+			// backend by its id, so the id is resolved first — the same mapping
+			// the chat path's per-candidate check uses.
+			if allowed(endpoint) {
+				healthy = append(healthy, p)
+			}
+		}
+		if len(healthy) == 0 {
+			return nil, "", fmt.Errorf("embedding: no candidate backend is in service: %w", llmresolver.ErrNoSatisfactoryModel)
+		}
+		return llmresolver.Randomly(healthy)
+	}
+}
+
+func (e *modelManager) backendIDForEndpoint(ctx context.Context, endpoint string) string {
+	if e.runtime == nil {
+		return endpoint
+	}
+	for _, state := range e.runtime.Get(ctx) {
+		if state.Backend.BaseURL == endpoint || state.ID == endpoint || state.Backend.ID == endpoint {
+			if state.Backend.ID != "" {
+				return state.Backend.ID
+			}
+			return state.ID
+		}
+	}
+	return endpoint
 }
 
 type EmbedRequest struct {
-	ModelName    string
-	ProviderType string
-	Tracker      libtracker.ActivityTracker
+	ModelName     string
+	ProviderType  string
+	Tracker       libtracker.ActivityTracker
+	BackendHealth BackendHealth
 }
 
 type Meta struct {
@@ -240,7 +295,7 @@ func (e *modelManager) Chat(
 	}
 
 	if len(messages) == 0 {
-		return libmodelprovider.ChatResult{}, Meta{}, errors.New("messages cannot be empty")
+		return libmodelprovider.ChatResult{}, Meta{}, fmt.Errorf("%w: messages cannot be empty", ErrInvalidRequest)
 	}
 
 	runtimeStateResolution := e.GetRuntime(ctx)
@@ -287,7 +342,7 @@ func (e *modelManager) Embed(
 	prompt string,
 ) ([]float64, Meta, error) {
 	if prompt == "" {
-		return nil, Meta{}, errors.New("prompt cannot be empty")
+		return nil, Meta{}, fmt.Errorf("%w: prompt cannot be empty", ErrInvalidRequest)
 	}
 
 	runtimeStateResolution := e.GetRuntime(ctx)
@@ -305,13 +360,13 @@ func (e *modelManager) Embed(
 	client, provider, backend, err := llmresolver.Embed(ctx,
 		resolverReq,
 		runtimeStateResolution,
-		llmresolver.Randomly,
+		e.healthyResolver(ctx, embedReq.BackendHealth),
 	)
 	if err != nil && e.reconcileForResolution(ctx, err) {
 		client, provider, backend, err = llmresolver.Embed(ctx,
 			resolverReq,
 			e.GetRuntime(ctx),
-			llmresolver.Randomly,
+			e.healthyResolver(ctx, embedReq.BackendHealth),
 		)
 	}
 	if err != nil {
@@ -319,21 +374,19 @@ func (e *modelManager) Embed(
 	}
 	defer safeClose(client)
 
-	// Envelope allowlist bounds embeddings too: the allowlist is TOTAL, not
-	// per-kind (see ResolutionBounds).
-	if err := e.enforceResolutionBounds(ctx, "embed", provider, backend); err != nil {
-		return nil, Meta{}, err
-	}
-
-	embeddings, err := client.Embed(ctx, prompt)
-	if err != nil {
-		return nil, Meta{}, fmt.Errorf("embedding generation failed: %w", err)
-	}
-
 	meta := Meta{
 		ModelName:    provider.ModelName(),
 		ProviderType: provider.GetType(),
 		BackendID:    backend,
+	}
+
+	if err := e.enforceResolutionBounds(ctx, "embed", provider, backend); err != nil {
+		return nil, meta, err
+	}
+
+	embeddings, err := client.Embed(ctx, prompt)
+	if err != nil {
+		return nil, meta, fmt.Errorf("embedding generation failed: %w", err)
 	}
 	return embeddings, meta, nil
 }
@@ -345,7 +398,7 @@ func (e *modelManager) Stream(
 	opts ...libmodelprovider.ChatArgument,
 ) (<-chan *libmodelprovider.StreamParcel, Meta, error) {
 	if len(messages) == 0 {
-		return nil, Meta{}, errors.New("messages cannot be empty")
+		return nil, Meta{}, fmt.Errorf("%w: messages cannot be empty", ErrInvalidRequest)
 	}
 
 	if err := validateRequest(req); err != nil {
@@ -391,21 +444,7 @@ func (e *modelManager) Stream(
 }
 
 func mergeTokenUsage(dst *libmodelprovider.TokenUsage, src *libmodelprovider.TokenUsage) {
-	if src.PromptTokens != 0 {
-		dst.PromptTokens = src.PromptTokens
-	}
-	if src.CompletionTokens != 0 {
-		dst.CompletionTokens = src.CompletionTokens
-	}
-	if src.TotalTokens != 0 {
-		dst.TotalTokens = src.TotalTokens
-	}
-	if src.CacheReadTokens != 0 {
-		dst.CacheReadTokens = src.CacheReadTokens
-	}
-	if src.CacheWriteTokens != 0 {
-		dst.CacheWriteTokens = src.CacheWriteTokens
-	}
+	dst.Merge(src)
 }
 
 func (e *modelManager) reportTokenUsage(ctx context.Context, req Request, meta Meta, usage libmodelprovider.TokenUsage) {
@@ -477,7 +516,7 @@ func (e *modelManager) convertToResolverEmbedRequest(req EmbedRequest) llmresolv
 
 func validateRequest(req Request) error {
 	if req.ContextLength < 0 {
-		return errors.New("context length must be non-negative")
+		return fmt.Errorf("%w: context length must be non-negative", ErrInvalidRequest)
 	}
 	return nil
 }

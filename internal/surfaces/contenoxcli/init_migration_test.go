@@ -2,6 +2,7 @@ package contenoxcli
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -102,7 +103,7 @@ func TestUnit_RunLocalInitUpdate_MigratesBothTiers(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(workspace, "default-acp-chain.json"), []byte("WS SHADOW"), 0o644))
 
 	var out bytes.Buffer
-	require.NoError(t, RunLocalInit(&out, false, true, workspace, ""))
+	require.NoError(t, RunLocalInit(context.Background(), &out, false, true, workspace, ""))
 
 	for oldName, newName := range legacyChainRenames {
 		_, err := os.Stat(filepath.Join(homeContenox, oldName))
@@ -117,7 +118,7 @@ func TestUnit_RunLocalInitUpdate_MigratesBothTiers(t *testing.T) {
 
 	// Idempotent: the second run renames nothing.
 	var again bytes.Buffer
-	require.NoError(t, RunLocalInit(&again, false, true, workspace, ""))
+	require.NoError(t, RunLocalInit(context.Background(), &again, false, true, workspace, ""))
 	require.NotContains(t, again.String(), "Renamed ")
 }
 
@@ -130,7 +131,7 @@ func TestUnit_RunLocalInit_SeedsOnlyConventionNames(t *testing.T) {
 	workspace := filepath.Join(t.TempDir(), ".contenox")
 
 	var out bytes.Buffer
-	require.NoError(t, RunLocalInit(&out, false, false, workspace, ""))
+	require.NoError(t, RunLocalInit(context.Background(), &out, false, false, workspace, ""))
 
 	// contenox, run, acp, acpx and beam are no longer seeded as JSON: they are
 	// declarations under agents/, transpiled into .generated.

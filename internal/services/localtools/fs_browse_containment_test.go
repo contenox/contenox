@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/contenox/contenox/internal/kernel/taskengine"
 	"github.com/contenox/contenox/internal/services/localtools"
 	"github.com/contenox/contenox/internal/services/vfs"
+	"github.com/contenox/contenox/internal/store/runtimetypes"
 	"github.com/stretchr/testify/require"
 )
 
@@ -97,16 +97,15 @@ func TestUnit_LocalFSBrowseTools_WalkRefusesControlPlane(t *testing.T) {
 }
 
 // TestUnit_LocalFSBrowseTools_SupportsReportsScopedName asserts Supports reports
-// the toolset under its native- namespaced name, the one name an allowlist
-// addresses it by.
+// the toolset under the one name an allowlist addresses it by, which a declared
+// MCP source cannot mint.
 func TestUnit_LocalFSBrowseTools_SupportsReportsScopedName(t *testing.T) {
 	h := localtools.NewLocalFSBrowseTools(t.TempDir(), nil)
 	supported, err := h.Supports(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, localtools.LocalFSBrowseToolsName, supported[0])
-	// native- is a namespace, so a declared MCP source cannot mint this key.
-	require.True(t, strings.HasPrefix(supported[0], "native-"),
-		"the registry key dropped the native- namespace; a declared source could collide with it")
+	require.Equal(t, localtools.LocalFSToolsName, supported[0])
+	require.False(t, runtimetypes.IsDeclaredToolName(supported[0]),
+		"the registry key must not be one a declared source can mint")
 
 	require.Equal(t, []string{supported[0]},
 		taskengine.ExportedApplyAllowlist([]string{"*"}, []string{supported[0]}),

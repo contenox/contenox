@@ -51,14 +51,12 @@ fn chain_with_tools(cx: &Instance, allowlist: Option<Value>) -> PathBuf {
     at
 }
 
-/// A turn that reaches for one tool from `local_fs` and one from
-/// `native-fs-browse`, so a case can see each toolset's fate separately.
 fn reaches_for_both() -> Script {
     Script::new().turns([
         Turn::new()
             .text("Looking around.")
             .call(ToolCall::new("read_file").arg("path", "note.txt"))
-            .call(ToolCall::new("list_dir").arg("path", ".")),
+            .call(ToolCall::new("git_status")),
         Turn::new().text("That is what I found."),
     ])
 }
@@ -87,7 +85,7 @@ fn a_task_with_no_tools_line_at_all_may_call_nothing() {
 
     let said = tool_outputs_under(&cx, &chain);
     assert!(
-        !reached(&said, "read_file") && !reached(&said, "list_dir"),
+        !reached(&said, "read_file") && !reached(&said, "git_status"),
         "an absent allowlist grants nothing, not everything:\n{said}"
     );
 }
@@ -100,7 +98,7 @@ fn an_empty_tools_list_may_call_nothing() {
 
     let said = tool_outputs_under(&cx, &chain);
     assert!(
-        !reached(&said, "read_file") && !reached(&said, "list_dir"),
+        !reached(&said, "read_file") && !reached(&said, "git_status"),
         "an empty list reads the same as no list:\n{said}"
     );
 }
@@ -113,7 +111,7 @@ fn a_star_grants_every_toolset() {
 
     let said = tool_outputs_under(&cx, &chain);
     assert!(
-        reached(&said, "read_file") && reached(&said, "list_dir"),
+        reached(&said, "read_file") && reached(&said, "git_status"),
         "a star is every registered toolset:\n{said}"
     );
 }
@@ -129,7 +127,10 @@ fn naming_toolsets_grants_those_and_leaves_the_rest_out() {
         reached(&said, "read_file"),
         "the named toolset is granted:\n{said}"
     );
-    assert!(!reached(&said, "list_dir"), "and nothing else is:\n{said}");
+    assert!(
+        !reached(&said, "git_status"),
+        "and nothing else is:\n{said}"
+    );
 }
 
 #[test]
@@ -144,7 +145,7 @@ fn a_star_with_an_exclusion_grants_all_but_the_excluded_toolset() {
         "the exclusion holds against the star:\n{said}"
     );
     assert!(
-        reached(&said, "list_dir"),
+        reached(&said, "git_status"),
         "and everything else is still granted:\n{said}"
     );
 }
@@ -161,7 +162,7 @@ fn an_exclusion_beats_the_star_that_follows_it_as_well_as_the_one_before() {
         "order does not rescue an excluded toolset:\n{said}"
     );
     assert!(
-        reached(&said, "list_dir"),
+        reached(&said, "git_status"),
         "and the star still grants the rest:\n{said}"
     );
 }
@@ -210,10 +211,15 @@ fn the_tools_macro_renders_the_live_roster_rather_than_a_written_out_list() {
     assert_eq!(
         manifest["local_fs"],
         json!([
+            "count_stats",
             "edit_file",
+            "find_files",
+            "grep",
+            "list_dir",
             "read_file",
             "read_file_range",
             "sed",
+            "stat_file",
             "write_file"
         ]),
         "the macro names the tools each toolset actually has, not a copy in the prompt"

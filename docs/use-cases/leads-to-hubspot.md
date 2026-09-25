@@ -28,7 +28,7 @@ The recipe is also a tour of the two ways contenox reaches a third party:
   is refused:
 
   ```bash
-  contenox config set default-mission-policy hitl-policy-default.json
+  contenox config set execution.missions.permissions.policy hitl-policy-default.json
   ```
 
 - A free [Tavily](https://www.tavily.com/) account, for Part 1.

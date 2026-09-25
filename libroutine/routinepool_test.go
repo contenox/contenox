@@ -328,3 +328,37 @@ func TestUnit_GroupAffinityResetRoutine(t *testing.T) {
 		t.Fatalf("expected Closed, got %v", manager.GetState())
 	})
 }
+
+func TestUnit_Pool(t *testing.T) {
+	defer quiet()
+	pool := libroutine.NewPool(2, 5*time.Minute)
+	now := time.Now()
+
+	if !pool.AllowAt("key-1", now) {
+		t.Fatal("expected key-1 to be allowed initially")
+	}
+
+	r := pool.Get("key-1")
+	if r == nil {
+		t.Fatal("expected Get to return Routine")
+	}
+
+	r.MarkFailureAt(now)
+	r.MarkFailureAt(now)
+
+	if pool.AllowAt("key-1", now.Add(1*time.Minute)) {
+		t.Fatal("expected key-1 to be disallowed before reset timeout")
+	}
+	if !pool.AllowAt("key-1", now.Add(6*time.Minute)) {
+		t.Fatal("expected key-1 to be allowed after reset timeout")
+	}
+
+	if !pool.AllowAt("key-2", now) {
+		t.Fatal("expected key-2 to be unaffected by key-1 failures")
+	}
+
+	pool.MarkSuccess("key-1")
+	if !pool.AllowAt("key-1", now) {
+		t.Fatal("expected key-1 to be allowed after MarkSuccess")
+	}
+}

@@ -144,10 +144,10 @@ func TestUnit_Store_Deregister(t *testing.T) {
 	kv := openKV(t, t.TempDir())
 	store := presence.NewStore(kv)
 
-	if err := store.Register(ctx, presence.Record{InstanceID: "serve-1", Kind: presence.KindServe}); err != nil {
+	if err := store.Register(ctx, presence.Record{InstanceID: "serve-1", Kind: presence.KindACP}); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
-	if err := store.Deregister(ctx, presence.KindServe, "serve-1"); err != nil {
+	if err := store.Deregister(ctx, presence.KindACP, "serve-1"); err != nil {
 		t.Fatalf("Deregister: %v", err)
 	}
 	entries, err := store.List(ctx)
@@ -158,7 +158,7 @@ func TestUnit_Store_Deregister(t *testing.T) {
 		t.Fatalf("deregistered entry must be gone, got %+v", entries)
 	}
 	// Deregistering an already-absent key is a no-op, not an error.
-	if err := store.Deregister(ctx, presence.KindServe, "serve-1"); err != nil {
+	if err := store.Deregister(ctx, presence.KindACP, "serve-1"); err != nil {
 		t.Fatalf("idempotent Deregister: %v", err)
 	}
 }

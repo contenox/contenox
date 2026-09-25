@@ -8,7 +8,7 @@ order: 4
 
 A single agent loop cannot be good at everything. The instruction that makes a model a careful editor of files is not the instruction that makes it a careful reader of them, and the tools one needs are the tools the other must not have. The usual answer is to push the difference onto the user: write a longer prompt, spell out the method, remember to say "do not change anything". That answer scales badly and fails silently — a reasonable sentence gets a shallow answer and nobody can see why.
 
-Contenox puts the difference in the workflow instead. You author this as a directory: the parent `agent.md` is the classifier and each subdirectory is a branch — see [Branching: the directory is the chain](/docs/guide/agents/#branching-the-directory-is-the-chain). This page is the shape that compiles into, and what to read when you want to see how a routed workflow actually executes.
+Contenox puts the difference in the workflow instead. You author this as a directory: the parent `agent.md` is the classifier and each subdirectory is a branch — see [Branching: the directory is the chain](/docs/guide/declarations/#branching-the-directory-is-the-chain). This page is the shape that compiles into, and what to read when you want to see how a routed workflow actually executes.
 
 It is the layer above [the agentic loop](/docs/guide/chains/agentic-loop/): that page is about how one loop is built, this one about choosing which loop runs.
 
@@ -86,4 +86,4 @@ Then check it: `contenox vet path/to/chain.json` refuses a chain whose branches 
 
 ## Reading which branch ran
 
-The chain is data, so the route it took is observable rather than inferred. Each task attempt is logged with its id — `~/.contenox/telemetry.log` records `operation=task_attempt subject=review_chat` — and `contenox events` shows the same journey for a dispatched run. When an answer disappoints, the first question is not "how should I have phrased it" but "which loop got it", and that question has an answer you can read.
+The chain is data, so the route it took is observable rather than inferred. Each task attempt is logged with its id. With `observability.telemetry.enabled` set to `true`, `~/.contenox/telemetry.log` records `operation=task_attempt subject=review_chat`; `contenox events` shows the same journey for a dispatched run. When an answer disappoints, the first question is not "how should I have phrased it" but "which loop got it", and that question has an answer you can read.

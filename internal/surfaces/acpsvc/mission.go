@@ -70,7 +70,7 @@ func (t *Transport) handleMission(ctx context.Context, sess *sessionEntry, args 
 
 	agentName, intent, named := t.resolveMissionAgentAndIntent(ctx, store, rest)
 	if strings.TrimSpace(agentName) == "" {
-		return "", fmt.Errorf("no mission agent: name one as `/mission <agent-name> <intent>`, or set a default with `contenox config set default-mission-agent <name>`")
+		return "", fmt.Errorf("no mission agent: name one as `/mission <agent-name> <intent>`, or set a default with `contenox config set execution.missions.default_agent <name>`")
 	}
 	envelope, origin, err := t.resolveMissionEnvelope(ctx, store, flags.policy)
 	if err != nil {
@@ -153,7 +153,7 @@ func (t *Transport) resolveMissionEnvelope(ctx context.Context, store runtimetyp
 		name, origin = strings.TrimSpace(clikv.Read(ctx, store, missionPolicyConfigKey)), "default-mission-policy"
 	}
 	if name == "" {
-		return MissionEnvelope{}, "", fmt.Errorf("no mission envelope: name one as `/mission --policy <envelope> <intent>`, or set a default with `contenox config set %s <envelope>` — a mission must name the HITL policy that bounds it. /mission with no arguments lists the envelopes", missionPolicyConfigKey)
+		return MissionEnvelope{}, "", fmt.Errorf("no mission envelope: name one as `/mission --policy <envelope> <intent>`, or set a default with `contenox config set execution.missions.permissions.policy <envelope>` — a mission must name the HITL policy that bounds it. /mission with no arguments lists the envelopes")
 	}
 	src := t.deps.MissionEnvelopes
 	if src == nil {
@@ -188,7 +188,7 @@ func (t *Transport) missionStatus(ctx context.Context, store runtimetypes.Store)
 
 	agent := strings.TrimSpace(clikv.Read(ctx, store, "default-mission-agent"))
 	if agent == "" {
-		agent = "(none — set `contenox config set default-mission-agent <name>`)"
+		agent = "(none — set `contenox config set execution.missions.default_agent <name>`)"
 	}
 	defaultEnvelope := strings.TrimSpace(clikv.Read(ctx, store, missionPolicyConfigKey))
 	if defaultEnvelope == "" {

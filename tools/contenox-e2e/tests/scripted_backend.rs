@@ -118,8 +118,8 @@ fn adding_a_scripted_backend_prints_the_test_warning_and_the_dialog_it_replays()
         .expect_stdout(&format!(
             "WARNING: scripted-test is a TEST backend. It calls no model — every reply is replayed from {absolute} in order."
         ))
-        .expect_stdout("contenox config set default-provider scripted-test")
-        .expect_stdout("contenox config set default-model scripted-test");
+        .expect_stdout("contenox config set inference.provider scripted-test")
+        .expect_stdout("contenox config set inference.model scripted-test");
 }
 
 /// `--script` is stored as the backend's base URL — resolved to an absolute
@@ -879,7 +879,7 @@ fn arguments_written_as_a_json_string_reach_the_tool_as_raw_text() {
     let transcript = cx.session_show(&sessions[0].id).ok().stdout;
     assert!(
         transcript.contains(
-            "failed to unmarshal tool arguments for native-fs-browse.list_dir: invalid character 'n'"
+            "failed to unmarshal tool arguments for local_fs.list_dir: invalid character 'n'"
         ),
         "the raw text reached the dispatcher and was refused as arguments:\n{transcript}"
     );

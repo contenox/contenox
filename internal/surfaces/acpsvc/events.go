@@ -21,6 +21,7 @@ func (t *Transport) publishEvent(ctx context.Context, sid libacp.SessionID, payl
 	if err := json.Unmarshal(payload, &ev); err != nil {
 		return
 	}
+	t.observeAndEmitUsage(ctx, sid, ev)
 	switch ev.Kind {
 	case taskengine.TaskEventStepChunk:
 		// Only a handler whose streamed output is assistant narration reaches the
@@ -84,7 +85,12 @@ func (t *Transport) publishEvent(ctx context.Context, sid libacp.SessionID, payl
 			if s, ok := t.sessionFor(sid); ok && s != nil {
 				if eff := s.effectiveTokenLimit(); eff > 0 {
 					size = eff
+				} else if cap := t.modelContextCap(ctx, s); cap > 0 {
+					size = cap
 				}
+			}
+			if size <= 0 {
+				size = defaultContextWindowFallback
 			}
 		}
 		if size > 0 || used > 0 {

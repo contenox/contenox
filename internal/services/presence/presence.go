@@ -14,16 +14,13 @@ import (
 	"github.com/contenox/contenox/libkvstore"
 )
 
-// Kind is which contenox surface a process is — the primary way the board
-// distinguishes an editor session from serve (and, with ClientName, from
-// another editor).
+// Kind is which contenox surface a process is — with ClientName, the primary
+// way the board distinguishes one editor session from another.
 type Kind string
 
 const (
 	// KindACP is a `contenox acp` stdio process (Zed, GoLand, AionUi, etc.); ClientName carries which one.
 	KindACP Kind = "acp"
-	// KindServe is the `contenox serve` process itself.
-	KindServe Kind = "serve"
 )
 
 // DefaultTTL is the staleness threshold: a record whose LastSeen is older
@@ -59,10 +56,6 @@ type Record struct {
 	LastSeen time.Time `json:"lastSeen"`
 	// Cwd is the process working directory (an editor's project dir), optional.
 	Cwd string `json:"cwd,omitempty"`
-	// Address is the reachable listen address of a serve process, set only
-	// for KindServe; empty for the stdio editor kinds. Never carries the
-	// bearer token, which a sibling instead reads from CONTENOX_SERVER_TOKEN.
-	Address string `json:"address,omitempty"`
 	// SessionCount is how many ACP sessions are open, best-effort.
 	SessionCount int `json:"sessionCount"`
 	// ClientName is the editor that spawned the process (from the ACP initialize handshake), when known.

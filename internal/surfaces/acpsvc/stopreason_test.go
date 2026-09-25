@@ -84,7 +84,7 @@ func TestLoopback_MaxTokensStop_ReachesTheClientAsASentence(t *testing.T) {
 	require.NoError(t, err)
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	h.swapAgent(newResp.SessionID, &loopbackAgent{
 		promptFunc: func(context.Context, agentservice.PromptRequest) (*agentservice.PromptResponse, error) {
@@ -225,7 +225,7 @@ func TestLoopback_SuspendedTurn_TellsAClientHoldingTheCardToAnswerItThere(t *tes
 	require.NoError(t, err)
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	const approvalID = "ead905ab-0000-0000-0000-0000000ca4d1"
 	h.swapAgent(newResp.SessionID, &loopbackAgent{
@@ -290,7 +290,7 @@ func TestLoopback_ParkedTurn_ReportsSuspendedAndNamesTheApproval(t *testing.T) {
 	require.NoError(t, err)
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	const approvalID = "ead905ab-0000-0000-0000-00000000d548"
 	h.swapAgent(newResp.SessionID, &loopbackAgent{

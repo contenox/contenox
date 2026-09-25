@@ -1,6 +1,6 @@
 ---
 title: KI-Agenten, lokal und souverän — AI-Souveränität mit Contenox
-description: "AI-Souveränität operativ: KI-Agenten self-hosted mit Ollama oder vLLM, oder EU-Region auf eigenen Schlüsseln. KI-Governance als Datei, Human-in-the-Loop-Freigaben, harte Budgets, lokale SQLite — Open Source, kein Konto. Und was die KI-Verordnung damit zu tun hat."
+description: "AI-Souveränität operativ: native, private und gehostete Inferenz gemeinsam einsetzen, Zustand selbst betreiben und Grenzen als überprüfbare Regeln festlegen."
 eyebrow: AI-Souveränität
 ogType: article
 en: /docs/guide/sovereignty/
@@ -21,10 +21,10 @@ widerrufbar.
 
 ## Was digitale Souveränität hier operativ heißt
 
-- **Zustand bleibt lokal.** Sessions, Konfiguration, Run-Logs und erfasster
-  Ausführungszustand liegen in SQLite auf deinem Rechner. Kein Konto, kein
-  contenox-Dienst dazwischen — außer du [pairst](/docs/guide/pairing/) bewusst
-  mit dem optionalen Relay; Telemetrie ist opt-in und standardmäßig aus.
+- **Du bestimmst den Ort des Zustands.** SQLite ist der Standard ohne externe
+  Abhängigkeiten. PostgreSQL, NATS und Valkey bilden die servergestützte
+  Betriebsform auf deiner Infrastruktur. Kein Contenox-Konto oder -Dienst ist
+  erforderlich; Telemetrie ist opt-in und standardmäßig aus.
 - **Secrets bleiben in deiner Umgebung.** Backends referenzieren Credentials per
   Umgebungsvariable; der Wert wird zur Anfragezeit gelesen und landet nie in
   einer Config auf der Platte.
@@ -39,15 +39,12 @@ widerrufbar.
 
 ## Self-hosted und lokale KI — oder EU-Region auf deinen Schlüsseln
 
-Inferenz ist Konfiguration, nicht Architektur. Wenn nichts dein Netzwerk
-verlassen darf, läuft alles lokal:
-[Ollama](/docs/integrations/providers/ollama/) auf deinem Rechner oder
-[vLLM](/docs/integrations/providers/openai/) auf eigenen GPUs — kein Prompt und
-keine Antwort verlässt dein Netzwerk. Das ist die stärkste
-Souveränitäts-Haltung, die contenox kennt, und der Standardweg im
-[Quickstart](/docs/guide/quickstart/). So wird contenox zur selbst-gehosteten
-Copilot-Alternative: deine Regeln, deine Modelle, deine Maschine — statt eines
-Assistenten, dessen Verhalten und Telemetrie dem Anbieter gehören.
+Inferenz ist Konfiguration, nicht Architektur. [modeld](/docs/integrations/providers/modeld/)
+ist der native lokale Weg: `contenox auto` erkennt die Hardware, installiert
+Worker und Modell und prüft einen echten Tool-Aufruf. Bestehende Ollama- und
+vLLM-Server lassen sich ebenso anbinden. Lokale, private und gehostete Modelle
+können nebeneinander arbeiten; du musst dich nicht für eine Betriebsart
+entscheiden.
 
 Für gehostete Modelle gilt: eigene Keys, gepinnte Region.
 [AWS Bedrock in Frankfurt](/docs/integrations/providers/bedrock/#eu-regions)
@@ -131,14 +128,15 @@ ab, was du baust und ausrollst — die Bewertung gehört dir und deiner
 Rechtsberatung. Was contenox liefert, sind Kontrollen, auf die eine solche
 Bewertung zeigen kann: von dir verfasst, versioniert, inspizierbar.
 
-## Open Source, eine Binärdatei, kein Konto
+## Open Source, unter deiner Kontrolle
 
 Contenox ist Open Source unter Apache-2.0. Der Code, der deine Regeln
 durchsetzt, ist der Code, den du lesen kannst — dieselbe Transparenz, die du vom
-Envelope erwartest, eine Ebene tiefer. Eine Binärdatei, lokale SQLite, kein
-Konto, nichts telefoniert nach Hause ohne Opt-in. Und wenn du morgen aufhörst,
-contenox zu benutzen, bleiben deine Chains, Policies und Logs, was sie immer
-waren: Dateien auf deiner Platte.
+Envelope erwartest, eine Ebene tiefer. Der Go-basierte Contenox-Prozess und der
+native modeld-Worker bleiben getrennte Komponenten; SQLite oder die von dir
+betriebene Kombination aus PostgreSQL, NATS und Valkey halten den Zustand. Kein
+Konto, keine Telemetrie ohne Opt-in. Und wenn du morgen aufhörst, Contenox zu
+benutzen, bleiben Chains, Policies und Logs unter deiner Kontrolle.
 
 ## Weiter in die Tiefe (englisch)
 

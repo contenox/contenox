@@ -79,21 +79,38 @@ func providerConfigKey(backendType string) (string, bool) {
 	}
 }
 
-func (s *State) loadProviderAPIKey(ctx context.Context, backendType string) (string, error) {
-	key, ok := providerConfigKey(backendType)
+func BackendCredentialKey(backendType, backendID string) string {
+	return ProviderKeyPrefix + strings.ToLower(backendType) + ":" + backendID
+}
+
+func (s *State) loadProviderAPIKey(ctx context.Context, backend *runtimetypes.Backend) (string, error) {
+	key, ok := providerConfigKey(backend.Type)
 	if !ok {
 		return "", nil
 	}
 
-	cfg := ProviderConfig{}
 	store := runtimetypes.New(s.dbInstance.WithoutTransaction())
+	if backend.ID != "" {
+		var own ProviderConfig
+		if err := store.GetKV(ctx, BackendCredentialKey(backend.Type, backend.ID), &own); err == nil {
+			if cred := credentialFrom(own); cred != "" {
+				return cred, nil
+			}
+		}
+	}
+
+	cfg := ProviderConfig{}
 	if err := store.GetKV(ctx, key, &cfg); err != nil {
 		return "", err
 	}
+	return credentialFrom(cfg), nil
+}
+
+func credentialFrom(cfg ProviderConfig) string {
 	if cfg.APIKey == "" && strings.TrimSpace(cfg.APIKeyEnv) != "" {
-		return os.Getenv(strings.TrimSpace(cfg.APIKeyEnv)), nil
+		return os.Getenv(strings.TrimSpace(cfg.APIKeyEnv))
 	}
-	return cfg.APIKey, nil
+	return cfg.APIKey
 }
 
 func (s *State) newCatalogProvider(backend *runtimetypes.Backend, apiKey string) (modelrepo.CatalogProvider, error) {
@@ -128,12 +145,27 @@ func (s *State) loadObservedModelCache(ctx context.Context, backendID, apiKey st
 	return nil, false
 }
 
-func (s *State) storeObservedModelCache(ctx context.Context, backendID, apiKey string, models []modelrepo.ObservedModel) {
+func (s *State) storeObservedModelCache(ctx context.Context, backendID, apiKey string, models []modelrepo.ObservedModel, catalog modelrepo.CatalogProvider) {
+	policy := modelrepo.ModelCachePolicy{}
+	if p, ok := catalog.(modelrepo.CachePolicyCatalog); ok {
+		policy = p.CachePolicy()
+	}
+	ttl := ProviderCacheDuration
+	if len(models) == 0 {
+		if policy.Empty < 0 {
+			return
+		}
+		if policy.Empty > 0 {
+			ttl = policy.Empty
+		}
+	} else if policy.Healthy > 0 {
+		ttl = policy.Healthy
+	}
 	entry := providerCacheEntry{Models: models, APIKey: apiKey}
 	if s.kvStore != nil {
 		if exec, err := s.kvStore.Executor(ctx); err == nil {
 			if data, err := json.Marshal(entry); err == nil {
-				_ = exec.SetWithTTL(ctx, observedModelCacheKey(backendID), data, ProviderCacheDuration)
+				_ = exec.SetWithTTL(ctx, observedModelCacheKey(backendID), data, ttl)
 			}
 		}
 		return
@@ -149,12 +181,42 @@ func observedModelNames(models []modelrepo.ObservedModel) []string {
 	return names
 }
 
+func (s *State) applyDeclaredModel(ctx context.Context, backend *runtimetypes.Backend, declared *runtimetypes.Model, observed modelrepo.ObservedModel) ModelPullStatus {
+	model := pullStatusFromObservedModel(observed)
+	if declared != nil {
+		model = s.mergeDeclaredRow(ctx, declared, model)
+	}
+	return s.applyDeclarations(ctx, backend, model)
+}
+
+func (s *State) mergeDeclaredRow(ctx context.Context, declared *runtimetypes.Model, model ModelPullStatus) ModelPullStatus {
+	if declared.ContextLength == 0 && model.ContextLength > 0 {
+		learned := *declared
+		learned.ContextLength = model.ContextLength
+		learned.CanChat = model.CanChat
+		learned.CanEmbed = model.CanEmbed
+		learned.CanPrompt = model.CanPrompt
+		learned.CanStream = model.CanStream
+		_ = runtimetypes.New(s.dbInstance.WithoutTransaction()).UpdateModel(ctx, &learned)
+	}
+	if declared.ContextLength > 0 {
+		model.ContextLength = declared.ContextLength
+	}
+	model.CanChat = model.CanChat || declared.CanChat
+	model.CanEmbed = model.CanEmbed || declared.CanEmbed
+	model.CanPrompt = model.CanPrompt || declared.CanPrompt
+	model.CanStream = model.CanStream || declared.CanStream
+	return model
+}
+
+func (s *State) applyDeclarations(ctx context.Context, backend *runtimetypes.Backend, model ModelPullStatus) ModelPullStatus {
+	model = s.applyCapabilityOverrides(ctx, backend.Type, model)
+	return s.applyModelFacts(ctx, backend.ID, model)
+}
+
 func (s *State) applyCapabilityOverrides(ctx context.Context, provider string, model ModelPullStatus) ModelPullStatus {
 	provider = modelrepo.CanonicalBackendType(provider)
-	name := strings.TrimSpace(model.Model)
-	if name == "" {
-		name = strings.TrimSpace(model.Name)
-	}
+	name := declaredModelName(model)
 	if name == "" {
 		return model
 	}
@@ -169,6 +231,70 @@ func (s *State) applyCapabilityOverrides(ctx context.Context, provider string, m
 		model.CanVision = *override.CanVision
 	}
 	return model
+}
+
+func (s *State) applyModelFacts(ctx context.Context, providerID string, model ModelPullStatus) ModelPullStatus {
+	name := declaredModelName(model)
+	if providerID == "" || name == "" {
+		return model
+	}
+	declared, err := runtimetypes.New(s.dbInstance.WithoutTransaction()).GetLLMProviderModelFacts(ctx, providerID)
+	if err != nil {
+		return model
+	}
+	facts, ok := declared[name]
+	if !ok || facts.IsZero() {
+		return model
+	}
+	if facts.ContextLength > 0 {
+		model.ContextLength = facts.ContextLength
+	}
+	if facts.MaxOutputTokens > 0 {
+		model.MaxOutputTokens = facts.MaxOutputTokens
+	}
+	if len(facts.Capabilities) > 0 {
+		model.DeclaredCapabilities = facts.Capabilities
+		applyDeclaredCapabilities(&model, facts.Capabilities)
+	}
+	if facts.Pricing != nil {
+		model.Pricing = facts.Pricing
+	}
+	return model
+}
+
+func declaredModelName(model ModelPullStatus) string {
+	if name := strings.TrimSpace(model.Model); name != "" {
+		return name
+	}
+	return strings.TrimSpace(model.Name)
+}
+
+func applyDeclaredCapabilities(model *ModelPullStatus, capabilities []string) {
+	model.CanChat = false
+	model.CanEmbed = false
+	model.CanPrompt = false
+	model.CanStream = false
+	model.CanThink = false
+	model.CanVision = false
+	model.CanAudio = false
+	for _, capability := range capabilities {
+		switch capability {
+		case runtimetypes.CapabilityCompletion:
+			model.CanChat = true
+			model.CanPrompt = true
+			model.CanStream = true
+		case runtimetypes.CapabilityEmbedding:
+			model.CanEmbed = true
+		case runtimetypes.CapabilityTools:
+			model.CanChat = true
+		case runtimetypes.CapabilityVision:
+			model.CanVision = true
+		case runtimetypes.CapabilityThinking:
+			model.CanThink = true
+		case runtimetypes.CapabilityAudio:
+			model.CanAudio = true
+		}
+	}
 }
 
 func storeBackendError(state *State, backend *runtimetypes.Backend, apiKey string, err error, models []string) {

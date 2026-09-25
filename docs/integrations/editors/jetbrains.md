@@ -48,7 +48,7 @@ Restart the IDE. Open the agent panel — Contenox now appears in the agent pick
 
 **Session history that replays.** Close the IDE mid-conversation and reopen the project — your prompts, the agent's responses, and every tool call (with its output) come back. State lives in `~/.contenox/local.db`.
 
-**Missions from the composer.** `/mission <intent>` (or `/mission <agent-name> <intent>`) fires a declared agent at the intent unattended, as a child subprocess of this editor session, and its reports stream live back into the firing session. Configure the fallbacks first (`contenox config set default-mission-agent` / `default-mission-policy`); details in the [Zed guide](/docs/integrations/editors/zed/#fire-missions-with-mission) and the [CLI reference](/docs/reference/contenox-cli/#the-mission-slash-command).
+**Missions from the composer.** `/mission <intent>` (or `/mission <agent-name> <intent>`) fires a declared agent at the intent unattended, as a child subprocess of this editor session, and its reports stream live back into the firing session. Configure the fallbacks first (`contenox config set execution.missions.default_agent` / `default-mission-policy`); details in the [Zed guide](/docs/integrations/editors/zed/#fire-missions-with-mission) and the [CLI reference](/docs/reference/contenox-cli/#the-mission-slash-command).
 
 ---
 
@@ -67,8 +67,8 @@ The ACP chain's `"tools": ["*"]` exposes everything the engine has registered �
 ACP reads from your global model/provider config — the same one the CLI uses:
 
 ```bash
-contenox config set default-model qwen3:8b
-contenox config set default-provider ollama
+contenox config set inference.model qwen3:8b
+contenox config set inference.provider ollama
 ```
 
 Models are global config, shared across every surface that reads `default-model` — switching it here switches it everywhere.
@@ -79,12 +79,12 @@ Models are global config, shared across every surface that reads `default-model`
 
 **Nothing happens when I select Contenox.** Make sure `contenox` is on the IDE's `PATH`. JetBrains inherits the environment of the process that launched it — if you start the IDE from a desktop launcher, that may not be your login shell's `PATH`. Launching the IDE from a terminal (or using an absolute path in `command`) is the reliable test.
 
-**The default-model error.** ACP needs a configured default model. Run `contenox config set default-model <name>` and `contenox config set default-provider <type>` before launching from the IDE.
+**The default-model error.** ACP needs a configured default model. Run `contenox config set inference.model <name>` and `contenox config set inference.provider <type>` before launching from the IDE.
 
 **I want to see what's happening.** Enable file logging:
 
 ```bash
-contenox config set telemetry-enabled true
+contenox config set observability.telemetry.enabled true
 ```
 
 Subsequent ACP sessions write structured operation traces to `~/.contenox/telemetry.log` (chain steps, tool calls, model requests, session updates sent to the IDE).
@@ -99,7 +99,7 @@ Subsequent ACP sessions write structured operation traces to `~/.contenox/teleme
 
 ## Where to next
 
-- [Declaring agents](/docs/guide/agents/) — one Markdown file is the agent, regardless of which client drives it.
+- [Declaring agents](/docs/guide/declarations/) — one Markdown file is the agent, regardless of which client drives it.
 - [Writing a chain by hand](/docs/guide/chains/writing-a-chain/) — for the agent that has outgrown a declaration.
 - [HITL policies](/docs/guide/hitl/) — choose what requires approval and what doesn't.
 - [MCP](/docs/integrations/tools/mcp/) — register MCP servers once globally; ACP sessions pick them up automatically.

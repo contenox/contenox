@@ -29,6 +29,10 @@ CREATE TABLE IF NOT EXISTS llm_affinity_group (
     updated_at TIMESTAMP NOT NULL
 );
 
+-- Upstreams are addressed by entry, not by address: one provider wired twice is
+-- two rows, each with its own name and its own credential, so the resolver has
+-- two candidates to move between when one of them is rate limited or its key
+-- dies. The human label is what stays unique.
 CREATE TABLE IF NOT EXISTS llm_backends (
     id VARCHAR(255) PRIMARY KEY,
     name VARCHAR(512) NOT NULL UNIQUE,
@@ -36,8 +40,7 @@ CREATE TABLE IF NOT EXISTS llm_backends (
     type VARCHAR(512) NOT NULL,
 
     created_at TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP NOT NULL,
-    UNIQUE(type, base_url)
+    updated_at TIMESTAMP NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS llm_affinity_group_backend_assignments (
@@ -499,9 +502,11 @@ CREATE TABLE IF NOT EXISTS event_partitions (
     created_at TIMESTAMP NOT NULL
 );
 
--- event_nid_seq: the single-row global NID counter. Bumped in the same
--- transaction as each partition-table insert, so NIDs stay monotonic across
--- partitions — the ordering ListEventsSince and the dispatch cursor rely on.
+-- event_nid_seq: the store's single-row monotonic counter. Bumped in the same
+-- transaction as the insert that needs it — an event partition row, or a proxy
+-- usage snapshot — so NIDs stay strictly ordered. The event log's partition
+-- ordering and dispatch cursor rely on that; the metering log needs only each
+-- scope's newest row to sort last.
 CREATE TABLE IF NOT EXISTS event_nid_seq (
     id       INTEGER PRIMARY KEY CHECK (id = 1),
     last_nid INTEGER NOT NULL
@@ -553,3 +558,94 @@ CREATE INDEX IF NOT EXISTS idx_event_firings_ws_nid
 -- ADD COLUMN cannot express there. Postgres needs no equivalent: llm_backends
 -- as declared above already has the shape that rebuild produces, and the DROP
 -- would be refused anyway by llm_affinity_group_backend_assignments' foreign key.
+
+-- Gateway key ledger. Only the bearer's digest is stored, never the bearer; the
+-- allowance a bearer carries lives in its signed claims, so this table is
+-- identity and lifecycle, not policy.
+CREATE TABLE IF NOT EXISTS proxy_keys (
+    id         TEXT PRIMARY KEY,
+    key_hash   TEXT NOT NULL UNIQUE,
+    client_id  TEXT NOT NULL,
+    tier       TEXT NOT NULL DEFAULT '',
+    issued_at  TIMESTAMP NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    revoked_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_proxy_keys_client
+    ON proxy_keys (client_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_proxy_keys_created
+    ON proxy_keys (created_at DESC, id DESC);
+
+-- proxy_usage: append-only metering snapshots. Every metered turn appends one
+-- row per scope it counts in, carrying both that turn's delta and the scope's
+-- cumulative totals through that turn, so each allowance question is answered by
+-- the newest row for its scope — never by summing rows.
+CREATE TABLE IF NOT EXISTS proxy_usage (
+    nid                    INTEGER NOT NULL,
+    id                     TEXT PRIMARY KEY,
+    scope                  TEXT NOT NULL,
+    scope_id               TEXT NOT NULL,
+    key_hash               TEXT NOT NULL,
+    client_id              TEXT NOT NULL,
+    model                  TEXT NOT NULL,
+    window_kind            TEXT NOT NULL,
+    window_start           TIMESTAMP NOT NULL,
+    prompt_tokens          INTEGER NOT NULL DEFAULT 0,
+    completion_tokens      INTEGER NOT NULL DEFAULT 0,
+    thinking_tokens        INTEGER,
+    total_tokens           INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens      INTEGER NOT NULL DEFAULT 0,
+    cache_write_tokens     INTEGER NOT NULL DEFAULT 0,
+    effective_input        INTEGER NOT NULL DEFAULT 0,
+    effective_output       INTEGER,
+    cost_microdollars      INTEGER NOT NULL DEFAULT 0,
+    image_count            INTEGER NOT NULL DEFAULT 0,
+    audio_bytes            INTEGER NOT NULL DEFAULT 0,
+    duration_ms            INTEGER NOT NULL DEFAULT 0,
+    finish_reason          TEXT,
+    cum_prompt_tokens      INTEGER NOT NULL DEFAULT 0,
+    cum_completion_tokens  INTEGER NOT NULL DEFAULT 0,
+    cum_thinking_tokens    INTEGER,
+    cum_total_tokens       INTEGER NOT NULL DEFAULT 0,
+    cum_cache_read_tokens  INTEGER NOT NULL DEFAULT 0,
+    cum_cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+    cum_effective_input    INTEGER NOT NULL DEFAULT 0,
+    cum_effective_output   INTEGER,
+    cum_cost_microdollars  INTEGER NOT NULL DEFAULT 0,
+    cum_image_count        INTEGER NOT NULL DEFAULT 0,
+    cum_audio_bytes        INTEGER NOT NULL DEFAULT 0,
+    recorded_at            TIMESTAMP NOT NULL
+);
+
+ALTER TABLE proxy_usage ADD COLUMN IF NOT EXISTS thinking_tokens INTEGER;
+ALTER TABLE proxy_usage ADD COLUMN IF NOT EXISTS effective_output INTEGER;
+ALTER TABLE proxy_usage ADD COLUMN IF NOT EXISTS cum_thinking_tokens INTEGER;
+ALTER TABLE proxy_usage ADD COLUMN IF NOT EXISTS cum_effective_output INTEGER;
+UPDATE proxy_usage
+SET thinking_tokens = COALESCE(thinking_tokens, 0),
+    effective_output = COALESCE(effective_output, completion_tokens),
+    cum_thinking_tokens = COALESCE(cum_thinking_tokens, 0),
+    cum_effective_output = COALESCE(cum_effective_output, cum_completion_tokens)
+WHERE thinking_tokens IS NULL OR effective_output IS NULL
+   OR cum_thinking_tokens IS NULL OR cum_effective_output IS NULL;
+
+-- The one read is "newest row for this scope", so the index carries the scope's
+-- whole key in its order with nid descending.
+CREATE INDEX IF NOT EXISTS idx_proxy_usage_scope
+    ON proxy_usage (scope, scope_id, model, window_kind, nid DESC);
+CREATE INDEX IF NOT EXISTS idx_proxy_usage_key
+    ON proxy_usage (key_hash, recorded_at);
+CREATE INDEX IF NOT EXISTS idx_proxy_usage_recorded
+    ON proxy_usage (recorded_at);
+
+-- What the operator states about a served model beyond what the upstream
+-- reports: context window, output ceiling, capabilities and upstream pricing.
+-- One row per provider, the per-model map folded into JSON because the two
+-- backends spell their JSON operators differently.
+CREATE TABLE IF NOT EXISTS llm_provider_model_facts (
+    provider_id TEXT PRIMARY KEY,
+    facts       TEXT NOT NULL,
+    updated_at  TIMESTAMP NOT NULL
+);

@@ -34,7 +34,7 @@ func TestLoopback_MissionReport_RoutedThroughSessionRouterReachesTheFiringSessio
 		McpServers: []libacp.McpServer{},
 	})
 	require.NoError(t, err)
-	h.lc.drain(t, 1) // available_commands_update
+	h.lc.drain(t, 2) // command menu and initial context gauge
 
 	contenoxID := h.contenoxSessionID(newResp.SessionID)
 	require.NotEmpty(t, contenoxID, "the session must carry a contenox id — it is what a mission names as its parent")
@@ -71,7 +71,7 @@ func TestLoopback_MissionReport_IsPersistedIntoTheTranscript(t *testing.T) {
 		McpServers: []libacp.McpServer{},
 	})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	contenoxID := h.contenoxSessionID(newResp.SessionID)
 	require.NoError(t, h.router.DeliverToContenoxSession(ctx, contenoxID,
@@ -96,7 +96,7 @@ func TestLoopback_SlashCommand_TurnIsPersisted(t *testing.T) {
 		McpServers: []libacp.McpServer{},
 	})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	resp, err := h.client.Prompt(ctx, libacp.PromptRequest{
 		SessionID: newResp.SessionID,
@@ -126,7 +126,7 @@ func TestLoopback_SlashCommand_HistoryRewritingCommandsAreNotPersisted(t *testin
 		McpServers: []libacp.McpServer{},
 	})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	_, err = h.client.Prompt(ctx, libacp.PromptRequest{
 		SessionID: newResp.SessionID,
@@ -153,14 +153,14 @@ func TestLoopback_SessionList_CarriesMissionAttribution(t *testing.T) {
 		Meta:       missionservice.MarshalMissionMeta("m-42"),
 	})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	chat, err := h.client.NewSession(ctx, libacp.NewSessionRequest{
 		Cwd:        t.TempDir(),
 		McpServers: []libacp.McpServer{},
 	})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	list, err := h.client.ListSessions(ctx, libacp.ListSessionsRequest{})
 	require.NoError(t, err)
@@ -213,7 +213,7 @@ func TestLoopback_MissionTurnAndReport_SurviveAReload(t *testing.T) {
 	require.NoError(t, err)
 	newResp, err := c1.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: cwd, McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	c1.lc.drain(t, 1)
+	c1.lc.drain(t, 2)
 
 	_, err = c1.client.Prompt(ctx, libacp.PromptRequest{
 		SessionID: newResp.SessionID,

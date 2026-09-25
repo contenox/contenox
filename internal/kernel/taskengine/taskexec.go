@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -24,11 +25,29 @@ type TaskExecutor interface {
 	TaskExec(ctx context.Context, startingTime time.Time, ctxLength int, chainContext *ChainContext, currentTask *TaskDefinition, input any, dataType DataType) (any, DataType, string, error)
 }
 
+// ensureUniqueToolCallID tags a task-scoped context with an id that cannot
+// collide with another task's. It is for the runtime's own task bookkeeping,
+// never for a provider's tool call, whose id must survive unchanged.
 func ensureUniqueToolCallID(id string) string {
 	if id == "" {
 		return uuid.NewString()
 	}
 	return id + "-" + uuid.NewString()[:4]
+}
+
+// toolCallIDFor keeps the id a provider assigned to a tool call, minting one
+// only when the provider assigned none.
+//
+// The id is a pairing key, not a label: a tool result is matched to its call by
+// string equality, so renaming the call as it is recorded orphans every result
+// that follows it and an upstream that enforces the pairing refuses the whole
+// turn. Nothing is gained by adding uniqueness here either, since the provider
+// already guarantees it within a response.
+func toolCallIDFor(id string) string {
+	if id == "" {
+		return uuid.NewString()
+	}
+	return id
 }
 
 // SimpleExec is a basic implementation of TaskExecutor, executing chat
@@ -97,7 +116,10 @@ func (exe *SimpleExec) publishStepStreamEnd(ctx context.Context, meta llmrepo.Me
 		event.Usage = &TokenUsage{
 			Prompt:     usage.PromptTokens,
 			Completion: usage.CompletionTokens,
+			Thinking:   usage.ThinkingTokens,
 			Total:      usage.TotalTokens,
+			CacheRead:  usage.CacheReadTokens,
+			CacheWrite: usage.CacheWriteTokens,
 		}
 	}
 	publishTaskEventBestEffort(ctx, exe.tracker, exe.eventSink, event)
@@ -762,6 +784,9 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			resolutionInfo, found := resolveToolWithResolution(chainContext, toolCall.Function.Name)
 			if !found {
 				errStr := fmt.Sprintf("tool %s not found", toolCall.Function.Name)
+				if hint := toolNotFoundSuggestion(chainContext, hiddenTools, toolCall.Function.Name); hint != "" {
+					errStr += hint
+				}
 				exe.reportInvalidToolCall(taskCtx, toolCall, "not_found", errStr, repeatIndex)
 				exe.appendToolErrorResult(taskCtx, &chatHistory, toolCall, errStr, nil)
 				answeredBatch[toolCall.ID] = true
@@ -1229,13 +1254,13 @@ func (exe *SimpleExec) executeLLM(
 		"schema_bytes": toolSchemaBytes,
 	})
 	if len(prelude) > 0 {
-		preludeContents := make([]string, 0, len(prelude))
+		preludeBytes := 0
 		for _, m := range prelude {
-			preludeContents = append(preludeContents, m.Content)
+			preludeBytes += len(m.Content)
 		}
 		reportChange("prelude_injected", map[string]any{
-			"count":    len(prelude),
-			"messages": preludeContents,
+			"count": len(prelude),
+			"bytes": preludeBytes,
 		})
 	}
 	providerNames := []string{}
@@ -1273,7 +1298,7 @@ func (exe *SimpleExec) executeLLM(
 
 	// Every chat streams and is assembled engine-side; the non-streaming Chat
 	// call survives only as the fallback when stream setup fails.
-	streamed, resp, meta, err := exe.streamChatOnce(ctx, reportChange, req, messagesC, chatArgs)
+	streamed, resp, meta, err := exe.streamWithRetry(ctx, reportChange, llmCall, req, messagesC, chatArgs)
 	if !streamed && err != nil {
 		resp, meta, err = exe.chatWithRetry(ctx, reportChange, llmCall, req, messagesC, chatArgs)
 		if err != nil {
@@ -1318,7 +1343,7 @@ func (exe *SimpleExec) executeLLM(
 			Arguments: tc.Function.Arguments,
 		}
 		callTools[i] = ToolCall{
-			ID:           ensureUniqueToolCallID(tc.ID),
+			ID:           toolCallIDFor(tc.ID),
 			Function:     function,
 			Type:         tc.Type,
 			ProviderMeta: tc.ProviderMeta,
@@ -1354,23 +1379,26 @@ func (exe *SimpleExec) executeLLM(
 	return input, DataTypeChatHistory, TransitionExecuted, nil
 }
 
+// streamChatOnce runs one streaming attempt and reports how many content
+// chunks it produced; a caller must not re-issue an attempt that already
+// produced content, because the client has been shown it.
 func (exe *SimpleExec) streamChatOnce(
 	ctx context.Context,
 	reportChange func(id string, data any),
 	req llmrepo.Request,
 	messages []libmodelprovider.Message,
 	chatArgs []libmodelprovider.ChatArgument,
-) (streamed bool, _ libmodelprovider.ChatResult, _ llmrepo.Meta, _ error) {
+) (streamed bool, produced int, _ libmodelprovider.ChatResult, _ llmrepo.Meta, _ error) {
 	stream, meta, err := exe.repo.Stream(ctx, req, messages, chatArgs...)
 	if err != nil {
-		return false, libmodelprovider.ChatResult{}, llmrepo.Meta{}, err
+		return false, 0, libmodelprovider.ChatResult{}, llmrepo.Meta{}, err
 	}
 
 	asm := libmodelprovider.NewStreamAssembler(meta.ProviderType, meta.ModelName)
 	chunkCount := 0
 	for parcel := range stream {
 		if err := asm.Consume(parcel); err != nil {
-			return true, libmodelprovider.ChatResult{}, meta, fmt.Errorf("chat stream failed: %w", err)
+			return true, chunkCount, libmodelprovider.ChatResult{}, meta, fmt.Errorf("chat stream failed: %w", err)
 		}
 		if countsAsStreamChunk(parcel) {
 			chunkCount++
@@ -1379,7 +1407,7 @@ func (exe *SimpleExec) streamChatOnce(
 	}
 	res, err := asm.Result()
 	if err != nil {
-		return true, libmodelprovider.ChatResult{}, meta, fmt.Errorf("chat stream failed: %w", err)
+		return true, chunkCount, libmodelprovider.ChatResult{}, meta, fmt.Errorf("chat stream failed: %w", err)
 	}
 	// Brackets the completed stream after the last chunk; on mid-stream
 	// failure (returns above) no bracket closes.
@@ -1406,7 +1434,78 @@ func (exe *SimpleExec) streamChatOnce(
 		ToolCalls:    res.ToolCalls,
 		FinishReason: res.FinishReason,
 	}
-	return true, out, meta, nil
+	return true, chunkCount, out, meta, nil
+}
+
+// streamWithRetry runs the streaming attempt under the call's retry policy.
+// A failure raised before the stream opened is returned unretried, so the
+// caller's non-streaming fallback keeps owning that case; a failure inside a
+// stream that had already produced content is returned unretried too, because
+// re-issuing it would replay text the client has been shown.
+func (exe *SimpleExec) streamWithRetry(
+	ctx context.Context,
+	reportChange func(id string, data any),
+	llmCall *LLMExecutionConfig,
+	req llmrepo.Request,
+	messages []libmodelprovider.Message,
+	chatArgs []libmodelprovider.ChatArgument,
+) (streamed bool, _ libmodelprovider.ChatResult, _ llmrepo.Meta, _ error) {
+	policy := llmretry.RetryPolicy{}
+	if llmCall != nil && llmCall.RetryPolicy != nil {
+		policy = *llmCall.RetryPolicy
+	}
+	primary := GetPrimaryModel(llmCall)
+	type streamResult struct {
+		resp libmodelprovider.ChatResult
+		meta llmrepo.Meta
+	}
+	attempt := 0
+	var prevErr error
+	var opened bool
+	var lastMeta llmrepo.Meta
+	result, outcome, err := llmretry.Do(ctx, policy, primary, func(modelID string) (any, error) {
+		attempt++
+		if attempt > 1 && reportChange != nil {
+			reportChange("retry_attempt", map[string]any{
+				"attempt":          attempt,
+				"model":            modelID,
+				"prev_error_class": string(llmretry.ClassifyError(prevErr)),
+				"prev_error":       prevErr.Error(),
+			})
+		}
+		callReq := req
+		if modelID != "" && modelID != primary {
+			callReq.ModelNames = []string{modelID}
+		}
+		s, produced, r, m, e := exe.streamChatOnce(ctx, reportChange, callReq, messages, chatArgs)
+		opened = s
+		lastMeta = m
+		prevErr = e
+		if e != nil {
+			if !s {
+				return nil, llmretry.NoRetry(e)
+			}
+			if produced > 0 {
+				return nil, llmretry.NoRetry(e)
+			}
+			return nil, e
+		}
+		return streamResult{resp: r, meta: m}, nil
+	})
+	appendRetryOutcome(ctx, outcome)
+	if reportChange != nil {
+		reportChange("retry_outcome", map[string]any{
+			"attempts":         outcome.Attempts,
+			"used_fallback":    outcome.UsedFallback,
+			"last_error_class": string(outcome.LastErrorClass),
+			"elapsed":          outcome.Elapsed.String(),
+		})
+	}
+	if err != nil {
+		return opened, libmodelprovider.ChatResult{}, lastMeta, err
+	}
+	sr := result.(streamResult)
+	return true, sr.resp, sr.meta, nil
 }
 
 func chatArgsForLLMCall(llmCall *LLMExecutionConfig, tools []libmodelprovider.Tool) []libmodelprovider.ChatArgument {
@@ -1583,6 +1682,117 @@ func resolveToolWithResolution(chainContext *ChainContext, toolName string) (Too
 	}
 
 	return ToolWithResolution{}, false
+}
+
+// toolNotFoundSuggestion names the tools closest to a call the chain cannot
+// resolve, so a model that invented a name has a way back. Ranking is structural:
+// an identical leaf under another namespace wins, then a shared namespace token,
+// then a leaf that contains the requested one. With nothing close it lists the
+// toolsets that do exist. Hidden tools are never suggested.
+func toolNotFoundSuggestion(chainContext *ChainContext, hidden map[string]struct{}, name string) string {
+	if chainContext == nil {
+		return ""
+	}
+	_, reqLeaf := splitToolName(name)
+	type candidate struct {
+		name  string
+		score int
+	}
+	seen := map[string]bool{}
+	toolsets := map[string]bool{}
+	var ranked []candidate
+	for _, twr := range chainContext.Tools {
+		candidateName := twr.Function.Name
+		if candidateName == "" {
+			candidateName = twr.ToolsName
+		}
+		if candidateName == "" || candidateName == name || seen[candidateName] {
+			continue
+		}
+		seen[candidateName] = true
+		if isExecutionToolHidden(hidden, candidateName, twr) {
+			continue
+		}
+		namespace, leaf := splitToolName(candidateName)
+		if namespace == "" {
+			continue
+		}
+		toolsets[namespace] = true
+		// Rank against the whole requested name: a model that invented
+		// "local_fs.browse" still shares "browse" with local_fs.
+		score := 10 * sharedNamespaceTokens(name, namespace)
+		switch {
+		case reqLeaf != "" && leaf == reqLeaf:
+			score += 100
+		case reqLeaf != "" && leaf != "" && (strings.Contains(leaf, reqLeaf) || strings.Contains(reqLeaf, leaf)):
+			score += 40
+		}
+		ranked = append(ranked, candidate{candidateName, score})
+	}
+	sort.Slice(ranked, func(i, j int) bool {
+		if ranked[i].score != ranked[j].score {
+			return ranked[i].score > ranked[j].score
+		}
+		return ranked[i].name < ranked[j].name
+	})
+	var names []string
+	for _, c := range ranked {
+		if c.score <= 0 || len(names) == 3 {
+			break
+		}
+		names = append(names, c.name)
+	}
+	if len(names) > 0 {
+		return "; did you mean " + strings.Join(names, ", ") + "?"
+	}
+	if len(toolsets) == 0 {
+		return ""
+	}
+	all := make([]string, 0, len(toolsets))
+	for namespace := range toolsets {
+		all = append(all, namespace)
+	}
+	sort.Strings(all)
+	if len(all) > 5 {
+		all = all[:5]
+	}
+	return "; available toolsets: " + strings.Join(all, ", ")
+}
+
+// splitToolName splits a namespaced tool name ("local_fs.find_files") into
+// its namespace and leaf. A name without a dot has no namespace.
+func splitToolName(name string) (namespace, leaf string) {
+	name = strings.TrimSpace(name)
+	idx := strings.LastIndex(name, ".")
+	if idx <= 0 || idx == len(name)-1 {
+		return "", name
+	}
+	return name[:idx], name[idx+1:]
+}
+
+// sharedNamespaceTokens counts the tokens ("native", "fs", "browse") two namespaces
+// share, so a call to local_fs.browse still points at local_fs.
+func sharedNamespaceTokens(a, b string) int {
+	if a == "" || b == "" {
+		return 0
+	}
+	tokens := func(namespace string) map[string]bool {
+		out := map[string]bool{}
+		for _, token := range strings.FieldsFunc(namespace, func(r rune) bool { return r == '-' || r == '_' || r == '.' }) {
+			if len(token) >= 3 {
+				out[token] = true
+			}
+		}
+		return out
+	}
+	have := tokens(a)
+	shared := 0
+	for token := range tokens(b) {
+		if have[token] {
+			shared++
+		}
+	}
+	return shared
 }
 
 func (exe *SimpleExec) executionToolsScope(ctx context.Context, currentTask *TaskDefinition) (map[string]struct{}, bool, error) {

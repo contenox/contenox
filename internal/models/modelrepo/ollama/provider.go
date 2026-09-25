@@ -10,20 +10,23 @@ import (
 )
 
 type OllamaProvider struct {
-	Name            string
-	ID              string
-	ContextLength   int
-	MaxOutputTokens int
-	SupportsChat    bool
-	SupportsEmbed   bool
-	SupportsStream  bool
-	SupportsPrompt  bool
-	SupportsThink   bool
-	SupportsVision  bool
-	apiKey          string
-	httpClient      *http.Client
-	Backends        []string
-	tracker         libtracker.ActivityTracker
+	Name                   string
+	ID                     string
+	ContextLength          int
+	MaxOutputTokens        int
+	SupportsChat           bool
+	SupportsEmbed          bool
+	SupportsStream         bool
+	SupportsPrompt         bool
+	SupportsThink          bool
+	SupportsVision         bool
+	SupportsAudio          bool
+	SupportsAudioExtension bool
+	SupportsSession        bool
+	apiKey                 string
+	httpClient             *http.Client
+	Backends               []string
+	tracker                libtracker.ActivityTracker
 }
 
 func NewOllamaProvider(name string, backends []string, httpClient *http.Client, caps modelrepo.CapabilityConfig, apiKey string, tracker libtracker.ActivityTracker) modelrepo.Provider {
@@ -35,20 +38,23 @@ func NewOllamaProvider(name string, backends []string, httpClient *http.Client, 
 	}
 
 	return &OllamaProvider{
-		Name:            name,
-		ID:              "ollama:" + name,
-		ContextLength:   caps.ContextLength,
-		MaxOutputTokens: caps.MaxOutputTokens,
-		SupportsChat:    caps.CanChat,
-		SupportsEmbed:   caps.CanEmbed,
-		SupportsStream:  caps.CanStream,
-		SupportsPrompt:  caps.CanPrompt,
-		SupportsThink:   caps.CanThink,
-		SupportsVision:  caps.CanVision,
-		apiKey:          apiKey,
-		Backends:        backends,
-		httpClient:      httpClient,
-		tracker:         tracker,
+		Name:                   name,
+		ID:                     "ollama:" + name,
+		ContextLength:          caps.ContextLength,
+		MaxOutputTokens:        caps.MaxOutputTokens,
+		SupportsChat:           caps.CanChat,
+		SupportsEmbed:          caps.CanEmbed,
+		SupportsStream:         caps.CanStream,
+		SupportsPrompt:         caps.CanPrompt,
+		SupportsThink:          caps.CanThink,
+		SupportsVision:         caps.CanVision,
+		SupportsAudio:          caps.CanAudio,
+		SupportsAudioExtension: caps.AudioExtension,
+		SupportsSession:        caps.SessionExtension,
+		apiKey:                 apiKey,
+		Backends:               backends,
+		httpClient:             httpClient,
+		tracker:                tracker,
 	}
 }
 
@@ -95,9 +101,8 @@ func (p *OllamaProvider) CanVision() bool {
 	return p.SupportsVision
 }
 
-// CanAudio always reports false; audio input is refused, not dropped.
 func (p *OllamaProvider) CanAudio() bool {
-	return false
+	return p.SupportsAudio
 }
 
 func (p *OllamaProvider) GetChatConnection(ctx context.Context, backendID string) (modelrepo.LLMChatClient, error) {
@@ -110,12 +115,14 @@ func (p *OllamaProvider) GetChatConnection(ctx context.Context, backendID string
 	}
 
 	return &OllamaChatClient{
-		ollamaClient:    client,
-		modelName:       p.ModelName(),
-		backendURL:      backendID,
-		maxOutputTokens: p.MaxOutputTokens,
-		supportsThink:   p.SupportsThink,
-		tracker:         p.tracker,
+		ollamaClient:     client,
+		audioExtension:   p.SupportsAudioExtension,
+		sessionExtension: p.SupportsSession,
+		modelName:        p.ModelName(),
+		backendURL:       backendID,
+		maxOutputTokens:  p.MaxOutputTokens,
+		supportsThink:    p.SupportsThink,
+		tracker:          p.tracker,
 	}, nil
 }
 
@@ -164,11 +171,13 @@ func (p *OllamaProvider) GetStreamConnection(ctx context.Context, backendID stri
 		return nil, fmt.Errorf("invalid backend URL '%s' for provider %s: %w", backendID, p.GetID(), err)
 	}
 	return &OllamaStreamClient{
-		ollamaClient:    client,
-		modelName:       p.ModelName(),
-		backendURL:      backendID,
-		maxOutputTokens: p.MaxOutputTokens,
-		supportsThink:   p.SupportsThink,
-		tracker:         p.tracker,
+		ollamaClient:     client,
+		audioExtension:   p.SupportsAudioExtension,
+		sessionExtension: p.SupportsSession,
+		modelName:        p.ModelName(),
+		backendURL:       backendID,
+		maxOutputTokens:  p.MaxOutputTokens,
+		supportsThink:    p.SupportsThink,
+		tracker:          p.tracker,
 	}, nil
 }

@@ -262,6 +262,8 @@ func (s *State) processBackends(ctx context.Context, backends []*runtimetypes.Ba
 
 func (s *State) processBackend(ctx context.Context, backend *runtimetypes.Backend, declaredModels []*runtimetypes.Model) {
 	switch modelrepo.CanonicalBackendType(backend.Type) {
+	case "modeld", "local":
+		s.processModeldBackend(ctx, backend, declaredModels)
 	case "ollama":
 		s.processOllamaBackend(ctx, backend, declaredModels)
 	case "vllm":
@@ -288,16 +290,46 @@ func (s *State) processBackend(ctx context.Context, backend *runtimetypes.Backen
 	}
 }
 
-func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.Backend, declaredOllamaModels []*runtimetypes.Model) {
-	models := []string{}
-	declaredModelMap := make(map[string]runtimetypes.Model)
-	for _, model := range declaredOllamaModels {
-		declaredModelMap[model.Model] = *model
-		models = append(models, model.Model)
+func (s *State) processModeldBackend(ctx context.Context, backend *runtimetypes.Backend, declaredModels []*runtimetypes.Model) {
+	models := declaredModelNames(declaredModels)
+
+	catalog, err := s.newCatalogProvider(backend, "")
+	if err != nil {
+		storeBackendError(s, backend, "", err, models)
+		return
 	}
 
+	observedModels, err := catalog.ListModels(ctx)
+	if err != nil {
+		storeBackendError(s, backend, "", err, models)
+		return
+	}
+
+	stateservice := &BackendRuntimeState{
+		ID:      backend.ID,
+		Name:    backend.Name,
+		Backend: *backend,
+		Models:  make([]string, 0, len(observedModels)),
+	}
+	stateservice.SetAPIKey("")
+
+	pulledModels := make([]ModelPullStatus, 0, len(observedModels))
+	for _, observed := range observedModels {
+		lmr := pullStatusFromObservedModel(observed)
+		pulledModels = append(pulledModels, lmr)
+	}
+
+	stateservice.PulledModels = pulledModels
+	stateservice.Models = observedModelNames(observedModels)
+	s.state.Store(backend.ID, stateservice)
+}
+
+func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.Backend, declaredOllamaModels []*runtimetypes.Model) {
+	declaredModelMap := declaredModelsByName(declaredOllamaModels)
+	models := declaredModelNames(declaredOllamaModels)
+
 	apiKey := ""
-	if key, err := s.loadProviderAPIKey(ctx, backend.Type); err == nil {
+	if key, err := s.loadProviderAPIKey(ctx, backend); err == nil {
 		apiKey = key
 	}
 
@@ -323,39 +355,7 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.
 
 	pulledModels := make([]ModelPullStatus, 0, len(observedModels))
 	for _, observed := range observedModels {
-		lmr := pullStatusFromObservedModel(observed)
-
-		// Write a discovered context_length back so later cycles skip re-learning it.
-		if decl, exists := declaredModelMap[observed.Name]; exists && decl.ContextLength == 0 && lmr.ContextLength > 0 {
-			declCopy := decl
-			declCopy.ContextLength = lmr.ContextLength
-			declCopy.CanChat = lmr.CanChat
-			declCopy.CanEmbed = lmr.CanEmbed
-			declCopy.CanPrompt = lmr.CanPrompt
-			declCopy.CanStream = lmr.CanStream
-			_ = runtimetypes.New(s.dbInstance.WithoutTransaction()).UpdateModel(ctx, &declCopy)
-		}
-
-		// Declared caps act as explicit overrides (admin intent wins over observed values).
-		if declaredModel, exists := declaredModelMap[observed.Name]; exists {
-			if declaredModel.ContextLength > 0 {
-				lmr.ContextLength = declaredModel.ContextLength
-			}
-			if declaredModel.CanChat {
-				lmr.CanChat = true
-			}
-			if declaredModel.CanEmbed {
-				lmr.CanEmbed = true
-			}
-			if declaredModel.CanPrompt {
-				lmr.CanPrompt = true
-			}
-			if declaredModel.CanStream {
-				lmr.CanStream = true
-			}
-		}
-
-		lmr = s.applyCapabilityOverrides(ctx, backend.Type, lmr)
+		lmr := s.applyDeclaredModel(ctx, backend, declaredModelMap[observed.Name], observed)
 		pulledModels = append(pulledModels, lmr)
 	}
 
@@ -369,14 +369,11 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.
 }
 
 func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Backend, models []*runtimetypes.Model) {
-	declaredModelMap := make(map[string]*runtimetypes.Model)
-	for _, m := range models {
-		declaredModelMap[m.Model] = m
-	}
+	declaredModelMap := declaredModelsByName(models)
 
 	// The bearer token must reach both the catalog and the runtime state.
 	apiKey := ""
-	if key, err := s.loadProviderAPIKey(ctx, backend.Type); err == nil {
+	if key, err := s.loadProviderAPIKey(ctx, backend); err == nil {
 		apiKey = key
 	}
 
@@ -406,27 +403,12 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 
 	pulledModels := make([]ModelPullStatus, 0, len(observedModels))
 	for _, observed := range observedModels {
-		if declaredModel, exists := declaredModelMap[observed.Name]; exists {
-			effectiveContextLen := declaredModel.ContextLength
-			if effectiveContextLen == 0 && observed.ContextLength > 0 {
-				effectiveContextLen = observed.ContextLength
-				declCopy := *declaredModel
-				declCopy.ContextLength = observed.ContextLength
-				_ = runtimetypes.New(s.dbInstance.WithoutTransaction()).UpdateModel(ctx, &declCopy)
-			}
-
-			// Observed capabilities are the base; declared trues merge in additively.
-			lmr := mergeDeclaredOverObserved(declaredModel, observed)
-			lmr.ContextLength = effectiveContextLen
-			lmr = s.applyCapabilityOverrides(ctx, backend.Type, lmr)
-			pulledModels = append(pulledModels, lmr)
+		declared, exists := declaredModelMap[observed.Name]
+		if !exists && !s.autoDiscoverModels {
 			continue
 		}
-
-		if s.autoDiscoverModels {
-			lmr := s.applyCapabilityOverrides(ctx, backend.Type, pullStatusFromObservedModel(observed))
-			pulledModels = append(pulledModels, lmr)
-		}
+		lmr := s.applyDeclaredModel(ctx, backend, declared, observed)
+		pulledModels = append(pulledModels, lmr)
 	}
 
 	if len(declaredModelMap) > 0 && len(pulledModels) == 0 && !s.autoDiscoverModels {
@@ -436,7 +418,8 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 	s.state.Store(backend.ID, res)
 }
 
-func (s *State) processGeminiBackend(ctx context.Context, backend *runtimetypes.Backend, _ []*runtimetypes.Model) {
+func (s *State) processGeminiBackend(ctx context.Context, backend *runtimetypes.Backend, declared []*runtimetypes.Model) {
+	declaredModels := declaredModelsByName(declared)
 	stateInstance := &BackendRuntimeState{
 		ID:           backend.ID,
 		Name:         backend.Name,
@@ -444,7 +427,7 @@ func (s *State) processGeminiBackend(ctx context.Context, backend *runtimetypes.
 		PulledModels: []ModelPullStatus{},
 	}
 	stateInstance.SetAPIKey("")
-	apiKey, err := s.loadProviderAPIKey(ctx, backend.Type)
+	apiKey, err := s.loadProviderAPIKey(ctx, backend)
 	if err != nil {
 		if errors.Is(err, libdb.ErrNotFound) {
 			stateInstance.Error = "API key not configured"
@@ -460,7 +443,7 @@ func (s *State) processGeminiBackend(ctx context.Context, backend *runtimetypes.
 		stateInstance.Models = observedModelNames(cachedModels)
 		stateInstance.PulledModels = make([]ModelPullStatus, 0, len(cachedModels))
 		for _, model := range cachedModels {
-			lmr := s.applyCapabilityOverrides(ctx, backend.Type, pullStatusFromObservedModel(model))
+			lmr := s.applyDeclaredModel(ctx, backend, declaredModels[model.Name], model)
 			stateInstance.PulledModels = append(stateInstance.PulledModels, lmr)
 		}
 		s.state.Store(backend.ID, stateInstance)
@@ -483,12 +466,12 @@ func (s *State) processGeminiBackend(ctx context.Context, backend *runtimetypes.
 	stateInstance.Models = observedModelNames(observedModels)
 	stateInstance.PulledModels = make([]ModelPullStatus, 0, len(observedModels))
 	for _, model := range observedModels {
-		lmr := s.applyCapabilityOverrides(ctx, backend.Type, pullStatusFromObservedModel(model))
+		lmr := s.applyDeclaredModel(ctx, backend, declaredModels[model.Name], model)
 		stateInstance.PulledModels = append(stateInstance.PulledModels, lmr)
 	}
 	s.state.Store(backend.ID, stateInstance)
 
-	s.storeObservedModelCache(ctx, backend.ID, apiKey, observedModels)
+	s.storeObservedModelCache(ctx, backend.ID, apiKey, observedModels, catalog)
 }
 
 func (s *State) processVertexBackend(ctx context.Context, backend *runtimetypes.Backend, models []*runtimetypes.Model) {
@@ -499,7 +482,8 @@ func (s *State) processBedrockBackend(ctx context.Context, backend *runtimetypes
 	s.processOptionalCredCloudBackend(ctx, backend, models)
 }
 
-func (s *State) processOptionalCredCloudBackend(ctx context.Context, backend *runtimetypes.Backend, _ []*runtimetypes.Model) {
+func (s *State) processOptionalCredCloudBackend(ctx context.Context, backend *runtimetypes.Backend, declared []*runtimetypes.Model) {
+	declaredModels := declaredModelsByName(declared)
 	stateInstance := &BackendRuntimeState{
 		ID:           backend.ID,
 		Name:         backend.Name,
@@ -507,15 +491,16 @@ func (s *State) processOptionalCredCloudBackend(ctx context.Context, backend *ru
 		PulledModels: []ModelPullStatus{},
 	}
 
-	// credJSON may be empty (ADC fallback) — that's fine, not an error.
-	credJSON, _ := s.loadProviderAPIKey(ctx, backend.Type)
-	stateInstance.SetAPIKey(credJSON)
+	credJSON, err := s.loadProviderAPIKey(ctx, backend)
+	if err == nil {
+		stateInstance.SetAPIKey(credJSON)
+	}
 
 	if cachedModels, ok := s.loadObservedModelCache(ctx, backend.ID, credJSON); ok {
 		stateInstance.Models = observedModelNames(cachedModels)
 		stateInstance.PulledModels = make([]ModelPullStatus, 0, len(cachedModels))
 		for _, model := range cachedModels {
-			lmr := s.applyCapabilityOverrides(ctx, backend.Type, pullStatusFromObservedModel(model))
+			lmr := s.applyDeclaredModel(ctx, backend, declaredModels[model.Name], model)
 			stateInstance.PulledModels = append(stateInstance.PulledModels, lmr)
 		}
 		s.state.Store(backend.ID, stateInstance)
@@ -538,11 +523,11 @@ func (s *State) processOptionalCredCloudBackend(ctx context.Context, backend *ru
 	stateInstance.Models = observedModelNames(observedModels)
 	stateInstance.PulledModels = make([]ModelPullStatus, 0, len(observedModels))
 	for _, model := range observedModels {
-		lmr := s.applyCapabilityOverrides(ctx, backend.Type, pullStatusFromObservedModel(model))
+		lmr := s.applyDeclaredModel(ctx, backend, declaredModels[model.Name], model)
 		stateInstance.PulledModels = append(stateInstance.PulledModels, lmr)
 	}
 	s.state.Store(backend.ID, stateInstance)
-	s.storeObservedModelCache(ctx, backend.ID, credJSON, observedModels)
+	s.storeObservedModelCache(ctx, backend.ID, credJSON, observedModels, catalog)
 }
 
 // processScriptedTestBackend re-reads the script every cycle and never caches its model list, so editing the script is enough to change what the backend offers.
@@ -570,9 +555,10 @@ func (s *State) processScriptedTestBackend(ctx context.Context, backend *runtime
 
 	stateInstance.Models = observedModelNames(observedModels)
 	for _, model := range observedModels {
-		stateInstance.PulledModels = append(stateInstance.PulledModels, s.applyCapabilityOverrides(ctx, backend.Type, pullStatusFromObservedModel(model)))
+		stateInstance.PulledModels = append(stateInstance.PulledModels, s.applyDeclarations(ctx, backend, pullStatusFromObservedModel(model)))
 	}
 	s.state.Store(backend.ID, stateInstance)
+	s.storeObservedModelCache(ctx, backend.ID, "", observedModels, catalog)
 }
 
 func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.Backend, models []*runtimetypes.Model) {
@@ -583,7 +569,7 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 		Backend:      *backend,
 	}
 
-	apiKey, err := s.loadProviderAPIKey(ctx, backend.Type)
+	apiKey, err := s.loadProviderAPIKey(ctx, backend)
 	if err != nil {
 		if errors.Is(err, libdb.ErrNotFound) {
 			stateInstance.Error = "API key not configured"
@@ -615,23 +601,18 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 			s.state.Store(backend.ID, stateInstance)
 			return
 		}
-		s.storeObservedModelCache(ctx, backend.ID, apiKey, observedModels)
+		s.storeObservedModelCache(ctx, backend.ID, apiKey, observedModels, catalog)
 	}
 
 	stateInstance.Models = observedModelNames(observedModels)
 	pulledModels := make([]ModelPullStatus, 0, len(observedModels))
 	for _, observed := range observedModels {
-		if declaredModel, exists := declaredModels[observed.Name]; exists {
-			// Observed capabilities are the base; declared trues merge in additively.
-			lmr := mergeDeclaredOverObserved(declaredModel, observed)
-			lmr = s.applyCapabilityOverrides(ctx, backend.Type, lmr)
-			pulledModels = append(pulledModels, lmr)
+		declared, exists := declaredModels[observed.Name]
+		if !exists && !s.autoDiscoverModels {
 			continue
 		}
-		if s.autoDiscoverModels {
-			lmr := s.applyCapabilityOverrides(ctx, backend.Type, pullStatusFromObservedModel(observed))
-			pulledModels = append(pulledModels, lmr)
-		}
+		lmr := s.applyDeclaredModel(ctx, backend, declared, observed)
+		pulledModels = append(pulledModels, lmr)
 	}
 	stateInstance.PulledModels = pulledModels
 	if len(declaredModels) > 0 && len(pulledModels) == 0 && !s.autoDiscoverModels {

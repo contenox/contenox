@@ -67,6 +67,11 @@ func TestHostE2E_Testy_McpPassDownThroughComposedPath(t *testing.T) {
 	if _, err := os.Stat(mcpBin); err != nil {
 		t.Fatalf("%s=%q is not accessible: %v", hostMcpEchoBinEnv, mcpBin, err)
 	}
+	workspace := t.TempDir()
+	mcpBytes, err := os.ReadFile(mcpBin)
+	require.NoError(t, err)
+	mcpBin = filepath.Join(workspace, "mcp-echo-server")
+	require.NoError(t, os.WriteFile(mcpBin, mcpBytes, 0o755))
 
 	ctx, agent, servers := registerAgentWithMcp(t, "testy-mcp", testyBin,
 		[]*runtimetypes.MCPServer{{Name: "echo", Transport: "stdio", Command: mcpBin, ConnectTimeoutSeconds: 30}},
@@ -78,7 +83,7 @@ func TestHostE2E_Testy_McpPassDownThroughComposedPath(t *testing.T) {
 	var stderr acpexec.LockedBuffer
 	harness := &agenthost.RecordingHarness{}
 	res, err := agenthost.DriveTurn(ctx, agent, harness, agenthost.TurnRequest{
-		Cwd:        t.TempDir(),
+		Cwd:        workspace,
 		Prompt:     testyCommandPrompt(t, map[string]any{"command": "list_tools", "server": "echo"}),
 		Stderr:     &stderr,
 		KillGrace:  500 * time.Millisecond,

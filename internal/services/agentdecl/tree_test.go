@@ -1,9 +1,11 @@
 package agentdecl_test
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -73,7 +75,7 @@ func gotoFor(task *taskengine.TaskDefinition, op taskengine.OperatorTerm, when s
 // branch, one shared terminal. This is the claim the whole convention rests on.
 func TestUnit_Tree_ReproducesTheShippedRoutingShape(t *testing.T) {
 	cfg := mustShipped(t)
-	tree, err := agentdecl.LoadTree(acpTree(t), cfg)
+	tree, err := agentdecl.LoadTree(context.Background(), rootOf(t, acpTree(t)), cfg)
 	require.NoError(t, err)
 	require.True(t, tree.IsRouter())
 	require.Equal(t, []string{"coding", "general", "review"}, tree.Labels(),
@@ -116,7 +118,7 @@ func TestUnit_Tree_ReproducesTheShippedRoutingShape(t *testing.T) {
 // the terminal. Absence of recovery.md has to mean exactly that.
 func TestUnit_Tree_ALeafWithoutRecoveryFallsStraightToTheTerminal(t *testing.T) {
 	cfg := mustShipped(t)
-	tree, err := agentdecl.LoadTree(acpTree(t), cfg)
+	tree, err := agentdecl.LoadTree(context.Background(), rootOf(t, acpTree(t)), cfg)
 	require.NoError(t, err)
 	chain, err := agentdecl.EmitTree(tree, cfg)
 	require.NoError(t, err)
@@ -127,7 +129,7 @@ func TestUnit_Tree_ALeafWithoutRecoveryFallsStraightToTheTerminal(t *testing.T) 
 	require.NotNil(t, review)
 	require.Equal(t, "acp-summarise", review.Transition.OnFailure)
 	require.Equal(t, "acp-summarise",
-		gotoFor(review, taskengine.OpEdgeTraversedAtLeast, "60"),
+		gotoFor(review, taskengine.OpEdgeTraversedAtLeast, strconv.Itoa(cfg.Chain.MainRounds)),
 		"an exhausted review loop lands on the terminal, not on a stage that does not exist")
 
 	// While a branch that DOES declare one keeps its own second attempt.
@@ -140,7 +142,7 @@ func TestUnit_Tree_ALeafWithoutRecoveryFallsStraightToTheTerminal(t *testing.T) 
 // they are two independent strings.
 func TestUnit_Tree_LabelsAreInjectedIntoTheClassifierPrompt(t *testing.T) {
 	cfg := mustShipped(t)
-	tree, err := agentdecl.LoadTree(acpTree(t), cfg)
+	tree, err := agentdecl.LoadTree(context.Background(), rootOf(t, acpTree(t)), cfg)
 	require.NoError(t, err)
 	chain, err := agentdecl.EmitTree(tree, cfg)
 	require.NoError(t, err)
@@ -166,12 +168,12 @@ func TestUnit_Tree_RefusesARouterWithNoUsableDefault(t *testing.T) {
 	writeDecl(t, filepath.Join(root, "a"), agentdecl.AgentFilename, "name: a\ndescription: A", "A.")
 	writeDecl(t, filepath.Join(root, "b"), agentdecl.AgentFilename, "name: b\ndescription: B", "B.")
 
-	_, err := agentdecl.LoadTree(root, cfg)
+	_, err := agentdecl.LoadTree(context.Background(), rootOf(t, root), cfg)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "names no default")
 
 	writeDecl(t, root, agentdecl.AgentFilename, "name: acp\ndescription: Router\ndefault: nope", "Classify.")
-	_, err = agentdecl.LoadTree(root, cfg)
+	_, err = agentdecl.LoadTree(context.Background(), rootOf(t, root), cfg)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not one of")
 }
@@ -183,7 +185,7 @@ func TestUnit_Tree_ASingleChildNeedsNoDeclaredDefault(t *testing.T) {
 	writeDecl(t, root, agentdecl.AgentFilename, "name: solo\ndescription: Router", "Classify.")
 	writeDecl(t, filepath.Join(root, "only"), agentdecl.AgentFilename, "name: only\ndescription: Only", "Do it.")
 
-	tree, err := agentdecl.LoadTree(root, cfg)
+	tree, err := agentdecl.LoadTree(context.Background(), rootOf(t, root), cfg)
 	require.NoError(t, err)
 	require.Equal(t, "only", tree.Default)
 }
@@ -199,7 +201,7 @@ func TestUnit_Tree_NestsWithoutAFurtherConcept(t *testing.T) {
 	writeDecl(t, filepath.Join(root, "work", "fast"), agentdecl.AgentFilename, "name: fast\ndescription: Fast", "Go.")
 	writeDecl(t, filepath.Join(root, "work", "slow"), agentdecl.AgentFilename, "name: slow\ndescription: Slow", "Go.")
 
-	tree, err := agentdecl.LoadTree(root, cfg)
+	tree, err := agentdecl.LoadTree(context.Background(), rootOf(t, root), cfg)
 	require.NoError(t, err)
 	chain, err := agentdecl.EmitTree(tree, cfg)
 	require.NoError(t, err)
@@ -220,7 +222,7 @@ func TestUnit_Tree_RefusesRecoveryOnARouter(t *testing.T) {
 	writeDecl(t, root, agentdecl.RecoveryFilename, "name: oops\ndescription: Nope", "No.")
 	writeDecl(t, filepath.Join(root, "a"), agentdecl.AgentFilename, "name: a\ndescription: A", "A.")
 
-	_, err := agentdecl.LoadTree(root, cfg)
+	_, err := agentdecl.LoadTree(context.Background(), rootOf(t, root), cfg)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "router has no recovery")
 }
@@ -255,8 +257,8 @@ func TestUnit_Tree_SyncEmitsOneChainForTheWholeTree(t *testing.T) {
 	writeDecl(t, agentsDir, "solo.md", "name: solo\ndescription: Solo", "Solo.")
 
 	generated := filepath.Join(root, ".generated")
-	results, err := agentdecl.Sync(
-		[]agentdecl.SourceDir{{Path: agentsDir, Native: true}}, generated, cfg)
+	results, err := syncAt(t, context.Background(),
+		[]agentdecl.SourceDir{{Root: rootOf(t, agentsDir), Native: true}}, generated, cfg)
 	require.NoError(t, err)
 
 	names := map[string]bool{}
@@ -287,7 +289,7 @@ func TestUnit_Tree_SyncEmitsOneChainForTheWholeTree(t *testing.T) {
 // shipped example now IS a tree, and it transpiles.
 func TestUnit_Tree_PreseedShipsAWorkingTreeExample(t *testing.T) {
 	dir := t.TempDir()
-	created, err := agentdecl.Preseed(dir)
+	created, err := agentdecl.Preseed(context.Background(), rootOf(t, dir))
 	require.NoError(t, err)
 
 	root := filepath.Join(dir, agentdecl.NativeSourceDir, "triage")
@@ -295,11 +297,11 @@ func TestUnit_Tree_PreseedShipsAWorkingTreeExample(t *testing.T) {
 	require.FileExists(t, filepath.Join(root, "code", agentdecl.AgentFilename))
 	require.FileExists(t, filepath.Join(root, "code", agentdecl.RecoveryFilename))
 	require.FileExists(t, filepath.Join(root, "docs", agentdecl.AgentFilename))
-	require.Contains(t, created, filepath.Join(root, "code", agentdecl.RecoveryFilename))
+	require.Contains(t, created.Created, filepath.Join(root, "code", agentdecl.RecoveryFilename))
 
 	// Seeded is not enough — it has to actually transpile.
 	cfg := mustShipped(t)
-	tree, err := agentdecl.LoadTree(root, cfg)
+	tree, err := agentdecl.LoadTree(context.Background(), rootOf(t, root), cfg)
 	require.NoError(t, err)
 	chain, err := agentdecl.EmitTree(tree, cfg)
 	require.NoError(t, err)
@@ -310,7 +312,7 @@ func TestUnit_Tree_PreseedShipsAWorkingTreeExample(t *testing.T) {
 	// A second pass leaves an edited file alone.
 	require.NoError(t, os.WriteFile(filepath.Join(root, "docs", agentdecl.AgentFilename),
 		[]byte("---\nname: docs\ndescription: Mine now\n---\n\nMine.\n"), 0o644))
-	_, err = agentdecl.Preseed(dir)
+	_, err = agentdecl.Preseed(context.Background(), rootOf(t, dir))
 	require.NoError(t, err)
 	again, err := os.ReadFile(filepath.Join(root, "docs", agentdecl.AgentFilename))
 	require.NoError(t, err)
@@ -324,7 +326,7 @@ func TestUnit_Tree_EmittedChainsLint(t *testing.T) {
 	cfg := mustShipped(t)
 	for _, name := range []string{"acp", "triage"} {
 		t.Run(name, func(t *testing.T) {
-			tree, err := agentdecl.LoadTree(filepath.Join("preseed", "agents", name), cfg)
+			tree, err := agentdecl.LoadTree(context.Background(), rootOf(t, filepath.Join("preseed", "agents", name)), cfg)
 			require.NoError(t, err)
 			chain, err := agentdecl.EmitTree(tree, cfg)
 			require.NoError(t, err)
@@ -347,7 +349,7 @@ func TestUnit_Tree_LoopMacrosResolveToThisLeafAndTheRealBudget(t *testing.T) {
 		"name: work-recovery\ndescription: Retry",
 		"Used {{rounds_used}} of {{main_rounds}} main and {{recovery_rounds_used}} of {{recovery_rounds}} recovery.")
 
-	tree, err := agentdecl.LoadTree(root, cfg)
+	tree, err := agentdecl.LoadTree(context.Background(), rootOf(t, root), cfg)
 	require.NoError(t, err)
 	chain, err := agentdecl.EmitTree(tree, cfg)
 	require.NoError(t, err)

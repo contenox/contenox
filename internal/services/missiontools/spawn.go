@@ -141,7 +141,7 @@ func (p *provider) execStartMission(ctx context.Context, parentSessionID string,
 		return nil, taskengine.DataTypeAny, fmt.Errorf("missiontools: %s needs an agent: name one, or set a default with `contenox config set default-mission-agent <name>`", ToolNameStartMission)
 	}
 	if policyName == "" {
-		return nil, taskengine.DataTypeAny, fmt.Errorf("missiontools: %s needs an envelope: name one, or set a default with `contenox config set default-mission-policy <name>`", ToolNameStartMission)
+		return nil, taskengine.DataTypeAny, fmt.Errorf("missiontools: %s needs an envelope: name one, or set a default with `contenox config set execution.missions.permissions.policy <name>`", ToolNameStartMission)
 	}
 
 	handle, err := p.spawner.Spawn(ctx, SubagentSpec{

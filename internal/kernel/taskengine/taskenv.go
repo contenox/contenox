@@ -3,6 +3,7 @@ package taskengine
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -11,8 +12,8 @@ import (
 	"time"
 
 	"github.com/Masterminds/sprig/v3"
-
 	"github.com/contenox/contenox/errdefs"
+	"github.com/contenox/contenox/internal/services/settings"
 	"github.com/contenox/contenox/libtracker"
 	"github.com/getkin/kin-openapi/openapi3"
 )
@@ -429,6 +430,10 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 				}
 			}
 
+			if tokenLimit <= 0 {
+				tokenLimit = settings.FallbackContextTokens
+			}
+
 			output, outputType, transitionEval, taskErr = env.exec.TaskExec(taskCtx, startingTime, tokenLimit, chainContext, &stepTask, taskInput, taskInputType)
 			if taskErr != nil {
 				taskErr = fmt.Errorf("task %s: %w", currentTask.ID, taskErr)
@@ -507,7 +512,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 			}
 			publishTaskEventBestEffort(taskCtx, env.tracker, env.eventSink, stepEvent)
 
-			reportChangeAttempt(currentTask.ID, output)
+			reportChangeAttempt(currentTask.ID, taskLogSummary(output, outputType))
 			break
 		}
 
@@ -595,7 +600,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 				ctx,
 				"chain_complete",
 				"chain")
-			reportChangeFinal("chain", finalOutput)
+			reportChangeFinal("chain", taskLogSummary(finalOutput, outputType))
 			endFinal() // direct call, not defer
 			break
 		}
@@ -623,6 +628,20 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 		return nil, DataTypeAny, stack.GetExecutionHistory(), normErr
 	}
 	return normOut, normDT, stack.GetExecutionHistory(), nil
+}
+
+func taskLogSummary(v any, dataType DataType) map[string]any {
+	summary := map[string]any{"data_type": dataType.String()}
+	if raw, err := json.Marshal(v); err == nil {
+		summary["json_bytes"] = len(raw)
+	}
+	if history, ok := v.(ChatHistory); ok {
+		summary["message_count"] = len(history.Messages)
+		summary["input_tokens"] = history.InputTokens
+		summary["output_tokens"] = history.OutputTokens
+		summary["finish_reason"] = history.FinishReason
+	}
+	return summary
 }
 
 func renderTemplate(tmplStr string, vars any) (string, error) {

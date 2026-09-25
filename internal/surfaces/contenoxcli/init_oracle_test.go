@@ -8,14 +8,17 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/contenox/contenox/internal/kernel/taskengine"
 	"github.com/contenox/contenox/internal/services/agentdecl"
 	"github.com/contenox/contenox/internal/services/clikv"
 	"github.com/contenox/contenox/internal/services/hitlservice"
+	"github.com/contenox/contenox/internal/services/missionservice"
 	"github.com/contenox/contenox/internal/services/oracletools"
 	"github.com/contenox/contenox/internal/store/runtimetypes"
 	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/libtracker"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -46,7 +49,7 @@ func TestUnit_InitGlobal_SeedsOracleSet(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	var out bytes.Buffer
-	require.NoError(t, RunGlobalInit(&out))
+	require.NoError(t, RunGlobalInit(context.Background(), &out))
 	for _, path := range seededOraclePaths(filepath.Join(home, ".contenox")) {
 		require.FileExistsf(t, path, "%s must be seeded by global init", path)
 	}
@@ -63,7 +66,7 @@ func TestUnit_InitLocal_SeedsOracleSet(t *testing.T) {
 	workspace := filepath.Join(t.TempDir(), ".contenox")
 
 	var out bytes.Buffer
-	require.NoError(t, RunLocalInit(&out, false, false, workspace, ""))
+	require.NoError(t, RunLocalInit(context.Background(), &out, false, false, workspace, ""))
 	require.FileExists(t, filepath.Join(workspace, chainOracleDefaultFilename),
 		"the workspace chain override must be seeded by init --local")
 	require.FileExists(t, filepath.Join(workspace, agentdecl.GeneratedDirName, "hitl-policy-oracle.json"),
@@ -148,7 +151,7 @@ func TestUnit_EmbeddedOracleChain_AgenticLoopShape(t *testing.T) {
 	require.Equal(t, taskengine.HandleExecuteToolCalls, execTask.Handler)
 	assert.Equal(t, "oracle_loop", execTask.InputVar)
 	assert.Equal(t, []string{oracletools.ToolsProviderName}, execTask.ExecuteConfig.Tools)
-	assert.Equal(t, "oracle_loop", execTask.Transition.Branches[0].Goto, "tool results loop back to the model")
+	assert.Equal(t, "oracle_correct", execTask.Transition.Branches[0].Goto, "tool results route through the corrective gate")
 
 	gate := tasks["oracle_correct"]
 	require.NotNil(t, gate)
@@ -181,7 +184,7 @@ func TestUnit_EmbeddedOracleChain_AgenticLoopShape(t *testing.T) {
 	recoveryTools := tasks["oracle_recovery_tools"]
 	require.NotNil(t, recoveryTools)
 	require.Equal(t, taskengine.HandleExecuteToolCalls, recoveryTools.Handler)
-	assert.Equal(t, "oracle_recovery", recoveryTools.Transition.Branches[0].Goto)
+	assert.Equal(t, "oracle_correct", recoveryTools.Transition.Branches[0].Goto)
 }
 
 // TestUnit_EmbeddedOracleChain_TeachesBothVerdictSets pins the prompt to the
@@ -249,7 +252,7 @@ func TestUnit_SeededOracleFiles_VetGreen(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	var seedOut bytes.Buffer
-	require.NoError(t, RunGlobalInit(&seedOut))
+	require.NoError(t, RunGlobalInit(context.Background(), &seedOut))
 	contenoxDir := filepath.Join(home, ".contenox")
 
 	files := seededOraclePaths(contenoxDir)
@@ -352,6 +355,10 @@ func TestUnit_OracleChainCandidates_TakesAnAgentNameOrAFilename(t *testing.T) {
 		oracleChainCandidates("oracle-default"),
 		"a bare agent name also reaches the chain a declared agent emits")
 
+	require.Equal(t, []string{"default", "default.json", "chain-default.json", "chain-oracle-default.json"},
+		oracleChainCandidates("default"),
+		"short name 'default' reaches chain-oracle-default.json")
+
 	require.Nil(t, oracleChainCandidates("  "), "blank names nothing")
 }
 
@@ -371,4 +378,58 @@ func TestUnit_ACPPolicySource_SeesGeneratedEnvelopes(t *testing.T) {
 	raw, err := profilePolicy{Name: name}.source(contenoxDir).ReadPolicy(context.Background(), "", name)
 	require.NoError(t, err, "a declared subagent's emitted envelope must be loadable by name")
 	require.Contains(t, string(raw), `"deny"`)
+}
+
+// TestUnit_OracleResolver_OperatorSessionApproval proves that when the operator
+// runs with approves=true (e.g. via --oracle-approves-tool-calls), an operator-level
+// session mission (ParentSessionID == "") can have tool calls approved by the oracle.
+func TestUnit_OracleResolver_OperatorSessionApproval(t *testing.T) {
+	ctx := context.Background()
+	db, err := libdb.NewSQLiteDBManager(ctx, filepath.Join(t.TempDir(), "resolver.db"), runtimetypes.SchemaSQLite)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	store := runtimetypes.New(db.WithoutTransaction())
+	policyDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(policyDir, "hitl-policy-default.json"), []byte(hitlPolicyDefault), 0o644))
+
+	hitl := hitlservice.NewWithDefaultPolicy(hitlservice.NewFSPolicySource(policyDir), runtimetypes.LocalTenantID, store, libtracker.NoopTracker{}, "hitl-policy-default.json")
+	missions := missionservice.New(db)
+
+	missionID := "mis-operator-1"
+	require.NoError(t, missions.Create(ctx, &missionservice.Mission{
+		ID:             missionID,
+		Intent:         "run unit tests",
+		AgentName:      "beam",
+		HITLPolicyName: "hitl-policy-default.json",
+		Status:         missionservice.StatusOpen,
+	}))
+
+	askID := "ask-op-1"
+	require.NoError(t, store.CreateHITLApproval(ctx, &runtimetypes.HITLApproval{
+		ID:          askID,
+		ToolsName:   "local_shell",
+		ToolName:    "local_shell",
+		ArgsSummary: "go test ./...",
+		State:       runtimetypes.HITLApprovalPending,
+		MissionID:   &missionID,
+		PolicyName:  "hitl-policy-default.json",
+		CreatedAt:   time.Now().UTC(),
+		ExpiresAt:   time.Now().UTC().Add(time.Hour),
+	}))
+
+	resolver := oracleResolver{
+		hitl:     hitl,
+		missions: missions,
+		store:    store,
+		approves: true,
+	}
+
+	err = resolver.Decide(ctx, askID, true, "")
+	require.NoError(t, err, "operator session with approves: true must allow agent approvals")
+
+	row, err := store.GetHITLApproval(ctx, askID)
+	require.NoError(t, err)
+	require.Equal(t, runtimetypes.HITLApprovalApproved, row.State)
+	require.Equal(t, "oracle", hitlservice.DecidedByOf(row))
 }

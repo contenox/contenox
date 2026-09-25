@@ -9,57 +9,105 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/contenox/contenox/internal/kernel/reasoning"
 	"github.com/contenox/contenox/internal/models/modelrepo"
 )
 
-// Request is the OpenAI-compatible chat/completions request body. This codec
-// emits max_tokens, not the newer max_completion_tokens.
+// Request is the OpenAI-compatible chat/completions request body. Build emits
+// max_tokens; decoders also accept max_completion_tokens.
 type Request struct {
-	Model       string        `json:"model"`
-	Messages    []wireMessage `json:"messages"`
-	Temperature *float64      `json:"temperature,omitempty"`
-	MaxTokens   *int          `json:"max_tokens,omitempty"`
-	TopP        *float64      `json:"top_p,omitempty"`
-	Seed        *int          `json:"seed,omitempty"`
-	Tools       []wireTool    `json:"tools,omitempty"`
-	ToolChoice  string        `json:"tool_choice,omitempty"`
-	Stream      bool          `json:"stream,omitempty"`
+	Model               string             `json:"model"`
+	Messages            []Message          `json:"messages"`
+	Temperature         *float64           `json:"temperature,omitempty"`
+	MaxTokens           *int               `json:"max_tokens,omitempty"`
+	TopP                *float64           `json:"top_p,omitempty"`
+	Seed                *int               `json:"seed,omitempty"`
+	Tools               []Tool             `json:"tools,omitempty"`
+	ToolChoice          string             `json:"tool_choice,omitempty"`
+	Format              *ResponseFormat    `json:"response_format,omitempty"`
+	Logprobs            *bool              `json:"logprobs,omitempty"`
+	TopLogprobs         *int               `json:"top_logprobs,omitempty"`
+	Stream              *bool              `json:"stream,omitempty"`
+	StreamOptions       *StreamOptions     `json:"stream_options,omitempty"`
+	ReasoningEffort     string             `json:"reasoning_effort,omitempty"`
+	MaxCompletionTokens *int               `json:"max_completion_tokens,omitempty"`
+	Session             string             `json:"contenox_session,omitempty"`
+	N                   *int               `json:"n,omitempty"`
+	Stop                json.RawMessage    `json:"stop,omitempty"`
+	FrequencyPenalty    *float64           `json:"frequency_penalty,omitempty"`
+	PresencePenalty     *float64           `json:"presence_penalty,omitempty"`
+	LogitBias           map[string]float64 `json:"logit_bias,omitempty"`
+	ParallelToolCalls   *bool              `json:"parallel_tool_calls,omitempty"`
+	Modalities          []string           `json:"modalities,omitempty"`
+	Store               bool               `json:"store,omitempty"`
 }
 
-type wireMessage struct {
-	Role       string         `json:"role"`
-	Content    any            `json:"content"`
-	ToolCallID string         `json:"tool_call_id,omitempty"`
-	ToolCalls  []wireToolCall `json:"tool_calls,omitempty"`
+// StreamOptions requests the trailing usage chunk of a streamed completion.
+type StreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
-type wireContentPart struct {
-	Type     string        `json:"type"`
-	Text     string        `json:"text,omitempty"`
-	ImageURL *wireImageURL `json:"image_url,omitempty"`
+// ResponseFormat is the structured-output control of a request: any JSON
+// object, or one conforming to JSONSchema.
+type ResponseFormat struct {
+	Type       string      `json:"type"`
+	JSONSchema *JSONSchema `json:"json_schema,omitempty"`
 }
 
-type wireImageURL struct {
+// JSONSchema names a response schema and carries it.
+type JSONSchema struct {
+	Name   string `json:"name"`
+	Schema any    `json:"schema"`
+}
+
+// Message describes one chat message.
+type Message struct {
+	Role       string     `json:"role"`
+	Content    any        `json:"content"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+}
+
+// ContentPart describes one text, image, or audio part of a message.
+type ContentPart struct {
+	Type       string      `json:"type"`
+	Text       string      `json:"text,omitempty"`
+	ImageURL   *ImageURL   `json:"image_url,omitempty"`
+	InputAudio *InputAudio `json:"input_audio,omitempty"`
+}
+
+// InputAudio carries base64 audio and its format.
+type InputAudio struct {
+	Data   string `json:"data"`
+	Format string `json:"format"`
+}
+
+// ImageURL describes an image URL or data URI.
+type ImageURL struct {
 	URL string `json:"url"`
 }
 
-type wireToolCall struct {
-	ID       string           `json:"id"`
-	Type     string           `json:"type"`
-	Function wireToolFunction `json:"function"`
+// ToolCall describes one function invocation in a message.
+type ToolCall struct {
+	ID       string       `json:"id"`
+	Type     string       `json:"type"`
+	Function ToolFunction `json:"function"`
 }
 
-type wireToolFunction struct {
+// ToolFunction describes a function invocation and its JSON arguments.
+type ToolFunction struct {
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`
 }
 
-type wireTool struct {
-	Type     string       `json:"type"`
-	Function wireToolDecl `json:"function"`
+// Tool describes one function available to the model.
+type Tool struct {
+	Type     string         `json:"type"`
+	Function ToolDefinition `json:"function"`
 }
 
-type wireToolDecl struct {
+// ToolDefinition describes a callable function.
+type ToolDefinition struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	Parameters  any    `json:"parameters,omitempty"`
@@ -75,13 +123,14 @@ func Build(model string, messages []modelrepo.Message, cfg *modelrepo.ChatConfig
 		req.MaxTokens = cfg.MaxTokens
 		req.TopP = cfg.TopP
 		req.Seed = cfg.Seed
+		req.ReasoningEffort = ReasoningEffort(cfg.Think)
 	}
 
 	nameMap := make(map[string]string) // sanitized -> original
 	origToSanitized := make(map[string]string)
 	if cfg != nil && len(cfg.Tools) > 0 {
 		seen := map[string]int{}
-		tools := make([]wireTool, 0, len(cfg.Tools))
+		tools := make([]Tool, 0, len(cfg.Tools))
 		for i, t := range cfg.Tools {
 			if strings.ToLower(t.Type) != "function" || t.Function == nil {
 				continue
@@ -94,9 +143,9 @@ func Build(model string, messages []modelrepo.Message, cfg *modelrepo.ChatConfig
 			name = uniquifyToolName(seen, name)
 			nameMap[name] = orig
 			origToSanitized[orig] = name
-			tools = append(tools, wireTool{
+			tools = append(tools, Tool{
 				Type: "function",
-				Function: wireToolDecl{
+				Function: ToolDefinition{
 					Name:        name,
 					Description: t.Function.Description,
 					Parameters:  t.Function.Parameters,
@@ -108,9 +157,9 @@ func Build(model string, messages []modelrepo.Message, cfg *modelrepo.ChatConfig
 		}
 	}
 
-	req.Messages = make([]wireMessage, 0, len(messages))
+	req.Messages = make([]Message, 0, len(messages))
 	for _, msg := range messages {
-		wm := wireMessage{
+		wm := Message{
 			Role:       msg.Role,
 			ToolCallID: msg.ToolCallID,
 		}
@@ -131,10 +180,10 @@ func Build(model string, messages []modelrepo.Message, cfg *modelrepo.ChatConfig
 			} else {
 				name = sanitizeToolName(name)
 			}
-			wm.ToolCalls = append(wm.ToolCalls, wireToolCall{
+			wm.ToolCalls = append(wm.ToolCalls, ToolCall{
 				ID:       tc.ID,
 				Type:     tc.Type,
-				Function: wireToolFunction{Name: name, Arguments: tc.Function.Arguments},
+				Function: ToolFunction{Name: name, Arguments: tc.Function.Arguments},
 			})
 		}
 		req.Messages = append(req.Messages, wm)
@@ -143,15 +192,15 @@ func Build(model string, messages []modelrepo.Message, cfg *modelrepo.ChatConfig
 	return req, nameMap
 }
 
-func wireImageContent(msg modelrepo.Message) []wireContentPart {
-	parts := make([]wireContentPart, 0, len(msg.Images)+1)
+func wireImageContent(msg modelrepo.Message) []ContentPart {
+	parts := make([]ContentPart, 0, len(msg.Images)+1)
 	if msg.Content != "" {
-		parts = append(parts, wireContentPart{Type: "text", Text: msg.Content})
+		parts = append(parts, ContentPart{Type: "text", Text: msg.Content})
 	}
 	for _, img := range msg.Images {
-		parts = append(parts, wireContentPart{
+		parts = append(parts, ContentPart{
 			Type:     "image_url",
-			ImageURL: &wireImageURL{URL: imageDataURI(img.MimeType, img.Data)},
+			ImageURL: &ImageURL{URL: imageDataURI(img.MimeType, img.Data)},
 		})
 	}
 	return parts
@@ -181,6 +230,9 @@ type wireUsage struct {
 	PromptTokensDetails struct {
 		CachedTokens int `json:"cached_tokens"`
 	} `json:"prompt_tokens_details"`
+	CompletionTokensDetails struct {
+		ReasoningTokens int `json:"reasoning_tokens"`
+	} `json:"completion_tokens_details"`
 }
 
 func (u *wireUsage) neutralUsage() *modelrepo.TokenUsage {
@@ -194,16 +246,17 @@ func (u *wireUsage) neutralUsage() *modelrepo.TokenUsage {
 	return &modelrepo.TokenUsage{
 		PromptTokens:     u.PromptTokens,
 		CompletionTokens: u.CompletionTokens,
+		ThinkingTokens:   u.CompletionTokensDetails.ReasoningTokens,
 		TotalTokens:      total,
 		CacheReadTokens:  u.PromptTokensDetails.CachedTokens,
 	}
 }
 
 type responseMsg struct {
-	Role             string         `json:"role"`
-	Content          string         `json:"content"`
-	ReasoningContent string         `json:"reasoning_content"`
-	ToolCalls        []wireToolCall `json:"tool_calls"`
+	Role             string     `json:"role"`
+	Content          string     `json:"content"`
+	ReasoningContent string     `json:"reasoning_content"`
+	ToolCalls        []ToolCall `json:"tool_calls"`
 }
 
 // DecodeResponse parses a non-streaming response into a neutral ChatResult,
@@ -226,13 +279,14 @@ func DecodeResponse(raw []byte, nameMap map[string]string) (modelrepo.ChatResult
 			Content:  choice.Message.Content,
 			Thinking: choice.Message.ReasoningContent,
 		},
-		Usage: resp.Usage.neutralUsage(),
+		Usage:        resp.Usage.neutralUsage(),
+		FinishReason: choice.FinishReason,
 	}
 	result.ToolCalls = decodeToolCalls(choice.Message.ToolCalls, nameMap)
 	return result, nil
 }
 
-func decodeToolCalls(in []wireToolCall, nameMap map[string]string) []modelrepo.ToolCall {
+func decodeToolCalls(in []ToolCall, nameMap map[string]string) []modelrepo.ToolCall {
 	var out []modelrepo.ToolCall
 	for _, tc := range in {
 		name := tc.Function.Name
@@ -346,6 +400,20 @@ func firstNonEmpty(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// ReasoningEffort renders a think setting as the wire's reasoning_effort. Auto
+// and an unset setting say nothing, sending an empty string; an invalid level
+// is refused upstream rather than silently flipped to a default.
+func ReasoningEffort(think *string) string {
+	if think == nil {
+		return ""
+	}
+	level, ok, err := reasoning.NormalizeOptional(*think)
+	if err != nil || !ok || level == reasoning.Auto {
+		return ""
+	}
+	return level
 }
 
 func sanitizeToolName(in string) string {

@@ -1,11 +1,13 @@
 package agentdecl_test
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/contenox/contenox/internal/kernel/taskengine"
 	"github.com/contenox/contenox/internal/services/agentdecl"
@@ -105,6 +107,108 @@ func TestUnit_EmittedChainPassesRuntimeLint(t *testing.T) {
 	}
 }
 
+func TestUnit_EmittedChainCarriesShiftFromConfig(t *testing.T) {
+	t.Parallel()
+	ir, err := agentdecl.ParseClaudeCode(
+		"code-reviewer.md", loadFixture(t, "claude-code", "code-reviewer"), mustConfig(t))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	off := mustConfig(t)
+	off.Chain.Shift = false
+	chain, err := agentdecl.EmitChain(ir, off)
+	if err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	for _, task := range chain.Tasks {
+		if task.Handler != taskengine.HandleChatCompletion || task.ExecuteConfig == nil {
+			continue
+		}
+		if task.ExecuteConfig.Shift {
+			t.Errorf("task %s shifts with [chain] shift off", task.ID)
+		}
+	}
+
+	on := mustConfig(t)
+	on.Chain.Shift = true
+	shifted, err := agentdecl.EmitChain(ir, on)
+	if err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+	seen := 0
+	for _, task := range shifted.Tasks {
+		if task.Handler != taskengine.HandleChatCompletion || task.ExecuteConfig == nil {
+			continue
+		}
+		seen++
+		if !task.ExecuteConfig.Shift {
+			t.Errorf("task %s does not carry [chain] shift = true", task.ID)
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no chat_completion task emitted, so shift was never asserted")
+	}
+}
+
+func TestUnit_ShippedConfigCarriesRetryPolicy(t *testing.T) {
+	t.Parallel()
+	rp := mustConfig(t).Chain.RetryPolicy
+	if rp == nil {
+		t.Fatal("shipped [chain.retry_policy] did not decode into a policy")
+	}
+	if rp.MaxAttempts != 4 {
+		t.Errorf("max_attempts = %d, want 4", rp.MaxAttempts)
+	}
+	if rp.InitialBackoff.D() != time.Second {
+		t.Errorf("initial_backoff = %v, want 1s", rp.InitialBackoff.D())
+	}
+	if rp.MaxBackoff.D() != 30*time.Second {
+		t.Errorf("max_backoff = %v, want 30s", rp.MaxBackoff.D())
+	}
+	if rp.RateLimitMinWait.D() != 10*time.Second {
+		t.Errorf("rate_limit_min_wait = %v, want 10s", rp.RateLimitMinWait.D())
+	}
+	if rp.Jitter != 0.25 {
+		t.Errorf("jitter = %v, want 0.25", rp.Jitter)
+	}
+}
+
+func TestUnit_EmittedChainCarriesRetryPolicyFromConfig(t *testing.T) {
+	t.Parallel()
+	cfg := mustConfig(t)
+	if cfg.Chain.RetryPolicy == nil {
+		t.Fatal("shipped config has no retry policy to carry")
+	}
+	ir, err := agentdecl.ParseClaudeCode(
+		"code-reviewer.md", loadFixture(t, "claude-code", "code-reviewer"), cfg)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	chain, err := agentdecl.EmitChain(ir, cfg)
+	if err != nil {
+		t.Fatalf("emit: %v", err)
+	}
+
+	seen := 0
+	for _, task := range chain.Tasks {
+		if task.Handler != taskengine.HandleChatCompletion || task.ExecuteConfig == nil {
+			continue
+		}
+		seen++
+		if task.ExecuteConfig.RetryPolicy == nil {
+			t.Errorf("task %s carries no retry policy", task.ID)
+			continue
+		}
+		if *task.ExecuteConfig.RetryPolicy != *cfg.Chain.RetryPolicy {
+			t.Errorf("task %s policy = %+v, want %+v", task.ID, *task.ExecuteConfig.RetryPolicy, *cfg.Chain.RetryPolicy)
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no chat_completion task emitted, so the retry policy was never asserted")
+	}
+}
+
 func TestUnit_EmittedChainShape(t *testing.T) {
 	t.Parallel()
 	cfg := mustConfig(t)
@@ -121,8 +225,8 @@ func TestUnit_EmittedChainShape(t *testing.T) {
 	if chain.TokenLimit != cfg.Chain.TokenLimit {
 		t.Errorf("token_limit = %d, want %d", chain.TokenLimit, cfg.Chain.TokenLimit)
 	}
-	if chain.TokenLimit == 0 {
-		t.Error("token_limit must never be zero: every tool result would report as too large")
+	if chain.TokenLimit != 0 {
+		t.Error("shipped agents must inherit the session context window")
 	}
 	if chain.ID != "claude-code-code-reviewer" {
 		t.Errorf("chain id = %q", chain.ID)
@@ -328,7 +432,7 @@ func TestUnit_LoadDefaultsOverlayIsPartial(t *testing.T) {
 		t.Fatalf("write overlay: %v", err)
 	}
 
-	cfg, err := agentdecl.Load(root)
+	cfg, err := agentdecl.Load(context.Background(), rootOf(t, root))
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -354,7 +458,7 @@ func TestUnit_ConfigNamesAToolContenoxDoesNotHost(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, agentdecl.ConfigFilename), []byte(overlay), 0o600); err != nil {
 		t.Fatalf("write overlay: %v", err)
 	}
-	cfg, err := agentdecl.Load(root)
+	cfg, err := agentdecl.Load(context.Background(), rootOf(t, root))
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
@@ -382,7 +486,7 @@ func TestUnit_ConfigOverlayMergesToolNames(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, agentdecl.ConfigFilename), []byte(overlay), 0o600); err != nil {
 		t.Fatalf("write overlay: %v", err)
 	}
-	cfg, err := agentdecl.Load(root)
+	cfg, err := agentdecl.Load(context.Background(), rootOf(t, root))
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
@@ -397,7 +501,7 @@ func TestUnit_ConfigOverlayMergesToolNames(t *testing.T) {
 
 func TestUnit_MissingOverlayIsNotAnError(t *testing.T) {
 	t.Parallel()
-	if _, err := agentdecl.Load(t.TempDir()); err != nil {
+	if _, err := agentdecl.Load(context.Background(), rootOf(t, t.TempDir())); err != nil {
 		t.Fatalf("absent overlay must be skipped, got %v", err)
 	}
 }

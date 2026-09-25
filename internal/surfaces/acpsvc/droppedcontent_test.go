@@ -119,7 +119,7 @@ func TestLoopback_DroppedImage_ReachesTheClientOnTheWire(t *testing.T) {
 	require.NoError(t, err)
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	h.swapAgent(newResp.SessionID, &loopbackAgent{
 		promptFunc: func(context.Context, agentservice.PromptRequest) (*agentservice.PromptResponse, error) {
@@ -166,7 +166,7 @@ func TestLoopback_SlashCommandDropsItsAttachment(t *testing.T) {
 	require.NoError(t, err)
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	png := base64.StdEncoding.EncodeToString([]byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a})
 	resp, err := h.client.Prompt(ctx, libacp.PromptRequest{
@@ -196,7 +196,7 @@ func TestLoopback_ParkedTurnWithDroppedImage_ReportsBothFacts(t *testing.T) {
 	require.NoError(t, err)
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	const approvalID = "ead905ab-0000-0000-0000-00000000d548"
 	h.swapAgent(newResp.SessionID, &loopbackAgent{

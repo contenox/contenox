@@ -103,7 +103,12 @@ func ensureProfileChain(ctx context.Context, contenoxDir, chainFile, chainEnv st
 	reportErr, reportChange, end := tracker.Start(ctx, "ensure", "profile_chain", "file", chainFile)
 	defer end()
 
-	created, err := agentdecl.Preseed(contenoxDir)
+	contenoxRoot, err := declRoot(contenoxDir)
+	if err != nil {
+		reportErr(err)
+		return fmt.Errorf("open %s: %w", contenoxDir, err)
+	}
+	seeded, err := agentdecl.Preseed(ctx, contenoxRoot)
 	if err != nil {
 		reportErr(err)
 		return fmt.Errorf("seed agent declarations: %w", err)
@@ -119,7 +124,7 @@ func ensureProfileChain(ctx context.Context, contenoxDir, chainFile, chainEnv st
 		reportErr(err)
 		return err
 	}
-	reportChange(contenoxDir, map[string]any{"seeded": len(created)})
+	reportChange(contenoxDir, map[string]any{"seeded": len(seeded.Created), "refreshed": len(seeded.Updated)})
 	return nil
 }
 
@@ -145,38 +150,60 @@ func syncDeclaredAgents(ctx context.Context, contenoxDir, homeDir string, tracke
 	reportErr, reportChange, end := tracker.Start(ctx, "sync", "declared_agents")
 	defer end()
 
-	contenoxDirs := []string{contenoxDir}
-	if homeDir != "" {
-		contenoxDirs = append(contenoxDirs, homeDir)
+	homeRoot, homeRootErr := declRoot(homeDir)
+	if homeRootErr != nil {
+		homeRoot = agentdecl.Root{}
 	}
-	// The home directory is a root like any other.
-	roots := workspaceRootsForSync(contenoxDir)
+	contenoxRoot, rootErr := declRoot(contenoxDir)
+	if rootErr != nil {
+		reportErr(rootErr)
+		return "", nil
+	}
+
+	// Declarations are read workspace first, so a workspace's own file precedes
+	// the same name in the home directory; agents.toml is read the other way
+	// round, weakest first.
+	sourceRoots := []agentdecl.Root{contenoxRoot}
+	configRoots := []agentdecl.Root{contenoxRoot}
+	if homeRootErr == nil {
+		sourceRoots = append(sourceRoots, homeRoot)
+		configRoots = []agentdecl.Root{homeRoot, contenoxRoot}
+	}
+
+	workspaceRoots := workspaceRootsForSync(contenoxDir)
+	var workspaceRoot string
+	if len(workspaceRoots) > 0 {
+		workspaceRoot = workspaceRoots[0]
+	}
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		roots = append(roots, home)
+		workspaceRoots = append(workspaceRoots, home)
 	}
-	sourceDirs := agentdecl.DiscoverSourceDirs(contenoxDirs, roots)
-	generated := filepath.Join(contenoxDir, agentdecl.GeneratedDirName)
+
+	sourceDirs := agentdecl.DiscoverSourceDirs(ctx, sourceRoots, rootsOf(workspaceRoots...))
+	generatedPath := filepath.Join(contenoxDir, agentdecl.GeneratedDirName)
 	if len(sourceDirs) == 0 {
-		if _, err := os.Stat(generated); err != nil {
+		if _, err := os.Stat(generatedPath); err != nil {
 			return "", nil
 		}
 	}
 
-	cfg, err := agentdecl.Load(homeDir, contenoxDir)
+	cfg, err := agentdecl.Load(ctx, configRoots...)
 	if err != nil {
 		reportErr(err)
 		return "", nil
 	}
 
+	generated, genErr := declRoot(generatedPath)
+	if genErr != nil {
+		reportErr(genErr)
+		return "", nil
+	}
+
 	// Skills live beside the agents that use them, with the same nearest-wins
 	// precedence, resolved relative to the project root.
-	var workspaceRoot string
-	if roots := workspaceRootsForSync(contenoxDir); len(roots) > 0 {
-		workspaceRoot = roots[0]
-	}
-	skills := agentdecl.DiscoverSkills(contenoxDirs, workspaceRoot)
+	skills := agentdecl.DiscoverSkills(ctx, sourceRoots, workspaceRoot)
 
-	results, err := agentdecl.Sync(sourceDirs, generated, cfg, agentdecl.WithSkills(skills))
+	results, err := agentdecl.Sync(ctx, sourceDirs, generated, cfg, agentdecl.WithSkills(skills))
 	if err != nil {
 		reportErr(err)
 		return "", nil
@@ -197,12 +224,34 @@ func syncDeclaredAgents(ctx context.Context, contenoxDir, homeDir string, tracke
 		}
 	}
 	if len(changed) > 0 {
-		reportChange(generated, changed)
+		reportChange(generatedPath, changed)
 	}
-	if _, err := os.Stat(generated); err != nil {
+	if _, err := os.Stat(generatedPath); err != nil {
 		return "", results
 	}
-	return generated, results
+	return generatedPath, results
+}
+
+// declRoot opens a directory as a compilation root. An empty path is not a
+// root, which is how a run without a home contenox directory stays a run.
+func declRoot(dir string) (agentdecl.Root, error) {
+	if strings.TrimSpace(dir) == "" {
+		return agentdecl.Root{}, fmt.Errorf("no directory to read")
+	}
+	return agentdecl.LocalRoot(dir)
+}
+
+// rootsOf opens the directories that exist as compilation roots, keeping the
+// order given. A directory that cannot be opened is dropped rather than failing
+// the caller: discovery reads what is there.
+func rootsOf(dirs ...string) []agentdecl.Root {
+	out := make([]agentdecl.Root, 0, len(dirs))
+	for _, dir := range dirs {
+		if root, err := declRoot(dir); err == nil {
+			out = append(out, root)
+		}
+	}
+	return out
 }
 
 // workspaceRootsForSync is the project a contenox directory belongs to.

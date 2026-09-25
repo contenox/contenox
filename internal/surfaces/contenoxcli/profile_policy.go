@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/contenox/contenox/internal/services/agentdecl"
 	"github.com/contenox/contenox/internal/services/hitlservice"
+	"github.com/contenox/contenox/internal/services/vfs"
 	"github.com/contenox/contenox/libtracker"
 	"github.com/spf13/cobra"
 )
@@ -61,7 +61,11 @@ func resolveProfilePolicy(ctx context.Context, cmd *cobra.Command, contenoxDir, 
 		if err != nil {
 			return profilePolicy{}, fmt.Errorf("--%s %q: %w", hitlPolicyFlag, named, err)
 		}
-		if _, err := os.Stat(path); err != nil {
+		view, vErr := vfs.OpenPrivilegedView(filepath.Dir(path))
+		if vErr != nil {
+			return profilePolicy{}, fmt.Errorf("--%s %q: %w", hitlPolicyFlag, named, vErr)
+		}
+		if _, err := view.Stat(ctx, filepath.Base(path)); err != nil {
 			return profilePolicy{}, fmt.Errorf("--%s %q: %w", hitlPolicyFlag, named, err)
 		}
 		return profilePolicy{Name: filepath.Base(path), Dir: filepath.Dir(path)}, nil
@@ -102,11 +106,11 @@ func ensureProfilePolicy(ctx context.Context, contenoxDir, envelope string, name
 	reportErr, reportChange, end := tracker.Start(ctx, "ensure", "profile_policy", "envelope", envelope, "named", named)
 	defer end()
 
-	renderErr := renderProfilePolicy(contenoxDir, envelope)
+	renderErr := renderProfilePolicy(ctx, contenoxDir, envelope)
 	if renderErr == nil {
 		reportChange(contenoxDir, map[string]any{"rendered": file})
 	}
-	if _, _, ok := readPolicyFile(policyDirs(contenoxDir), file); ok {
+	if _, _, ok := readPolicyFile(context.Background(), policyDirs(contenoxDir), file); ok {
 		if renderErr != nil && !errors.Is(renderErr, agentdecl.ErrNoEnvelope) {
 			// Reported, not fatal: the copy on the path is what gates the run.
 			reportErr(renderErr)
@@ -126,7 +130,7 @@ func ensureProfilePolicy(ctx context.Context, contenoxDir, envelope string, name
 // plus the preset copies still on the search path. A preset this build no
 // longer writes is offered only where one is actually readable, so the list
 // names files that resolve rather than files that once shipped.
-func knownPolicyNames(contenoxDir string) []string {
+func knownPolicyNames(ctx context.Context, contenoxDir string) []string {
 	var names []string
 	seen := map[string]bool{}
 	add := func(file string) {
@@ -136,33 +140,36 @@ func knownPolicyNames(contenoxDir string) []string {
 		seen[file] = true
 		names = append(names, file)
 	}
-	if cfg, err := loadEnvelopeConfig(contenoxDir); err == nil {
+	if cfg, err := loadEnvelopeConfig(ctx, contenoxDir); err == nil {
 		for _, name := range cfg.EnvelopeNames() {
 			add(agentdecl.EnvelopePolicyFile(name))
 		}
 	}
 	dirs := policyDirs(contenoxDir)
 	for _, file := range embeddedPolicyNames() {
-		if _, _, ok := readPolicyFile(dirs, file); ok {
+		if _, _, ok := readPolicyFile(context.Background(), dirs, file); ok {
 			add(file)
 		}
 	}
 	return names
 }
 
-func renderProfilePolicy(contenoxDir, envelope string) error {
-	cfg, err := loadEnvelopeConfig(contenoxDir)
+func renderProfilePolicy(ctx context.Context, contenoxDir, envelope string) error {
+	cfg, err := loadEnvelopeConfig(ctx, contenoxDir)
 	if err != nil {
 		return err
 	}
-	generated := filepath.Join(contenoxDir, agentdecl.GeneratedDirName)
-	_, _, err = agentdecl.SyncEnvelopePolicy(cfg, envelope, generated, agentdecl.ConfigFilename)
+	generated, err := declRoot(filepath.Join(contenoxDir, agentdecl.GeneratedDirName))
+	if err != nil {
+		return err
+	}
+	_, _, err = agentdecl.SyncEnvelopePolicy(ctx, cfg, envelope, generated, agentdecl.ConfigFilename)
 	return err
 }
 
 // envelopePolicyNames lists the filenames the declared envelopes render to.
-func envelopePolicyNames(contenoxDir string) []string {
-	cfg, err := loadEnvelopeConfig(contenoxDir)
+func envelopePolicyNames(ctx context.Context, contenoxDir string) []string {
+	cfg, err := loadEnvelopeConfig(ctx, contenoxDir)
 	if err != nil {
 		return nil
 	}
@@ -174,12 +181,13 @@ func envelopePolicyNames(contenoxDir string) []string {
 	return out
 }
 
-func loadEnvelopeConfig(contenoxDir string) (agentdecl.Config, error) {
+func loadEnvelopeConfig(ctx context.Context, contenoxDir string) (agentdecl.Config, error) {
 	homeDir, err := globalContenoxDir()
 	if err != nil {
 		return agentdecl.Config{}, err
 	}
-	return agentdecl.Load(homeDir, contenoxDir)
+	// Weakest first: the home overlay is read before the workspace's.
+	return agentdecl.Load(ctx, rootsOf(homeDir, contenoxDir)...)
 }
 
 // syncEnvelopePolicies renders every declared envelope into contenoxDir's
@@ -188,18 +196,21 @@ func loadEnvelopeConfig(contenoxDir string) (agentdecl.Config, error) {
 // of a preset was written where an operator's own file goes. One envelope that
 // refuses is collected rather than thrown, so a single bad section does not
 // cost the rest their render.
-func syncEnvelopePolicies(contenoxDir string) (rendered []string, err error) {
+func syncEnvelopePolicies(ctx context.Context, contenoxDir string) (rendered []string, err error) {
 	if contenoxDir == "" {
 		return nil, nil
 	}
-	cfg, err := loadEnvelopeConfig(contenoxDir)
+	cfg, err := loadEnvelopeConfig(ctx, contenoxDir)
 	if err != nil {
 		return nil, err
 	}
-	generated := filepath.Join(contenoxDir, agentdecl.GeneratedDirName)
+	generated, err := declRoot(filepath.Join(contenoxDir, agentdecl.GeneratedDirName))
+	if err != nil {
+		return nil, err
+	}
 	var problems []error
 	for _, name := range cfg.EnvelopeNames() {
-		path, changed, syncErr := agentdecl.SyncEnvelopePolicy(cfg, name, generated, agentdecl.ConfigFilename)
+		path, changed, syncErr := agentdecl.SyncEnvelopePolicy(ctx, cfg, name, generated, agentdecl.ConfigFilename)
 		if syncErr != nil {
 			problems = append(problems, syncErr)
 			continue

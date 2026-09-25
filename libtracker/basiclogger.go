@@ -31,8 +31,9 @@ type logActivityTracker struct {
 type LogOption func(*logActivityTracker)
 
 // WithRedactedFields replaces the built-in sensitive field-name list (see
-// DefaultRedactedFields). Names are matched case-insensitively as substrings,
-// and passing none disables redaction entirely.
+// DefaultRedactedFields). Credential names are matched case-insensitively as
+// substrings; built-in private-payload names are exact matches. Passing none
+// disables redaction entirely.
 func WithRedactedFields(names ...string) LogOption {
 	return func(t *logActivityTracker) { t.redactor = newFieldRedactor(names) }
 }

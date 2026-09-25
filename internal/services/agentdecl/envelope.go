@@ -34,6 +34,14 @@ func EnvelopePolicyFile(name string) string { return PolicyFileFor(name) }
 // PolicyFileFor is the one filename rule both policy families follow.
 func PolicyFileFor(stem string) string { return "hitl-policy-" + stem + ".json" }
 
+// ChainFileFor is the one filename rule a compiled declaration's chain follows.
+// The chain-agent- prefix is load-bearing: chainagents reads the BASENAME to
+// decide what is an agent template, so a host that loads the chain back must
+// name it the way the compiler did.
+func ChainFileFor(chainID string) string {
+	return "chain-agent-" + strings.TrimPrefix(chainID, "chain-") + ".json"
+}
+
 // EnvelopeName resolves what an operator may write for one envelope — its bare
 // name or the filename it transpiles to — to the bare name.
 func EnvelopeName(s string) (string, bool) {

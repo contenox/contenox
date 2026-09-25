@@ -368,3 +368,20 @@ func TestSystem_Evaluate_defaultModelNotAvailable(t *testing.T) {
 		t.Fatalf("expected available model in message, got %#v", found)
 	}
 }
+
+func TestUnit_ContextCapacityIsScopedAndChangesWithModel(t *testing.T) {
+	states := []runtimestate.BackendRuntimeState{
+		{Backend: runtimetypes.Backend{Type: "openai"}, PulledModels: []runtimestate.ModelPullStatus{{Model: "large", ContextLength: 262144}, {Model: "small", ContextLength: 32768}}},
+		{Backend: runtimetypes.Backend{Type: "ollama"}, PulledModels: []runtimestate.ModelPullStatus{{Model: "large", ContextLength: 8192}}},
+		{Backend: runtimetypes.Backend{Type: "openai"}, Error: "offline", PulledModels: []runtimestate.ModelPullStatus{{Model: "large", ContextLength: 4096}}},
+	}
+	if got := ResolveContextLength(states, "openai", "large"); got != 262144 {
+		t.Fatalf("large capacity = %d", got)
+	}
+	if got := ResolveContextLength(states, "openai", "small"); got != 32768 {
+		t.Fatalf("small capacity = %d", got)
+	}
+	if got := ResolveContextLength(states, "openai", "unknown"); got != 0 {
+		t.Fatalf("unrelated model supplied capacity %d", got)
+	}
+}

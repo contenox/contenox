@@ -18,7 +18,7 @@ Chain starts
                       └─ Result appended to history → model continues
 ```
 
-An [agent declaration](/docs/guide/agents/) names its tools on one line — `tools: Read, Glob, Grep` — and omitting the line inherits every tool. That is where most tool scoping happens.
+An [agent declaration](/docs/guide/declarations/) names its tools on one line — `tools: Read, Glob, Grep` — and omitting the line inherits every tool. That is where most tool scoping happens.
 
 In the chain behind it, and in a chain you author yourself, the same allowlist is `execute_config.tools`, per task:
 
@@ -42,7 +42,7 @@ Pattern support:
 
 Unknown names in an exact list are silently ignored — if `local_shell` is disabled the chain still runs.
 
-`"*"` admits everything this machine has connected: the toolsets contenox hosts, the `native-` in-process ones, every MCP server and OpenAPI service you registered, and the `decl-` sources an [agent declaration](/docs/guide/agents/#tools-an-agent-brings-with-it) brought with it. Those prefixes are **namespaces** — they stop a declared source from colliding with an in-process toolset — and never a hidden exclusion. To leave one out, say so: `"!native-git"` removes it, and an exclusion wins over `"*"` wherever the two appear in the list.
+`"*"` admits everything this machine has connected: the toolsets contenox hosts, the `native-` in-process ones, every MCP server and OpenAPI service you registered, and the `decl-` sources an [agent declaration](/docs/guide/declarations/#tools-an-agent-brings-with-it) brought with it. Those prefixes are **namespaces** — they stop a declared source from colliding with an in-process toolset — and never a hidden exclusion. To leave one out, say so: `"!native-git"` removes it, and an exclusion wins over `"*"` wherever the two appear in the list.
 
 Use `{{tools}}` in your `system_instruction` to inject the live tool manifest. It respects the task's `tools` allowlist — the model only sees what the task permits:
 

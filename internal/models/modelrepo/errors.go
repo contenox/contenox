@@ -111,7 +111,7 @@ func ClassifyProviderError(err error, httpStatus int, code, message string) erro
 		(httpStatus == 0 && containsMarker(message, notFoundMessageMarkers)) {
 		return fmt.Errorf("%w: %w", ErrModelNotFoundOnBackend, err)
 	}
-	if httpStatus == 403 || containsMarker(code, accessDeniedCodeMarkers) {
+	if httpStatus == 401 || httpStatus == 403 || containsMarker(code, accessDeniedCodeMarkers) {
 		return fmt.Errorf("%w: %w", ErrModelAccessDenied, err)
 	}
 	return err

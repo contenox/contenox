@@ -9,6 +9,9 @@ import (
 const (
 	terminalAuthMethodID = "terminal"
 	envAuthMethodID      = "env"
+	// licenseAuthMethodID is the first-party method: a Contenox licence token is
+	// the credential, so this is what a client offers instead of a provider key.
+	licenseAuthMethodID = "contenox-license"
 )
 
 // Authenticate accepts only the method IDs Initialize advertised.

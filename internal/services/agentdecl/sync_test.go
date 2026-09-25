@@ -1,6 +1,7 @@
 package agentdecl_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,12 +49,12 @@ func TestUnit_Sync_NativeDeclarationNeedsNoDetection(t *testing.T) {
 	declare(t, filepath.Join(root, agentdecl.NativeSourceDir), "triage.md", declTriage)
 	gen := filepath.Join(root, agentdecl.GeneratedDirName)
 
-	dirs := agentdecl.DiscoverSourceDirs([]string{root}, nil)
+	dirs := agentdecl.DiscoverSourceDirs(context.Background(), rootsOf(t, root), nil)
 	if len(dirs) != 1 || !dirs[0].Native {
 		t.Fatalf("expected one native source dir, got %+v", dirs)
 	}
 
-	results, err := agentdecl.Sync(dirs, gen, mustConfig(t))
+	results, err := syncAt(t, context.Background(), dirs, gen, mustConfig(t))
 	if err != nil {
 		t.Fatalf("sync: %v", err)
 	}
@@ -84,8 +85,8 @@ func TestUnit_Sync_ForeignDeclarationsAreScoped(t *testing.T) {
 	declare(t, filepath.Join(root, agentdecl.NativeSourceDir), "triage.md", declTriage)
 	declare(t, filepath.Join(ws, ".claude", "agents"), "triage.md", declTriage)
 
-	dirs := agentdecl.DiscoverSourceDirs([]string{root}, []string{ws})
-	results, err := agentdecl.Sync(dirs, filepath.Join(root, agentdecl.GeneratedDirName), mustConfig(t))
+	dirs := agentdecl.DiscoverSourceDirs(context.Background(), rootsOf(t, root), rootsOf(t, ws))
+	results, err := syncAt(t, context.Background(), dirs, filepath.Join(root, agentdecl.GeneratedDirName), mustConfig(t))
 	if err != nil {
 		t.Fatalf("sync: %v", err)
 	}
@@ -106,13 +107,13 @@ func TestUnit_Sync_UnchangedSourceIsANoOp(t *testing.T) {
 	root := t.TempDir()
 	declare(t, filepath.Join(root, agentdecl.NativeSourceDir), "triage.md", declTriage)
 	gen := filepath.Join(root, agentdecl.GeneratedDirName)
-	dirs := agentdecl.DiscoverSourceDirs([]string{root}, nil)
+	dirs := agentdecl.DiscoverSourceDirs(context.Background(), rootsOf(t, root), nil)
 	cfg := mustConfig(t)
 
-	if _, err := agentdecl.Sync(dirs, gen, cfg); err != nil {
+	if _, err := syncAt(t, context.Background(), dirs, gen, cfg); err != nil {
 		t.Fatalf("first sync: %v", err)
 	}
-	results, err := agentdecl.Sync(dirs, gen, cfg)
+	results, err := syncAt(t, context.Background(), dirs, gen, cfg)
 	if err != nil {
 		t.Fatalf("second sync: %v", err)
 	}
@@ -130,15 +131,15 @@ func TestUnit_Sync_EditingTheDeclarationRegenerates(t *testing.T) {
 	dir := filepath.Join(root, agentdecl.NativeSourceDir)
 	declare(t, dir, "triage.md", declTriage)
 	gen := filepath.Join(root, agentdecl.GeneratedDirName)
-	dirs := agentdecl.DiscoverSourceDirs([]string{root}, nil)
+	dirs := agentdecl.DiscoverSourceDirs(context.Background(), rootsOf(t, root), nil)
 	cfg := mustConfig(t)
 
-	if _, err := agentdecl.Sync(dirs, gen, cfg); err != nil {
+	if _, err := syncAt(t, context.Background(), dirs, gen, cfg); err != nil {
 		t.Fatalf("first sync: %v", err)
 	}
 	declare(t, dir, "triage.md", strings.Replace(declTriage, "You triage issues.", "You triage issues carefully.", 1))
 
-	results, err := agentdecl.Sync(dirs, gen, cfg)
+	results, err := syncAt(t, context.Background(), dirs, gen, cfg)
 	if err != nil {
 		t.Fatalf("second sync: %v", err)
 	}
@@ -165,13 +166,13 @@ func TestUnit_Sync_RemovingTheDeclarationRetiresTheAgent(t *testing.T) {
 	gen := filepath.Join(root, agentdecl.GeneratedDirName)
 	cfg := mustConfig(t)
 
-	if _, err := agentdecl.Sync(agentdecl.DiscoverSourceDirs([]string{root}, nil), gen, cfg); err != nil {
+	if _, err := syncAt(t, context.Background(), agentdecl.DiscoverSourceDirs(context.Background(), rootsOf(t, root), nil), gen, cfg); err != nil {
 		t.Fatalf("first sync: %v", err)
 	}
 	if err := os.Remove(path); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
-	if _, err := agentdecl.Sync(agentdecl.DiscoverSourceDirs([]string{root}, nil), gen, cfg); err != nil {
+	if _, err := syncAt(t, context.Background(), agentdecl.DiscoverSourceDirs(context.Background(), rootsOf(t, root), nil), gen, cfg); err != nil {
 		t.Fatalf("second sync: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(gen, "chain-agent-triage.json")); err == nil {
@@ -189,8 +190,8 @@ func TestUnit_Sync_OneBadDeclarationDoesNotCostTheRest(t *testing.T) {
 	declare(t, dir, "researcher.md",
 		"---\nname: researcher\ndescription: Searches\ntools: WebSearch, NotebookEdit\n---\n\nBody.\n")
 
-	results, err := agentdecl.Sync(
-		agentdecl.DiscoverSourceDirs([]string{root}, nil),
+	results, err := syncAt(t, context.Background(),
+		agentdecl.DiscoverSourceDirs(context.Background(), rootsOf(t, root), nil),
 		filepath.Join(root, agentdecl.GeneratedDirName), mustConfig(t))
 	if err != nil {
 		t.Fatalf("sync must not fail on one bad declaration: %v", err)
@@ -218,12 +219,12 @@ func TestUnit_Sync_ConnectingTheToolMakesTheAgentWork(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	cfg, err := agentdecl.Load(root)
+	cfg, err := agentdecl.Load(context.Background(), rootOf(t, root))
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	results, err := agentdecl.Sync(
-		agentdecl.DiscoverSourceDirs([]string{root}, nil),
+	results, err := syncAt(t, context.Background(),
+		agentdecl.DiscoverSourceDirs(context.Background(), rootsOf(t, root), nil),
 		filepath.Join(root, agentdecl.GeneratedDirName), cfg)
 	if err != nil {
 		t.Fatalf("sync: %v", err)
@@ -237,14 +238,14 @@ func TestUnit_Sync_ConnectingTheToolMakesTheAgentWork(t *testing.T) {
 func TestUnit_Preseed_EstablishesTheConvention(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	created, err := agentdecl.Preseed(root)
+	created, err := agentdecl.Preseed(context.Background(), rootOf(t, root))
 	if err != nil {
 		t.Fatalf("preseed: %v", err)
 	}
 	// Every flat entry, PLUS the tree example — which is files rather than a
 	// list, so it is checked by name below rather than by count.
-	if len(created) < len(agentdecl.Preseeded) {
-		t.Errorf("created %d files, want at least %d", len(created), len(agentdecl.Preseeded))
+	if len(created.Created) < len(agentdecl.Preseeded) {
+		t.Errorf("created %d files, want at least %d", len(created.Created), len(agentdecl.Preseeded))
 	}
 	for _, rel := range []string{
 		agentdecl.ConfigFilename,
@@ -259,8 +260,8 @@ func TestUnit_Preseed_EstablishesTheConvention(t *testing.T) {
 	}
 
 	// The shipped agent must be a working declaration, not a sample.
-	results, err := agentdecl.Sync(
-		agentdecl.DiscoverSourceDirs([]string{root}, nil),
+	results, err := syncAt(t, context.Background(),
+		agentdecl.DiscoverSourceDirs(context.Background(), rootsOf(t, root), nil),
 		filepath.Join(root, agentdecl.GeneratedDirName), mustConfig(t))
 	if err != nil {
 		t.Fatalf("sync: %v", err)
@@ -270,11 +271,11 @@ func TestUnit_Preseed_EstablishesTheConvention(t *testing.T) {
 		t.Fatalf("the seeded agent does not run: %+v", results)
 	}
 
-	again, err := agentdecl.Preseed(root)
+	again, err := agentdecl.Preseed(context.Background(), rootOf(t, root))
 	if err != nil {
 		t.Fatalf("second preseed: %v", err)
 	}
-	if len(again) != 0 {
-		t.Errorf("preseed overwrote existing files: %v", again)
+	if len(again.Created) != 0 || len(again.Updated) != 0 {
+		t.Errorf("preseed overwrote existing files: %+v", again)
 	}
 }

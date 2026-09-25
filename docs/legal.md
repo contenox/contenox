@@ -1,32 +1,11 @@
 ---
 title: Legal
-description: All Contenox legal documents in one place — terms of service, privacy policy, right of withdrawal, imprint, security and sub-processors for the hosted service, plus the notices for this website and the open-source software.
+description: Legal notice, license, warranty, liability, and privacy notices for the Contenox open-source software and website.
 ---
 
 # Legal
 
-Everything legal, in one place. Two groups: the documents for the **hosted
-service** you sign up to, and the notices for **this website and the
-open-source software**, which need no account at all.
-
-## The hosted service (app.contenox.com)
-
-| Document | What it covers |
-|---|---|
-| [Terms of service](/legal/terms) | The contract: the three layers, what we owe, liability, and which rules reach you where you are |
-| [Privacy policy](/legal/privacy) | What is processed, on what legal basis, how long it is kept, how it is secured, and your rights — including outside the EU |
-| [Right of withdrawal](/legal/withdrawal) | For consumers: the fourteen-day right, the model form, and when it lapses |
-| [Imprint](/legal/imprint) | § 5 DDG provider identification for the service |
-| [Security](/legal/security) | How to report a vulnerability, and what we do with it |
-| [Sub-processors](/legal/subprocessors) | Every third party that processes data, and how changes are announced |
-
-All six are published here. The copies served inside the app are mirrors of
-these.
-
-## This website and the software
-
-The rest of this page. Using the open-source software needs no account, and
-none of the documents above apply to it.
+Legal notices, license terms, warranty, liability, and data privacy for the Contenox open-source software and this website.
 
 ## Legal notice (Impressum gem. § 5 DDG)
 
@@ -88,8 +67,6 @@ what we can fairly be asked to stand behind.
   person;
 - the system of declared triggers;
 - the task engine, and the interfaces that build on it;
-- the procedure by which a machine pairs to the relay, and the relay's fixed
-  identity;
 - `modeld`, the layer between contenox and the programs that run AI models on
   your own computer.
 
@@ -170,23 +147,11 @@ None of this is legal advice.
 
 ## Data & privacy
 
-**The software runs on your machine.** Contenox stores its state (sessions,
-chains, configuration) locally. Inputs and files you include in a request go
-only to the AI model provider you configured — no server of ours processes your
-workload. Using the software needs no account and no registration.
-
-**The hosted relay is a separate, optional service.** If you create an account
-at [app.contenox.com](https://app.contenox.com), you can reach the machines you
-already run from a browser. That service does hold data about you — an account,
-which machines are paired, and, if you subscribe, a billing reference. It
-stores no session content: no inputs, no outputs, no files. What it holds, for
-how long, and how to export or erase it is set out in its own documents:
-[privacy policy](/legal/privacy), [terms of service](/legal/terms), and, for
-consumers, [right of withdrawal](/legal/withdrawal), and the service
-[imprint](/legal/imprint). How the service is secured and how to report a
-vulnerability is on the [security page](/legal/security), and the processors it
-uses are listed under [sub-processors](/legal/subprocessors). Nothing on this page applies to it, and nothing
-there is needed to use the open-source software.
+**The software runs on infrastructure you control.** Contenox stores its state
+in SQLite by default or in PostgreSQL, NATS and Valkey you configure. Inputs and
+files you include in a request go only to the model backends and tools you
+configured — no server of ours processes your workload. Using the software
+needs no account and no registration.
 
 **This website is static.** contenox.com is a static site. It sets no cookies,
 runs no analytics, and requires no account. Your color-scheme preference is

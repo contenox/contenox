@@ -455,3 +455,40 @@ func TestUnit_CircuitBreaker_Loop_ErrHandling(t *testing.T) {
 		t.Fatal("Timeout waiting for open state error")
 	}
 }
+
+func TestUnit_CircuitBreaker_ExplicitTimestamps(t *testing.T) {
+	defer quiet()()
+	rm := libroutine.NewRoutine(2, 5*time.Minute)
+	now := time.Now()
+
+	if !rm.AllowAt(now) {
+		t.Fatal("expected AllowAt to be true initially")
+	}
+
+	rm.MarkFailureAt(now)
+	if !rm.AllowAt(now) {
+		t.Fatal("expected AllowAt to be true before threshold")
+	}
+
+	rm.MarkFailureAt(now)
+	if rm.GetState() != libroutine.Open {
+		t.Fatal("expected Open state after reaching threshold")
+	}
+	if rm.AllowAt(now.Add(1 * time.Minute)) {
+		t.Fatal("expected AllowAt to be false before reset timeout")
+	}
+	if !rm.AllowAt(now.Add(6 * time.Minute)) {
+		t.Fatal("expected AllowAt to be true after reset timeout")
+	}
+
+	rm.ForceOpenAt(now)
+	if rm.GetState() != libroutine.Open {
+		t.Fatal("expected Open state after ForceOpenAt")
+	}
+	if rm.AllowAt(now.Add(2 * time.Minute)) {
+		t.Fatal("expected AllowAt to be false before reset timeout after ForceOpenAt")
+	}
+	if !rm.AllowAt(now.Add(6 * time.Minute)) {
+		t.Fatal("expected AllowAt to be true after reset timeout after ForceOpenAt")
+	}
+}

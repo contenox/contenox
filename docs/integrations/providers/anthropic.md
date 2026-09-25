@@ -12,8 +12,8 @@ export ANTHROPIC_API_KEY=your-key
 
 contenox backend add anthropic --type anthropic --api-key-env ANTHROPIC_API_KEY
 contenox model list                                    # list the Claude models your key can reach
-contenox config set default-model claude-sonnet-4-5    # example — use an id from `model list`
-contenox config set default-provider anthropic
+contenox config set inference.model claude-sonnet-4-5    # example — use an id from `model list`
+contenox config set inference.provider anthropic
 ```
 
 The base URL (`https://api.anthropic.com`) is inferred; pass `--url` only for a proxy.

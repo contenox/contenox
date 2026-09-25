@@ -33,7 +33,7 @@ If already on the latest version, nothing is downloaded.
   contenox update check    print version info without installing
 
 To disable automatic update notifications set the opt-out flag:
-  contenox config set update-check false`,
+  contenox config set updates.check.enabled false`,
 	RunE: runUpdateInstall,
 }
 
@@ -91,7 +91,7 @@ func runUpdateInstall(cmd *cobra.Command, _ []string) error {
 	}
 
 	if isUpdateCheckDisabled(cmd, ctx) {
-		fmt.Fprintln(cmd.ErrOrStderr(), "Update checks are disabled (update-check = false). Run `contenox config set update-check true` to re-enable.")
+		fmt.Fprintln(cmd.ErrOrStderr(), "Update checks are disabled (update-check = false). Run `contenox config set updates.check.enabled true` to re-enable.")
 		return nil
 	}
 

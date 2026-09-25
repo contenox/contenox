@@ -163,7 +163,7 @@ func TestUnit_LocalExecTools_GetToolsForToolsByName_ContextPolicy_Description(t 
 	require.True(t, ok)
 	assert.Equal(t, "boolean", shellProp["type"])
 	assert.NotContains(t, shellProp, "enum", "Gemini rejects boolean enum values in tool declarations")
-	assert.Contains(t, shellProp["description"], "Omit or set false")
+	assert.Contains(t, shellProp["description"], "no shell is spawned")
 }
 
 func TestUnit_LocalExecTools_Exec_ContextPolicy_Enforced(t *testing.T) {
@@ -322,21 +322,30 @@ func TestUnit_LocalExecTools_Exec_ShellMode_NoPolicy_Allowed(t *testing.T) {
 	assert.Equal(t, "shell test", res.Stdout)
 }
 
-func TestUnit_LocalExecTools_Exec_ShellMode_WithPolicyRejected(t *testing.T) {
-	// shell:true must be REJECTED when an allowlist policy is active, to prevent command injection (e.g. "git status; rm -rf /" bypassing allowlist checks).
+func TestUnit_LocalExecTools_Exec_ShellModeUnderPolicyReadsTheLine(t *testing.T) {
+	// shell:true used to be refused outright because a shell string could not be
+	// checked. The line is read now, so the mode is no longer a refusal by
+	// itself — and the injection it guarded against is refused for the program
+	// it names.
 	ctx := context.Background()
 	h := localtools.NewLocalExecToolsWith(localtools.NewTestHostRunner(), localtools.WithLocalExecAllowedCommands(testAllowedCommands)).(*localtools.LocalExecTools)
-	start := time.Now().UTC()
-	toolsCall := &taskengine.ToolsCall{
+
+	out, _, err := h.Exec(ctx, time.Now().UTC(), nil, false, &taskengine.ToolsCall{
 		Name: "local_shell",
-		Args: map[string]string{
-			"command": "echo shell test",
-			"shell":   "true",
-		},
-	}
-	_, _, err := h.Exec(ctx, start, nil, false, toolsCall)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "strictly forbidden")
+		Args: map[string]string{"command": "echo shell test", "shell": "true"},
+	})
+	require.NoError(t, err)
+	res, ok := out.(*localtools.LocalExecResult)
+	require.True(t, ok)
+	assert.True(t, res.Success, res.Error)
+	assert.Equal(t, "shell test", res.Stdout)
+
+	_, _, err = h.Exec(ctx, time.Now().UTC(), nil, false, &taskengine.ToolsCall{
+		Name: "local_shell",
+		Args: map[string]string{"command": "echo ok; rm -rf /", "shell": "true"},
+	})
+	require.Error(t, err, "every program of the line is checked")
+	assert.Contains(t, err.Error(), "rm is not in this chain's allowed commands")
 }
 
 func TestUnit_LocalExecTools_Exec_AllowlistReject(t *testing.T) {
@@ -471,19 +480,17 @@ func TestUnit_LocalExecTools_Exec_NonZeroExit(t *testing.T) {
 	assert.Equal(t, 3, res.ExitCode)
 }
 
-func TestUnit_LocalExecTools_Exec_NonZeroExit_WithPolicy_Rejected(t *testing.T) {
+func TestUnit_LocalExecTools_Exec_ShellBuiltinIsCheckedLikeAnyOtherName(t *testing.T) {
+	// No shell is spawned under a policy, so a builtin is a program name like
+	// any other: an unallowed one is refused rather than interpreted.
 	ctx := context.Background()
 	h := localtools.NewLocalExecToolsWith(localtools.NewTestHostRunner(), localtools.WithLocalExecAllowedCommands(testAllowedCommands)).(*localtools.LocalExecTools)
-	toolsCall := &taskengine.ToolsCall{
+	_, _, err := h.Exec(ctx, time.Now().UTC(), nil, false, &taskengine.ToolsCall{
 		Name: "local_shell",
-		Args: map[string]string{
-			"command": "exit 3",
-			"shell":   "true",
-		},
-	}
-	_, _, err := h.Exec(ctx, time.Now().UTC(), nil, false, toolsCall)
+		Args: map[string]string{"command": "umask 022"},
+	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "strictly forbidden")
+	assert.Contains(t, err.Error(), "umask is not in this chain's allowed commands")
 }
 
 func TestUnit_LocalExecTools_DescriptionTeachesTheCallingConvention(t *testing.T) {
@@ -494,10 +501,13 @@ func TestUnit_LocalExecTools_DescriptionTeachesTheCallingConvention(t *testing.T
 	require.NoError(t, err)
 	require.Len(t, tools, 1)
 
+	// The description is the contract the model reads: a command line, every
+	// program of it checked, cd interpreted, and what needs a shell refused.
 	desc := tools[0].Function.Description
-	assert.Contains(t, desc, `{"command": "ls", "args": ["-F"]}`)
-	assert.Contains(t, desc, `never {"command": "ls -F"}`)
-	assert.Contains(t, desc, "not interpreted unless shell is passed")
+	assert.Contains(t, desc, `{"command": "git status"}`)
+	assert.Contains(t, desc, `cd`+"` is interpreted")
+	assert.Contains(t, desc, "Every program in the line is checked")
+	assert.Contains(t, desc, "pipes, redirection, globs")
 	assert.Contains(t, desc, "no approval can widen")
 
 	params, ok := tools[0].Function.Parameters.(map[string]interface{})
@@ -506,16 +516,16 @@ func TestUnit_LocalExecTools_DescriptionTeachesTheCallingConvention(t *testing.T
 	require.True(t, ok)
 	commandProp, ok := props["command"].(map[string]interface{})
 	require.True(t, ok)
-	assert.Contains(t, commandProp["description"], "flags and operands go in args")
-	assert.Contains(t, commandProp["description"], `never {"command": "ls -F"}`)
+	assert.Contains(t, commandProp["description"], "command line to run")
+	assert.Contains(t, commandProp["description"], "must be allowed by the command policy")
 
 	schemas, err := h.GetSchemasForSupportedTools(ctx)
 	require.NoError(t, err)
 	schema := schemas["local_shell"]
 	require.NotNil(t, schema)
-	assert.Contains(t, schema.Info.Description, "every flag and operand in args")
+	assert.Contains(t, schema.Info.Description, "command is a command line")
 	published := schema.Components.Schemas["LocalExecRequest"].Value.Properties["command"].Value
 	require.NotNil(t, published)
-	assert.Contains(t, published.Description, "flags and operands go in args")
-	assert.Contains(t, published.Description, `never {"command": "ls -F"}`)
+	assert.Contains(t, published.Description, "command line to run")
+	assert.Contains(t, published.Description, "needs no allowlist entry")
 }

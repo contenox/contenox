@@ -49,9 +49,8 @@ type Deps struct {
 	WorkspaceRoots *vfs.Factory
 
 	// MountFSTerminal mounts the one shared client-side fs+terminal server
-	// (internal/kernel/clientfsterm) for dispatched units. Beam and the editor
-	// profiles set it; contenox serve does not — the host serves no filesystem and
-	// no terminal, every capability it has being an MCP server.
+	// (internal/kernel/clientfsterm) for dispatched units, as beam and the
+	// editor profiles do.
 	MountFSTerminal bool
 
 	// WorkspaceEnv scrubs a launched terminal's parent environment (the agent-shell

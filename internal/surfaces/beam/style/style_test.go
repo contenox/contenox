@@ -51,12 +51,12 @@ func TestUnit_BrandLadderExactBytes(t *testing.T) {
 		caps   Caps
 		prefix string
 	}{
-		{"truecolor dark", Caps{Profile: ProfileTrueColor, Dark: true}, "\x1b[38;2;52;211;153m"},
-		{"truecolor light", Caps{Profile: ProfileTrueColor, Dark: false}, "\x1b[38;2;5;150;105m"},
-		{"ansi256 dark", Caps{Profile: ProfileANSI256, Dark: true}, "\x1b[38;5;78m"},
-		{"ansi256 light", Caps{Profile: ProfileANSI256, Dark: false}, "\x1b[38;5;78m"},
-		{"ansi16 dark", Caps{Profile: ProfileANSI16, Dark: true}, "\x1b[32m"},
-		{"ansi16 light", Caps{Profile: ProfileANSI16, Dark: false}, "\x1b[32m"},
+		{"truecolor dark", Caps{Profile: ProfileTrueColor, Dark: true}, "\x1b[38;2;242;201;76m"},
+		{"truecolor light", Caps{Profile: ProfileTrueColor, Dark: false}, "\x1b[38;2;159;121;0m"},
+		{"ansi256 dark", Caps{Profile: ProfileANSI256, Dark: true}, "\x1b[38;5;221m"},
+		{"ansi256 light", Caps{Profile: ProfileANSI256, Dark: false}, "\x1b[38;5;136m"},
+		{"ansi16 dark", Caps{Profile: ProfileANSI16, Dark: true}, "\x1b[93m"},
+		{"ansi16 light", Caps{Profile: ProfileANSI16, Dark: false}, "\x1b[33m"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -81,7 +81,7 @@ func TestUnit_BrandLadderExactBytes(t *testing.T) {
 }
 
 // TestUnit_BrandRampLadderExactBytes pins the logo-mark ramp to the
-// terminal's own mint ladder byte for byte, since goldens compare
+// terminal's signal-yellow ladder byte for byte, since goldens compare
 // StyleIDs, not colors, and wouldn't catch a drift here.
 func TestUnit_BrandRampLadderExactBytes(t *testing.T) {
 	cases := []struct {
@@ -93,26 +93,26 @@ func TestUnit_BrandRampLadderExactBytes(t *testing.T) {
 	}{
 		{
 			"truecolor dark", Caps{Profile: ProfileTrueColor, Dark: true},
-			"\x1b[38;2;95;255;175m", // #5FFFAF
-			"\x1b[38;2;52;211;153m", // #34D399
-			"\x1b[38;2;5;150;105m",  // #059669
+			"\x1b[38;2;242;201;76m",  // #F2C94C
+			"\x1b[38;2;220;174;24m",  // #DCAE18
+			"\x1b[38;2;255;232;120m", // #FFE878
 		},
 		{
 			"truecolor light", Caps{Profile: ProfileTrueColor, Dark: false},
-			"\x1b[38;2;5;150;105m",  // #059669
-			"\x1b[38;2;52;211;153m", // #34D399
-			"\x1b[38;2;95;255;175m", // #5FFFAF
+			"\x1b[38;2;220;174;24m", // #DCAE18
+			"\x1b[38;2;159;121;0m",  // #9F7900
+			"\x1b[38;2;242;201;76m", // #F2C94C
 		},
 		{
 			"ansi256 dark", Caps{Profile: ProfileANSI256, Dark: true},
-			"\x1b[38;5;85m", "\x1b[38;5;78m", "\x1b[38;5;29m",
+			"\x1b[38;5;221m", "\x1b[38;5;178m", "\x1b[38;5;228m",
 		},
 		{
 			"ansi256 light", Caps{Profile: ProfileANSI256, Dark: false},
-			"\x1b[38;5;85m", "\x1b[38;5;78m", "\x1b[38;5;29m",
+			"\x1b[38;5;178m", "\x1b[38;5;136m", "\x1b[38;5;221m",
 		},
-		{"ansi16 dark", Caps{Profile: ProfileANSI16, Dark: true}, "\x1b[92m", "\x1b[32m", "\x1b[32m"},
-		{"ansi16 light", Caps{Profile: ProfileANSI16, Dark: false}, "\x1b[92m", "\x1b[32m", "\x1b[32m"},
+		{"ansi16 dark", Caps{Profile: ProfileANSI16, Dark: true}, "\x1b[93m", "\x1b[33m", "\x1b[93m"},
+		{"ansi16 light", Caps{Profile: ProfileANSI16, Dark: false}, "\x1b[33m", "\x1b[33m", "\x1b[93m"},
 		{"mono dark", Caps{Profile: ProfileMono, Dark: true}, "", "", ""},
 		{"mono light", Caps{Profile: ProfileMono, Dark: false}, "", "", ""},
 	}
@@ -136,13 +136,13 @@ func TestUnit_BrandRampLadderExactBytes(t *testing.T) {
 		})
 	}
 
-	// The mid dark stop is brand mint: the mark must sit in the same
-	// family as the spinner, sigil and status identity, not next to it.
+	// The top dark stop is the signal yellow used by the spinner, sigil and
+	// status identity.
 	dark := New(Caps{Profile: ProfileTrueColor, Dark: true})
-	mid, _ := dark.SGR(frame.StyleBrandRamp2)
+	top, _ := dark.SGR(frame.StyleBrandRamp1)
 	brand, _ := dark.SGR(frame.StyleBrand)
-	if mid != "\x1b[38;2;52;211;153m" || mid != brand {
-		t.Fatalf("ramp2 dark = %q, want %q and equal to brand %q", mid, "\x1b[38;2;52;211;153m", brand)
+	if top != "\x1b[38;2;242;201;76m" || top != brand {
+		t.Fatalf("ramp1 dark = %q, want %q and equal to brand %q", top, "\x1b[38;2;242;201;76m", brand)
 	}
 
 	// Same 16-color doctrine as brand: a real basic color, never an

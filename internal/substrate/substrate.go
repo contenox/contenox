@@ -316,6 +316,10 @@ func OpenDB(ctx context.Context, sqlitePath string, dbPathExplicit bool) (libdb.
 		if err != nil {
 			return nil, fmt.Errorf("%s: cannot use the Postgres database it names: %w", PostgresURLEnv, err)
 		}
+		if err := runtimetypes.MigrateBackends(ctx, db.WithoutTransaction()); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
 		return db, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(sqlitePath), 0o755); err != nil {
@@ -324,6 +328,10 @@ func OpenDB(ctx context.Context, sqlitePath string, dbPathExplicit bool) (libdb.
 	schema := runtimetypes.SchemaSQLite + "\n" + libkvstore.SQLiteSchema
 	db, err := libdb.NewSQLiteDBManager(ctx, sqlitePath, schema)
 	if err != nil {
+		return nil, fmt.Errorf("failed to open database %q: %w", sqlitePath, err)
+	}
+	if err := runtimetypes.MigrateBackends(ctx, db.WithoutTransaction()); err != nil {
+		_ = db.Close()
 		return nil, fmt.Errorf("failed to open database %q: %w", sqlitePath, err)
 	}
 	return db, nil

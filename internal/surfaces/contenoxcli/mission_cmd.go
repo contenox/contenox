@@ -306,9 +306,9 @@ func fireMissionAndWait(cmd *cobra.Command, spec missionFireSpec) (*missionFireO
 	// A mission names the envelope that bounds it, so every declared one has to
 	// be rendered before the name is looked up.
 	if home, herr := globalContenoxDir(); herr == nil && home != contenoxDir {
-		_, _ = syncEnvelopePolicies(home)
+		_, _ = syncEnvelopePolicies(ctx, home)
 	}
-	_, _ = syncEnvelopePolicies(contenoxDir)
+	_, _ = syncEnvelopePolicies(ctx, contenoxDir)
 
 	store := runtimetypes.New(db.WithoutTransaction())
 	policy := strings.TrimSpace(spec.policy)
@@ -316,7 +316,7 @@ func fireMissionAndWait(cmd *cobra.Command, spec missionFireSpec) (*missionFireO
 		policy = strings.TrimSpace(clikv.Read(ctx, store, "default-mission-policy"))
 	}
 	if policy == "" {
-		return nil, fmt.Errorf("no mission envelope: pass --policy <policy>, or set a default with `contenox config set default-mission-policy <policy>` — a mission must name the HITL policy that bounds it")
+		return nil, fmt.Errorf("no mission envelope: pass --policy <policy>, or set a default with `contenox config set execution.missions.permissions.policy <policy>` — a mission must name the HITL policy that bounds it")
 	}
 
 	var tracker libtracker.ActivityTracker = libtracker.NoopTracker{}

@@ -2,7 +2,7 @@
 
 contenox is an agent server: `contenox beam` in the terminal, ACP over stdio
 for editors (Zed, JetBrains, AionUi, OpenClaw), `contenox run` for a caller
-that is a program, `contenox serve` for a paired host, and the CLI that
+that is a program, and the CLI that
 declares, inspects and fires agents. This page says how the code is
 maintained, how a change gets in, and how to build and test it.
 
@@ -70,7 +70,6 @@ must not re-create chain semantics elsewhere.
   "…"` is the same shape with stdin attached
 - `contenox chat` — a session-backed conversation without the TUI
 - `contenox acp` / `contenox acpx` for ACP editors
-- `contenox serve` / `contenox pair` for a relay-reachable host
 - the rest of the CLI (agents, missions, approvals, inbox, sessions, config,
   backends, models, tools, MCP, events, hitl, vet)
 
@@ -188,12 +187,17 @@ services; business logic never lives in `internal/surfaces/`.
 ## Local development setup
 
 Go 1.25+ and [Task](https://taskfile.dev) (`go install
-github.com/go-task/task/v3/cmd/task@latest`). The CLI is pure Go — no C
-toolchain needed.
+github.com/go-task/task/v3/cmd/task@latest`). The fast CLI build needs no C
+toolchain. A complete local installation also builds the native inference
+worker and therefore needs the dependencies described below.
+
+The separate native inference worker uses the existing Make dependency and
+packaging pipe. See [Building modeld](docs/development/modeld-build.md).
 
 ```bash
-task build        # build bin/contenox
-task dev-link     # symlink it into ~/.local/bin
+task build        # build bin/contenox only
+task dev-link     # expose only that CLI for a fast development loop
+task dev-install  # install the CLI and a release-shaped native modeld bundle
 task version:set  # stamp a local build with `git describe`, or it reports the last release
 task --list       # everything else
 ```
@@ -348,7 +352,6 @@ validates against. Touch either type or its doc comments and regenerate:
 
 ```bash
 task spec:generate   # rewrite schema/*.schema.json from the Go types
-task spec:verify     # what CI runs: regenerate to a temp dir, fail on drift
 ```
 
 Optional race detector:
@@ -371,10 +374,6 @@ run `task test-cli-help` and update the relevant docs.
    "not run" with a reason.
 4. Run `gofmt` on Go changes; `task lint` is what CI enforces.
 5. Keep docs and help text in sync with public-surface changes.
-6. Commit `schema/*.schema.json` when you regenerate it — it is published at
-   contenox.com/schema/ and CI's `task spec:verify` fails when it is stale.
-   Keep other generated artifacts out of the change unless the build needs
-   them.
 
 ## Code conventions
 

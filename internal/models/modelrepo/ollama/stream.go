@@ -10,19 +10,27 @@ import (
 )
 
 type OllamaStreamClient struct {
-	ollamaClient    *ollamaHTTPClient
-	modelName       string
-	backendURL      string
-	maxOutputTokens int
-	supportsThink   bool
-	tracker         libtracker.ActivityTracker
+	ollamaClient     *ollamaHTTPClient
+	modelName        string
+	backendURL       string
+	maxOutputTokens  int
+	supportsThink    bool
+	audioExtension   bool
+	sessionExtension bool
+	tracker          libtracker.ActivityTracker
+}
+
+func (c *OllamaStreamClient) checkAudio(messages []modelrepo.Message) error {
+	if !c.audioExtension {
+		return modelrepo.RefuseAudioInput("ollama", c.modelName, messages)
+	}
+	return modelrepo.ValidateAudioParts("ollama", c.modelName, messages)
 }
 
 func (c *OllamaStreamClient) Stream(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (<-chan *modelrepo.StreamParcel, error) {
 	reportErr, reportChange, end := c.tracker.Start(ctx, "stream", "ollama", "model", c.modelName)
 
-	// No audio encoding on this wire format; refuse instead of dropping silently.
-	if err := modelrepo.RefuseAudioInput("ollama", c.modelName, messages); err != nil {
+	if err := c.checkAudio(messages); err != nil {
 		reportErr(err)
 		end()
 		return nil, err
@@ -40,6 +48,7 @@ func (c *OllamaStreamClient) Stream(ctx context.Context, messages []modelrepo.Me
 				var tcArgs ToolCallFunctionArguments
 				_ = json.Unmarshal([]byte(argsStr), &tcArgs)
 				apiToolCalls = append(apiToolCalls, ToolCall{
+					ID: tc.ID,
 					Function: ToolCallFunction{
 						Name:      tc.Function.Name,
 						Arguments: tcArgs,
@@ -48,10 +57,12 @@ func (c *OllamaStreamClient) Stream(ctx context.Context, messages []modelrepo.Me
 			}
 		}
 		apiMessages = append(apiMessages, Message{
-			Role:      msg.Role,
-			Content:   msg.Content,
-			Images:    toOllamaImages(msg.Images),
-			ToolCalls: apiToolCalls,
+			Role:       msg.Role,
+			Content:    msg.Content,
+			Images:     toOllamaImages(msg.Images),
+			Audios:     toOllamaAudios(msg.Audio),
+			ToolCalls:  apiToolCalls,
+			ToolCallID: msg.ToolCallID,
 		})
 	}
 
@@ -86,6 +97,7 @@ func (c *OllamaStreamClient) Stream(ctx context.Context, messages []modelrepo.Me
 	if config.Truncate != nil {
 		req.Truncate = config.Truncate
 	}
+	req.Session = sessionOf(config, c.sessionExtension)
 
 	// Ollama delivers each tool call whole; each gets the next sequential index.
 	ch := make(chan *modelrepo.StreamParcel)
@@ -126,8 +138,13 @@ func (c *OllamaStreamClient) Stream(ctx context.Context, messages []modelrepo.Me
 				if err != nil {
 					continue
 				}
+				// The id must survive: it is what a tool result quotes back, and
+				// an upstream that pairs calls to results by id refuses a turn
+				// whose result carries none. Ollama itself omits it, so an
+				// id-less call stays id-less for the caller to synthesise.
 				delta := &modelrepo.ToolCallDelta{
 					Index:        toolCallIndex,
+					ID:           tc.ID,
 					Type:         "function",
 					Name:         tc.Function.Name,
 					ArgsFragment: string(argsJSON),

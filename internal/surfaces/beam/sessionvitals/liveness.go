@@ -197,7 +197,7 @@ func snapshotOf(a *activity, stallAfter time.Duration, now time.Time, spinnerFra
 	stalled := sinceEvent >= stallAfter
 	text := a.label
 	if stalled {
-		text = fmt.Sprintf("still working — no update for %ds", int(sinceEvent/time.Second))
+		text = fmt.Sprintf("still working — %ds", int(sinceEvent/time.Second))
 	}
 	return Snapshot{
 		SpinnerIndex: spinnerIndex(elapsed, spinnerFrames),

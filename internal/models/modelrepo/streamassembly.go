@@ -135,21 +135,7 @@ func (a *StreamAssembler) consumeToolCall(d *ToolCallDelta) error {
 
 func (a *StreamAssembler) mergeUsage(u TokenUsage) {
 	a.sawUsage = true
-	if u.PromptTokens != 0 {
-		a.usage.PromptTokens = u.PromptTokens
-	}
-	if u.CompletionTokens != 0 {
-		a.usage.CompletionTokens = u.CompletionTokens
-	}
-	if u.TotalTokens != 0 {
-		a.usage.TotalTokens = u.TotalTokens
-	}
-	if u.CacheReadTokens != 0 {
-		a.usage.CacheReadTokens = u.CacheReadTokens
-	}
-	if u.CacheWriteTokens != 0 {
-		a.usage.CacheWriteTokens = u.CacheWriteTokens
-	}
+	a.usage.Merge(&u)
 }
 
 // Result finalizes the assembly. It fails when the stream errored, when a

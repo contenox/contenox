@@ -33,13 +33,17 @@ type BuildOptions struct {
 }
 
 type Meta struct {
-	ToolsName  string `json:"toolsName,omitempty"`
-	ToolName   string `json:"toolName,omitempty"`
-	PolicyName string `json:"policyName,omitempty"`
-	PolicyPath string `json:"policyPath,omitempty"`
-	Diff       string `json:"diff,omitempty"`
-	DiffOld    string `json:"diffOld,omitempty"`
-	DiffNew    string `json:"diffNew,omitempty"`
+	// Detached identifies an approval backed by an unclaimed suspended checkpoint.
+	Detached bool `json:"detached,omitempty"`
+	// ArgsSummary describes persisted arguments when their original input is unavailable.
+	ArgsSummary string `json:"argsSummary,omitempty"`
+	ToolsName   string `json:"toolsName,omitempty"`
+	ToolName    string `json:"toolName,omitempty"`
+	PolicyName  string `json:"policyName,omitempty"`
+	PolicyPath  string `json:"policyPath,omitempty"`
+	Diff        string `json:"diff,omitempty"`
+	DiffOld     string `json:"diffOld,omitempty"`
+	DiffNew     string `json:"diffNew,omitempty"`
 
 	// MatchedRule is the 0-based index of the rule that gated this call; nil
 	// when the policy's DefaultAction applied instead.

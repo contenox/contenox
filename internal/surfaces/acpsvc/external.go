@@ -9,8 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/contenox/contenox/internal/kernel/agentinstance"
 	"github.com/contenox/contenox/internal/kernel/taskengine"
 	"github.com/contenox/contenox/internal/services/agenthost"
@@ -20,6 +18,7 @@ import (
 	"github.com/contenox/contenox/internal/version"
 	libacp "github.com/contenox/contenox/libacp"
 	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/google/uuid"
 )
 
 // AgentMetaKey is the session/new `_meta` key binding a session to a registered
@@ -828,7 +827,7 @@ func (d *externalDriver) ConfigOptions(ctx context.Context, sess *sessionEntry) 
 // agent and adopts the option set it confirms. configIDHITLPolicy and
 // configIDAgent are contenox's own and never reach the downstream.
 func (d *externalDriver) SetConfigOption(ctx context.Context, sess *sessionEntry, configID string, value libacp.SessionConfigOptionValue) error {
-	if configID == configIDHITLPolicy {
+	if configID == configIDHITLPolicy || configID == "hitl-policy" {
 		if err := d.t.setSessionConfigOption(ctx, sess, configID, value.AsString()); err != nil {
 			return err
 		}

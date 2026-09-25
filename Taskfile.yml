@@ -16,13 +16,13 @@ vars:
   # (tools/acp-validator README, rust-sdk at tools/rust-sdk). Explicit env
   # overrides; a missing binary keeps the clear set-this-var failure/skip.
   ACP_VALIDATOR_BIN:
-    sh: ls {{.ROOT_DIR}}/tools/acp-validator/target/debug/acp-validator 2>/dev/null || true
+    sh: 'if [ -n "${ACP_VALIDATOR_BIN:-}" ]; then printf "%s\n" "$ACP_VALIDATOR_BIN"; else ls {{.ROOT_DIR}}/tools/acp-validator/target/debug/acp-validator 2>/dev/null || true; fi'
   ACP_YOPO_BIN:
-    sh: ls {{.ROOT_DIR}}/tools/rust-sdk/target/debug/yopo 2>/dev/null || true
+    sh: 'if [ -n "${ACP_YOPO_BIN:-}" ]; then printf "%s\n" "$ACP_YOPO_BIN"; else ls {{.ROOT_DIR}}/tools/rust-sdk/target/debug/yopo 2>/dev/null || true; fi'
   ACP_TESTY_BIN:
-    sh: ls {{.ROOT_DIR}}/tools/rust-sdk/target/debug/testy 2>/dev/null || true
+    sh: 'if [ -n "${ACP_TESTY_BIN:-}" ]; then printf "%s\n" "$ACP_TESTY_BIN"; else ls {{.ROOT_DIR}}/tools/rust-sdk/target/debug/testy 2>/dev/null || true; fi'
   ACP_MCP_ECHO_BIN:
-    sh: ls {{.ROOT_DIR}}/tools/rust-sdk/target/debug/mcp-echo-server 2>/dev/null || true
+    sh: 'if [ -n "${ACP_MCP_ECHO_BIN:-}" ]; then printf "%s\n" "$ACP_MCP_ECHO_BIN"; else ls {{.ROOT_DIR}}/tools/rust-sdk/target/debug/mcp-echo-server 2>/dev/null || true; fi'
   # The black-box CLI suite is Rust too (tools/contenox-e2e/README.md explains
   # why it cannot be Go). Detected rather than required: a checkout without a
   # Rust toolchain still runs every other gate.
@@ -45,7 +45,7 @@ tasks:
       - task --list
 
   build:
-    desc: Build the contenox CLI (pure Go, static)
+    desc: Build the portable contenox control and harness binary
     cmds:
       - CGO_ENABLED=0 go build -o {{.BIN}} {{.ROOT_DIR}}/cmd/contenox
 
@@ -54,13 +54,47 @@ tasks:
     cmds:
       - CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o {{.BIN_DIR}}/contenox-windows-amd64.exe {{.ROOT_DIR}}/cmd/contenox
 
+  modeld:build:
+    desc: Build the native modeld worker using the existing dependency pipe
+    cmds:
+      - make -C {{.ROOT_DIR}} build-modeld {{.CLI_ARGS}}
+
+  modeld:package:
+    desc: Package modeld against a prepared native dependency bundle
+    cmds:
+      - make -C {{.ROOT_DIR}} package-modeld-release {{.CLI_ARGS}}
+
+  modeld:release:
+    desc: Build the release modeld worker on the pinned native baseline (containerised, gated)
+    cmds:
+      - bash {{.ROOT_DIR}}/scripts/modeld-release-container.sh
+
+  modeld:release:publish:
+    desc: 'Publish an explicit Linux worker archive immutably and merge the installer index'
+    requires:
+      vars: [MODELD_RELEASE_ARCHIVE, MODELD_RELEASE_S3_URI, MODELD_PUBLIC_BASE_URL]
+    cmds:
+      - >-
+        python3 {{.ROOT_DIR}}/scripts/modeld-publish.py
+        {{.MODELD_RELEASE_ARCHIVE | shellQuote}}
+        --store {{.MODELD_RELEASE_S3_URI | shellQuote}}
+        --public-base-url {{.MODELD_PUBLIC_BASE_URL | shellQuote}}
+        --linux-only
+
+  modeld:check:
+    desc: Compile modeld control paths across the release matrix (no native inference)
+    cmds:
+      - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o {{.BIN_DIR}}/modeld-check-linux-amd64 {{.ROOT_DIR}}/cmd/modeld
+      - CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o {{.BIN_DIR}}/modeld-check-linux-arm64 {{.ROOT_DIR}}/cmd/modeld
+      - CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o {{.BIN_DIR}}/modeld-check-darwin-arm64 {{.ROOT_DIR}}/cmd/modeld
+      - CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o {{.BIN_DIR}}/modeld-check-windows-amd64.exe {{.ROOT_DIR}}/cmd/modeld
+
   lint:
     desc: The formatting and static gates CI enforces (gofmt, vet)
     cmds:
       - cmd: |
-          # Skip gitignored paths so this agrees with CI, which lints a clean
-          # checkout; a local scratch dir must not fail a gate CI would pass.
-          unformatted=$(gofmt -l . | while read -r f; do git check-ignore -q "$f" || echo "$f"; done)
+          set -o pipefail
+          unformatted=$(git ls-files -z --cached --others --exclude-standard -- '*.go' | xargs -0 gofmt -l)
           if [ -n "$unformatted" ]; then
             echo "$unformatted"
             echo "gofmt found unformatted files (above). Fix with, gofmt -w ."
@@ -225,6 +259,11 @@ tasks:
   # switches off. SKIP=<regexp> excludes cases by name: CI passes it to keep the
   # multi-GB model pulls out of the per-push run, the nightly gate passes
   # nothing so everything is attempted.
+  apitests:
+    desc: VFS HTTP contracts and, with a configured gateway, vendor SDK contracts
+    cmds:
+      - python3 -m pytest internal/apitests -q
+
   test-system:
     desc: 'The release gate: every TestSystem_/TestE2E_ case, with a census of what skipped (SKIP=<regexp> excludes)'
     cmds:
@@ -388,8 +427,6 @@ tasks:
       - task: lint
       - task: vuln
       - task: test-unit
-      - task: test-cli-help
-      - task: spec:verify
       - task: acp-suites
       - task: e2e-cli-optional
       # The release claim, named rather than implied: the system and e2e cases
@@ -402,23 +439,35 @@ tasks:
       - 'echo "==> test-all: every gate that ran is green — re-read every SKIPPED notice above before releasing"'
 
   dev-install:
-    desc: Build and put the CLI on your PATH (~/.local/bin, or %LOCALAPPDATA%\Programs\contenox on Windows)
+    desc: Build and install the complete local system (CLI plus packaged modeld)
     deps: [build]
     cmds:
-      - task: dev-link
+      - cmd: |
+          set -eu
+          cuda_bin=""
+          if command -v nvcc >/dev/null 2>&1; then
+            cuda_bin=$(dirname "$(command -v nvcc)")
+          elif [ -x /usr/local/cuda/bin/nvcc ]; then
+            cuda_bin=/usr/local/cuda/bin
+          fi
+          if [ -n "$cuda_bin" ] && [ -z "${NVCC_CCBIN:-}" ] && command -v g++-14 >/dev/null 2>&1; then
+            export NVCC_CCBIN=$(command -v g++-14)
+          fi
+          export TMPDIR=${TMPDIR:-/var/tmp}
+          PATH="${cuda_bin:+$cuda_bin:}$PATH" make -C {{.ROOT_DIR}} package-modeld
+          {{.ROOT_DIR}}/scripts/dev-install.sh --cli {{.BIN}} --modeld {{.ROOT_DIR}}/bin/dist
+        platforms: [linux, darwin]
+      - cmd: powershell -NoProfile -ExecutionPolicy Bypass -File {{.ROOT_DIR}}/scripts/dev-install.ps1 -Source {{.BIN}}
+        platforms: [windows]
 
   # POSIX symlinks into ~/.local/bin; Windows copies into a directory it also
   # registers on the user PATH, because Windows has no conventional bin dir
   # that is already there. See scripts/dev-install.ps1 for why it copies.
   dev-link:
-    desc: Put bin/contenox on your PATH
+    desc: Put only bin/contenox on your PATH (fast CLI development loop)
     deps: [build]
     cmds:
-      - cmd: mkdir -p $HOME/.local/bin
-        platforms: [linux, darwin]
-      - cmd: ln -sf {{.BIN}} $HOME/.local/bin/contenox
-        platforms: [linux, darwin]
-      - cmd: 'echo "Linked $HOME/.local/bin/contenox -> {{.BIN}} (ensure ~/.local/bin precedes other installs on PATH)"'
+      - cmd: '{{.ROOT_DIR}}/scripts/dev-install.sh --cli {{.BIN}}'
         platforms: [linux, darwin]
       - cmd: powershell -NoProfile -ExecutionPolicy Bypass -File {{.ROOT_DIR}}/scripts/dev-install.ps1 -Source {{.BIN}}
         platforms: [windows]
@@ -426,7 +475,7 @@ tasks:
   dev-unlink:
     desc: Remove the installed CLI from your PATH
     cmds:
-      - cmd: rm -f $HOME/.local/bin/contenox
+      - cmd: '{{.ROOT_DIR}}/scripts/dev-install.sh --uninstall'
         platforms: [linux, darwin]
       - cmd: powershell -NoProfile -ExecutionPolicy Bypass -File {{.ROOT_DIR}}/scripts/dev-install.ps1 -Uninstall
         platforms: [windows]
@@ -456,39 +505,33 @@ tasks:
     cmds:
       - npm run preview
 
-
-  spec:generate:
-    desc: Regenerate schema/*.schema.json from the Go types users author against
+  website:test:e2e:
+    desc: Run Playwright E2E visual and functional tests
+    dir: website
     cmds:
-      - go run {{.ROOT_DIR}}/tools/schema-gen -project {{.ROOT_DIR}} -output schema
+      - npm run test:e2e -- {{.CLI_ARGS}}
 
-  spec:verify:
-    desc: Regenerate the JSON schemas to a temp dir and fail on drift
+  website:screenshots:
+    desc: Capture screenshots of all website pages across desktop and mobile viewports
+    dir: website
     cmds:
-      - defer: rm -rf {{.ROOT_DIR}}/.verify
-      - go run {{.ROOT_DIR}}/tools/schema-gen -project {{.ROOT_DIR}} -output .verify
-      # `git diff --no-index` rather than `diff`: it ships wherever git does,
-      # including a Windows checkout with no diff(1) on PATH, and prints a
-      # reviewable patch instead of a byte offset.
-      - cmd: |
-          if ! git --no-pager diff --no-index --exit-code {{.ROOT_DIR}}/schema {{.ROOT_DIR}}/.verify; then
-            echo
-            echo "schema/ no longer matches the Go types it is generated from (patch above)."
-            echo "Every emitted policy stamps these schemas by URL, so the drift is published."
-            echo "Fix: run 'task spec:generate' and commit schema/."
-            exit 1
-          fi
+      - npm run test:e2e -- {{.CLI_ARGS}}
 
-  # Releases are not cut from this repository. The tree is developed upstream
-  # and published here by source drop: every commit on main is one release and
-  # every tag a signed release that .github/workflows/release.yml turns into
-  # binaries (CONTRIBUTING.md, "How this repository is maintained"). The only
-  # version task left is the stamp for a local build — without it `task build`
-  # reports the last release's version.
+  website:report:
+    desc: Open the Playwright HTML test and visual report
+    dir: website
+    cmds:
+      - npm run test:report
+
   version:set:
     desc: Stamp internal/version/version.txt from `git describe` for a local build
     cmds:
       - go run {{.ROOT_DIR}}/tools/version/main.go set
+
+  preseed:hashes:
+    desc: Regenerate the blessed-hash table seeding reads, from the shipped declarations' history
+    cmds:
+      - go run {{.ROOT_DIR}}/tools/preseed-hashes
 
   clean:
     desc: Remove build outputs

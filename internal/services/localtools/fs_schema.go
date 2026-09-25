@@ -96,7 +96,7 @@ func (h *LocalFSTools) GetSchemasForSupportedTools(ctx context.Context) (map[str
 		return nil, err
 	}
 	doc, err := buildToolsetDoc(h.name, "Local Filesystem Tools",
-		"Read, search and modify files inside the workspace directory. Every path is contained to that directory, binaries are refused rather than dumped into the transcript, every result is capped and says what it withheld, and modifying an existing file requires having read its current version first.",
+		"Read and modify files inside the workspace directory; listing, searching and file metadata are the browse tools of this same toolset (list_dir, grep, find_files, stat_file, count_stats). Every path is contained to that directory, binaries are refused rather than dumped into the transcript, every result is capped and says what it withheld, and modifying an existing file requires having read its current version first.",
 		declared, fsSchemaSpecs())
 	if err != nil {
 		return nil, err

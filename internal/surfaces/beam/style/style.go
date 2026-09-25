@@ -31,37 +31,29 @@ const (
 	fg16Cyan    = "\x1b[96m"
 	fg16Gray    = "\x1b[90m"
 
-	// Brand mint ladder: unlike the old amber ladder's near-identical
-	// shades, mint has a real 16-color spelling. The luminous rung gets
-	// the same bright green every other bright-tier role uses; the core
-	// and dim rungs — indistinguishable at this tier — collapse onto the
-	// one plain green the palette offers, a true color rather than a
-	// bold-only fallback.
-	fg16BrandRamp1 = "\x1b[92m"
-	fg16BrandCore  = "\x1b[32m"
+	fg16BrandBright = "\x1b[93m"
+	fg16BrandCore   = "\x1b[33m"
 )
 
 // ANSI256 foreground codes, indexed into the standard xterm 256-color
 // palette (\x1b[38;5;Nm).
 const (
-	fg256Red     = "\x1b[38;5;203m"
-	fg256Yellow  = "\x1b[38;5;221m"
-	fg256Green   = "\x1b[38;5;114m"
-	fg256Cyan    = "\x1b[38;5;116m"
-	fg256Magenta = "\x1b[38;5;176m"
-	fg256Gray    = "\x1b[38;5;244m"
-	fg256Code    = "\x1b[38;5;110m"
-	fg256Brand   = "\x1b[38;5;78m" // brand ladder, fixed for both themes
+	fg256Red        = "\x1b[38;5;203m"
+	fg256Yellow     = "\x1b[38;5;221m"
+	fg256Green      = "\x1b[38;5;114m"
+	fg256Cyan       = "\x1b[38;5;116m"
+	fg256Magenta    = "\x1b[38;5;176m"
+	fg256Gray       = "\x1b[38;5;244m"
+	fg256Code       = "\x1b[38;5;110m"
+	fg256BrandDark  = "\x1b[38;5;221m"
+	fg256BrandLight = "\x1b[38;5;136m"
 
-	// Logo-mark luminance ramp, fixed for both themes (85/78/29): the
-	// 256-color palette has no separate light-terminal mint run worth
-	// splitting, and 78 keeps the mid stop identical to fg256Brand. Each
-	// code is the nearest xterm 6x6x6-cube color to its truecolor rung
-	// (85 = #5FFFAF exactly; 78 = #5FD787, nearest to #34D399; 29 =
-	// #00875F, nearest to #059669).
-	fg256Ramp1 = "\x1b[38;5;85m"
-	fg256Ramp2 = "\x1b[38;5;78m"
-	fg256Ramp3 = "\x1b[38;5;29m"
+	fg256Ramp1Dark  = "\x1b[38;5;221m"
+	fg256Ramp2Dark  = "\x1b[38;5;178m"
+	fg256Ramp3Dark  = "\x1b[38;5;228m"
+	fg256Ramp1Light = "\x1b[38;5;178m"
+	fg256Ramp2Light = "\x1b[38;5;136m"
+	fg256Ramp3Light = "\x1b[38;5;221m"
 )
 
 // TrueColor foreground codes (\x1b[38;2;R;G;Bm).
@@ -73,21 +65,15 @@ const (
 	fgTCMagenta    = "\x1b[38;2;192;132;252m"
 	fgTCGray       = "\x1b[38;2;107;114;128m"
 	fgTCCode       = "\x1b[38;2;125;211;252m"
-	fgTCBrandDark  = "\x1b[38;2;52;211;153m" // brand mint, dark terminal (#34D399)
-	fgTCBrandLight = "\x1b[38;2;5;150;105m"  // brand mint, light terminal (#059669)
+	fgTCBrandDark  = "\x1b[38;2;242;201;76m" // #F2C94C
+	fgTCBrandLight = "\x1b[38;2;159;121;0m"  // #9F7900
 
-	// Logo-mark luminance ramp, lightest to deepest: the terminal's own
-	// three-rung mint ladder (luminous/core/dim), tuned for tier fidelity
-	// — ramp1 is an exact xterm 256-cube color — rather than byte-parity
-	// with the website's mint tokens. The mid dark stop is brand mint and
-	// the lightest light stop is the light-terminal brand, so the mark
-	// reads as one family with the rest of the accent.
-	fgTCRamp1Dark  = "\x1b[38;2;95;255;175m" // #5FFFAF
-	fgTCRamp2Dark  = "\x1b[38;2;52;211;153m" // #34D399
-	fgTCRamp3Dark  = "\x1b[38;2;5;150;105m"  // #059669
-	fgTCRamp1Light = "\x1b[38;2;5;150;105m"  // #059669
-	fgTCRamp2Light = "\x1b[38;2;52;211;153m" // #34D399
-	fgTCRamp3Light = "\x1b[38;2;95;255;175m" // #5FFFAF
+	fgTCRamp1Dark  = "\x1b[38;2;242;201;76m"  // #F2C94C
+	fgTCRamp2Dark  = "\x1b[38;2;220;174;24m"  // #DCAE18
+	fgTCRamp3Dark  = "\x1b[38;2;255;232;120m" // #FFE878
+	fgTCRamp1Light = "\x1b[38;2;220;174;24m"  // #DCAE18
+	fgTCRamp2Light = "\x1b[38;2;159;121;0m"   // #9F7900
+	fgTCRamp3Light = "\x1b[38;2;242;201;76m"  // #F2C94C
 )
 
 // Styles is the process-lifetime StyleID→SGR table for one Caps snapshot.
@@ -122,8 +108,7 @@ func (s *Styles) SGR(id frame.StyleID) (prefix, suffix string) {
 // lookup on a nil map yields the zero value, so SGR strips all styling
 // without a second code path — this is the doctrine, not an optimization.
 //
-// Role values (the same across Dark/light except brand, which is the only
-// role with a light/dark ladder):
+// Role values (the same across dark/light except the brand family):
 //
 //	none, assistant, shell            empty (default foreground)
 //	user, heading, strong, active     bold
@@ -134,10 +119,10 @@ func (s *Styles) SGR(id frame.StyleID) (prefix, suffix string) {
 //	done                              green
 //	pending                           cyan
 //	code                              soft cyan/blue
-//	hitl                              magenta
+//	hitl                              brand signal yellow
 //	border, inactive, tool            bright-black (chrome)
-//	brand                             brand-mint ladder; ANSI16 = green
-//	brand-ramp1/2/3                   logo-mark mint ramp, same ladder rules
+//	brand                             signal yellow; ANSI16 = yellow
+//	brand-ramp1/2/3                   logo-mark yellow ramp
 //
 // Every prefix here is foreground/attribute-only: no role ever emits a
 // background or reverse-video code, in content or chrome.
@@ -160,24 +145,29 @@ func buildTable(caps Caps) map[frame.StyleID]string {
 		frame.StyleSkipped:   attrDim,
 	}
 
-	var red, yellow, green, cyan, magenta, gray, code, brand string
+	var red, yellow, green, cyan, gray, code, brand string
 	var ramp1, ramp2, ramp3 string
 	switch caps.Profile {
 	case ProfileANSI16:
-		red, yellow, green, cyan, magenta, gray, code = fg16Red, fg16Yellow, fg16Green, fg16Cyan, fg16Magenta, fg16Gray, fg16Blue
-		// Mint has a real 16-color spelling, unlike the old amber
-		// ladder's near-identical shades: the luminous rung gets its own
-		// bright green, and the core/dim rungs — indistinguishable at
-		// this tier — share the one plain green left, a true color
-		// rather than a bold-only fallback.
-		brand = fg16BrandCore
-		ramp1, ramp2, ramp3 = fg16BrandRamp1, fg16BrandCore, fg16BrandCore
+		red, yellow, green, cyan, gray, code = fg16Red, fg16Yellow, fg16Green, fg16Cyan, fg16Gray, fg16Blue
+		if caps.Dark {
+			brand = fg16BrandBright
+			ramp1, ramp2, ramp3 = fg16BrandBright, fg16BrandCore, fg16BrandBright
+		} else {
+			brand = fg16BrandCore
+			ramp1, ramp2, ramp3 = fg16BrandCore, fg16BrandCore, fg16BrandBright
+		}
 	case ProfileANSI256:
-		red, yellow, green, cyan, magenta, gray, code = fg256Red, fg256Yellow, fg256Green, fg256Cyan, fg256Magenta, fg256Gray, fg256Code
-		brand = fg256Brand
-		ramp1, ramp2, ramp3 = fg256Ramp1, fg256Ramp2, fg256Ramp3
+		red, yellow, green, cyan, gray, code = fg256Red, fg256Yellow, fg256Green, fg256Cyan, fg256Gray, fg256Code
+		if caps.Dark {
+			brand = fg256BrandDark
+			ramp1, ramp2, ramp3 = fg256Ramp1Dark, fg256Ramp2Dark, fg256Ramp3Dark
+		} else {
+			brand = fg256BrandLight
+			ramp1, ramp2, ramp3 = fg256Ramp1Light, fg256Ramp2Light, fg256Ramp3Light
+		}
 	case ProfileTrueColor:
-		red, yellow, green, cyan, magenta, gray, code = fgTCRed, fgTCYellow, fgTCGreen, fgTCCyan, fgTCMagenta, fgTCGray, fgTCCode
+		red, yellow, green, cyan, gray, code = fgTCRed, fgTCYellow, fgTCGreen, fgTCCyan, fgTCGray, fgTCCode
 		if caps.Dark {
 			brand = fgTCBrandDark
 			ramp1, ramp2, ramp3 = fgTCRamp1Dark, fgTCRamp2Dark, fgTCRamp3Dark
@@ -192,7 +182,7 @@ func buildTable(caps Caps) map[frame.StyleID]string {
 	t[frame.StyleWarn] = yellow
 	t[frame.StyleDone] = green
 	t[frame.StylePending] = cyan
-	t[frame.StyleHITL] = magenta
+	t[frame.StyleHITL] = brand
 	t[frame.StyleBorder] = gray
 	t[frame.StyleInactive] = gray
 	t[frame.StyleTool] = gray

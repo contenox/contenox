@@ -71,6 +71,17 @@ func MessagesHaveImages(messages []Message) bool {
 	return false
 }
 
+// MessagesImageCount is how many image attachments a request carries, which is
+// what a turn against a per-image rate card is charged for: a provider that
+// bills images apart from tokens reports the tokens but never the count.
+func MessagesImageCount(messages []Message) int {
+	count := 0
+	for _, m := range messages {
+		count += len(m.Images)
+	}
+	return count
+}
+
 // MessagesHaveAudio reports whether any message carries an audio attachment,
 // for deriving the audio requirement at resolution time.
 func MessagesHaveAudio(messages []Message) bool {
@@ -98,10 +109,13 @@ type ToolCallDelta struct {
 	ProviderMeta map[string]string
 }
 
-// TokenUsage is provider-reported token accounting; zero fields mean not reported, and PromptTokens is always the total prompt count including cached tokens.
+// TokenUsage is provider-reported token accounting; zero fields mean not
+// reported. PromptTokens includes cached tokens, CompletionTokens includes
+// thinking tokens, and ThinkingTokens is the reported thinking subset.
 type TokenUsage struct {
 	PromptTokens     int
 	CompletionTokens int
+	ThinkingTokens   int
 	TotalTokens      int
 	// CacheReadTokens is prompt tokens served from the provider's prefix cache; zero where unsupported.
 	CacheReadTokens int
@@ -208,4 +222,30 @@ type LLMPromptExecClient interface {
 	// Prompt returns the completion text plus the provider-reported token
 	// accounting; nil usage means the provider did not report any.
 	Prompt(ctx context.Context, systemInstruction string, temperature float32, prompt string) (string, *TokenUsage, error)
+}
+
+// Merge folds a partial provider usage report into cumulative counters.
+// Nonzero fields replace earlier values; nil reports leave counters unchanged.
+func (u *TokenUsage) Merge(src *TokenUsage) {
+	if src == nil {
+		return
+	}
+	if src.PromptTokens != 0 {
+		u.PromptTokens = src.PromptTokens
+	}
+	if src.CompletionTokens != 0 {
+		u.CompletionTokens = src.CompletionTokens
+	}
+	if src.ThinkingTokens != 0 {
+		u.ThinkingTokens = src.ThinkingTokens
+	}
+	if src.TotalTokens != 0 {
+		u.TotalTokens = src.TotalTokens
+	}
+	if src.CacheReadTokens != 0 {
+		u.CacheReadTokens = src.CacheReadTokens
+	}
+	if src.CacheWriteTokens != 0 {
+		u.CacheWriteTokens = src.CacheWriteTokens
+	}
 }

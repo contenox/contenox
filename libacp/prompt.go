@@ -39,6 +39,7 @@ const (
 	SessionUpdateCurrentMode       SessionUpdateKind = "current_mode_update"
 	SessionUpdateConfigOption      SessionUpdateKind = "config_option_update"
 	SessionUpdateUsageUpdate       SessionUpdateKind = "usage_update"
+	SessionUpdateUsageStats        SessionUpdateKind = "usage_stats"
 	SessionUpdateSessionInfo       SessionUpdateKind = "session_info_update"
 )
 
@@ -57,6 +58,7 @@ func AllSessionUpdateKinds() []SessionUpdateKind {
 		SessionUpdateCurrentMode,
 		SessionUpdateConfigOption,
 		SessionUpdateUsageUpdate,
+		SessionUpdateUsageStats,
 		SessionUpdateSessionInfo,
 	}
 }
@@ -87,6 +89,9 @@ type SessionUpdate struct {
 	Used int        `json:"used,omitempty"`
 	Size int        `json:"size,omitempty"`
 	Cost *UsageCost `json:"cost,omitempty"`
+
+	// Stats is the session-level usage record; only usage_stats carries it.
+	Stats *SessionStats `json:"stats,omitempty"`
 
 	// MessageID groups streamed chunks into messages: all chunks of one message
 	// share an id, and a change marks a new message.
@@ -132,6 +137,9 @@ type sessionUpdateWire struct {
 	Size *int       `json:"size,omitempty"`
 	Cost *UsageCost `json:"cost,omitempty"`
 
+	// Stats is the session usage record; only usage_stats carries it.
+	Stats *SessionStats `json:"stats,omitempty"`
+
 	MessageID string `json:"messageId,omitempty"`
 	UpdatedAt string `json:"updatedAt,omitempty"`
 
@@ -141,6 +149,47 @@ type sessionUpdateWire struct {
 type UsageCost struct {
 	Amount   float64 `json:"amount"`
 	Currency string  `json:"currency"`
+}
+
+// SessionModelStats is one model's slice of a session usage record; Provider
+// names the backend that served the calls.
+type SessionModelStats struct {
+	Model    string `json:"model"`
+	Provider string `json:"provider,omitempty"`
+	Calls    int64  `json:"calls"`
+
+	InputTokens      int64 `json:"inputTokens"`
+	OutputTokens     int64 `json:"outputTokens"`
+	ThinkingTokens   int64 `json:"thinkingTokens"`
+	CacheReadTokens  int64 `json:"cacheReadTokens"`
+	CacheWriteTokens int64 `json:"cacheWriteTokens"`
+}
+
+// SessionStats is the session-level usage record a usage_stats update carries:
+// the same shape every client renders, derived server-side from engine events.
+// Token fields are provider-reported; times are milliseconds. TtftSamples and
+// TtftMs together give the average first-token latency (per sample), and
+// output throughput is OutputTokens/StreamMs.
+type SessionStats struct {
+	SessionID string `json:"sessionId"`
+
+	Turns      int64 `json:"turns"`
+	Steps      int64 `json:"steps"`
+	ModelCalls int64 `json:"modelCalls"`
+	LlmMs      int64 `json:"llmMs"`
+	ToolMs     int64 `json:"toolMs"`
+
+	TtftSamples int64 `json:"ttftSamples"`
+	TtftMs      int64 `json:"ttftMs"`
+	StreamMs    int64 `json:"streamMs"`
+
+	InputTokens      int64 `json:"inputTokens"`
+	OutputTokens     int64 `json:"outputTokens"`
+	ThinkingTokens   int64 `json:"thinkingTokens"`
+	CacheReadTokens  int64 `json:"cacheReadTokens"`
+	CacheWriteTokens int64 `json:"cacheWriteTokens"`
+
+	ByModel []SessionModelStats `json:"byModel,omitempty"`
 }
 
 func (u SessionUpdate) MarshalJSON() ([]byte, error) {
@@ -156,6 +205,7 @@ func (u SessionUpdate) MarshalJSON() ([]byte, error) {
 		Entries:       u.Entries,
 		CurrentModeID: u.CurrentModeID,
 		Cost:          u.Cost,
+		Stats:         u.Stats,
 		MessageID:     u.MessageID,
 		UpdatedAt:     u.UpdatedAt,
 		Meta:          u.Meta,
@@ -216,6 +266,7 @@ func (u *SessionUpdate) UnmarshalJSON(data []byte) error {
 		Entries:       w.Entries,
 		CurrentModeID: w.CurrentModeID,
 		Cost:          w.Cost,
+		Stats:         w.Stats,
 		MessageID:     w.MessageID,
 		UpdatedAt:     w.UpdatedAt,
 		Meta:          w.Meta,
@@ -252,6 +303,28 @@ type SessionNotification struct {
 	SessionID SessionID       `json:"sessionId"`
 	Update    SessionUpdate   `json:"update"`
 	Meta      json.RawMessage `json:"_meta,omitempty"`
+}
+
+// EventSeqMetaKey is the `_meta` key under which a notification carries its
+// session-local monotonic sequence (the SSE resume cursor). Present on every
+// notification the runtime sends for a session that journals its events; a
+// reconnecting client names its last seen value as sinceSeq.
+const EventSeqMetaKey = "contenox.seq"
+
+// WithSeq returns a copy of the notification whose `_meta` records seq under
+// EventSeqMetaKey, preserving any existing `_meta` fields.
+func (n SessionNotification) WithSeq(seq uint64) SessionNotification {
+	meta := make(map[string]any)
+	if len(n.Meta) > 0 {
+		_ = json.Unmarshal(n.Meta, &meta)
+	}
+	if meta == nil {
+		meta = make(map[string]any)
+	}
+	meta[EventSeqMetaKey] = seq
+	encoded, _ := json.Marshal(meta)
+	n.Meta = encoded
+	return n
 }
 
 func NewAgentMessageChunk(text string) SessionUpdate {

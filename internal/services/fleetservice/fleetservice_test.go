@@ -42,6 +42,7 @@ type fakeManager struct {
 	openSpecs []agentinstance.SessionSpec
 
 	promptErr          error
+	promptStop         libacp.StopReason
 	promptCalls        int
 	promptBlocks       []libacp.ContentBlock   // blocks of the most recent prompt
 	promptBlocksByCall [][]libacp.ContentBlock // blocks of every prompt, in order
@@ -111,6 +112,9 @@ func (m *fakeManager) Prompt(_ context.Context, _ string, _ libacp.SessionID, bl
 	m.mu.Unlock()
 	if hook != nil {
 		hook(call)
+	}
+	if m.promptStop != "" {
+		return m.promptStop, m.promptErr
 	}
 	return libacp.StopReasonEndTurn, m.promptErr
 }
@@ -954,4 +958,26 @@ func TestFleetService_Dispatch_TurnErrorSettlesTheMissionEndToEnd(t *testing.T) 
 		return len(man.stops()) == 1
 	}, 5*time.Second, 20*time.Millisecond, "and reap the unit it can no longer drive")
 	require.Equal(t, []string{"inst-err"}, man.stops())
+}
+
+func TestUnit_DriveLoop_CancelledTurnLeavesMissionResumable(t *testing.T) {
+	for _, turn := range []int{1, 2} {
+		t.Run(fmt.Sprint(turn), func(t *testing.T) {
+			mgr := &fakeManager{openID: "sess-1"}
+			svc, missions, run := driveFixture(t, hitlservice.ComputeBounds{}, mgr)
+			mgr.onPrompt = func(call int) {
+				if call == turn {
+					mgr.promptStop = libacp.StopReasonCancelled
+				}
+			}
+			svc.driveUnattendedMission(context.Background(), run)
+			require.Equal(t, turn, mgr.prompts())
+			got, err := missions.Get(context.Background(), run.missionID)
+			require.NoError(t, err)
+			require.Equal(t, missionservice.StatusOpen, got.Status)
+			reports, err := missions.ListReports(context.Background(), run.missionID, 5)
+			require.NoError(t, err)
+			require.Empty(t, reports)
+		})
+	}
 }

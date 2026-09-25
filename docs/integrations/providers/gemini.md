@@ -13,8 +13,8 @@ No GPU required. Get a free API key at [aistudio.google.com/apikey](https://aist
 export GEMINI_API_KEY=your-key
 
 contenox backend add gemini --type gemini --api-key-env GEMINI_API_KEY
-contenox config set default-model gemini-flash-latest
-contenox config set default-provider gemini
+contenox config set inference.model gemini-flash-latest
+contenox config set inference.provider gemini
 ```
 
 ## Vertex AI

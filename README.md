@@ -1,10 +1,16 @@
 # contenox
 
-**Declare an agent in one Markdown file. Run it in your terminal.**
+**AI agents. Under your command.**
 
-Every action it takes is checked against policy you wrote — and when it needs
-you, it waits, durably: answer from your terminal or your phone, days later, and
-the run resumes exactly once.
+Contenox is built for demanding work — and the people accountable for it. The
+same system carries work from an interactive terminal or editor into scripts,
+CI and unattended missions.
+
+Choose the models and infrastructure. Attach only the tools the work requires.
+Keep policy, state and operational evidence under your control. No Contenox
+account is required.
+
+![contenox beam running a session](https://contenox-website-assets-573643652148.s3.amazonaws.com/media/hitl-approve.gif)
 
 Docs: **[contenox.com](https://contenox.com)**
 
@@ -24,19 +30,21 @@ less install.sh
 sh install.sh
 ```
 
-Pre-built binaries are on the [releases page](https://github.com/contenox/contenox/releases).
-
-<!-- TAG=v1.0.0 -->
+<!-- TAG=v1.1.0 -->
 
 ```bash
-contenox setup                          # pick a provider and model, once
-contenox beam                           # the front door: talk to an agent here
+contenox auto                           # choose a local model, verify it, and open the TUI
 ```
 
-`contenox beam` is the first-party terminal client. The transcript is your
-native scrollback, the composer takes `/` commands and `@` file mentions, and a
-gated tool call raises an approval card inline — one keystroke answers it. Bare
-`contenox` on a terminal opens beam.
+Run it from the project directory you want to work in. `contenox auto --dry-run`
+previews the choice. For an existing model server or a hosted API, use
+`contenox setup`, then `contenox beam`. See the [quickstart](https://contenox.com/docs/guide/quickstart/)
+for hardware and backend requirements.
+
+To serve models to applications or other machines, follow
+[Gateway: day one](https://contenox.com/docs/guide/tutorials/gateway-local/), then
+[Gateway operations](https://contenox.com/docs/guide/gateway-operations/) for
+service startup, access management, backups and upgrades.
 
 `contenox doctor` reports anything missing; its first line is the verdict:
 
@@ -53,9 +61,43 @@ contexts back up.
 
 ---
 
-## You don't build an agent. You declare one.
+## Ways in
 
-An agent is one file:
+**`contenox beam`** — the terminal client, first-party and in the box.
+Full-screen, the transcript is your native scrollback, the composer takes `/` for
+commands and `@` to put a file in front of the agent. Bare `contenox` on a
+terminal opens it.
+
+```bash
+contenox beam                           # or just: contenox
+```
+
+**`contenox acp`** — the same agent over stdio to Zed, JetBrains, AionUi,
+OpenClaw and anything else that speaks the Agent Client Protocol. No plugin
+lock-in; per the protocol the editor owns the workspace, so the session works in
+the project you already have open, and approvals route through the editor's own
+permission UI.
+
+```bash
+contenox acp                            # speak ACP over stdio to any ACP client
+```
+
+**`contenox run`** — a program is the caller: CI, cron, another agent. It runs
+the task with the tools on that machine and prints the report to stdout, exit 0
+when the work landed and nonzero when it did not.
+
+```bash
+contenox run "summarise what changed under ./internal since Friday"
+contenox run reviewer "review the payment retry change"
+```
+
+With no agent named it runs the preseeded `run` declaration.
+
+---
+
+## Agents are declared, not built
+
+An agent is one Markdown file with a YAML frontmatter header:
 
 ```markdown
 ---
@@ -68,164 +110,38 @@ You are a code reviewer. Read the file you are asked about, then list the
 problems you can point at in what you actually read.
 ```
 
-Drop it in `.contenox/agents/` and the next run picks it up. No build step, no
-plugin API, no release:
+Drop it in `.contenox/agents/` and the next run picks it up — no build step, no
+plugin API. `.claude/agents/` and `.agents/agents/` are read where they are, so
+declarations you already keep for Claude Code, Copilot, Cursor, OpenCode or
+Antigravity import unchanged. Behind each one contenox compiles a **chain** that
+says what happens and a **policy** that says what is permitted, both JSON
+Schema-validated, both yours to read and neither yours to maintain.
 
-```
-.contenox/
-  agents/
-    reviewer.md      one agent
-    triage.md        another
-  agents.toml        the knobs a declaration cannot reach
-```
-
-**Already have agents?** `.claude/agents/` and `.agents/agents/` are read where
-they are. Claude Code, Copilot, Cursor, OpenCode and Antigravity declarations
-all import — nothing to move or convert, it is the same file.
-
-```bash
-contenox agent list
-```
-
-**A directory of declarations is a workflow.** The `agent.md` at the top reads
-the request and answers with one label; the branch of that name takes it from
-there, with its own instruction, its own tools, its own budget:
-
-```
-.contenox/agents/
-  triage/
-    agent.md         reads the request, answers with one label
-    code/
-      agent.md       the branch that label routes to
-      recovery.md    its second attempt, when the first stops short
-    docs/
-      agent.md       tools: Read, Glob, Grep — it cannot write
-    failure.md       what it says when every branch has given up
-```
-
-`default:` in the router's frontmatter names the branch an unrecognised answer
-falls to — the narrowest one, never the most capable.
-
-Behind each declaration contenox compiles a **chain** that says what happens and
-a **policy** that says what is permitted, into `.generated/`. Both are JSON
-Schema-validated, both are yours to read, and neither is yours to maintain —
-edit the declaration and they follow. Every policy denies `.ssh`, `.aws` and
-`.kube` under every permission setting.
-
-Model routing is configuration too: `contenox backend add`, `contenox config set
-default-provider`.
+[Declaring agents →](https://contenox.com/docs/guide/declarations/) ·
+[Chain files →](https://contenox.com/docs/guide/chains/)
 
 ---
 
-## Three shapes
-
-The same runtime, the same declarations, the same envelope. What differs is who
-is accountable for the machine it runs on.
-
-**`contenox beam`** — you, at the keyboard, on your own device. The terminal
-client above: filesystem and terminal work natively, and a gated call stops in
-front of you.
-
-```bash
-contenox beam                           # or just: contenox
-```
-
-**`contenox run`** — a program is the caller: CI, cron, another agent. It runs
-the task with the tools on that machine and prints the report to stdout, exit 0
-when the work landed and nonzero when it did not. Nobody is at the keyboard, so
-what the task may touch is bounded by its envelope: a gated file write or shell
-command becomes a durable ask that waits for `contenox approvals respond`.
-
-```bash
-contenox run "summarise what changed under ./internal since Friday"
-contenox run reviewer "review the payment retry change"
-```
-
-With no agent named it runs the preseeded `run` declaration.
-
-**`contenox serve`** — the organization's shape: a standing host on a box
-somebody else looks after. It serves exactly one workspace, fixed when you
-launch it, and it has **no filesystem and no terminal tools, ever** — every
-capability it has is an MCP server you attached. Connectors and event triggers
-drive it through the relay, and it can run on Postgres, NATS and Valkey when one
-host is not enough.
-
-```bash
-contenox serve                          # the workspace is your home directory
-contenox serve ~/src/api                # or the path you name
-```
-
-One instance serves one workspace. There is no workspace picker anywhere,
-because there is nothing to pick: the app discovers instances and the sessions
-they are already holding.
-
----
-
-## The durable ask
-
-Any harness can pause for a human while it holds the connection open. Holding a
-connection is not the hard part — surviving the wait is.
-
-A run that stops for a person checkpoints where it stopped, saves the ask, and
-releases the process. Restart the box, close the laptop, let days pass: when the
-answer arrives, the run resumes from that exact point, exactly once.
-
-```bash
-contenox approvals list
-contenox approvals respond 8f3c --answer "yes, send them"
-contenox inbox list
-```
-
-The gate sits at the tool boundary: every call is checked against the envelope
-before it leaves contenox, whether it is headed for your terminal or an MCP
-server you attached. Gated actions ask a human first — the approval card in
-beam, your editor's permission UI, or your phone.
-
-**From your phone.** Everything above runs locally, with no account. To reach a
-running session from elsewhere — reading the transcript, answering approvals —
-pair the machine with the hosted relay: sign in at
-[app.contenox.com](https://app.contenox.com), tap **Pair device**, and enter the
-key as `/pair <key>` in the session. The machine dials out and sends exactly two
-things, the key and its hostname. Free for you and three teammates, one machine
-each, opt-in per machine.
-[How pairing works.](https://contenox.com/docs/guide/pairing/)
-
----
-
-## Integrations
-
-**Editors.** Zed, JetBrains, AionUi and OpenClaw spawn contenox as an ACP
-subprocess over stdio — no plugin lock-in, and approvals route through the
-editor's own permission UI. Per the protocol the editor owns the workspace, so
-the session works in the project you already have open.
-
-```bash
-contenox acp                            # speak ACP over stdio to any ACP client
-```
-
-**Missions and events.** `contenox mission fire` sends a one-line intent to a
-declared agent under a named envelope and leaves a durable record; internal
-domain events land in a durable log where operator-authored `trigger-*.json`
-files fire chains from them (opt-in, beta).
-
----
-
-## We ship no tools. That is the point.
+## No tools loaded without declaration
 
 contenox owns the tool boundary and you decide what stands on the other side of
-it. Every tool you do not need is tokens burned on every turn, and one more
-thing to govern. Tools cross that boundary two ways, and both are yours to
-choose.
+it. Every tool you do not need is tokens burned on every turn.
 
-**From the client.** beam and every ACP client — your editor — carry `fs/*` and
-`terminal/*` as capabilities. contenox forwards the call and the client performs
-it, in the workspace already open. `local_fs` is five tools: `read_file`,
-`write_file`, `edit_file`, `sed`, `read_file_range`. Listing and search go
-through the shell, on the client's side of the line. `contenox serve` has
-neither, by construction.
+Tools have to be passed to agents via the declarations:
 
-**From the operator.** Anything reachable over MCP or described by an OpenAPI
-spec becomes a policy-scoped tool your agents can name:
+`cat ~/.contenox/agents/run.md`
+
+```yaml
+---
+name: run
+description: Carries out one stated task on this machine and reports what it did, for a caller that is a program rather than a person
+tools: "*" # or a list of tools, or even nothing
+---
+```
+
+This is especially useful when you have a lot of tools but not all workflows require them, this enforces a boundary to the agent and prevents confusing it with additional tool-descriptions.
+
+Tools are added to contenox via the CLI:
 
 ```bash
 # Connect any Model Context Protocol (MCP) server
@@ -251,19 +167,24 @@ remoteTools:
     spec: https://internal.example.com/openapi.json
 ```
 
-What you connected yourself with `contenox mcp add` stays yours and is never
-touched.
-
 ---
 
 ## Guardrails
 
 Every run is bounded by an **envelope**: a JSON policy naming what passes
-silently, what stops for a human, and what is denied outright, plus hard
-ceilings on tool calls and tokens. Anything no rule matches fails closed — it
-asks. Six presets ship with `contenox init`, and the knobs a declaration cannot
-reach live in `agents.toml`. Every session leaves reviewable local state on
-disk.
+silently, what stops for a human, and what is denied outright, plus hard ceilings
+on tool calls and tokens. Anything no rule matches fails closed — it asks. Six
+presets ship with `contenox init`, and the knobs a declaration cannot reach live
+in `agents.toml`. Every session leaves reviewable local state on disk.
+
+A run that stops for a person checkpoints where it stopped, saves the ask and
+releases the process. Restart the box, close the laptop, let days pass: when the
+answer arrives the run resumes from that exact point, exactly once.
+
+```bash
+contenox approvals list
+contenox approvals respond 8f3c --answer "yes, send them"
+```
 
 The [sandbox](https://contenox.com/docs/guide/confinement/sandbox/) — Landlock
 filesystem and exec confinement, scrubbed environment, Linux-only — confines
@@ -271,27 +192,17 @@ foreign agent code you choose to run locally.
 
 ---
 
-## What people use it for
+## Inference
 
-* **Standing, scheduled agents** — declare one, call it with `contenox run` from
-  cron or CI. Each run starts clean.
-* **Request processing** — intake, classify, draft, hold for a human, send.
-  The hold is the feature.
-* **Wrapping internal APIs** — expose a subset of an OpenAPI spec as a tool,
-  with sensitive arguments filled in by config rather than the model.
-* **Release evidence** — aggregate git logs, PRs, tickets and CI output into
-  changelogs and reviewer packets.
-* **Live operations** — query dashboards, scripts or MCP tools under scoped
-  policies instead of broad credentials.
-
----
-
-## Backends
-
-Mix local and hosted freely:
+`contenox auto` detects the hardware, installs the native `modeld` worker and a
+compatible model, verifies a real tool call, and opens Beam. Ollama, vLLM and
+hosted providers remain available when they are the right operational boundary:
 
 ```bash
-# Local & private-network inference
+# Native local inference
+contenox auto
+
+# Existing local or private-network inference
 contenox backend add ollama --type ollama
 contenox backend add myvllm --type vllm --url http://gpu-host:8000
 
@@ -300,49 +211,30 @@ contenox backend add openai    --type openai    --api-key-env OPENAI_API_KEY
 contenox backend add anthropic --type anthropic --api-key-env ANTHROPIC_API_KEY
 contenox backend add gemini    --type gemini    --api-key-env GEMINI_API_KEY
 
-# Defaults
-contenox config set default-provider ollama
-contenox config set default-model    qwen2.5:7b
+# Defaults for an explicitly registered backend
+contenox config set inference.provider ollama
+contenox config set inference.model qwen2.5:7b
 ```
 
-Also supported: Gemini, Vertex AI, and Amazon Bedrock.
-
----
-
-## The argument
-
-Before Apache, serving a website meant writing your own server: parse the
-request, hold the connection, decide what to send — all of it welded to the
-content it existed to deliver. Apache made serving something you **install**,
-and HTML the thing you **author**. Everyone building an agent today is back on
-the wrong side of that line, hand-rolling the same machine — the loop, the tool
-gate, the approval flow, session persistence — welded to one prompt and
-rewritten at the next company.
-
-contenox makes that machine infrastructure and the declaration the artifact.
-Where the analogy stops: Apache shipped no browser, and contenox ships one.
-`contenox beam` is it — a first-party client, in-tree, so the front door is
-never somebody else's product. It is still a client, and the policy it renders
-is enforced underneath it rather than by it.
-
----
-
-## Managed
-
-We provision and run contenox agents for you, on your terms. Tell us what the
-work is and we will get you set up: **hello@contenox.com** — or see the hosted
-app at [app.contenox.com](https://app.contenox.com).
+Also supported: Vertex AI and Amazon Bedrock. By default sessions, configuration,
+run logs and captured execution state live in one local SQLite database. A
+server-backed deployment moves the store, message bus and cache onto PostgreSQL,
+NATS and Valkey. Telemetry is opt-in and off by default. Secrets resolve from
+your environment at request time and never land in config on disk.
 
 ---
 
 ## Building from source
 
-Pure Go, no C toolchain:
+The `contenox` control-plane binary is pure Go. Native inference is a separate
+`modeld` worker with llama.cpp and OpenVINO backends and therefore has its own
+native build and packaging path.
 
 ```bash
 git clone https://github.com/contenox/contenox
 cd contenox
-task build        # https://taskfile.dev — or: CGO_ENABLED=0 go build ./cmd/contenox
+task build          # build the contenox binary
+task modeld:build   # build modeld and its selected native backend
 ```
 
 This repository is a release mirror: every commit on `main` is one release and
@@ -352,3 +244,5 @@ upstream and credited — [CONTRIBUTING.md](CONTRIBUTING.md).
 ---
 
 Questions: **hello@contenox.com**
+
+**Advance with excellence.**

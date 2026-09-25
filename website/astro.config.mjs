@@ -47,6 +47,11 @@ export default defineConfig({
     "/docs/guide/aionui": "/docs/integrations/editors/aionui/",
     "/docs/guide/openclaw": "/docs/integrations/editors/openclaw/",
     "/docs/guide/mcp": "/docs/integrations/tools/mcp/",
+    // The declaration material is one page now.
+    "/docs/guide/agents": "/docs/guide/declarations/",
+    "/docs/guide/concepts": "/docs/guide/declarations/",
+    "/docs/guide/pairing": "/",
+    "/docs/guide/serve": "/docs/reference/contenox-cli/",
     // Routing is chain-level detail; you author it as a directory.
     "/docs/guide/request-routing": "/docs/guide/chains/routing/",
     // The hard parts is contributor material, not a guide.

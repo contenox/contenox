@@ -70,6 +70,8 @@ func TestUnit_CatalogProvider_ListModels(t *testing.T) {
 	provider := catalog.ProviderFor(model)
 	require.Equal(t, "ollama", provider.GetType())
 	require.Equal(t, "qwen3:8b", provider.ModelName())
+	require.Equal(t, 4096, provider.GetContextLength(),
+		"a window the catalogue read must reach the provider built from it")
 	require.True(t, provider.CanEmbed())
 	require.False(t, provider.CanThink())
 	require.False(t, model.CanVision, "non-vision model must not claim vision")
@@ -127,4 +129,146 @@ func TestUnit_CatalogProvider_DetectsThinkingFromShowCapabilities(t *testing.T) 
 	require.Len(t, models, 1)
 	require.True(t, models[0].CanThink, "thinking capability from /api/show must set CanThink")
 	require.True(t, catalog.ProviderFor(models[0]).CanThink())
+}
+
+// MaxOutputTokens is read from the Modelfile-style parameters /api/show
+// reports, which is where an Ollama server states num_predict.
+func TestUnit_CatalogProvider_DetectsOutputCeilingFromShowParameters(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tags":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"models": []map[string]any{{"name": "qwen3:8b", "model": "qwen3:8b", "details": map[string]any{}}},
+			})
+		case "/api/show":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"capabilities":["completion"],"model_info":{"llama.context_length":4096},"parameters":"num_ctx 4096\nnum_predict 8192"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	catalog, err := modelrepo.NewCatalogProvider(modelrepo.BackendSpec{Type: "ollama", BaseURL: server.URL})
+	require.NoError(t, err)
+	models, err := catalog.ListModels(context.Background())
+	require.NoError(t, err)
+	require.Len(t, models, 1)
+	require.Equal(t, 8192, models[0].MaxOutputTokens, "num_predict is the output ceiling")
+	require.Equal(t, 8192, catalog.ProviderFor(models[0]).GetMaxOutputTokens())
+}
+
+// A parameter string that states no positive num_predict leaves the ceiling
+// unknown, because Ollama spells "unlimited" as -1 and a clamp to zero would be
+// a ceiling nobody stated.
+func TestUnit_CatalogProvider_IgnoresNonPositiveNumPredict(t *testing.T) {
+	require.Equal(t, 0, parameterInt("num_predict -1", "num_predict"))
+	require.Equal(t, 0, parameterInt("num_predict 0", "num_predict"))
+	require.Equal(t, 0, parameterInt("num_ctx 4096", "num_predict"))
+	require.Equal(t, 0, parameterInt("", "num_predict"))
+	require.Equal(t, 4096, parameterInt("stop \"<|end|>\"\nnum_predict 4096\nnum_ctx 8192", "num_predict"))
+}
+
+func TestUnit_ListModels_GatesAudioOnTheVersionHandshake(t *testing.T) {
+	for name, tc := range map[string]struct {
+		handshake string
+		wantAudio bool
+	}{
+		"vanilla ollama": {``, false},
+		"contenox gateway": {
+			`{"product":"contenox-gateway","version":"v1.0.0","extensions":["audios"]}`,
+			true,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case ContenoxPath:
+					if tc.handshake == "" {
+						http.NotFound(w, r)
+						return
+					}
+					_, _ = w.Write([]byte(tc.handshake))
+				case "/api/tags":
+					_, _ = w.Write([]byte(`{"models":[{"name":"gemma3n","model":"gemma3n"}]}`))
+				case "/api/show":
+					_, _ = w.Write([]byte(`{"capabilities":["completion","audio"]}`))
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer srv.Close()
+
+			catalog, err := modelrepo.NewCatalogProvider(modelrepo.BackendSpec{Type: "ollama", BaseURL: srv.URL},
+				modelrepo.WithCatalogHTTPClient(srv.Client()))
+			require.NoError(t, err)
+
+			models, err := catalog.ListModels(context.Background())
+			require.NoError(t, err)
+			require.Len(t, models, 1)
+			require.Equal(t, tc.wantAudio, models[0].CanAudio,
+				"audio is only offered when the endpoint claimed the flavour that understands it")
+			require.Equal(t, tc.wantAudio, models[0].CapabilityConfig.AudioExtension)
+
+			provider := catalog.ProviderFor(models[0])
+			require.Equal(t, tc.wantAudio, provider.CanAudio(),
+				"what the catalog decided is what the resolver routes on")
+		})
+	}
+}
+
+// A conversation may only be named to a peer that said it understands the field,
+// and the decision has to survive the trip from the handshake to the provider
+// that writes the request body.
+func TestUnit_ListModels_GatesTheSessionOnTheVersionHandshake(t *testing.T) {
+	for name, tc := range map[string]struct {
+		handshake   string
+		wantSession bool
+	}{
+		"vanilla ollama": {``, false},
+		"gateway without the extension": {
+			`{"product":"contenox-gateway","version":"v1.0.0","extensions":["audios"]}`,
+			false,
+		},
+		"gateway with it": {
+			`{"product":"contenox-gateway","version":"v1.0.0","extensions":["audios","session"]}`,
+			true,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case ContenoxPath:
+					if tc.handshake == "" {
+						http.NotFound(w, r)
+						return
+					}
+					_, _ = w.Write([]byte(tc.handshake))
+				case "/api/tags":
+					_, _ = w.Write([]byte(`{"models":[{"name":"gemma3n","model":"gemma3n"}]}`))
+				case "/api/show":
+					_, _ = w.Write([]byte(`{"capabilities":["completion"]}`))
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer srv.Close()
+
+			catalog, err := modelrepo.NewCatalogProvider(modelrepo.BackendSpec{Type: "ollama", BaseURL: srv.URL},
+				modelrepo.WithCatalogHTTPClient(srv.Client()))
+			require.NoError(t, err)
+
+			models, err := catalog.ListModels(context.Background())
+			require.NoError(t, err)
+			require.Len(t, models, 1)
+			require.Equal(t, tc.wantSession, models[0].CapabilityConfig.SessionExtension)
+
+			provider, ok := catalog.ProviderFor(models[0]).(*OllamaProvider)
+			require.True(t, ok)
+			require.Equal(t, tc.wantSession, provider.SupportsSession)
+		})
+	}
 }

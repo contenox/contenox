@@ -355,9 +355,9 @@ func commandInListMatch(scope *evalScope, list string) (string, bool) {
 		return commandBasename(scope.args), true
 	}
 	if cmd, ok := structuralCommandInList(scope.shell(), list); ok {
-		name := cmd.display
+		name := cmd.Display
 		if name == "" {
-			name = cmd.base
+			name = cmd.Base
 		}
 		return name, true
 	}
@@ -402,11 +402,11 @@ func tokenizerProgramWords(args map[string]any) []string {
 func structuralProgramWords(r shellReading) []string {
 	out := make([]string, 0, len(r.commands))
 	for _, cmd := range r.commands {
-		if cmd.name == "" {
+		if cmd.Name == "" {
 			// Unnameable means the upgrade path let something through unread; refuse rather than vouch.
 			return nil
 		}
-		out = append(out, cmd.name)
+		out = append(out, cmd.Name)
 	}
 	return out
 }

@@ -114,7 +114,7 @@ func (a *ExternalACPAgent) connectStdio(ctx context.Context, harness libacp.Clie
 	return &Handle{Conn: conn, closeFn: closeFn}, nil
 }
 
-const sandboxDocsURL = "https://contenox.com/docs/guide/agent-sandbox/"
+const sandboxDocsURL = "https://contenox.com/docs/guide/confinement/sandbox/"
 
 const sandboxCarveoutFile = ".contenox/sandbox-carveouts.json"
 

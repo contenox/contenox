@@ -71,7 +71,7 @@ func (h *LocalFSBrowseTools) GetSchemasForSupportedTools(ctx context.Context) (m
 		return nil, err
 	}
 	doc, err := buildToolsetDoc(h.name, "Local Filesystem Browse Tools",
-		"List, search and inspect files inside the workspace directory, read-only. Every path is contained to that directory, gitignored and high-noise paths are omitted, binaries are refused rather than dumped into the transcript, and every result is capped and says what it withheld.",
+		"List, search and inspect files inside the workspace directory, read-only; reading file content and editing are the content tools of this same toolset (read_file, read_file_range, write_file, edit_file, sed). Every path is contained to that directory, gitignored and high-noise paths are omitted, binaries are refused rather than dumped into the transcript, and every result is capped and says what it withheld.",
 		declared, fsBrowseSchemaSpecs())
 	if err != nil {
 		return nil, err

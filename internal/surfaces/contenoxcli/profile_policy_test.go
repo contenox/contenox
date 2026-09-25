@@ -38,12 +38,12 @@ func tempContenoxDir(t *testing.T) string {
 // come up gated.
 func TestUnit_ProfilePolicy_SelfHealsAnEmptyContenoxDir(t *testing.T) {
 	dir := tempContenoxDir(t)
-	rendered := filepath.Join(dir, agentdecl.GeneratedDirName, "hitl-policy-serve.json")
+	rendered := filepath.Join(dir, agentdecl.GeneratedDirName, "hitl-policy-acpx.json")
 	require.NoFileExists(t, rendered)
 
-	pol, err := resolveProfilePolicy(context.Background(), policyCmd(t, ""), dir, "serve", libtracker.NoopTracker{})
+	pol, err := resolveProfilePolicy(context.Background(), policyCmd(t, ""), dir, "acpx", libtracker.NoopTracker{})
 	require.NoError(t, err)
-	require.Equal(t, "hitl-policy-serve.json", pol.Name)
+	require.Equal(t, "hitl-policy-acpx.json", pol.Name)
 	require.Empty(t, pol.Dir)
 	require.FileExists(t, rendered)
 
@@ -51,23 +51,23 @@ func TestUnit_ProfilePolicy_SelfHealsAnEmptyContenoxDir(t *testing.T) {
 	require.NoError(t, err)
 	var doc map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(raw, &doc))
-	require.Contains(t, string(doc["//"]), "serve")
+	require.Contains(t, string(doc["//"]), "acpx")
 }
 
 // TestUnit_ProfilePolicy_OperatorFileShadowsTheRenderedEnvelope is resolution
 // step two: a hand-written top-level file wins without editing anything.
 func TestUnit_ProfilePolicy_OperatorFileShadowsTheRenderedEnvelope(t *testing.T) {
 	dir := tempContenoxDir(t)
-	own := filepath.Join(dir, "hitl-policy-serve.json")
+	own := filepath.Join(dir, "hitl-policy-acpx.json")
 	require.NoError(t, os.WriteFile(own, []byte(`{"default_action":"deny","rules":[]}`), 0o644))
 
-	pol, err := resolveProfilePolicy(context.Background(), policyCmd(t, ""), dir, "serve", libtracker.NoopTracker{})
+	pol, err := resolveProfilePolicy(context.Background(), policyCmd(t, ""), dir, "acpx", libtracker.NoopTracker{})
 	require.NoError(t, err)
 	raw, err := pol.source(dir).ReadPolicy(context.Background(), "", pol.Name)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"default_action":"deny","rules":[]}`, string(raw))
 	// The transpiled copy is still refreshed; it is simply never read.
-	require.FileExists(t, filepath.Join(dir, agentdecl.GeneratedDirName, "hitl-policy-serve.json"))
+	require.FileExists(t, filepath.Join(dir, agentdecl.GeneratedDirName, "hitl-policy-acpx.json"))
 }
 
 // TestUnit_ProfilePolicy_NamedArgumentWins covers resolution step one in both
@@ -75,18 +75,18 @@ func TestUnit_ProfilePolicy_OperatorFileShadowsTheRenderedEnvelope(t *testing.T)
 func TestUnit_ProfilePolicy_NamedArgumentWins(t *testing.T) {
 	dir := tempContenoxDir(t)
 
-	byName, err := resolveProfilePolicy(context.Background(), policyCmd(t, "acpx"), dir, "serve", libtracker.NoopTracker{})
+	byName, err := resolveProfilePolicy(context.Background(), policyCmd(t, "acpx"), dir, "acpx", libtracker.NoopTracker{})
 	require.NoError(t, err)
 	require.Equal(t, "hitl-policy-acpx.json", byName.Name)
 
-	byFilename, err := resolveProfilePolicy(context.Background(), policyCmd(t, "hitl-policy-acpx.json"), dir, "serve", libtracker.NoopTracker{})
+	byFilename, err := resolveProfilePolicy(context.Background(), policyCmd(t, "hitl-policy-acpx.json"), dir, "acpx", libtracker.NoopTracker{})
 	require.NoError(t, err)
 	require.Equal(t, byName.Name, byFilename.Name, "a name and the filename it renders resolve to one envelope")
 
 	elsewhere := t.TempDir()
 	path := filepath.Join(elsewhere, "my-policy.json")
 	require.NoError(t, os.WriteFile(path, []byte(`{"default_action":"allow","rules":[]}`), 0o644))
-	byPath, err := resolveProfilePolicy(context.Background(), policyCmd(t, path), dir, "serve", libtracker.NoopTracker{})
+	byPath, err := resolveProfilePolicy(context.Background(), policyCmd(t, path), dir, "acpx", libtracker.NoopTracker{})
 	require.NoError(t, err)
 	require.Equal(t, "my-policy.json", byPath.Name)
 	raw, err := byPath.source(dir).ReadPolicy(context.Background(), "", byPath.Name)
@@ -99,13 +99,13 @@ func TestUnit_ProfilePolicy_NamedArgumentWins(t *testing.T) {
 func TestUnit_ProfilePolicy_NamedButMissingIsAHardError(t *testing.T) {
 	dir := tempContenoxDir(t)
 
-	_, err := resolveProfilePolicy(context.Background(), policyCmd(t, filepath.Join(t.TempDir(), "gone.json")), dir, "serve", libtracker.NoopTracker{})
+	_, err := resolveProfilePolicy(context.Background(), policyCmd(t, filepath.Join(t.TempDir(), "gone.json")), dir, "acpx", libtracker.NoopTracker{})
 	require.Error(t, err)
 
-	_, err = resolveProfilePolicy(context.Background(), policyCmd(t, "no-such-envelope"), dir, "serve", libtracker.NoopTracker{})
+	_, err = resolveProfilePolicy(context.Background(), policyCmd(t, "no-such-envelope"), dir, "acpx", libtracker.NoopTracker{})
 	require.ErrorContains(t, err, "no envelope")
 
-	_, err = resolveProfilePolicy(context.Background(), policyCmd(t, "Not A Name"), dir, "serve", libtracker.NoopTracker{})
+	_, err = resolveProfilePolicy(context.Background(), policyCmd(t, "Not A Name"), dir, "acpx", libtracker.NoopTracker{})
 	require.ErrorContains(t, err, "neither an envelope name nor a path")
 }
 
@@ -114,7 +114,7 @@ func TestUnit_ProfilePolicy_NamedButMissingIsAHardError(t *testing.T) {
 // would only fail at boot.
 func TestUnit_ProfilePolicy_EveryShippedProfileResolves(t *testing.T) {
 	dir := tempContenoxDir(t)
-	for _, profile := range []acpProfile{acpProfileACP, acpProfileServe, acpProfileBeam, acpProfileACPX} {
+	for _, profile := range []acpProfile{acpProfileACP, acpProfileBeam, acpProfileACPX} {
 		t.Run(profile.name, func(t *testing.T) {
 			pol, err := resolveProfilePolicy(context.Background(), policyCmd(t, ""), dir, profile.hitlEnvelope, libtracker.NoopTracker{})
 			require.NoError(t, err)
@@ -130,15 +130,15 @@ func TestUnit_Vet_ShadowedEnvelopeIsAWarningNamingBoth(t *testing.T) {
 	dir := tempContenoxDir(t)
 	generated := filepath.Join(dir, agentdecl.GeneratedDirName)
 	require.NoError(t, os.MkdirAll(generated, 0o750))
-	require.NoError(t, os.WriteFile(filepath.Join(generated, "hitl-policy-serve.json"), []byte(`{"default_action":"deny","rules":[]}`), 0o644))
-	own := filepath.Join(dir, "hitl-policy-serve.json")
+	require.NoError(t, os.WriteFile(filepath.Join(generated, "hitl-policy-acpx.json"), []byte(`{"default_action":"deny","rules":[]}`), 0o644))
+	own := filepath.Join(dir, "hitl-policy-acpx.json")
 	require.NoError(t, os.WriteFile(own, []byte(`{"default_action":"approve","rules":[]}`), 0o644))
 
 	var out strings.Builder
 	require.Equal(t, 0, runVetOnFiles(&out, []string{own}, vetOpts{envelopeSearchPath: policyDirs(dir)}))
 	report := out.String()
 	require.Contains(t, report, "WARN "+own)
-	require.Contains(t, report, filepath.Join(generated, "hitl-policy-serve.json"))
+	require.Contains(t, report, filepath.Join(generated, "hitl-policy-acpx.json"))
 }
 
 // TestUnit_Vet_RuleNamingAToolTheToolsetDoesNotServeFails.

@@ -40,17 +40,17 @@ func TestUnit_DoctorVerdict(t *testing.T) {
 	t.Run("not ready names the ranked reason and its own fix", func(t *testing.T) {
 		res := setupcheck.Result{Issues: []setupcheck.Issue{
 			{Code: "default_model_not_available", Severity: "error", Message: "model not served", CLICommand: "contenox model list"},
-			{Code: "missing_default_model", Severity: "error", Message: "no default model set", CLICommand: "contenox config set default-model qwen3:8b"},
+			{Code: "missing_default_model", Severity: "error", Message: "no default model set", CLICommand: "contenox config set inference.model qwen3:8b"},
 		}}
 		ready, reason, next := doctorVerdict(res)
 		require.False(t, ready)
 		require.Equal(t, "no default model set", reason, "the lowest issueRank blocker is the one to name")
-		require.Equal(t, "contenox config set default-model qwen3:8b", next)
+		require.Equal(t, "contenox config set inference.model qwen3:8b", next)
 
 		var out strings.Builder
 		printDoctorVerdict(&out, res)
 		require.Contains(t, out.String(), "Ready: no — no default model set")
-		require.Contains(t, out.String(), "Next:  contenox config set default-model qwen3:8b")
+		require.Contains(t, out.String(), "Next:  contenox config set inference.model qwen3:8b")
 	})
 
 	t.Run("a blocker with no command falls through to the next one that has it", func(t *testing.T) {
@@ -321,11 +321,6 @@ func TestUnit_ToolRoster_NamesEveryToolAndItsBacking(t *testing.T) {
 	require.Contains(t, s, "github — MCP server (http http://localhost:3000/mcp)")
 	require.Contains(t, s, "acp-conn-1-fs — MCP server (session-scoped, supplied by an attached client)\n")
 	require.NotContains(t, s, "granted", "doctor has no client; it states requirements, not verdicts")
-
-	// The roster is what `contenox acp` registers, so it would read as the truth
-	// for every shape unless it says where those two are absent.
-	require.Contains(t, s, "local_fs, local_shell — not mounted under `contenox serve`")
-	require.Contains(t, s, "every capability is an MCP server")
 }
 
 // TestUnit_ACPRosterToolsets_MatchesTheACPComposition pins that doctor's

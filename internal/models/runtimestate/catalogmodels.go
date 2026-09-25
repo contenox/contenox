@@ -30,41 +30,36 @@ func observedModelFromPullStatus(model ModelPullStatus) modelrepo.ObservedModel 
 		Size:          model.Size,
 		Digest:        model.Digest,
 		CapabilityConfig: modelrepo.CapabilityConfig{
-			ContextLength:   model.ContextLength,
-			MaxOutputTokens: model.MaxOutputTokens,
-			CanChat:         model.CanChat,
-			CanEmbed:        model.CanEmbed,
-			CanPrompt:       model.CanPrompt,
-			CanStream:       model.CanStream,
-			CanThink:        model.CanThink,
-			CanVision:       model.CanVision,
-			CanAudio:        model.CanAudio,
+			ContextLength:    model.ContextLength,
+			MaxOutputTokens:  model.MaxOutputTokens,
+			CanChat:          model.CanChat,
+			CanEmbed:         model.CanEmbed,
+			CanPrompt:        model.CanPrompt,
+			CanStream:        model.CanStream,
+			CanThink:         model.CanThink,
+			CanVision:        model.CanVision,
+			CanAudio:         model.CanAudio,
+			AudioExtension:   model.AudioExtension,
+			SessionExtension: model.SessionExtension,
 		},
 		Meta: meta,
 	}
 }
 
-func mergeDeclaredOverObserved(declared *runtimetypes.Model, observed modelrepo.ObservedModel) ModelPullStatus {
-	lmr := pullStatusFromObservedModel(observed)
-	lmr.Name = declared.ID
-	lmr.Model = declared.Model
-	lmr.ModifiedAt = declared.UpdatedAt
-	if declared.ContextLength > 0 {
-		lmr.ContextLength = declared.ContextLength
+func declaredModelsByName(models []*runtimetypes.Model) map[string]*runtimetypes.Model {
+	byName := make(map[string]*runtimetypes.Model, len(models))
+	for _, model := range models {
+		byName[model.Model] = model
 	}
-	if declared.CanChat {
-		lmr.CanChat = true
+	return byName
+}
+
+func declaredModelNames(models []*runtimetypes.Model) []string {
+	names := make([]string, 0, len(models))
+	for _, model := range models {
+		names = append(names, model.Model)
 	}
-	if declared.CanEmbed {
-		lmr.CanEmbed = true
-	}
-	if declared.CanPrompt {
-		lmr.CanPrompt = true
-	}
-	if declared.CanStream {
-		lmr.CanStream = true
-	}
-	return lmr
+	return names
 }
 
 func pullStatusFromObservedModel(model modelrepo.ObservedModel) ModelPullStatus {
@@ -76,19 +71,21 @@ func pullStatusFromObservedModel(model modelrepo.ObservedModel) ModelPullStatus 
 	}
 
 	return ModelPullStatus{
-		Name:            displayName,
-		Model:           model.Name,
-		ModifiedAt:      model.ModifiedAt,
-		Size:            model.Size,
-		Digest:          model.Digest,
-		ContextLength:   model.ContextLength,
-		MaxOutputTokens: model.MaxOutputTokens,
-		CanChat:         model.CanChat,
-		CanEmbed:        model.CanEmbed,
-		CanPrompt:       model.CanPrompt,
-		CanStream:       model.CanStream,
-		CanThink:        model.CanThink,
-		CanVision:       model.CanVision,
-		CanAudio:        model.CanAudio,
+		Name:             displayName,
+		Model:            model.Name,
+		ModifiedAt:       model.ModifiedAt,
+		Size:             model.Size,
+		Digest:           model.Digest,
+		ContextLength:    model.ContextLength,
+		MaxOutputTokens:  model.MaxOutputTokens,
+		CanChat:          model.CanChat,
+		CanEmbed:         model.CanEmbed,
+		CanPrompt:        model.CanPrompt,
+		CanStream:        model.CanStream,
+		CanThink:         model.CanThink,
+		CanVision:        model.CanVision,
+		CanAudio:         model.CanAudio,
+		AudioExtension:   model.CapabilityConfig.AudioExtension,
+		SessionExtension: model.CapabilityConfig.SessionExtension,
 	}
 }

@@ -627,3 +627,44 @@ func TestConformanceDivergence_UnsubscribeDrain(t *testing.T) {
 		})
 	}
 }
+
+func TestConformance_TwoHandlersOnOneSubjectBothSurvive(t *testing.T) {
+	runConformance(t, "second_handler_joins_rather_than_replaces", func(t *testing.T, newBus newBusFunc) {
+		ctx := t.Context()
+		bus := newBus(t)
+		subject := uniqueSubject(t)
+
+		asked := func(bus libbus.Messenger) error {
+			reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			_, err := bus.Request(reqCtx, subject, nil)
+			return err
+		}
+		served := func(bus libbus.Messenger) bool {
+			if err := asked(bus); err == nil {
+				return true
+			}
+			// A backend whose Reply can be delivered before its handler is
+			// visible to Request needs a second try; the durable one documents
+			// that as waitsForLateHandler.
+			require.Eventually(t, func() bool { return asked(bus) == nil }, 3*time.Second, 50*time.Millisecond)
+			return false
+		}
+
+		first, err := bus.Serve(ctx, subject, func(_ context.Context, _ []byte) ([]byte, error) {
+			return []byte("first"), nil
+		})
+		require.NoError(t, err)
+		second, err := bus.Serve(ctx, subject, func(_ context.Context, _ []byte) ([]byte, error) {
+			return []byte("second"), nil
+		})
+		require.NoError(t, err)
+
+		require.True(t, served(bus), "a subject with two handlers must still answer")
+
+		// The older subscription stops: the newer one is still serving.
+		require.NoError(t, first.Unsubscribe())
+		require.True(t, served(bus), "unsubscribing the shadowed handler must not silence the one serving")
+		require.NoError(t, second.Unsubscribe())
+	})
+}

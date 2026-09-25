@@ -67,8 +67,8 @@ prefix/suffix are accepted up to 16 KiB each; longer sides are truncated
 toward the cursor position.
 
 Examples:
-  contenox config set default-autocomplete-model qwen2.5-coder:7b
-  contenox config set default-autocomplete-provider ollama
+  contenox config set inference.autocomplete.model qwen2.5-coder:7b
+  contenox config set inference.autocomplete.provider ollama
   contenox autocomplete --stdio`,
 	RunE: runAutocompleteCmd,
 }
@@ -130,7 +130,7 @@ func runAutocompleteCmd(cmd *cobra.Command, args []string) error {
 func resolveAutocompleteRole(ctx context.Context, store runtimetypes.Store) (model, provider string, err error) {
 	model = strings.TrimSpace(clikv.Read(ctx, store, "default-autocomplete-model"))
 	if model == "" {
-		return "", "", errors.New("no autocomplete model is configured; set one with: contenox config set default-autocomplete-model <name>  (and optionally default-autocomplete-provider)")
+		return "", "", errors.New("no autocomplete model is configured; set one with: contenox config set inference.autocomplete.model <name>  (and optionally inference.autocomplete.provider)")
 	}
 	provider = strings.TrimSpace(clikv.Read(ctx, store, "default-autocomplete-provider"))
 	return model, provider, nil

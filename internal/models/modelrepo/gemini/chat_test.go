@@ -248,3 +248,64 @@ func TestUnit_BuildGeminiRequest_KeepsNormalObjectToolResultStructured(t *testin
 	require.NoError(t, err)
 	require.Equal(t, "ok", req.Contents[1].Parts[0].FunctionResponse.Response["status"])
 }
+
+// TestUnit_BuildGeminiRequest_TrimsTrailingModelTurn pins the guard the Vertex
+// provider already carries: a history that ends on the model's own reply — a
+// recovery or summarise turn, or any chain handoff — must not go out with that
+// trailing model turn, which Gemini answers with "Requests ending with a model
+// turn are not supported".
+func TestUnit_BuildGeminiRequest_TrimsTrailingModelTurn(t *testing.T) {
+	t.Parallel()
+
+	req, err := buildGeminiRequest("gemini-3.1-pro-preview", []modelrepo.Message{
+		{Role: "user", Content: "do the thing"},
+		{Role: "assistant", Content: "I already answered this turn; continuing now."},
+	}, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, req.Contents)
+	require.Equal(t, "user", req.Contents[len(req.Contents)-1].Role,
+		"the request must not end with a model turn")
+
+	req, err = buildGeminiRequest("gemini-3.1-pro-preview", []modelrepo.Message{
+		{Role: "user", Content: "do the thing"},
+		{Role: "assistant", Content: "first answer"},
+		{Role: "assistant", Content: "second answer"},
+	}, nil)
+	require.NoError(t, err)
+	require.Equal(t, "user", req.Contents[len(req.Contents)-1].Role,
+		"a run of trailing model turns trims to the last non-model turn")
+}
+
+// TestUnit_BuildGeminiRequest_KeepsOperatorTextBeforeTheFunctionResponse pins the
+// resumed-session shape on the Gemini provider too: the tool result and the
+// operator's next prompt are one user turn — consecutive same-role contents fail
+// the provider's alternation check — with the text ahead of the functionResponse.
+func TestUnit_BuildGeminiRequest_KeepsOperatorTextBeforeTheFunctionResponse(t *testing.T) {
+	t.Parallel()
+
+	call := modelrepo.ToolCall{ID: "call-1", Type: "function"}
+	call.Function.Name = "local_fs.edit_file"
+	call.Function.Arguments = `{"path":"x.go"}`
+
+	req, err := buildGeminiRequest("gemini-3.1-pro-preview", []modelrepo.Message{
+		{Role: "user", Content: "start"},
+		{Role: "assistant", ToolCalls: []modelrepo.ToolCall{call}},
+		{Role: "tool", ToolCallID: "call-1", Content: `{"error":"tool call was interrupted before a result was recorded"}`},
+		{Role: "user", Content: "continue"},
+	}, nil)
+	require.NoError(t, err)
+
+	require.Len(t, req.Contents, 3)
+	for i := 1; i < len(req.Contents); i++ {
+		require.NotEqual(t, req.Contents[i-1].Role, req.Contents[i].Role,
+			"consecutive same-role contents fail the provider's alternation check")
+	}
+
+	last := req.Contents[len(req.Contents)-1]
+	require.Equal(t, "user", last.Role)
+	require.Len(t, last.Parts, 2)
+	require.Equal(t, "continue", last.Parts[0].Text,
+		"the operator's text must come before the function response")
+	require.NotNil(t, last.Parts[1].FunctionResponse,
+		"the function response must close the turn that carries it")
+}

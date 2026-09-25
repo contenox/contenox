@@ -11,8 +11,8 @@ Any OpenAI-compatible endpoint works — OpenAI, vLLM, LM Studio, or your own pr
 export OPENAI_API_KEY=your-key
 
 contenox backend add openai --type openai --api-key-env OPENAI_API_KEY
-contenox config set default-model gpt-5-mini
-contenox config set default-provider openai
+contenox config set inference.model gpt-5-mini
+contenox config set inference.provider openai
 ```
 
 For a custom endpoint (vLLM, LM Studio, etc.) add `--url`:

@@ -1,10 +1,9 @@
 package agentdecl
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/contenox/contenox/internal/services/hitlservice"
 )
@@ -36,22 +35,25 @@ func RenderEnvelopePolicy(cfg Config, name, source string) ([]byte, error) {
 	return marshalPolicyDoc(out.Policy, annotations)
 }
 
-// SyncEnvelopePolicy writes one rendered envelope into generatedDir, reporting
-// whether the file changed. The directory is derived, so an unchanged render is
-// left alone rather than rewritten.
-func SyncEnvelopePolicy(cfg Config, name, generatedDir, source string) (string, bool, error) {
+// SyncEnvelopePolicy writes one rendered envelope into the generated root,
+// reporting whether the file changed. The directory is derived, so an unchanged
+// render is left alone rather than rewritten.
+func SyncEnvelopePolicy(ctx context.Context, cfg Config, name string, generatedDir Root, source string) (string, bool, error) {
+	if generatedDir.FS == nil {
+		return "", false, fmt.Errorf("agentdecl: generated root %q holds no handle", generatedDir.Key)
+	}
 	raw, err := RenderEnvelopePolicy(cfg, name, source)
 	if err != nil {
 		return "", false, err
 	}
-	path := filepath.Join(generatedDir, EnvelopePolicyFile(name))
-	if fileHas(path, raw) {
+	path := generatedDir.Path(EnvelopePolicyFile(name))
+	if fileHas(ctx, generatedDir.FS, EnvelopePolicyFile(name), raw) {
 		return path, false, nil
 	}
-	if err := os.MkdirAll(generatedDir, 0o750); err != nil {
-		return "", false, fmt.Errorf("agentdecl: create %s: %w", generatedDir, err)
+	if err := generatedDir.FS.MkdirAll(ctx, "."); err != nil {
+		return "", false, fmt.Errorf("agentdecl: create %s: %w", generatedDir.Key, err)
 	}
-	if err := os.WriteFile(path, raw, 0o644); err != nil {
+	if err := generatedDir.FS.WriteFile(ctx, EnvelopePolicyFile(name), raw); err != nil {
 		return "", false, fmt.Errorf("agentdecl: write %s: %w", path, err)
 	}
 	return path, true, nil

@@ -28,7 +28,7 @@ func TestUnit_VLLMStreamClient_GoldenFixture_ToolCallFragments(t *testing.T) {
 			`{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_v1","type":"function","function":{"name":"get_weather","arguments":"{\"ci"}}]}}]}`,
 			`{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ty\":\"Berlin\"}"}}]}}]}`,
 			`{"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`,
-			`{"choices":[],"usage":{"prompt_tokens":20,"completion_tokens":8,"total_tokens":28}}`,
+			`{"choices":[],"usage":{"prompt_tokens":20,"completion_tokens":8,"total_tokens":28,"completion_tokens_details":{"reasoning_tokens":6}}}`,
 		}
 		for _, l := range lines {
 			fmt.Fprintf(w, "data: %s\n\n", l)
@@ -66,6 +66,7 @@ func TestUnit_VLLMStreamClient_GoldenFixture_ToolCallFragments(t *testing.T) {
 	require.NotNil(t, res.Usage)
 	assert.Equal(t, 20, res.Usage.PromptTokens)
 	assert.Equal(t, 8, res.Usage.CompletionTokens)
+	assert.Equal(t, 6, res.Usage.ThinkingTokens)
 }
 
 // An in-stream error frame ends the stream with an Error parcel.

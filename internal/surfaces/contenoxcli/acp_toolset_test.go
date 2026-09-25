@@ -15,10 +15,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func testToolset(profile acpProfile, optInBeta bool) map[string]taskengine.ToolsRepo {
+func testToolset(optInBeta bool) map[string]taskengine.ToolsRepo {
 	noTransport := func(context.Context) *acpsvc.Transport { return nil }
 	noFleet := func() fleetservice.Service { return nil }
-	return acpToolset(profile, nil, libtracker.NoopTracker{}, "test-workspace",
+	return acpToolset(nil, libtracker.NoopTracker{}, "test-workspace",
 		noTransport, missionservice.New(nil), nil, nil, optInBeta, noFleet)
 }
 
@@ -27,7 +27,7 @@ func testToolset(profile acpProfile, optInBeta bool) map[string]taskengine.Tools
 // carry the same toolsets `contenox chat`/`run` gets via engine.go's
 // localToolset, not just local_fs/webtools/local_shell.
 func TestUnit_ACPToolset_CarriesTheSharedToolsets(t *testing.T) {
-	tools := testToolset(acpProfileACP, true)
+	tools := testToolset(true)
 
 	// Every provider chat/run already had must still be present.
 	for _, name := range []string{"local_fs", "local_shell", missiontools.ToolsProviderName} {
@@ -48,7 +48,7 @@ func TestUnit_ACPToolset_CarriesTheSharedToolsets(t *testing.T) {
 		require.Containsf(t, supported, tc.tool, "%s must support %s", tc.provider, tc.tool)
 	}
 
-	stable := testToolset(acpProfileACP, false)
+	stable := testToolset(false)
 	for _, name := range []string{"local_fs", "local_shell", missiontools.ToolsProviderName} {
 		require.Containsf(t, stable, name, "stable toolset %q must not be beta-gated", name)
 	}
@@ -61,7 +61,7 @@ func TestUnit_ACPToolset_CarriesTheSharedToolsets(t *testing.T) {
 // withheld the native sets would be the runtime deciding it knows better than
 // the declaration.
 func TestUnit_ACPToolset_NativeToolsetsAreDeclarationScoped(t *testing.T) {
-	tools := testToolset(acpProfileACP, true)
+	tools := testToolset(true)
 
 	all := make([]string, 0, len(tools))
 	var native []string
@@ -72,7 +72,7 @@ func TestUnit_ACPToolset_NativeToolsetsAreDeclarationScoped(t *testing.T) {
 		}
 	}
 	require.Subset(t, all, []string{
-		localtools.GitToolsName, localtools.LocalFSBrowseToolsName, localtools.WebToolsName,
+		localtools.GitToolsName, localtools.LocalFSToolsName, localtools.WebToolsName,
 	}, "the editor profile carries the cleared native toolsets")
 	require.NotEmpty(t, native)
 
@@ -87,63 +87,36 @@ func TestUnit_ACPToolset_NativeToolsetsAreDeclarationScoped(t *testing.T) {
 	require.Contains(t, named, localtools.GitToolsName, "a declaration naming the toolset exactly admits it")
 }
 
-// TestUnit_ACPToolset_AdvertisesNoProxiedToolWithoutAClient pins the rule the
-// production incident broke: local_fs and local_shell are pure proxies to the
-// attached client, so a host serving a session nobody is attached to must not
-// show the model a shell it can never run.
-func TestUnit_ACPToolset_AdvertisesNoProxiedToolWithoutAClient(t *testing.T) {
-	tools := testToolset(acpProfileACP, true)
+// TestUnit_ACPToolset_AdvertisesOnlyTheInProcessHalfWithoutAClient pins the rule
+// the production incident broke, on the namespace that now holds both kinds of
+// tool: a host serving a session nobody is attached to must not show the model a
+// read or a shell it can never run — and must still show it the tools that run
+// here, which is what local_fs browsing is.
+func TestUnit_ACPToolset_AdvertisesOnlyTheInProcessHalfWithoutAClient(t *testing.T) {
+	tools := testToolset(true)
 
-	for _, name := range []string{"local_fs", "local_shell"} {
+	for _, name := range []string{localtools.LocalExecToolsName} {
 		repo, ok := tools[name]
 		require.Truef(t, ok, "%q must stay registered", name)
 		advertised, err := repo.GetToolsForToolsByName(context.Background(), name)
 		require.NoError(t, err)
 		require.Emptyf(t, advertised, "%q must advertise nothing with no client attached", name)
 	}
-}
 
-// A host is an organization's shape: nobody is at its keyboard and it has no
-// keyboard to be at. Mounting the proxies and letting them fail per call would
-// still put a filesystem and a shell in the model's tool list, so the host
-// profile must not compose them at all.
-func TestUnit_ACPToolset_HostMountsNoFilesystemOrTerminal(t *testing.T) {
-	tools := testToolset(acpProfileServe, true)
+	repo, ok := tools[localtools.LocalFSToolsName]
+	require.True(t, ok, "local_fs must stay registered")
+	advertised, err := repo.GetToolsForToolsByName(context.Background(), localtools.LocalFSToolsName)
+	require.NoError(t, err)
+	require.NotEmpty(t, advertised, "the in-process half runs without a client")
 
-	for _, name := range hostUnservedToolsets {
-		require.NotContainsf(t, tools, name, "the host profile must not mount %q", name)
+	var leaves []string
+	for _, tool := range advertised {
+		leaves = append(leaves, tool.Function.Name)
 	}
-	require.Contains(t, tools, missiontools.ToolsProviderName, "mission tools are in-process and stay")
-
-	// Every other profile keeps them: this is the host's shape, not a global cut.
-	for _, profile := range []acpProfile{acpProfileACP, acpProfileACPX, acpProfileBeam} {
-		for _, name := range hostUnservedToolsets {
-			require.Containsf(t, testToolset(profile, true), name, "%s must keep %q", profile.name, name)
-		}
+	for _, leaf := range []string{"read_file", "write_file", "edit_file", "sed", "read_file_range"} {
+		require.NotContainsf(t, leaves, leaf, "%q proxies to the client and must not be advertised without one", leaf)
 	}
-}
-
-// A declaration compiled for a host still names Read and Bash, and the toolsets
-// simply vanish from the chain. The refusal is what turns that silence into
-// something an operator can act on.
-func TestUnit_ACPToolset_HostRefusalNamesTheShape(t *testing.T) {
-	chain := &taskengine.TaskChainDefinition{Tasks: []taskengine.TaskDefinition{
-		{ID: "loop", ExecuteConfig: &taskengine.LLMExecutionConfig{Tools: []string{"local_fs", "mission"}}},
-		{ID: "again", ExecuteConfig: &taskengine.LLMExecutionConfig{Tools: []string{"local_fs", "local_shell"}}},
-	}}
-
-	host := testToolset(acpProfileServe, true)
-	require.Equal(t, []string{"local_fs", "local_shell"}, unservedToolsets(chain, host),
-		"each unserved toolset is named once, and a mounted one is never named")
-	require.Empty(t, unservedToolsets(chain, testToolset(acpProfileACP, true)),
-		"an editor profile serves both, so it refuses neither")
-	require.Empty(t, unservedToolsets(nil, host))
-
-	var out strings.Builder
-	printUnservedToolsets(&out, unservedToolsets(chain, host))
-	s := out.String()
-	require.Contains(t, s, "local_fs")
-	require.Contains(t, s, "local_shell")
-	require.Contains(t, s, "no filesystem and no terminal")
-	require.Contains(t, s, "MCP")
+	for _, leaf := range []string{"list_dir", "grep", "find_files", "count_stats", "stat_file"} {
+		require.Containsf(t, leaves, leaf, "%q runs in process and must be advertised", leaf)
+	}
 }

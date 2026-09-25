@@ -1,6 +1,7 @@
 package contenoxcli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -66,7 +67,7 @@ func (m missionEnvelopes) LookupEnvelope(name string) (acpsvc.MissionEnvelope, b
 	if name == "" || name != filepath.Base(name) || strings.ContainsAny(name, `/\`) {
 		return acpsvc.MissionEnvelope{}, false
 	}
-	path, raw, ok := readPolicyFile(m.dirs, name)
+	path, raw, ok := readPolicyFile(context.Background(), m.dirs, name)
 	if !ok {
 		return acpsvc.MissionEnvelope{}, false
 	}

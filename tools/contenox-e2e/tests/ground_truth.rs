@@ -158,7 +158,7 @@ fn init_refuses_a_provider_it_does_not_know_before_scaffolding_anything() {
     cx.run(["init", "notaprovider"])
         .expect_code(1)
         .expect_stderr(
-            "unknown provider \"notaprovider\" — valid options: ollama, openai, gemini, anthropic, bedrock, vertex-google",
+            "unknown provider \"notaprovider\" — valid options: modeld, ollama, openai, gemini, anthropic, bedrock, vertex-google",
         );
 
     assert!(
@@ -822,10 +822,10 @@ fn doctor_warns_when_default_max_tokens_exceeds_the_provider_ceiling() {
     cx.doctor()
         .ok()
         .expect_stdout(
-            "⚠️  Advisory: default-max-tokens=9000 exceeds scripted-test provider ceiling (256).",
+            "⚠️  Advisory: inference.generation.max_output_tokens=9000 exceeds scripted-test provider ceiling (256).",
         )
         .expect_stdout("Requests will be clamped automatically")
-        .expect_stdout("contenox config set default-max-tokens 256");
+        .expect_stdout("contenox config set inference.generation.max_output_tokens 256");
 }
 
 #[test]

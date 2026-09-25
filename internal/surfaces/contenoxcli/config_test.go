@@ -1,6 +1,7 @@
 package contenoxcli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/contenox/contenox/internal/services/clikv"
+	"github.com/contenox/contenox/internal/services/settings"
 	"github.com/contenox/contenox/internal/store/runtimetypes"
 	"github.com/contenox/contenox/libdbexec"
 	"github.com/spf13/cobra"
@@ -25,12 +27,12 @@ func openTestDB(t *testing.T) (context.Context, libdbexec.DBManager, runtimetype
 	return ctx, db, runtimetypes.New(db.WithoutTransaction())
 }
 
-func TestUnit_getConfigKV_unset_returnsEmpty(t *testing.T) {
+func TestUnit_getConfigKV_unset_returnsInheritedDefault(t *testing.T) {
 	ctx, _, store := openTestDB(t)
 	for _, key := range []string{"default-model", "default-provider", "default-alt-model", "default-alt-provider", "default-autocomplete-model", "default-autocomplete-provider", "default-audio-model", "default-audio-provider", "default-max-tokens", "default-think", "default-chain"} {
 		val, err := getConfigKV(ctx, store, key)
 		require.NoError(t, err, "key=%s", key)
-		assert.Equal(t, "", val, "key=%s should be empty when not set", key)
+		assert.Equal(t, settings.Fallback(key), val, "key=%s should inherit when not set", key)
 	}
 }
 
@@ -132,4 +134,37 @@ func testCobraCmd() *cobra.Command {
 	child := &cobra.Command{Use: "test"}
 	root.AddCommand(child)
 	return child
+}
+
+func TestUnit_ConfigCanonicalCommandsExplainAndReset(t *testing.T) {
+	cmd := testCobraCmd()
+	dir := t.TempDir()
+	require.NoError(t, cmd.Root().PersistentFlags().Set("db", filepath.Join(dir, "settings.db")))
+	require.NoError(t, cmd.Root().PersistentFlags().Set("data-dir", dir))
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.Flags().Bool("explain", true, "")
+	require.NoError(t, configSetCmd.RunE(cmd, []string{"inference.context.window_tokens", "230000"}))
+	require.NoError(t, configGetCmd.RunE(cmd, []string{"default-token-limit"}))
+	require.Contains(t, out.String(), "inference.context.window_tokens")
+	require.Contains(t, out.String(), `Inherited: "230000" (global)`)
+	out.Reset()
+	require.NoError(t, configResetCmd.RunE(cmd, []string{"inference.context.window_tokens"}))
+	require.NoError(t, configGetCmd.RunE(cmd, []string{"inference.context.window_tokens"}))
+	require.Contains(t, out.String(), `Inherited: "0" (built-in)`)
+	require.NoError(t, configSetCmd.RunE(cmd, []string{"observability.logs.max_files", "20"}))
+	require.NoError(t, configResetCmd.RunE(cmd, []string{"observability.logs.max_files"}))
+	require.Error(t, configSetCmd.RunE(cmd, []string{"updates.check.enabled", "perhaps"}))
+}
+
+func TestUnit_InvocationSettingFlagEnvironmentAndStorePrecedence(t *testing.T) {
+	ctx, db, store := openTestDB(t)
+	require.NoError(t, clikv.SetString(ctx, store, "default-max-tokens", "4096"))
+	t.Setenv(envDefaultMaxTokens, "8192")
+	cmd := testCobraCmd()
+	cmd.Root().PersistentFlags().Int("max-tokens", 0, "")
+	require.Equal(t, "8192", invocationConfigValue(ctx, cmd, db, "default-max-tokens", "max-tokens"))
+	require.NoError(t, cmd.Root().PersistentFlags().Set("max-tokens", "0"))
+	require.Equal(t, "0", invocationConfigValue(ctx, cmd, db, "default-max-tokens", "max-tokens"))
+	require.Equal(t, "4096", clikv.Read(ctx, store, "default-max-tokens"))
 }

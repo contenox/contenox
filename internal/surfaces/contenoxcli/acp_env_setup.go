@@ -8,10 +8,13 @@ import (
 
 	"github.com/contenox/contenox/internal/models/backendservice"
 	"github.com/contenox/contenox/internal/services/clikv"
+	"github.com/contenox/contenox/internal/services/settings"
 	"github.com/contenox/contenox/internal/store/runtimetypes"
 	"github.com/contenox/contenox/internal/surfaces/acpsvc"
 	"github.com/contenox/contenox/libacp"
 	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // Environment variables of the non-interactive ACP setup route.
@@ -26,15 +29,6 @@ const (
 	// URL cannot be defaulted.
 	envBaseURL = "CONTENOX_BASE_URL"
 )
-
-// configValueWithEnv reads a global config value with environment-first
-// precedence, without persisting anything.
-func configValueWithEnv(ctx context.Context, db libdb.DBManager, key, envKey string) string {
-	if v := strings.TrimSpace(os.Getenv(envKey)); v != "" {
-		return v
-	}
-	return acpsvc.ReadConfigValue(ctx, db, key)
-}
 
 // acpEnvSetupVars is the variable list advertised via the ACP env_var auth
 // method.
@@ -59,6 +53,7 @@ func acpEnvSetupVars() []libacp.AuthEnvVar {
 func completeEnvSetup(ctx context.Context, db libdb.DBManager) error {
 	provider := strings.ToLower(strings.TrimSpace(os.Getenv(envDefaultProvider)))
 	model := strings.TrimSpace(os.Getenv(envDefaultModel))
+
 	if provider == "" {
 		if model == "" {
 			return fmt.Errorf("set %s (and optionally %s)", envDefaultProvider, envDefaultModel)
@@ -130,4 +125,18 @@ func backendExists(ctx context.Context, db libdb.DBManager, providerType string)
 		}
 	}
 	return false
+}
+
+func invocationFlagValue(cmd *cobra.Command, name string) *string {
+	for _, flags := range []*pflag.FlagSet{cmd.Flags(), cmd.InheritedFlags(), cmd.Root().PersistentFlags()} {
+		if flag := flags.Lookup(name); flag != nil && flag.Changed {
+			value := flag.Value.String()
+			return &value
+		}
+	}
+	return nil
+}
+
+func invocationConfigValue(ctx context.Context, cmd *cobra.Command, db libdb.DBManager, key, flag string) string {
+	return settings.Resolve(key, acpsvc.ReadConfigValue(ctx, db, key), "global", settings.Fallback(key), invocationFlagValue(cmd, flag)).Value
 }

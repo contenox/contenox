@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/contenox/contenox/internal/kernel/enginesvc"
 	"github.com/contenox/contenox/internal/kernel/reasoning"
+	"github.com/contenox/contenox/internal/kernel/taskengine"
 	"github.com/contenox/contenox/internal/models/runtimestate"
 	"github.com/contenox/contenox/internal/services/clikv"
 	"github.com/contenox/contenox/internal/store/runtimetypes"
@@ -47,7 +49,7 @@ func TestUnit_SessionConfigOptionsExposeModelPolicyAndThink(t *testing.T) {
 	sess := &sessionEntry{Think: "medium", HITLPolicy: "dev", driver: &nativeDriver{t: tr}}
 
 	options := tr.sessionConfigOptions(ctx, sess)
-	require.Len(t, options, 4)
+	require.Len(t, options, 5)
 
 	model := optionByID(t, options, configIDModel)
 	require.Equal(t, configCategoryModel, model.Category)
@@ -76,8 +78,8 @@ func TestUnit_SessionConfigOptionsExposeModelPolicyAndThink(t *testing.T) {
 
 	limit := optionByID(t, options, configIDTokenLimit)
 	require.Equal(t, "context", limit.Category)
-	require.Equal(t, "0", limit.CurrentValue) // default
-	require.Contains(t, limit.Description, "token limit")
+	require.Equal(t, "inherit", limit.CurrentValue) // default
+	require.Contains(t, limit.Description, "Effective history window")
 }
 
 func TestUnit_HITLPolicyDisplayNameShortensPresetFilenames(t *testing.T) {
@@ -252,7 +254,7 @@ func TestUnit_WorkspaceConfigOptionsMirrorFreshSession(t *testing.T) {
 	}
 
 	options := tr.workspaceConfigOptions(ctx)
-	require.Len(t, options, 4)
+	require.Len(t, options, 5)
 
 	model := optionByID(t, options, configIDModel)
 	require.Equal(t, "openai/gpt-5-mini", model.CurrentValue)
@@ -266,7 +268,7 @@ func TestUnit_WorkspaceConfigOptionsMirrorFreshSession(t *testing.T) {
 	require.True(t, configOptionHasValue(policy, hitlPolicyDefaultValue))
 
 	limit := optionByID(t, options, configIDTokenLimit)
-	require.Equal(t, "0", limit.CurrentValue)
+	require.Equal(t, "inherit", limit.CurrentValue)
 
 	// Byte-identical to a first session seeded from the same defaults.
 	sess := &sessionEntry{Provider: tr.provider(), Model: tr.model(), Think: tr.thinkDefault(), driver: &nativeDriver{t: tr}}
@@ -392,4 +394,118 @@ func optionByID(t *testing.T, options []libacp.SessionConfigOption, id string) l
 	}
 	t.Fatalf("option %q not found in %#v", id, options)
 	return libacp.SessionConfigOption{}
+}
+
+// TestUnit_TokenLimitLadderIsModernAndAutomatic pins the budget ladder: the
+// zero option is "Automatic" (not a chain-implementation term), and no rung
+// below 32k is offered — a modern agentic loop needs at least that to hold tool
+// definitions and a couple of turns.
+func TestUnit_TokenLimitLadderIsModernAndAutomatic(t *testing.T) {
+	values := tokenLimitConfigValues(0, 0)
+
+	require.Equal(t, "inherit", values.Values[0].Value)
+	require.Equal(t, "0", values.Values[1].Value)
+	require.Equal(t, "Automatic", values.Values[1].Name)
+
+	var offered []string
+	for _, v := range values.AllValues() {
+		offered = append(offered, v.Value)
+	}
+	for _, stale := range []string{"4096", "8192", "16384"} {
+		require.NotContains(t, offered, stale, "sub-32k budgets must not be offered")
+	}
+	for _, modern := range []string{"32768", "1048576"} {
+		require.Contains(t, offered, modern, "the ladder must span the modern 32k–1M range")
+	}
+}
+
+// TestUnit_SetSessionConfigOptionMidFlightConcurrentUpdate pins: updating session config options (like HITL policy) concurrently while a session is prompting or active works safely and takes effect immediately.
+func TestUnit_SetSessionConfigOptionMidFlightConcurrentUpdate(t *testing.T) {
+	ctx, db := setupConfigOptionsDB(t)
+	tr := &Transport{
+		deps: Deps{
+			DB:                    db,
+			KnownPolicies:         []string{"strict", "dev", "auto"},
+			HITLDefaultPolicyName: "strict",
+		},
+		defaultProvider: "openai",
+		defaultModel:    "gpt-5",
+		sessions:        make(map[libacp.SessionID]*sessionEntry),
+	}
+	sid := libacp.SessionID("sess-concurrent-midflight")
+	sess := &sessionEntry{
+		Provider:   "openai",
+		Model:      "gpt-5",
+		Think:      "medium",
+		HITLPolicy: "strict",
+		driver:     &nativeDriver{t: tr},
+	}
+	tr.sessions[sid] = sess
+
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		policy := "dev"
+		if i%2 == 0 {
+			policy = "auto"
+		}
+		go func(p string) {
+			defer wg.Done()
+			resp, err := tr.SetSessionConfigOption(ctx, libacp.SetSessionConfigOptionRequest{
+				SessionID: sid,
+				ConfigID:  configIDHITLPolicy,
+				Value:     libacp.StringConfigValue(p),
+			})
+			require.NoError(t, err)
+			require.NotEmpty(t, resp.ConfigOptions)
+		}(policy)
+	}
+	wg.Wait()
+
+	finalPolicy := tr.resolveSessionHITLPolicy(sess)
+	require.Contains(t, []string{"dev", "auto"}, finalPolicy)
+}
+
+func TestUnit_ContextChoicePreservesAutoAndExplainsAgentCeiling(t *testing.T) {
+	ctx, db := setupConfigOptionsDB(t)
+	store := runtimetypes.New(db.WithoutTransaction())
+	require.NoError(t, clikv.SetString(ctx, store, "default-token-limit", "65536"))
+	tr := &Transport{deps: Deps{DB: db}, sessions: map[libacp.SessionID]*sessionEntry{}}
+	sess := &sessionEntry{driver: &nativeDriver{t: tr}}
+	tr.sessions["a"] = sess
+	require.Equal(t, 65536, tr.turnContextLength(ctx, sess))
+	require.NoError(t, tr.setSessionConfigOption(ctx, sess, "token-limit", "0"))
+	require.Zero(t, sess.effectiveTokenLimit())
+	require.Equal(t, defaultContextWindowFallback, tr.turnContextLength(ctx, sess))
+	require.Equal(t, "0", tr.tokenLimitConfigOption(ctx, sess).CurrentValue)
+	require.NoError(t, tr.setSessionConfigOption(ctx, sess, configIDTokenLimit, "inherit"))
+	require.Equal(t, 65536, tr.turnContextLength(ctx, sess))
+	tr.deps.ChainRegistry = &ChainRegistry{defaultChain: &taskengine.TaskChainDefinition{TokenLimit: 230000}}
+	require.NoError(t, tr.setSessionConfigOption(ctx, sess, configIDTokenLimit, "auto"))
+	require.Equal(t, 230000, tr.turnContextLength(ctx, sess))
+	tr.deps.ChainRegistry = &ChainRegistry{defaultChain: &taskengine.TaskChainDefinition{TokenLimit: 131072}}
+	out, err := tr.handleSessionSetting(ctx, sess, configIDTokenLimit, "230000")
+	require.NoError(t, err)
+	require.Contains(t, out, "Effective history window: 131072 tokens")
+	require.Equal(t, "230000", tr.tokenLimitConfigOption(ctx, sess).CurrentValue)
+	require.Equal(t, 131072, tr.sessionTokenSize(ctx, "a"))
+	require.Equal(t, "65536", clikv.Read(ctx, store, "default-token-limit"))
+	require.Contains(t, CommandValueDomains(tr.sessionConfigOptions(ctx, sess))["context"], "230000")
+}
+
+func TestUnit_SlashModelAndPermissionsMatchSessionPickers(t *testing.T) {
+	ctx, db := setupConfigOptionsDB(t)
+	tr := &Transport{deps: Deps{DB: db, KnownPolicies: []string{"strict", "default"}}, defaultProvider: "openai", defaultModel: "gpt-5", defaultAltProvider: "anthropic", defaultAltModel: "claude-sonnet-4"}
+	sess := &sessionEntry{driver: &nativeDriver{t: tr}}
+	other := &sessionEntry{driver: &nativeDriver{t: tr}}
+	_, err := tr.handleSessionSetting(ctx, sess, configIDModel, "claude-sonnet-4")
+	require.NoError(t, err)
+	require.Equal(t, "anthropic", sess.providerOrDefault(tr.provider()))
+	require.Equal(t, "openai", other.providerOrDefault(tr.provider()))
+	_, err = tr.handleSessionSetting(ctx, sess, configIDHITLPolicy, "strict")
+	require.NoError(t, err)
+	require.Equal(t, "strict", sess.hitlPolicy())
+	require.NotEqual(t, "strict", other.hitlPolicy())
+	require.Empty(t, ReadConfigValue(ctx, db, "default-model"))
+	require.Empty(t, ReadConfigValue(ctx, db, "hitl-policy-name"))
 }

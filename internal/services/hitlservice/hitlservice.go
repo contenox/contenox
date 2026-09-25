@@ -569,12 +569,26 @@ func (s *service) RecordPendingApproval(ctx context.Context, approvalID string, 
 	if strings.TrimSpace(approvalID) == "" {
 		return fmt.Errorf("hitlservice: RecordPendingApproval requires a non-empty approval ID")
 	}
+	// A repeat gate on the same tool call is expected — a task retry or a
+	// resume replay re-enters with the original call id. The first row is
+	// authoritative: adopt it rather than re-create, which would fail the
+	// UNIQUE constraint and drop the ask to the non-durable fallback.
+	if _, err := s.approvals.GetHITLApproval(ctx, approvalID); err == nil {
+		return nil
+	} else if !errors.Is(err, libdb.ErrNotFound) {
+		return fmt.Errorf("hitlservice: look up pending approval %s: %w", approvalID, err)
+	}
 	timeoutDur := s.ceiling()
 	if req.TimeoutS != 0 {
 		timeoutDur = WaitOf(req.TimeoutS)
 	}
 	row := buildApprovalRow(approvalID, req, time.Now().UTC(), timeoutDur)
 	if err := s.approvals.CreateHITLApproval(ctx, row); err != nil {
+		// A create race with another process on the same id: whoever won
+		// recorded the row, so this repeat adopts it too.
+		if _, getErr := s.approvals.GetHITLApproval(ctx, approvalID); getErr == nil {
+			return nil
+		}
 		return fmt.Errorf("hitlservice: persist pending approval %s: %w", approvalID, err)
 	}
 	// The in-process gating path records its row here rather than through

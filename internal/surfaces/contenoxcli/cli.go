@@ -17,18 +17,18 @@ import (
 
 	"github.com/contenox/contenox/internal/kernel/reasoning"
 	"github.com/contenox/contenox/internal/models/modelrepo"
+	"github.com/contenox/contenox/internal/models/modelrepo/modeldconn"
 	"github.com/contenox/contenox/internal/services/clikv"
 	"github.com/contenox/contenox/internal/services/eventlog"
 	"github.com/contenox/contenox/internal/services/project"
 	"github.com/contenox/contenox/internal/store/runtimetypes"
 	"github.com/contenox/contenox/internal/substrate"
 	"github.com/contenox/contenox/internal/version"
-	"github.com/contenox/contenox/libtracker"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
-// Version optionally overrides the CLI version via -ldflags; empty uses runtime/version/version.txt.
+// Version optionally overrides the CLI version via -ldflags; empty uses internal/version/version.txt.
 var Version string
 
 // CLIVersion returns the effective CLI version string (embedded file or link override).
@@ -52,7 +52,7 @@ const (
 	defaultTimeout = 2 * time.Hour
 )
 
-var reservedSubcommands = map[string]bool{"init": true, "chat": true, "help": true, "completion": true, "session": true, "run": true, "tools": true, "mcp": true, "backend": true, "agent": true, "config": true, "model": true, "models": true, "doctor": true, "version": true, "state": true, "acp": true, "acpx": true, "setup": true, "cache": true, "update": true, "sandbox": true, "shell-env": true, "vet": true, "serve": true, "fleet": true, "mission": true, "approvals": true, "inbox": true, "new": true, "resume": true, "index": true, "search": true, "events": true, "hitl": true, "login": true, "logout": true, "autocomplete": true, "beam": true, "pair": true, "unpair": true,
+var reservedSubcommands = map[string]bool{"init": true, "chat": true, "help": true, "completion": true, "session": true, "run": true, "tools": true, "mcp": true, "backend": true, "agent": true, "config": true, "model": true, "models": true, "doctor": true, "version": true, "state": true, "acp": true, "acpx": true, "setup": true, "cache": true, "update": true, "sandbox": true, "shell-env": true, "vet": true, "fleet": true, "mission": true, "approvals": true, "inbox": true, "new": true, "resume": true, "index": true, "search": true, "events": true, "hitl": true, "autocomplete": true, "beam": true, "gateway": true,
 	// cobra's shell-completion protocol: every TAB press invokes these.
 	"__complete": true, "__completeNoDesc": true}
 
@@ -87,11 +87,12 @@ func Main() {
 	}
 	// Seeded with the inherited event hop so a CLI spawned by a fired chain can
 	// forward it to its own spawns.
+
 	err := rootCmd.ExecuteContext(eventlog.InheritHop(context.Background()))
 	// Best-effort: flushes warm-session KV snapshots.
 	_ = modelrepo.Shutdown()
+	modeldconn.StopAutoStarted()
 	if err != nil {
-		recordStartupFailure(err)
 		// A command with its own exit status has already printed what it wanted.
 		var ee *exitError
 		if errors.As(err, &ee) {
@@ -147,30 +148,6 @@ func isSentence(s string) bool {
 	return strings.IndexFunc(strings.TrimSpace(s), unicode.IsSpace) >= 0
 }
 
-func recordStartupFailure(execErr error) {
-	defer func() { _ = recover() }()
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return
-	}
-	dir := filepath.Join(home, ".contenox")
-	if mkErr := os.MkdirAll(dir, 0o755); mkErr != nil {
-		return
-	}
-	f, openErr := os.OpenFile(filepath.Join(dir, "telemetry.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if openErr != nil {
-		return
-	}
-	defer f.Close()
-	tr := libtracker.NewTextActivityTracker(f)
-	reportErr, _, end := tr.Start(context.Background(), "exec", "cli",
-		"argv", strings.Join(os.Args[1:], " "),
-		"version", CLIVersion(),
-	)
-	reportErr(execErr)
-	end()
-}
-
 func firstNonFlagIsReserved(args []string) bool {
 	rest := nonFlagArgs(args)
 	return len(rest) > 0 && reservedSubcommands[rest[0]]
@@ -210,12 +187,12 @@ func nonFlagArgs(args []string) []string {
 var rootCmd = &cobra.Command{
 	Use:   "contenox",
 	Short: "Declare an agent in Markdown, run it under an envelope you wrote — from your terminal, your editor, a script, or a standing host.",
-	Long: `Contenox is a worker you program yourself, using the AI you already pay for.
-An agent is a Markdown file you can read: what it may do, what needs your
-approval, what sets it off. State lives on your machine. Hosted providers and
-Ollama work out of the box; for local inference run Ollama or vLLM.
+	Long: `Contenox directs agentic work across models, tools and systems under
+policies you control. An agent is a Markdown file you can read: what it may do,
+what needs your approval, what sets it off. contenox auto selects and sets up
+native local inference; registered private and hosted backends work alongside it.
 
-  One runtime, three shapes — they differ by who is accountable for the work:
+  Choose how to work:
 
     a person, at this keyboard
       contenox beam                # the terminal UI: your files, your shell, your approvals
@@ -230,16 +207,14 @@ Ollama work out of the box; for local inference run Ollama or vLLM.
                                    #   unknown command, so a typo never reaches a model
       git diff | contenox "<task>" # a filter: stdin is the material the task is about
 
-    an organization
-      contenox serve               # a standing host reachable from the app, serving one
-                                   #   workspace fixed at launch, with NO terminal and NO
-                                   #   filesystem — every capability it has is an MCP server
+  Start here, from your project directory:
+    contenox auto                  # choose and download a local model, verify tools, open the TUI
+    contenox beam                  # return to your latest session
+    contenox doctor                # inspect model/backend readiness
 
-  Start here, in this order:
-    contenox setup                 # 1. wizard — pick provider, model, API key
-    contenox doctor                # 2. verdict: can I run right now, yes or no
-    contenox init                  # 3. once per project: scaffold .contenox/ and its agents
-    contenox beam                  # 4. work
+  Existing model server or hosted API:
+    contenox setup                 # choose a provider and model
+    contenox beam                  # start working
 
   Unattended work, and the humans it interrupts:
     contenox mission fire <agent> "<intent>" --wait   dispatch a declared agent under an envelope
@@ -252,13 +227,13 @@ Ollama work out of the box; for local inference run Ollama or vLLM.
   Or register an LLM backend by hand:
     ollama serve && ollama pull qwen3:8b
     contenox backend add ollama --type ollama
-    contenox config set default-provider ollama
-    contenox config set default-model qwen3:8b
+    contenox config set inference.provider ollama
+    contenox config set inference.model qwen3:8b
     # Hosted providers are the same three commands — see 'contenox backend add --help'.
 
   Editor autocomplete (FIM, over ACP) can use a separate model from chat:
-    contenox config set default-autocomplete-provider ollama
-    contenox config set default-autocomplete-model qwen2.5-coder:7b
+    contenox config set inference.autocomplete.provider ollama
+    contenox config set inference.autocomplete.model qwen2.5-coder:7b
 
   Scope note:
     Backends and config are GLOBAL (stored in ~/.contenox/local.db).
@@ -290,35 +265,36 @@ is transpiled into .generated/hitl-policy-<name>.json on every run. A
 hitl-policy-<name>.json you write at the top level of .contenox/ or ~/.contenox/
 shadows the rendered one and is never rewritten.
 
-'contenox setup' is the recommended entry point and runs first: it picks a provider
-and model and registers the backend. Run init afterwards, once per project.
+'contenox auto' sets up native local inference and opens the TUI.
+'contenox setup' selects an existing model server or hosted API.
+Use init to create an explicit workspace marker and editable defaults.
 
 To configure by hand instead, register a backend, make sure the runtime can see a
 model, then set your defaults:
 
   # Local Ollama:
   contenox backend add ollama --type ollama
-  contenox config set default-provider ollama
-  contenox config set default-model qwen3:8b
+  contenox config set inference.provider ollama
+  contenox config set inference.model qwen3:8b
 
   # Hosted Ollama Cloud:
   contenox backend add ollama-cloud --type ollama --url https://ollama.com/api --api-key-env OLLAMA_API_KEY
-  contenox config set default-provider ollama
-  contenox config set default-model gpt-oss:20b
+  contenox config set inference.provider ollama
+  contenox config set inference.model gpt-oss:20b
 
   # OpenAI:
   contenox backend add openai --type openai --api-key-env OPENAI_API_KEY
-  contenox config set default-provider openai
-  contenox config set default-model gpt-5-mini
+  contenox config set inference.provider openai
+  contenox config set inference.model gpt-5-mini
 
   # Google Gemini:
   contenox backend add gemini --type gemini --api-key-env GEMINI_API_KEY
-  contenox config set default-provider gemini
-  contenox config set default-model gemini-flash-latest
+  contenox config set inference.provider gemini
+  contenox config set inference.model gemini-flash-latest
 
   # Optional editor autocomplete model, independent from chat:
-  contenox config set default-autocomplete-provider ollama
-  contenox config set default-autocomplete-model qwen2.5-coder:7b
+  contenox config set inference.autocomplete.provider ollama
+  contenox config set inference.autocomplete.model qwen2.5-coder:7b
 
 Use --force to overwrite existing files, or --update to refresh unchanged default files to the
 latest version. --update also renames shipped chain files still carrying a pre-v0.38 name (for
@@ -366,15 +342,15 @@ func init() {
 	f.String("db", "", "Database path (default: ~/.contenox/local.db)")
 	f.String("data-dir", "", "Override the .contenox data directory path")
 	f.String("ollama", defaultOllama, "Ollama base URL")
-	f.String("model", defaultModel, "Model name (task/chat/embed)")
+	f.String("model", "", "Model override for this invocation; otherwise uses inference.model")
 	f.String("provider", "", "Provider type override. See 'contenox backend add --help' for supported backend types.")
-	f.String("alt-model", "", "Alt model name (chains referencing {{var:alt_model}}). Overrides config default-alt-model.")
-	f.String("alt-provider", "", "Alt provider type (chains referencing {{var:alt_provider}}). Overrides config default-alt-provider.")
-	f.Int("max-tokens", 0, "Response token cap for chains referencing {{var:max_tokens}}. Overrides config default-max-tokens when set.")
-	f.Int("context", defaultContext, "Context length")
+	f.String("alt-model", "", "Alt model name (chains referencing {{var:alt_model}}). Overrides inference.recovery.model.")
+	f.String("alt-provider", "", "Alt provider type (chains referencing {{var:alt_provider}}). Overrides inference.recovery.provider.")
+	f.Int("max-tokens", 0, "Response token cap for chains referencing {{var:max_tokens}}. Overrides inference.generation.max_output_tokens; 0 uses the backend default.")
+	f.Int("context", defaultContext, "Session history window in tokens; 0 follows model capacity. Overrides inference.context.window_tokens; agent ceilings still apply")
 	f.Bool("no-delete-models", true, "Legacy compatibility flag; OSS runtime model deletion is disabled.")
 	_ = f.MarkHidden("no-delete-models")
-	f.String("chain", "", "Path to a task chain JSON file. Chains define the LLM workflow: which model, which tools, how to branch. Falls back to default-chain in config, then the agent chain compiled into .generated/")
+	f.String("chain", "", "Path to a task chain JSON file. Chains define the LLM workflow: which model, which tools, how to branch. Falls back to execution.chain in config, then the agent chain compiled into .generated/")
 	f.String("input", "", "Input for the chain (default: positional args or stdin if piped)")
 	f.Bool("shell", false, "Enable the local_shell tools (use only in trusted environments)")
 	f.String("local-exec-allowed-dir", "", "If set, local_shell may only run scripts/binaries under this directory")
@@ -442,7 +418,7 @@ func setupTelemetryLogging(ctx context.Context, store runtimetypes.Store, conten
 
 func warnTelemetryLoggingUnavailable(w io.Writer, err error) {
 	fmt.Fprintf(w, "warning: telemetry-enabled is set but its log file could not be opened, continuing without it: %v\n"+
-		"         turn it off with: contenox config set telemetry-enabled false\n", err)
+		"         turn it off with: contenox config set observability.telemetry.enabled false\n", err)
 }
 
 // ResolveContenoxDir finds the closest .contenox by walking up from cwd, or --data-dir if set; falls back to cwd/.contenox.
@@ -524,7 +500,7 @@ func runInitCmd(cmd *cobra.Command, args []string) error {
 		}
 		contenoxDir, projectName = resolveProjectInit(cwd, projectName)
 		if localMode {
-			if err := RunLocalInit(cmd.OutOrStdout(), force, update, contenoxDir, projectName); err != nil {
+			if err := RunLocalInit(cmd.Context(), cmd.OutOrStdout(), force, update, contenoxDir, projectName); err != nil {
 				return err
 			}
 		} else if err := RunInit(cmd.OutOrStdout(), cmd.ErrOrStderr(), force, update, provider, contenoxDir, projectName); err != nil {
@@ -538,7 +514,7 @@ func runInitCmd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to resolve .contenox dir: %w", err)
 	}
 	if localMode {
-		return RunLocalInit(cmd.OutOrStdout(), force, update, contenoxDir, projectName)
+		return RunLocalInit(cmd.Context(), cmd.OutOrStdout(), force, update, contenoxDir, projectName)
 	}
 	return RunInit(cmd.OutOrStdout(), cmd.ErrOrStderr(), force, update, provider, contenoxDir, projectName)
 }

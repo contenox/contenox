@@ -11,12 +11,32 @@ import (
 )
 
 type OllamaChatClient struct {
-	ollamaClient    *ollamaHTTPClient
-	modelName       string
-	backendURL      string
-	maxOutputTokens int
-	supportsThink   bool
-	tracker         libtracker.ActivityTracker
+	ollamaClient     *ollamaHTTPClient
+	modelName        string
+	backendURL       string
+	maxOutputTokens  int
+	supportsThink    bool
+	audioExtension   bool
+	sessionExtension bool
+	tracker          libtracker.ActivityTracker
+}
+
+func (c *OllamaChatClient) checkAudio(messages []modelrepo.Message) error {
+	if !c.audioExtension {
+		return modelrepo.RefuseAudioInput("ollama", c.modelName, messages)
+	}
+	return modelrepo.ValidateAudioParts("ollama", c.modelName, messages)
+}
+
+func toOllamaAudios(audios []modelrepo.AudioPart) []ImageData {
+	if len(audios) == 0 {
+		return nil
+	}
+	out := make([]ImageData, 0, len(audios))
+	for _, audio := range audios {
+		out = append(out, ImageData(audio.Data))
+	}
+	return out
 }
 
 func toOllamaImages(images []modelrepo.ImagePart) []ImageData {
@@ -34,8 +54,7 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 	reportErr, reportChange, end := c.tracker.Start(ctx, "chat", "ollama", "model", c.modelName)
 	defer end()
 
-	// No audio encoding on this wire format; refuse instead of dropping silently.
-	if err := modelrepo.RefuseAudioInput("ollama", c.modelName, messages); err != nil {
+	if err := c.checkAudio(messages); err != nil {
 		reportErr(err)
 		return modelrepo.ChatResult{}, err
 	}
@@ -53,6 +72,7 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 				var tcArgs ToolCallFunctionArguments
 				_ = json.Unmarshal([]byte(argsStr), &tcArgs)
 				apiToolCalls = append(apiToolCalls, ToolCall{
+					ID: tc.ID,
 					Function: ToolCallFunction{
 						Name:      tc.Function.Name,
 						Arguments: tcArgs,
@@ -61,10 +81,12 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 			}
 		}
 		apiMessages = append(apiMessages, Message{
-			Role:      msg.Role,
-			Content:   msg.Content,
-			Images:    toOllamaImages(msg.Images),
-			ToolCalls: apiToolCalls,
+			Role:       msg.Role,
+			Content:    msg.Content,
+			Images:     toOllamaImages(msg.Images),
+			Audios:     toOllamaAudios(msg.Audio),
+			ToolCalls:  apiToolCalls,
+			ToolCallID: msg.ToolCallID,
 		})
 	}
 
@@ -101,6 +123,7 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 	if config.Truncate != nil {
 		req.Truncate = config.Truncate
 	}
+	req.Session = sessionOf(config, c.sessionExtension)
 
 	var finalResponse ChatResponse
 
@@ -151,8 +174,17 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 		// Arguments is an ordered map; String() renders it as the JSON string modelrepo.ToolCall expects.
 		argsJSON := tc.Function.Arguments.String()
 
+		// The id the upstream assigned is quoted back by the tool result, and
+		// an upstream that pairs calls to results by id refuses a turn whose
+		// result carries a different one. Only a server that assigned no id at
+		// all gets one minted here, so real Ollama keeps working.
+		id := tc.ID
+		if id == "" {
+			id = uuid.NewString()
+		}
+
 		toolCalls = append(toolCalls, modelrepo.ToolCall{
-			ID:   uuid.NewString(),
+			ID:   id,
 			Type: "function",
 			Function: struct {
 				Name      string `json:"name"`

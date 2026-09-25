@@ -191,6 +191,7 @@ type providerConfig struct {
 }
 
 var providerConfigs = map[string]providerConfig{
+	"modeld": {name: "Contenox native (modeld)", defaultModel: "qwen2.5-coder-7b"},
 	"ollama": {
 		name:         "Ollama (local)",
 		defaultModel: defaultModel,
@@ -240,7 +241,7 @@ func hasBackendOfType(ctx context.Context, db libdb.DBManager, providerType stri
 }
 
 // RunGlobalInit ensures ~/.contenox/ has chain files, declarations and rendered envelopes, without creating a workspace-scoped .contenox/ directory.
-func RunGlobalInit(out io.Writer) error {
+func RunGlobalInit(ctx context.Context, out io.Writer) error {
 	homeDir, err := globalContenoxDir()
 	if err != nil {
 		return fmt.Errorf("could not resolve ~/.contenox: %w", err)
@@ -274,22 +275,45 @@ func RunGlobalInit(out io.Writer) error {
 			return err
 		}
 	}
-	if _, err := agentdecl.Preseed(homeDir); err != nil {
+	homeRoot, err := declRoot(homeDir)
+	if err != nil {
 		return err
 	}
+	seeded, err := agentdecl.Preseed(ctx, homeRoot)
+	if err != nil {
+		return err
+	}
+	reportPreseed(out, seeded)
 	// The seeded declarations are the shipped agents, so they have to be chains
 	// before anything looks one up.
-	transpileSeededAgents(io.Discard, homeDir)
-	renderEnvelopePolicies(out, homeDir)
+	transpileSeededAgents(ctx, io.Discard, homeDir)
+	renderEnvelopePolicies(ctx, out, homeDir)
 	return nil
+}
+
+// reportPreseed prints what seeding the shipped declarations did. Silence is
+// the common case: a declaration the operator edited is theirs and is reported
+// nowhere, and the rest are already current. A changed shipped prompt reaching
+// an unedited copy is the event worth a line, and one left behind is worth the
+// instruction that takes it.
+func reportPreseed(out io.Writer, result agentdecl.PreseedResult) {
+	for _, path := range result.Created {
+		fmt.Fprintf(out, "  Created %s\n", path)
+	}
+	for _, path := range result.Updated {
+		fmt.Fprintf(out, "  Updated %s (shipped version refreshed)\n", path)
+	}
+	for _, path := range result.Unrecorded {
+		fmt.Fprintf(out, "  Kept %s (differs from the shipped declaration and no shipped copy was recorded; delete it to take the shipped one)\n", path)
+	}
 }
 
 // renderEnvelopePolicies transpiles the declared envelopes into contenoxDir's
 // .generated, which is where the shipped postures live now that nothing seeds
 // hitl-policy-*.json. Reported rather than fatal: a surface that needs its own
 // envelope ensures it again, and hard errors there.
-func renderEnvelopePolicies(out io.Writer, contenoxDir string) {
-	rendered, err := syncEnvelopePolicies(contenoxDir)
+func renderEnvelopePolicies(ctx context.Context, out io.Writer, contenoxDir string) {
+	rendered, err := syncEnvelopePolicies(ctx, contenoxDir)
 	if err != nil {
 		fmt.Fprintf(out, "  note: rendering envelopes from %s failed (%v)\n", agentdecl.ConfigFilename, err)
 	}
@@ -344,7 +368,7 @@ func writeInitFile(out io.Writer, force, update bool, path, content string) erro
 }
 
 // RunLocalInit seeds contenoxDir with the same chain files and declarations RunInit writes to ~/.contenox, as workspace-local overrides that shadow the global copies.
-func RunLocalInit(out io.Writer, force, update bool, contenoxDir, projectName string) error {
+func RunLocalInit(ctx context.Context, out io.Writer, force, update bool, contenoxDir, projectName string) error {
 	if err := os.MkdirAll(contenoxDir, 0750); err != nil {
 		return fmt.Errorf("failed to create .contenox directory: %w", err)
 	}
@@ -374,7 +398,7 @@ func RunLocalInit(out io.Writer, force, update bool, contenoxDir, projectName st
 	// preset the workspace never held is not planted here, since the rendered
 	// envelope behind that name already answers for it.
 	if force {
-		written, refreshErr := refreshExistingHITLPolicies(contenoxDir)
+		written, refreshErr := refreshExistingHITLPolicies(ctx, contenoxDir)
 		for _, path := range written {
 			fmt.Fprintf(out, "  Refreshed %s\n", path)
 		}
@@ -382,17 +406,19 @@ func RunLocalInit(out io.Writer, force, update bool, contenoxDir, projectName st
 			return refreshErr
 		}
 	}
-	seeded, err := agentdecl.Preseed(contenoxDir)
+	contenoxRoot, err := declRoot(contenoxDir)
 	if err != nil {
 		return err
 	}
-	if problems := transpileSeededAgents(out, contenoxDir); problems != nil {
+	seeded, err := agentdecl.Preseed(ctx, contenoxRoot)
+	if err != nil {
+		return err
+	}
+	if problems := transpileSeededAgents(ctx, out, contenoxDir); problems != nil {
 		printSyncProblems(out, problems)
 	}
-	for _, path := range seeded {
-		fmt.Fprintf(out, "  Created %s\n", path)
-	}
-	renderEnvelopePolicies(out, contenoxDir)
+	reportPreseed(out, seeded)
+	renderEnvelopePolicies(ctx, out, contenoxDir)
 	fmt.Fprintln(out, "Done.")
 	fmt.Fprintf(out, "These workspace copies shadow the ones in ~/.contenox — the workspace file wins by name.\n")
 	return nil
@@ -425,13 +451,13 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 			}
 		}
 		if provider == "" {
-			provider = "ollama"
+			provider = "modeld"
 		}
 	}
 
 	pc, ok := providerConfigs[provider]
 	if !ok {
-		return fmt.Errorf("unknown provider %q — valid options: ollama, openai, gemini, anthropic, bedrock, vertex-google", provider)
+		return fmt.Errorf("unknown provider %q — valid options: modeld, ollama, openai, gemini, anthropic, bedrock, vertex-google", provider)
 	}
 	if err := os.MkdirAll(contenoxDir, 0750); err != nil {
 		return fmt.Errorf("failed to create .contenox directory: %w", err)
@@ -494,20 +520,26 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 		}
 	}
 	if force {
-		if err := refreshPoliciesOnSearchPath(out, contenoxDir); err != nil {
+		if err := refreshPoliciesOnSearchPath(context.Background(), out, contenoxDir); err != nil {
 			return err
 		}
 	}
-	if _, err := agentdecl.Preseed(homeDir); err != nil {
+	homeRoot, err := declRoot(homeDir)
+	if err != nil {
 		return err
 	}
+	seeded, err := agentdecl.Preseed(ctx, homeRoot)
+	if err != nil {
+		return err
+	}
+	reportPreseed(out, seeded)
 	// Transpiled here rather than at first use, so a fresh install has a working
 	// acp before anything asks for one. Reported, not fatal.
-	if problems := transpileSeededAgents(out, homeDir); problems != nil {
+	if problems := transpileSeededAgents(ctx, out, homeDir); problems != nil {
 		printSyncProblems(out, problems)
 	}
-	renderEnvelopePolicies(out, homeDir)
-	for _, name := range envelopePolicyNames(homeDir) {
+	renderEnvelopePolicies(ctx, out, homeDir)
+	for _, name := range envelopePolicyNames(ctx, homeDir) {
 		noteShadowed(name)
 	}
 
@@ -532,7 +564,7 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 			if curModel != "" {
 				fmt.Fprintf(out, "  default-model    = %s\n", curModel)
 			}
-			fmt.Fprintln(out, "  To change: contenox config set default-model <model>")
+			fmt.Fprintln(out, "  To change: contenox config set inference.model <model>")
 			fmt.Fprintln(out, "")
 		}
 	}
@@ -568,6 +600,12 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 	fmt.Fprintln(out, "")
 	chatStep := 3
 	switch provider {
+	case "modeld":
+		fmt.Fprintln(out, "  1. Install the worker: contenox modeld install")
+		fmt.Fprintf(out, "  2. Download a model: contenox model pull %s\n", pc.defaultModel)
+		fmt.Fprintln(out, "  3. Run contenox setup and choose Contenox native.")
+		fmt.Fprintln(out, "")
+		chatStep = 4
 	case "vertex-google":
 		fmt.Fprintln(out, "  1. Authenticate with Google Cloud:")
 		fmt.Fprintln(out, "       export GOOGLE_CLOUD_PROJECT=my-project-id")
@@ -581,8 +619,8 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 		fmt.Fprintln(out, "       contenox model list   # model availability differs per endpoint")
 		fmt.Fprintln(out, "")
 		fmt.Fprintln(out, "  3. Set defaults:")
-		fmt.Fprintf(out, "       contenox config set default-provider %s\n", provider)
-		fmt.Fprintf(out, "       contenox config set default-model %s\n", pc.defaultModel)
+		fmt.Fprintf(out, "       contenox config set inference.provider %s\n", provider)
+		fmt.Fprintf(out, "       contenox config set inference.model %s\n", pc.defaultModel)
 		fmt.Fprintln(out, "")
 		fmt.Fprintln(out, "  Get started with Vertex AI: https://cloud.google.com/vertex-ai/generative-ai/docs/start/quickstarts")
 		fmt.Fprintln(out, "")
@@ -600,8 +638,8 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 		fmt.Fprintln(out, "")
 		fmt.Fprintln(out, "  3. Register the local API and set defaults (URLs match contenox backend add defaults):")
 		fmt.Fprintln(out, "       contenox backend add ollama --type ollama")
-		fmt.Fprintln(out, "       contenox config set default-provider ollama")
-		fmt.Fprintln(out, "       contenox config set default-model qwen3:8b")
+		fmt.Fprintln(out, "       contenox config set inference.provider ollama")
+		fmt.Fprintln(out, "       contenox config set inference.model qwen3:8b")
 		fmt.Fprintln(out, "       contenox doctor")
 		fmt.Fprintln(out, "")
 		fmt.Fprintln(out, "  Optional: use hosted Ollama Cloud instead of a local server:")
@@ -632,8 +670,8 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 			} else {
 				fmt.Fprintf(out, "       contenox backend add %s --type %s --url \"https://bedrock-runtime.eu-central-1.amazonaws.com\"   # region lives in the URL; credentials come from the AWS chain\n", provider, provider)
 			}
-			fmt.Fprintf(out, "       contenox config set default-provider %s\n", provider)
-			fmt.Fprintf(out, "       contenox config set default-model %s\n", pc.defaultModel)
+			fmt.Fprintf(out, "       contenox config set inference.provider %s\n", provider)
+			fmt.Fprintf(out, "       contenox config set inference.model %s\n", pc.defaultModel)
 			fmt.Fprintln(out, "       contenox doctor")
 			fmt.Fprintln(out, "")
 			chatStep = registerStep + 1
@@ -654,19 +692,29 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 
 // transpileSeededAgents turns the declarations under contenoxDir/agents into
 // chains in .generated, and returns whatever refused.
-func transpileSeededAgents(out io.Writer, contenoxDir string) []agentdecl.SyncResult {
-	cfg, err := agentdecl.Load(contenoxDir)
+func transpileSeededAgents(ctx context.Context, out io.Writer, contenoxDir string) []agentdecl.SyncResult {
+	root, err := declRoot(contenoxDir)
+	if err != nil {
+		fmt.Fprintf(out, "  note: could not open %s (%v); declared agents were not transpiled\n", contenoxDir, err)
+		return nil
+	}
+	cfg, err := agentdecl.Load(ctx, root)
 	if err != nil {
 		fmt.Fprintf(out, "  note: could not read %s (%v); declared agents were not transpiled\n",
 			agentdecl.ConfigFilename, err)
 		return nil
 	}
-	dirs := agentdecl.DiscoverSourceDirs([]string{contenoxDir}, nil)
+	dirs := agentdecl.DiscoverSourceDirs(ctx, []agentdecl.Root{root}, nil)
 	if len(dirs) == 0 {
 		return nil
 	}
 	generated := filepath.Join(contenoxDir, agentdecl.GeneratedDirName)
-	results, err := agentdecl.Sync(dirs, generated, cfg)
+	generatedRoot, err := declRoot(generated)
+	if err != nil {
+		fmt.Fprintf(out, "  note: could not open %s (%v); declared agents were not transpiled\n", generated, err)
+		return nil
+	}
+	results, err := agentdecl.Sync(ctx, dirs, generatedRoot, cfg)
 	if err != nil {
 		fmt.Fprintf(out, "  note: transpiling declared agents failed (%v)\n", err)
 		return nil

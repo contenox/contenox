@@ -4,11 +4,11 @@ description: Give a model controlled, policy-scoped access to the filesystem and
 
 # Local Tools
 
-Contenox never touches the filesystem or spawns processes itself. Local tools give a model access to the filesystem and shell of the machine a client is running on: `local_fs` and `local_shell` calls are forwarded to the connected client's `fs/*` and `terminal/*` capabilities, which the client — `contenox beam`, or an editor — actually carries out.
+Contenox never touches the filesystem or spawns processes itself. Local tools give a model access to the filesystem and shell of the machine it runs on, and they differ in what they need to do it. `local_fs` holds two halves under one name: its content tools (read, write, edit, sed) go through the connected client's `fs/*` capability, and its browsing tools (list_dir, grep, find_files, stat_file, count_stats) walk the tree in the process the runtime runs in. `local_shell` is forwarded to the client's `terminal/*` capability.
 
-A [`contenox serve`](/docs/guide/serve/) host has no such client, so neither of these toolsets exists there: every capability a host has is an MCP server or an OpenAPI service you attached.
+A standing host has no client, so the client-backed half of `local_fs` and all of `local_shell` are absent there; what a host has is the in-process toolsets, and every other capability is an MCP server or an OpenAPI service you attached.
 
-Neither does an unattended [mission](/docs/guide/missions/) unit — what `contenox run "<task>"` dispatches, and what `contenox mission fire` and `/mission` fire — and for the same reason: nothing is attached to forward `fs/*` or `terminal/*` to. Such a run reaches the in-process toolsets (`native-fs-browse`, `native-git`, `native-go`, `native-jq`, the `mission` tools) and whatever MCP servers you connected; a `local_fs` or `local_shell` call comes back to the model as `tool local_shell not found`, and `--shell` does not change that. Give a run file or shell access by connecting an MCP server for it, or drive the task from `contenox beam` or an editor, where a client exists to carry it out.
+An unattended [mission](/docs/guide/missions/) unit — what `contenox run "<task>"` dispatches, and what `contenox mission fire` and `/mission` fire — has no client either, so it runs on the in-process toolsets (`local_fs`, `native-git`, `native-go`, `native-jq`, the `mission` tools) and whatever MCP servers you connected. Its `local_fs` is backed by the workspace itself rather than by a client, and its `local_shell` runs on the machine the runtime runs on.
 
 ## `local_fs` — Filesystem access
 
@@ -112,7 +112,7 @@ Values are strings even when conceptually numeric — `tools_policies` is the ch
 > **Caution:**
 > `local_shell` gives the model direct access to run arbitrary commands on the machine the ACP client is running on. **Never enable it in public-facing deployments or when processing untrusted user input.**
 
-`local_shell` is forwarded to the ACP client's `terminal/*` capability, governed by HITL policy — there is no CLI flag that turns it on or off. `local_fs` no longer has tools for directory listing, searching or globbing, so a shell is one way to do those (`ls`, `find`, `grep`/`rg`) — but not the only one: `native-fs-browse` (`list_dir`, `grep`, `find_files`, `stat_file`, `count_stats`) runs in-process and is therefore also reachable from a shape with no client to forward a terminal to.
+`local_shell` is forwarded to the ACP client's `terminal/*` capability, governed by HITL policy — there is no CLI flag that turns it on or off. Directory listing, searching and file metadata do not need it: `local_fs` carries `list_dir`, `grep`, `find_files`, `stat_file` and `count_stats`, which run in-process and are therefore also reachable from a shape with no client to forward a terminal to. Prefer them over `ls`/`find`/`grep` in a shell.
 
 **Command policy is a file, not a CLI flag.** For a declared agent it lives in [`agents.toml`](/docs/reference/agents-config/), globally or under `[agents.<name>]`:
 
@@ -150,9 +150,13 @@ In a chain you author yourself it is a `tools_policies` block on `execute_config
 }
 ```
 
-- `_allowed_commands` — comma-separated list of permitted command names. When set, any command not on this list is rejected before it runs.
-- `_denied_commands` — comma-separated commands that are always blocked, regardless of the allowlist.
-- `_allowed_dir` — if set, the command executable or script path must reside under this directory.
+- `_allowed_commands` — comma-separated list of permitted programs, by name (looked up on `PATH`) or absolute path. When set, **every program of a command line** must be on this list or the whole call is rejected before anything runs, so `ls && rm -rf /` is refused for the `rm`, not for the line.
+- `_denied_commands` — comma-separated programs that are always blocked, regardless of the allowlist.
+- `_allowed_dir` — if set, the program path must reside under this directory, and a `cd` cannot leave it.
+
+With a policy active, `command` is read with the `sh` grammar and each step is checked: `cd` is interpreted (it moves the steps after it and needs no allowlist entry), `&&`/`||`/`;` sequences run in order, and anything the policy cannot vouch for is refused rather than guessed at — pipes, redirection, globs, `$VAR`/`$(...)`, escapes, `&`, `!`, `VAR=x` prefixes and compound constructs (`if`, `for`, subshells). Each of those becomes its own call.
+
+A quoted pattern is a literal argument, not a glob, so `find . -name '*.go'` is allowed — the program does the matching — while `ls *.go` is refused, because the shell would have expanded it and the policy cannot see what it expands to. Without any `tools_policies` entry there is no policy to enforce, so `shell: true` still hands the line to the platform shell.
 
 The default chains ship with sensible defaults: common dev tools allowed, privilege-escalation and raw-disk commands denied.
 
@@ -164,11 +168,11 @@ To use `local_shell` with **no policy restrictions** (fully open), omit `tools_p
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `command` | string | ✅ | The executable alone — flags and operands go in `args`: `{"command": "ls", "args": ["-F"]}`, never `{"command": "ls -F"}` |
-| `args` | string \| array | — | Everything after the executable: an array of argument strings, or a space-separated string |
+| `command` | string | ✅ | The command line to run: `{"command": "ls -F"}`, or `{"command": "cd sub && go test ./..."}` |
+| `args` | string \| array | — | Operands for a single executable: an array of argument strings, or a space-separated string. Passed through literally, never read as syntax |
 | `cwd` | string | — | Working directory |
 | `timeout` | string | — | Duration e.g. `30s` |
-| `shell` | boolean | — | Run via `/bin/sh -c` (allows pipes, redirects, `$VAR`); without it the argv is executed directly and none of those are interpreted. **Disabled when `_allowed_commands` or `_allowed_dir` is set.** |
+| `shell` | boolean | — | Run via `/bin/sh -c` (allows pipes, redirects, `$VAR`). **Disabled when a command policy is active** — under one, `command` is read as a command line instead and anything needing a real shell is refused. |
 
 ---
 

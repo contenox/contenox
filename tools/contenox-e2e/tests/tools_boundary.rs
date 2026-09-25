@@ -1,11 +1,5 @@
 //! Tools: what crosses the boundary.
 //!
-//! contenox ships no tools of its own. `local_fs` and `local_shell` are
-//! forwarded to whoever is holding the project open — an editor over ACP, or
-//! beam — and the agent process never reads, writes or spawns anything itself.
-//! These cases sit on the client's side of that wire, which is the only place
-//! the claim can be checked: the test process *is* the filesystem, so a write
-//! it declines to perform is a file that cannot appear.
 
 use contenox_e2e::{Acp, Instance, Script, ToolCall, Turn, Verdict};
 use serde_json::{Value, json};
@@ -40,7 +34,7 @@ fn write(path: &str, content: &str) -> ToolCall {
 // ------------------------------------------------ what the agent ships with
 
 #[test]
-fn local_fs_is_five_tools_and_every_one_of_them_needs_the_client() {
+fn local_fs_roster_distinguishes_forwarded_and_in_process_tools() {
     let cx = Instance::named("roster-local-fs").expect("scratch instance");
     cx.init().ok();
 
@@ -59,20 +53,25 @@ fn local_fs_is_five_tools_and_every_one_of_them_needs_the_client() {
             "edit_file — local_fs — needs client capability fs.readTextFile+fs.writeTextFile",
             "sed — local_fs — needs client capability fs.readTextFile+fs.writeTextFile",
             "read_file_range — local_fs — needs client capability fs.readTextFile",
+            "list_dir — local_fs — local (in-process)",
+            "grep — local_fs — local (in-process)",
+            "find_files — local_fs — local (in-process)",
+            "count_stats — local_fs — local (in-process)",
+            "stat_file — local_fs — local (in-process)",
         ],
-        "local_fs is exactly five tools, none of which the agent can perform alone:\n{roster}"
+        "local_fs identifies which operations need the editor client:\n{roster}"
     );
 }
 
 #[test]
-fn listing_and_search_are_not_local_fs_but_in_process_browsing() {
+fn local_fs_listing_and_search_run_in_process() {
     let cx = Instance::named("roster-browse").expect("scratch instance");
     cx.init().ok();
 
     let roster = cx.doctor().ok().stdout;
     for tool in ["list_dir", "grep", "find_files"] {
         assert!(
-            roster.contains(&format!("{tool} — native-fs-browse — local (in-process)")),
+            roster.contains(&format!("{tool} — local_fs — local (in-process)")),
             "{tool} browses in-process and is not part of the forwarded five:\n{roster}"
         );
     }
@@ -910,7 +909,7 @@ fn a_denied_command_is_refused_by_name_even_where_the_allowlist_would_be_silent(
 }
 
 #[test]
-fn shell_true_is_refused_outright_while_a_command_policy_is_active() {
+fn a_pipeline_is_refused_while_a_command_policy_is_active() {
     let cx = editor(
         "shell-mode-forbidden",
         &Script::new().route("general").turns([
@@ -933,11 +932,11 @@ fn shell_true_is_refused_outright_while_a_command_policy_is_active() {
 
     let said = turn.tool_outputs();
     assert!(
-        said.contains("'shell: true' is strictly forbidden"),
+        said.contains("joins commands with a pipe"),
         "a raw shell string cannot be checked against a command list, so it is refused:\n{said}"
     );
     assert!(
-        said.contains("set shell:false and supply the command and args separately"),
+        said.contains("Run each step as its own call"),
         "and the model is told what to do instead:\n{said}"
     );
     assert!(
@@ -1067,7 +1066,7 @@ fn a_command_under_the_allowed_dir_runs_and_one_outside_it_does_not() {
 }
 
 #[test]
-fn shell_true_is_refused_when_an_allowed_dir_alone_is_in_force() {
+fn a_pipeline_is_refused_when_an_allowed_dir_alone_is_in_force() {
     let cx = editor(
         "shell-allowed-dir-shell-mode",
         &Script::new().turns([
@@ -1086,7 +1085,7 @@ fn shell_true_is_refused_when_an_allowed_dir_alone_is_in_force() {
 
     let said = under_chain(&cx, &chain).tool_outputs();
     assert!(
-        said.contains("'shell: true' is strictly forbidden"),
-        "an allowed-dir on its own is enough to disable shell mode:\n{said}"
+        said.contains("joins commands with a pipe"),
+        "an allowed-dir on its own is enough to refuse a pipeline:\n{said}"
     );
 }

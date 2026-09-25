@@ -79,7 +79,7 @@ func TestUnit_OpenAICache_ChatCompletionsUsageIncludesCachedTokens(t *testing.T)
 	// prompt_tokens already includes cached tokens; cached count is read from prompt_tokens_details.cached_tokens.
 	body := `{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],
 		"usage":{"prompt_tokens":1200,"completion_tokens":9,"total_tokens":1209,
-		"prompt_tokens_details":{"cached_tokens":1024}}}`
+		"prompt_tokens_details":{"cached_tokens":1024},"completion_tokens_details":{"reasoning_tokens":7}}}`
 	var resp openAIChatCompletionResponse
 	if err := json.Unmarshal([]byte(body), &resp); err != nil {
 		t.Fatal(err)
@@ -88,14 +88,14 @@ func TestUnit_OpenAICache_ChatCompletionsUsageIncludesCachedTokens(t *testing.T)
 	if u.PromptTokens != 1200 || u.CacheReadTokens != 1024 || u.CacheWriteTokens != 0 {
 		t.Fatalf("chat-completions usage extraction wrong: %+v", u)
 	}
-	if u.CompletionTokens != 9 || u.TotalTokens != 1209 {
+	if u.CompletionTokens != 9 || u.ThinkingTokens != 7 || u.TotalTokens != 1209 {
 		t.Fatalf("completion/total wrong: %+v", u)
 	}
 }
 
 func TestUnit_OpenAICache_ResponsesUsageIncludesCachedAndWriteTokens(t *testing.T) {
 	body := `{"input_tokens":1500,"output_tokens":20,"total_tokens":1520,
-		"input_tokens_details":{"cached_tokens":1408},"cache_write_tokens":64}`
+		"input_tokens_details":{"cached_tokens":1408},"output_tokens_details":{"reasoning_tokens":12},"cache_write_tokens":64}`
 	var u openAIResponsesUsage
 	if err := json.Unmarshal([]byte(body), &u); err != nil {
 		t.Fatal(err)
@@ -103,5 +103,8 @@ func TestUnit_OpenAICache_ResponsesUsageIncludesCachedAndWriteTokens(t *testing.
 	nu := u.neutralUsage()
 	if nu.PromptTokens != 1500 || nu.CacheReadTokens != 1408 || nu.CacheWriteTokens != 64 {
 		t.Fatalf("responses usage extraction wrong: %+v", nu)
+	}
+	if nu.CompletionTokens != 20 || nu.ThinkingTokens != 12 || nu.TotalTokens != 1520 {
+		t.Fatalf("responses completion/total wrong: %+v", nu)
 	}
 }

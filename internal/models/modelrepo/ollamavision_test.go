@@ -15,8 +15,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 )
 
-// visionModel is the smallest broadly-available ollama vision model (~1.7GB).
-const visionModel = "moondream"
+const visionModel = "qwen3.5:0.8b"
 
 // redCirclePNG renders a solid red circle on white — an image whose one
 // unambiguous property a small vision model can be asked about.
@@ -58,6 +57,7 @@ func TestSystem_Ollama_Vision(t *testing.T) {
 		ContextLength: 2048,
 		CanChat:       true,
 		CanVision:     true,
+		CanThink:      true,
 	}
 	provider := ollama.NewOllamaProvider(visionModel, []string{uri}, http.DefaultClient, caps, "", nil)
 	chatClient, err := provider.GetChatConnection(ctx, uri)
@@ -69,7 +69,7 @@ func TestSystem_Ollama_Vision(t *testing.T) {
 			Content: "What color is the shape in this image? Answer with the color name only.",
 			Images:  []modelrepo.ImagePart{{Data: redCirclePNG(t), MimeType: "image/png"}},
 		},
-	})
+	}, modelrepo.WithTemperature(0), modelrepo.WithThink("off"), modelrepo.WithMaxTokens(64))
 	require.NoError(t, err)
 	require.NotEmpty(t, resp.Message.Content)
 	require.Contains(t, strings.ToLower(resp.Message.Content), "red",

@@ -13,6 +13,8 @@ static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 const SCRUBBED_PREFIXES: &[&str] = &["CONTENOX_", "XDG_"];
 const SCRUBBED_NAMES: &[&str] = &[
+    "NO_COLOR",
+    "BEAM_THEME",
     "OLLAMA_API_KEY",
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
@@ -56,6 +58,15 @@ impl Instance {
         }
 
         guard_real_home(&home)?;
+        for ancestor in root.canonicalize()?.ancestors().skip(1) {
+            if ancestor.join(".contenox/workspace.id").is_file() {
+                bail!(
+                    "refusing to run: scratch directory {} inherits workspace {}; set TMPDIR outside an existing workspace",
+                    root.display(),
+                    ancestor.display()
+                );
+            }
+        }
 
         let mut env: Vec<(OsString, Option<OsString>)> = Vec::new();
         for (key, _) in std::env::vars_os() {

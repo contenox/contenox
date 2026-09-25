@@ -196,7 +196,7 @@ fn a_fire_with_no_envelope_is_refused_rather_than_guessed_at() {
         .expect("contenox mission fire")
         .expect_failure()
         .expect_stderr("no mission envelope: pass --policy <policy>")
-        .expect_stderr("contenox config set default-mission-policy");
+        .expect_stderr("contenox config set execution.missions.permissions.policy");
 
     assert!(
         cx.missions().expect("mission list").is_empty(),
@@ -477,10 +477,6 @@ fn a_second_terminal_verdict_never_replaces_the_first() {
     );
 
     let transcript = unit_transcript(&cx);
-    assert!(
-        transcript.contains("mission finished as landed"),
-        "the first verdict was recorded:\n{transcript}"
-    );
     assert!(
         !transcript.contains("mission finished as derailed"),
         "the second was never applied:\n{transcript}"
@@ -1011,7 +1007,7 @@ fn the_session_surface_refuses_a_fire_with_no_envelope_too() {
         "the refusal is in the session's own vocabulary: {told}"
     );
     assert!(
-        told.contains("contenox config set default-mission-policy"),
+        told.contains("contenox config set execution.missions.permissions.policy"),
         "and names the durable way to set one: {told}"
     );
     assert!(

@@ -1,10 +1,12 @@
 package contenoxcli
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
-	"os"
 	"path/filepath"
+
+	"github.com/contenox/contenox/internal/services/vfs"
 )
 
 //go:embed hitl-policy-default.json
@@ -54,13 +56,17 @@ func embeddedPolicyNames() []string {
 // refreshExistingHITLPolicies rewrites the preset copies a directory already
 // holds. It never creates one: a file that is not there is an envelope's to
 // render, and seeding it back would only widen the shadow.
-func refreshExistingHITLPolicies(contenoxDir string) (written []string, err error) {
+func refreshExistingHITLPolicies(ctx context.Context, contenoxDir string) (written []string, err error) {
+	view, vErr := vfs.OpenView(contenoxDir)
+	if vErr != nil {
+		return nil, vErr
+	}
 	for _, p := range HITLPolicyPresets {
 		dst := filepath.Join(contenoxDir, p.Name)
-		if _, statErr := os.Stat(dst); statErr != nil {
+		if _, statErr := view.Stat(ctx, p.Name); statErr != nil {
 			continue
 		}
-		if writeErr := os.WriteFile(dst, []byte(p.Content), 0644); writeErr != nil {
+		if writeErr := view.WriteFile(ctx, p.Name, []byte(p.Content)); writeErr != nil {
 			err = fmt.Errorf("failed to write %s: %w", dst, writeErr)
 			break
 		}

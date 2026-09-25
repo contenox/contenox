@@ -42,7 +42,9 @@ implemented** peers from the reference Rust SDK
 | `task acp-conformance` | the **agent** side (`libacp/cmd/acp-stub-agent` via `AgentSideConnection`) | `acp-validator`, a conformance-checking ACP client |
 | `task acp-client-e2e` | the **client** side (`ClientSideConnection` over `acpexec`) | `testy`, the SDK's deterministic test agent |
 
-Both targets skip-or-fail cleanly when their binary env var is unset:
+Both targets require their peer binary when invoked directly. `task test-all`
+reports missing peers as skipped suites. Set the environment variables below,
+or build the peers under `tools/` for automatic discovery:
 
 - `ACP_TESTY_BIN` / `ACP_MCP_ECHO_BIN` — build from a rust-sdk checkout with
   `cargo build -p agent-client-protocol-test --bins`; the binaries land at
@@ -68,7 +70,7 @@ Servers, each isolating something different:
 | Server | Gate | Asserts |
 | --- | --- | --- |
 | `acp-stub-agent` (hermetic) | none — runs in plain `go test` | deterministic "ack" turn, update ordering through the harness seam |
-| contenox self-loopback (`contenox acp` built in-test, driving a no-model chain fixture) | none (skips under `-short`) | byte-exact fixture reply through registry → host → real chain |
+| contenox self-loopback (`contenox acp` built in-test, driving a no-model chain fixture) | currently skipped: its isolated home conflicts with the confined spawn path | intended to check the byte-exact fixture reply; not established by this test |
 | `testy` | `ACP_TESTY_BIN` | deterministic echo/greet through the composed path |
 | Claude Code (via `claude-code-acp`) | `ACP_CLAUDE_ACP_BIN` — never CI; needs Claude credentials | turn **shape** only: `end_turn` plus displayable output from a real, foreign production agent |
 
@@ -77,6 +79,12 @@ drives the same DriveTurn path against any registered agent and streams the
 reply — the way to verify an agent right after `contenox agent add`.
 
 ### MCP forwarding and the agent's command surface
+
+Forwarding a registered MCP command does not grant it permission to execute
+inside a foreign agent's sandbox. Its executable and dependencies must be
+reachable under the [sandbox configuration](/docs/guide/confinement/sandbox/).
+The composed-host test must exercise that confinement as well as the ACP
+forwarding contract; a passing wire-only MCP test does not prove both.
 
 An agent row's `mcp_servers` config field is an explicit, per-agent allowlist
 of registered MCP server names (`contenox mcp list`) forwarded to that agent
@@ -98,3 +106,29 @@ printed by `agent check`. *Merging* them with contenox's own acpsvc command
 set is not implemented: acpsvc's leading-slash interception is the natural
 merge point, and a collision policy is required since command sets can
 overlap (claude-code-acp and acpsvc both advertise `/compact`).
+
+
+## Native session settings
+
+Read the session's returned `configOptions` instead of hard-coding names or
+values. Contenox advertises dotted IDs corresponding to `contenox config` names, with
+human-readable names, descriptions and current choices. The model select carries
+a `provider/model` pair; saved defaults store `inference.provider` and
+`inference.model` separately. Context and output
+selects distinguish `inherit` from `0` (automatic). A context request remains a
+request when the model changes; capacity is resolved again for each turn.
+
+`session/set_config_option` returns the refreshed option set. Replace the
+client's previous set, including descriptions: a model change can change
+capacity. The model and reasoning selects retain ACP's `model` and
+`thought_level` categories. Older IDs `model`, `think`, `hitl-policy` and
+`token-limit` remain accepted for native sessions. The output select uses
+`inference.generation.max_output_tokens` and also accepts `max-tokens`.
+
+Changes are local to the live native session and do not save machine or
+workspace defaults. The initialize metadata advertises the same inherited
+choices before session creation. External agents retain their own option IDs;
+Contenox's surrounding permission-policy select remains local to Contenox.
+
+See [configuration](/docs/reference/config/#current-session) for the slash-command
+equivalents and persistence rules.

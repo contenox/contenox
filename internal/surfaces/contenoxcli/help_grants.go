@@ -34,5 +34,5 @@ grant that never asks is refused, naming the envelope and the axis.`
 	askWaitLine = `An ask this envelope raises can carry a wait — timeout = "30m", on_timeout =
 "deny" beside the grant, or timeout = "never" for an ask that waits until it is
 answered. Raised without one it falls to this host's approval ceiling
-('contenox config set approval-ceiling', seven days until you set it).`
+('contenox config set execution.approval.timeout', seven days until you set it).`
 )

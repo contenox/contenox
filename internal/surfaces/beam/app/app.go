@@ -132,8 +132,8 @@ type Deps struct {
 	Model, Provider, SessionName string
 	// Editor composes a draft in $EDITOR: it receives the current draft as
 	// the seed and returns the edited text. An error (including the editor's
-	// own empty-abort) leaves the draft untouched. Nil disables the
-	// Ctrl+X, Ctrl+E handoff.
+	// own empty-abort) leaves the draft untouched. Nil disables both the
+	// Ctrl+X, Ctrl+E chord and the /editor command.
 	Editor func(seed string) (string, error)
 	// FileSource backs the `@` picker. Nil is legal: the picker then shows
 	// fileaddr's fixed no-root empty state.
@@ -255,8 +255,20 @@ type app struct {
 	// has no dismiss action.
 	inbox int
 
+	// pendingAsk is the newest mission ask still waiting on an operator
+	// reply, so a bare "/answer" can name a uuid the operator has no way to
+	// read off the screen. Only the newest is kept: asks are answered one at
+	// a time, and a superseded id is what /answer alone lists.
+	pendingAsk string
+
 	history []string
 	echoSeq int
+
+	// queuedPrompts holds prompts submitted while a turn was already running.
+	queuedPrompts []string
+
+	// stats holds the latest session-level usage statistics from usage_stats.
+	stats *libacp.SessionStats
 
 	// lastPrompt is the text of the most recently submitted TURN prompt —
 	// never a `!` shell line, and never a local slash command, both of which

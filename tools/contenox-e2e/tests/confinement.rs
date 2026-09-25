@@ -811,7 +811,7 @@ fn a_substitution_in_an_argument_takes_the_allowlist_off_the_table() {
 }
 
 #[test]
-fn shell_mode_is_refused_outright_and_never_reaches_the_allowlist() {
+fn shell_mode_requires_approval_even_for_an_allowlisted_command() {
     let cx = instance("gate-shellmode");
     write_policy(&cx, "pinned", &gate_policy(ALLOWED, None));
 
@@ -826,15 +826,10 @@ fn shell_mode_is_refused_outright_and_never_reaches_the_allowlist() {
             .arg("shell", true),
     );
 
+    seen.raised_by("pinned");
     assert!(
-        seen.told.contains("'shell: true' is strictly forbidden"),
-        "shell mode is settled by the toolset before any policy is consulted:\n{}",
-        seen.told
-    );
-    assert!(
-        !seen.asked && seen.ran.is_empty(),
-        "so there is no card to answer and nothing runs: asked={} ran={:?}",
-        seen.asked,
+        seen.ran.is_empty(),
+        "denying shell mode must prevent execution: ran={:?}",
         seen.ran
     );
 }
@@ -1461,8 +1456,8 @@ fn the_preview_and_the_injection_are_read_from_different_commands() {
 // contenox forwards `terminal/create` and never spawns anything, so no scrub
 // of its own applies (docs/guide/confinement/sandbox.md says exactly this).
 // Under `contenox beam`, beam IS the client, so beam spawns the process and
-// the composed scrub-and-inject is what that process gets. `contenox run` and
-// `contenox serve` have no client at all and serve no shell.
+// the composed scrub-and-inject is what that process gets. `contenox run` has
+// no client at all and serves no shell.
 //
 // So beam is the one shape where the promise is observable end to end, and
 // what it inherited is read back through `contenox session show`.
@@ -1675,7 +1670,7 @@ fn doctor_reports_the_drift_and_names_the_verb_that_fixes_it() {
 }
 
 #[test]
-#[ignore = "confirmed defect: `contenox doctor` reports trusted-binary drift only for the six legacy preset FILE NAMES. contenoxcli/hitl_cmd.go trustedBinaryDrift() loops over HITLPolicyPresets — hitl-policy-{default,strict,dev,acp,acpx,oracle}.json — so a declaration in any other policy drifts silently: an operator's own file (`hitl trust --policy ./ops/host.json` is a documented form), and every rendered envelope other than those six, which is most of the shipped set (run, change, chat, reviewer, researcher, triage, serve, read_only, ask_always, auto_edit). `contenox vet` reads every .json on the path it is given and does report it, so the same drift is visible from one command and invisible from the other — while docs/guide/confinement/trusted-binaries.md#how-vet-and-doctor-report-drift says doctor reports 'the same drift'. The fix is to walk the policy files present on policyDirs rather than a fixed preset list."]
+#[ignore = "confirmed defect: `contenox doctor` reports trusted-binary drift only for the six legacy preset FILE NAMES. contenoxcli/hitl_cmd.go trustedBinaryDrift() loops over HITLPolicyPresets — hitl-policy-{default,strict,dev,acp,acpx,oracle}.json — so a declaration in any other policy drifts silently: an operator's own file (`hitl trust --policy ./ops/host.json` is a documented form), and every rendered envelope other than those six, which is most of the shipped set (run, change, chat, reviewer, researcher, triage, read_only, ask_always, auto_edit). `contenox vet` reads every .json on the path it is given and does report it, so the same drift is visible from one command and invisible from the other — while docs/guide/confinement/trusted-binaries.md#how-vet-and-doctor-report-drift says doctor reports 'the same drift'. The fix is to walk the policy files present on policyDirs rather than a fixed preset list."]
 fn doctor_reports_drift_in_a_policy_that_is_not_a_shipped_preset_name() {
     let mut cx = instance("drift-doctor-other");
     let policy = drifted_workspace_policy(&mut cx, "hitl-policy-pinned.json");

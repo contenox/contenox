@@ -198,6 +198,8 @@ func (d *nativeDriver) runNativeTurn(turnCtx context.Context, req libacp.PromptR
 	// reads the loss in the order the live one saw it.
 	announceDroppedContent(turnCtx, req.SessionID, droppedContentKinds, audioRefusal, emit)
 
+	t.ensureSessionMission(turnCtx, sess, string(req.SessionID), input)
+
 	// Same per-session HITL/mission context injection as prompt.go, riding
 	// turnCtx instead of the request ctx.
 	if policyName := t.resolveSessionHITLPolicy(sess); policyName != "" {
@@ -254,33 +256,13 @@ func (d *nativeDriver) runNativeTurn(turnCtx context.Context, req libacp.PromptR
 		}
 	}
 
-	contextLen := sess.effectiveTokenLimit()
-	if contextLen == 0 {
-		currentModel := sess.modelOrDefault(t.model())
-		for _, state := range t.runtimeStates(turnCtx) {
-			for _, pulled := range state.PulledModels {
-				if pulled.Model == currentModel && pulled.ContextLength > 0 {
-					contextLen = pulled.ContextLength
-					break
-				}
-			}
-			if contextLen > 0 {
-				break
-			}
+	contextLen, err := t.validatedTurnContextLength(turnCtx, sess)
+	if err != nil {
+		if drainEvents != nil {
+			drainEvents()
 		}
-		if contextLen == 0 {
-			for _, state := range t.runtimeStates(turnCtx) {
-				for _, pulled := range state.PulledModels {
-					if pulled.ContextLength > 0 && (pulled.CanChat || pulled.CanPrompt) {
-						contextLen = pulled.ContextLength
-						break
-					}
-				}
-				if contextLen > 0 {
-					break
-				}
-			}
-		}
+		reportErr(err)
+		return nativeturn.Result{Err: err, DroppedContentKinds: droppedContentKinds}
 	}
 
 	resp, err := d.agent.Prompt(turnCtx, agentservice.PromptRequest{

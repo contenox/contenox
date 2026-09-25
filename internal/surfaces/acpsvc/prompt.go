@@ -2,7 +2,9 @@ package acpsvc
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/contenox/contenox/internal/kernel/taskengine"
@@ -28,6 +30,45 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 		return libacp.PromptResponse{}, err
 	}
 	t.claimSessionRouting(sess)
+
+	// Mirror the user's prompt to any other live connections holding the same session.
+	if t.deps.SessionRouter != nil {
+		if contenoxID, ok := t.contenoxSessionForACPID(req.SessionID); ok {
+			images, nonImageBlocks := extractImageParts(req.Prompt)
+			audio, textBlocks := extractAudioParts(nonImageBlocks)
+			input, _ := libacp.FlattenContent(textBlocks)
+			msgID := fmt.Sprintf("mirror-user-%d", time.Now().UnixNano())
+			userChunk := libacp.NewUserMessageChunk(input)
+			userChunk.MessageID = msgID
+			t.deps.SessionRouter.mirror(t, contenoxID, libacp.SessionNotification{
+				SessionID: req.SessionID,
+				Update:    userChunk,
+			})
+			for _, img := range images {
+				imgBlock := libacp.NewImageContent(base64.StdEncoding.EncodeToString(img.Data), img.MimeType)
+				t.deps.SessionRouter.mirror(t, contenoxID, libacp.SessionNotification{
+					SessionID: req.SessionID,
+					Update: libacp.SessionUpdate{
+						SessionUpdate: libacp.SessionUpdateUserMessageChunk,
+						MessageID:     msgID,
+						Content:       &imgBlock,
+					},
+				})
+			}
+			for _, aud := range audio {
+				audBlock := libacp.NewAudioContent(base64.StdEncoding.EncodeToString(aud.Data), aud.MimeType)
+				t.deps.SessionRouter.mirror(t, contenoxID, libacp.SessionNotification{
+					SessionID: req.SessionID,
+					Update: libacp.SessionUpdate{
+						SessionUpdate: libacp.SessionUpdateUserMessageChunk,
+						MessageID:     msgID,
+						Content:       &audBlock,
+					},
+				})
+			}
+		}
+	}
+
 	resp, err := sess.driver.Prompt(ctx, req, sess)
 	if err != nil {
 		return resp, err
@@ -49,16 +90,13 @@ func (d *nativeDriver) AvailableCommands() []libacp.AvailableCommand { return d.
 
 func (d *nativeDriver) ConfigOptions(ctx context.Context, sess *sessionEntry) []libacp.SessionConfigOption {
 	t := d.t
-	opts := []libacp.SessionConfigOption{
+	return []libacp.SessionConfigOption{
 		t.modelConfigOption(ctx, sess),
 		t.hitlPolicyConfigOption(sess),
 		t.thinkConfigOption(sess),
 		t.tokenLimitConfigOption(ctx, sess),
+		t.outputTokensConfigOption(ctx, sess),
 	}
-	if opt, ok := t.agentConfigOption(ctx, sess); ok {
-		opts = append(opts, opt)
-	}
-	return opts
 }
 
 func (d *nativeDriver) SetConfigOption(ctx context.Context, sess *sessionEntry, configID string, value libacp.SessionConfigOptionValue) error {
@@ -170,6 +208,8 @@ func (d *nativeDriver) Prompt(ctx context.Context, req libacp.PromptRequest, ses
 		cancelPrompt()
 	}()
 
+	t.ensureSessionMission(promptCtx, sess, string(req.SessionID), input)
+
 	// One shared hitlservice sits behind every session, so the per-session policy
 	// rides the request context.
 	if policyName := t.resolveSessionHITLPolicy(sess); policyName != "" {
@@ -222,33 +262,13 @@ func (d *nativeDriver) Prompt(ctx context.Context, req libacp.PromptRequest, ses
 		}
 	}
 
-	contextLen := sess.effectiveTokenLimit()
+	contextLen, err := t.validatedTurnContextLength(promptCtx, sess)
+	if err != nil {
+		reportErr(err)
+		return libacp.PromptResponse{}, libacp.NewError(libacp.ErrInvalidParams, err.Error())
+	}
 	if contextLen == 0 {
-		currentModel := sess.modelOrDefault(t.model())
-		for _, state := range t.runtimeStates(promptCtx) {
-			for _, pulled := range state.PulledModels {
-				if pulled.Model == currentModel && pulled.ContextLength > 0 {
-					contextLen = pulled.ContextLength
-					break
-				}
-			}
-			if contextLen > 0 {
-				break
-			}
-		}
-		if contextLen == 0 {
-			for _, state := range t.runtimeStates(promptCtx) {
-				for _, pulled := range state.PulledModels {
-					if pulled.ContextLength > 0 && (pulled.CanChat || pulled.CanPrompt) {
-						contextLen = pulled.ContextLength
-						break
-					}
-				}
-				if contextLen > 0 {
-					break
-				}
-			}
-		}
+		contextLen = defaultContextWindowFallback
 	}
 
 	resp, err := d.agent.Prompt(promptCtx, agentservice.PromptRequest{

@@ -792,7 +792,7 @@ func TestLoopback_NativeSession_LoadUnaffectedByReloadPath(t *testing.T) {
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: cwd, McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
 	require.NotEmpty(t, newResp.ConfigOptions, "a native session/new advertises the chain config options")
-	h.lc.drain(t, 1) // deferred available_commands_update after session/new
+	h.lc.drain(t, 2) // command menu and initial context gauge after session/new
 	loadResp, err := h.client.LoadSession(ctx, libacp.LoadSessionRequest{
 		SessionID:  newResp.SessionID,
 		Cwd:        cwd,
@@ -802,7 +802,9 @@ func TestLoopback_NativeSession_LoadUnaffectedByReloadPath(t *testing.T) {
 	require.NotEmpty(t, loadResp.ConfigOptions,
 		"a native session/load must still carry the chain config options (the external reload path must not intercept it)")
 
-	got := h.lc.drain(t, 1)
+	got := h.lc.drain(t, 2)
+	require.Equal(t, libacp.SessionUpdateUsageUpdate, got[0].Update.SessionUpdate)
+	got = got[1:]
 	require.Equal(t, libacp.SessionUpdateAvailableCommands, got[0].Update.SessionUpdate,
 		"a native session/load still emits the contenox slash-command menu")
 	require.Equal(t, newResp.SessionID, got[0].SessionID)
@@ -1317,10 +1319,10 @@ func TestLoopback_ExternalAgent_HITLPolicyPickerRoundTripsNativelyAndPersists(t 
 }
 
 // TestLoopback_NativeSession_PolicySlashCommandStillWorks pins: the native
-// /policy slash command still switches the global cli.hitl-policy-name KV,
-// distinct from the per-session toolbar HITL picker, which never writes it.
+// /policy uses the same session-local permission selection as the ACP picker.
 func TestLoopback_NativeSession_PolicySlashCommandStillWorks(t *testing.T) {
 	h := newLoopbackHarness(t)
+	h.tr.deps.KnownPolicies = []string{"dev", "strict"}
 	ctx := context.Background()
 
 	_, err := h.client.Initialize(ctx, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
@@ -1331,7 +1333,7 @@ func TestLoopback_NativeSession_PolicySlashCommandStillWorks(t *testing.T) {
 		McpServers: []libacp.McpServer{},
 	})
 	require.NoError(t, err)
-	h.lc.drain(t, 1) // the deferred available_commands_update after session/new
+	h.lc.drain(t, 2) // command menu and initial context gauge after session/new
 
 	promptResp, err := h.client.Prompt(ctx, libacp.PromptRequest{
 		SessionID: newResp.SessionID,
@@ -1347,15 +1349,15 @@ func TestLoopback_NativeSession_PolicySlashCommandStillWorks(t *testing.T) {
 	var confirmed bool
 	for _, u := range updates {
 		if u.Update.SessionUpdate == libacp.SessionUpdateAgentMessageChunk && u.Update.Content != nil {
-			require.Contains(t, u.Update.Content.Text, "HITL policy set to dev",
+			require.Contains(t, u.Update.Content.Text, "Session execution.permissions.policy = dev",
 				"the native /policy switch confirms inline")
 			confirmed = true
 		}
 	}
 	require.True(t, confirmed, "the /policy confirmation must reach the client")
 
-	// The native slash path writes the persisted KV at this session's
-	// workspace scope, unlike the per-session picker, which writes nothing.
-	require.Equal(t, "dev", clikv.ReadHITLPolicy(ctx, runtimetypes.New(h.tr.deps.DB.WithoutTransaction()), h.tr.workspaceID()),
-		"native /policy still writes the cli.hitl-policy-name KV the evaluator reads")
+	require.Empty(t, clikv.ReadHITLPolicy(ctx, runtimetypes.New(h.tr.deps.DB.WithoutTransaction()), h.tr.workspaceID()))
+	sess, ok := h.tr.sessionFor(newResp.SessionID)
+	require.True(t, ok)
+	require.Equal(t, "dev", sess.hitlPolicy())
 }

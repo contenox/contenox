@@ -1,9 +1,9 @@
 package agentdecl
 
 import (
+	"context"
 	"fmt"
-	"io/fs"
-	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -27,18 +27,22 @@ type Skill struct {
 	Path        string
 }
 
-// DiscoverSkills reads every skill under the given contenox directories, nearest
-// root first, in either the flat `timesheet.md` or the `timesheet/SKILL.md`
-// layout. A nearer skill shadows one of the same name further out, and one
-// outside workspaceRoot is left out because the agent could not address it.
-func DiscoverSkills(contenoxDirs []string, workspaceRoot string) []Skill {
+// DiscoverSkills reads every skill under the given contenox roots, nearest root
+// first, in either the flat `timesheet.md` or the `timesheet/SKILL.md` layout. A
+// nearer skill shadows one of the same name further out, and one outside
+// workspaceRoot is left out because the agent could not address it.
+func DiscoverSkills(ctx context.Context, contenoxDirs []Root, workspaceRoot string) []Skill {
 	seen := map[string]bool{}
 	var out []Skill
-	for _, dir := range contenoxDirs {
-		if strings.TrimSpace(dir) == "" {
+	for _, root := range contenoxDirs {
+		if root.FS == nil {
 			continue
 		}
-		for _, skill := range skillsIn(filepath.Join(dir, SkillDirName)) {
+		skills, err := root.Child(SkillDirName)
+		if err != nil {
+			continue
+		}
+		for _, skill := range skillsIn(ctx, skills) {
 			if seen[skill.Name] {
 				continue
 			}
@@ -66,39 +70,39 @@ func readablePath(path, workspaceRoot string) (string, bool) {
 	return filepath.ToSlash(rel), true
 }
 
-func skillsIn(root string) []Skill {
-	entries, err := os.ReadDir(root)
+func skillsIn(ctx context.Context, root Root) []Skill {
+	entries, err := root.FS.ReadDir(ctx, ".")
 	if err != nil {
 		return nil
 	}
 	var out []Skill
 	for _, entry := range entries {
-		path := filepath.Join(root, entry.Name())
+		rel := entry.Name()
 		if entry.IsDir() {
-			path = filepath.Join(path, "SKILL.md")
-			if info, err := os.Stat(path); err != nil || info.IsDir() {
+			rel = path.Join(rel, "SKILL.md")
+			if info, err := root.FS.Stat(ctx, rel); err != nil || info.IsDir() {
 				continue
 			}
-		} else if !strings.EqualFold(filepath.Ext(entry.Name()), ".md") {
+		} else if !strings.EqualFold(path.Ext(entry.Name()), ".md") {
 			continue
 		}
-		if skill, ok := readSkill(path, entry); ok {
+		data, err := root.FS.ReadFile(ctx, rel)
+		if err != nil {
+			continue
+		}
+		if skill, ok := readSkill(data, root.Path(rel), entry.Name(), entry.IsDir()); ok {
 			out = append(out, skill)
 		}
 	}
 	return out
 }
 
-func readSkill(path string, entry fs.DirEntry) (Skill, bool) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return Skill{}, false
+func readSkill(data []byte, display, entryName string, isDir bool) (Skill, bool) {
+	name := strings.TrimSuffix(entryName, path.Ext(entryName))
+	if isDir {
+		name = entryName
 	}
-	name := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
-	if entry.IsDir() {
-		name = entry.Name()
-	}
-	skill := Skill{Name: name, Path: path}
+	skill := Skill{Name: name, Path: display}
 
 	// Frontmatter is optional: a bare Markdown procedure is still a skill.
 	if front, _, ok := splitFrontmatter(data); ok {

@@ -1,6 +1,7 @@
 package contenoxcli
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -162,7 +163,7 @@ func TestUnit_StalePolicyNotice_StopsAfterRefresh(t *testing.T) {
 		require.NotEmpty(t, stalePolicyNotice("hitl-policy-default.json", []string{dir}, nil))
 
 		// What `contenox init --refresh-policies` does.
-		_, err := refreshExistingHITLPolicies(dir)
+		_, err := refreshExistingHITLPolicies(context.Background(), dir)
 		require.NoError(t, err)
 
 		require.Empty(t, stalePolicyNotice("hitl-policy-default.json", []string{dir}, nil))
@@ -305,7 +306,7 @@ func TestUnit_DoctorStalePolicyWarning(t *testing.T) {
 	require.True(t, res.Ready())
 
 	// And with a current envelope doctor stays quiet.
-	_, refreshErr := refreshExistingHITLPolicies(dir)
+	_, refreshErr := refreshExistingHITLPolicies(context.Background(), dir)
 	require.NoError(t, refreshErr)
 	clean := setupcheck.AddStalePolicyPresetIssue(
 		setupcheck.Result{DefaultModel: "qwen2.5:7b", DefaultProvider: "ollama"},

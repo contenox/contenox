@@ -225,7 +225,7 @@ func resolveChatChain(ctx context.Context, cmd *cobra.Command, contenoxDir strin
 		if err != nil {
 			return nil, fmt.Errorf("invalid --chain path: %w", err)
 		}
-		return loadChainFromFile(path)
+		return loadChainFromFile(ctx, path)
 	}
 	if err := ensureProfileChain(ctx, contenoxDir, chainAgentChatFilename, "", libtracker.NoopTracker{}); err != nil {
 		return nil, err
@@ -239,5 +239,5 @@ func resolveChatChain(ctx context.Context, cmd *cobra.Command, contenoxDir strin
 	if err != nil {
 		return nil, err
 	}
-	return loadChainFromFile(path)
+	return loadChainFromFile(ctx, path)
 }

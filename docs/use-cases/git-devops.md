@@ -19,7 +19,7 @@ a git hook, or a CI step.
   is refused:
 
   ```bash
-  contenox config set default-mission-policy hitl-policy-default.json
+  contenox config set execution.missions.permissions.policy hitl-policy-default.json
   ```
 
 ---

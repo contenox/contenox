@@ -22,7 +22,7 @@ var realTools = map[string]bool{
 	"write_file":      true,
 	"edit_file":       true,
 
-	// native-fs-browse, real since the 2026-08-19 revival wired it.
+	// local_fs, real since the 2026-08-19 revival wired it.
 	"list_dir":    true,
 	"find_files":  true,
 	"stat_file":   true,
@@ -65,17 +65,16 @@ var toolShapedToken = regexp.MustCompile(`\b[a-z]+(?:_[a-z]+)+\b`)
 // grant passes MapTools verbatim, so this is the only thing standing between a
 // renamed toolset and a declaration that silently grants nothing.
 var servedToolsets = map[string]bool{
-	"local_fs":         true,
-	"local_shell":      true,
-	"native-git":       true,
-	"native-fs-browse": true,
-	"native-web":       true,
-	"native-jq":        true,
-	"native-go":        true,
-	"native-goja":      true,
-	"native-ssh":       true,
-	"native-echo":      true,
-	"mission":          true,
+	"local_fs":    true,
+	"local_shell": true,
+	"native-git":  true,
+	"native-web":  true,
+	"native-jq":   true,
+	"native-go":   true,
+	"native-goja": true,
+	"native-ssh":  true,
+	"native-echo": true,
+	"mission":     true,
 }
 
 // preseedDeclarations returns every markdown file this package ships, keyed by

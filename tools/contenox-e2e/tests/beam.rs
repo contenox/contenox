@@ -163,12 +163,13 @@ fn the_composer_takes_slash_for_commands() {
     let screen = pty
         .wait_for("/help", Duration::from_secs(30))
         .expect("the slash palette lists the session's commands");
-    for command in ["/clear", "/keys"] {
-        assert!(
-            screen.contains(command),
-            "the palette should offer {command}:\n{screen}"
-        );
-    }
+    assert!(
+        screen.contains("/clear"),
+        "the palette offers /clear: {screen}"
+    );
+    pty.send("keys").expect("filter the palette");
+    pty.wait_for("/keys", Duration::from_secs(30))
+        .expect("filtering reveals commands beyond the visible page");
 }
 
 #[test]
@@ -537,15 +538,14 @@ fn light_paints_the_brand_in_its_light_ladder() {
     light.interrupt();
     light.wait_exit(ready()).expect("beam leaves");
 
-    // #059669 is the brand mint for a light background, #34D399 for a dark one.
     assert_eq!(
         overridden.first().map(String::as_str),
-        Some("38;2;5;150;105"),
+        Some("38;2;159;121;0"),
         "--light overrides detection and paints the light ladder"
     );
     assert_eq!(
         detected.first().map(String::as_str),
-        Some("38;2;52;211;153"),
+        Some("38;2;242;201;76"),
         "the same terminal, undirected, opens on the dark ladder"
     );
 }
@@ -718,7 +718,6 @@ fn hitl_policy_read_only_refuses_the_write_without_raising_an_ask() {
 // ------------------------------------------------- confirmed defects
 
 #[test]
-#[ignore = "confirmed defect: a re-offered card claims 'Esc cancels turn' over a turn that ended in another process. Nothing marks a parked ask detached on the re-offer path (acpsvc.offerParkedAsk -> enginebridge PermissionRequested -> beam app.events), so approval.Card.MarkDetached is never called and the footer keeps the live-turn hint."]
 fn a_reoffered_card_says_answering_resumes_the_run() {
     let cx = Instance::named("beam-reoffer-hint").expect("scratch instance");
     cx.init().ok();
@@ -746,7 +745,6 @@ fn a_reoffered_card_says_answering_resumes_the_run() {
 }
 
 #[test]
-#[ignore = "confirmed defect: Esc on a re-offered card is silent and cancels a session with no turn in it. app.dispatch takes the Detached() branch — which prints 'no turn is running …' — only for a card marked detached, and the re-offer path never marks one, so Esc calls Bridge.Cancel instead and prints nothing."]
 fn esc_on_a_reoffered_card_says_there_is_no_turn_to_cancel() {
     let cx = Instance::named("beam-reoffer-esc").expect("scratch instance");
     cx.init().ok();
@@ -774,7 +772,6 @@ fn esc_on_a_reoffered_card_says_there_is_no_turn_to_cancel() {
 }
 
 #[test]
-#[ignore = "confirmed defect: a re-offered card names the tool and the rule but nothing about what the call acts on. acpsvc.parkedAskCard deliberately carries no rawInput and puts the row's args_summary on ToolCall.Title and in a content block; approval.Card.Ask renders neither, so the operator is asked to authorise a write without being shown the path that 'contenox approvals list' prints in its SUMMARY column."]
 fn a_reoffered_card_still_names_what_the_call_acts_on() {
     let cx = Instance::named("beam-reoffer-target").expect("scratch instance");
     cx.init().ok();

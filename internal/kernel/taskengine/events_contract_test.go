@@ -34,7 +34,7 @@ func TestContract_StreamedRun_SequenceFieldsAndAddresses(t *testing.T) {
 			ch <- &libmodelprovider.StreamParcel{Data: "world"}
 			ch <- &libmodelprovider.StreamParcel{Terminal: &libmodelprovider.StreamTerminal{
 				FinishReason: "stop",
-				Usage:        &libmodelprovider.TokenUsage{PromptTokens: 11, CompletionTokens: 7, TotalTokens: 18},
+				Usage:        &libmodelprovider.TokenUsage{PromptTokens: 11, CompletionTokens: 7, ThinkingTokens: 5, TotalTokens: 18, CacheReadTokens: 9, CacheWriteTokens: 2},
 			}}
 			close(ch)
 			return ch, llmrepo.Meta{ModelName: "test-model", ProviderType: "openai", BackendID: "b1"}, nil
@@ -85,7 +85,7 @@ func TestContract_StreamedRun_SequenceFieldsAndAddresses(t *testing.T) {
 	assert.Equal(t, 3, streamEnd.ChunkCount)
 	assert.Equal(t, "stop", streamEnd.FinishReason)
 	require.NotNil(t, streamEnd.Usage)
-	assert.Equal(t, taskengine.TokenUsage{Prompt: 11, Completion: 7, Total: 18}, *streamEnd.Usage)
+	assert.Equal(t, taskengine.TokenUsage{Prompt: 11, Completion: 7, Thinking: 5, Total: 18, CacheRead: 9, CacheWrite: 2}, *streamEnd.Usage)
 	assert.Equal(t, "test-model", streamEnd.ModelName)
 	assert.Equal(t, "openai", streamEnd.ProviderType)
 	assert.Equal(t, "b1", streamEnd.BackendID)

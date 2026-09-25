@@ -11,9 +11,27 @@ const redactedPlaceholder = "[REDACTED]"
 // maxRedactDepth bounds the walk over a decoded payload.
 const maxRedactDepth = 64
 
-// defaultRedactedFields are matched as case-insensitive substrings of a
-// normalized field name.
-var defaultRedactedFields = []string{
+// defaultPrivatePayloadFields are exact matches so accounting names such as
+// input_tokens and output_tokens remain observable.
+var defaultPrivatePayloadFields = []string{
+	"args",
+	"arguments",
+	"argv",
+	"content",
+	"input",
+	"message",
+	"messages",
+	"output",
+	"prompt",
+	"provider_meta",
+	"system_instruction",
+	"thinking",
+	"thought_signature",
+}
+
+// defaultRedactedFields combines substring-matched credential names with exact
+// private-payload names.
+var defaultRedactedFields = append([]string{
 	"password",
 	"passwd",
 	"passphrase",
@@ -39,7 +57,7 @@ var defaultRedactedFields = []string{
 	"bearer",
 	// Bare "token" catches everything else; see tokenAccountingFields.
 	"token",
-}
+}, defaultPrivatePayloadFields...)
 
 // tokenAccountingFields exempts the bare "token" rule so LLM telemetry like
 // "max_tokens" isn't redacted.
@@ -92,6 +110,12 @@ func (r *fieldRedactor) sensitive(name string) bool {
 		return false
 	}
 	for _, f := range r.fields {
+		if privatePayloadField(f) {
+			if n == f {
+				return true
+			}
+			continue
+		}
 		if !strings.Contains(n, f) {
 			continue
 		}
@@ -99,6 +123,15 @@ func (r *fieldRedactor) sensitive(name string) bool {
 			continue
 		}
 		return true
+	}
+	return false
+}
+
+func privatePayloadField(name string) bool {
+	for _, field := range defaultPrivatePayloadFields {
+		if name == field {
+			return true
+		}
 	}
 	return false
 }
@@ -143,7 +176,6 @@ func (r *fieldRedactor) redactMarshaled(raw []byte, v any) (any, bool) {
 
 func (r *fieldRedactor) redactTree(v any, depth int) (any, bool) {
 	if depth > maxRedactDepth {
-		// Fail closed below the depth limit.
 		return redactedPlaceholder, true
 	}
 	switch node := v.(type) {

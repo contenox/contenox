@@ -105,7 +105,7 @@ func TestUnit_Reporter_BestEffort_StoreFailureNeverBreaksStartup(t *testing.T) {
 	done := make(chan *presence.Reporter, 1)
 	go func() {
 		done <- presence.StartReporter(context.Background(), store,
-			presence.Record{Kind: presence.KindServe},
+			presence.Record{Kind: presence.KindACP},
 			presence.WithInterval(5*time.Millisecond),
 		)
 	}()
@@ -174,7 +174,7 @@ func TestUnit_Reporter_StoreFailureIsReportedToTracker(t *testing.T) {
 	store := &recordingStore{fail: true}
 	tracker := &recordingTracker{}
 	r := presence.StartReporter(context.Background(), store,
-		presence.Record{Kind: presence.KindServe},
+		presence.Record{Kind: presence.KindACP},
 		presence.WithInterval(5*time.Millisecond),
 		presence.WithTracker(tracker),
 	)

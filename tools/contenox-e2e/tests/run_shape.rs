@@ -201,7 +201,7 @@ fn a_task_with_no_envelope_to_bound_it_is_refused_rather_than_guessed_at() {
         .expect("contenox run")
         .expect_failure()
         .expect_stderr("no mission envelope: pass --policy <policy>")
-        .expect_stderr("contenox config set default-mission-policy");
+        .expect_stderr("contenox config set execution.missions.permissions.policy");
 
     assert!(
         cx.missions().expect("contenox mission list").is_empty(),
@@ -347,7 +347,7 @@ fn a_scripted_tool_call_reaches_a_toolset_registered_on_this_machine() {
         .output()
         .expect("contenox run")
         .ok()
-        .expect_stderr("operation=tool_call subject=native-fs-browse.list_dir");
+        .expect_stderr("operation=tool_call subject=local_fs.list_dir");
 
     assert!(
         !out.stderr.contains("invalid_call=true"),
@@ -364,10 +364,8 @@ fn a_scripted_tool_call_reaches_a_toolset_registered_on_this_machine() {
 /// itself, rooted at the launch directory — "the tools on that machine", as
 /// the README promises. The envelope, not tool absence, bounds the call: the
 /// shell command is held as a durable ask, and answering it runs the command.
-/// The mission does not land here: the scripted backend replays its script
-/// from the top on every resume, so the re-emitted shell call — a fresh call —
-/// is correctly held by the envelope again. A real model resumes from history
-/// instead of re-emitting, which is the half a scripted dialog cannot reach.
+/// Replaying the same call ID reuses its recorded result. A later call with a
+/// distinct ID must ask again before touching another file.
 #[test]
 fn a_run_serves_the_shell_itself_and_the_envelope_holds_the_call() {
     let cx = instance("run-owns-shell");
@@ -378,6 +376,13 @@ fn a_run_serves_the_shell_itself_and_the_envelope_holds_the_call() {
                     ToolCall::new("local_shell")
                         .arg("command", "touch")
                         .arg("args", serde_json::json!(["proof.txt"])),
+                ),
+            )
+            .turn(
+                Turn::new().text("A separate command.").call(
+                    ToolCall::new("local_shell")
+                        .arg("command", "touch")
+                        .arg("args", serde_json::json!(["second-proof.txt"])),
                 ),
             )
             .turn(
@@ -421,13 +426,15 @@ fn a_run_serves_the_shell_itself_and_the_envelope_holds_the_call() {
         "answering the ask runs the gated command on this machine"
     );
 
-    // The scripted replay re-emits the call as a fresh one, and the envelope
-    // holds a fresh call for approval — each emission is its own gate.
     let asks = cx.approvals().expect("contenox approvals list");
     assert_eq!(
         asks.len(),
         1,
-        "the re-emitted call is held again, got {asks:?}"
+        "the distinct call is held for approval, got {asks:?}"
+    );
+    assert!(
+        !cx.work().join("second-proof.txt").exists(),
+        "the previous approval must not authorize a distinct call"
     );
     assert_eq!(asks[0].tool, "local_shell.local_shell");
     assert_ne!(

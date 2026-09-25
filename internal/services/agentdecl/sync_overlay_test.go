@@ -1,6 +1,7 @@
 package agentdecl_test
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -25,12 +26,12 @@ func syncOne(t *testing.T, root, config string) ([]agentdecl.SyncResult, string)
 			t.Fatalf("write config: %v", err)
 		}
 	}
-	cfg, err := agentdecl.Load(root)
+	cfg, err := agentdecl.Load(context.Background(), rootOf(t, root))
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
 	gen := filepath.Join(root, agentdecl.GeneratedDirName)
-	results, err := agentdecl.Sync(agentdecl.DiscoverSourceDirs([]string{root}, nil), gen, cfg)
+	results, err := syncAt(t, context.Background(), agentdecl.DiscoverSourceDirs(context.Background(), rootsOf(t, root), nil), gen, cfg)
 	if err != nil {
 		t.Fatalf("sync: %v", err)
 	}
@@ -72,8 +73,8 @@ token_limit = 4096
 	if got := triage["token_limit"]; got == float64(4096) {
 		t.Fatalf("triage inherited reviewer's overlay: %v", got)
 	}
-	if got := triage["token_limit"]; got != float64(131072) {
-		t.Fatalf("triage token_limit = %v, want the shipped 131072", got)
+	if got := triage["token_limit"]; got != float64(0) {
+		t.Fatalf("triage token_limit = %v, want the inherited window", got)
 	}
 }
 
@@ -85,7 +86,7 @@ func TestUnit_Sync_ConfigEditRegeneratesWithoutTouchingTheDeclaration(t *testing
 	declare(t, filepath.Join(root, agentdecl.NativeSourceDir), "reviewer.md", declReviewer)
 
 	_, gen := syncOne(t, root, "")
-	if got := readChain(t, gen, "chain-agent-reviewer.json")["token_limit"]; got != float64(131072) {
+	if got := readChain(t, gen, "chain-agent-reviewer.json")["token_limit"]; got != float64(0) {
 		t.Fatalf("first pass token_limit = %v", got)
 	}
 
@@ -139,7 +140,7 @@ func TestUnit_Sync_RewritesAGeneratedFileThatWasCorrupted(t *testing.T) {
 	}
 
 	syncOne(t, root, "")
-	if got := readChain(t, gen, "chain-agent-reviewer.json")["token_limit"]; got != float64(131072) {
+	if got := readChain(t, gen, "chain-agent-reviewer.json")["token_limit"]; got != float64(0) {
 		t.Fatalf("corrupted file was not rewritten: token_limit = %v", got)
 	}
 }
@@ -153,7 +154,7 @@ func TestUnit_Sync_OverlayThatCannotRunRefusesThatAgentOnly(t *testing.T) {
 
 	results, gen := syncOne(t, root, `
 [agents.reviewer.chain]
-token_limit = 0
+token_limit = -1
 `)
 
 	r, ok := resultFor(results, "reviewer.md")
@@ -207,12 +208,12 @@ token_limit = 4096
 `), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	cfg, err := agentdecl.Load(root)
+	cfg, err := agentdecl.Load(context.Background(), rootOf(t, root))
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	gen := filepath.Join(root, agentdecl.GeneratedDirName)
-	results, err := agentdecl.Sync(agentdecl.DiscoverSourceDirs([]string{root}, []string{workspace}), gen, cfg)
+	results, err := syncAt(t, context.Background(), agentdecl.DiscoverSourceDirs(context.Background(), rootsOf(t, root), rootsOf(t, workspace)), gen, cfg)
 	if err != nil {
 		t.Fatalf("sync: %v", err)
 	}

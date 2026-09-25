@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func TestUnit_Beam_IsItsOwnCommandNotAServeAlias(t *testing.T) {
+func TestUnit_Beam_IsItsOwnCommand(t *testing.T) {
 	var found *cobra.Command
 	for _, c := range rootCmd.Commands() {
 		if c.Name() == "beam" {
@@ -21,17 +21,8 @@ func TestUnit_Beam_IsItsOwnCommandNotAServeAlias(t *testing.T) {
 	if found.Hidden {
 		t.Fatal("'contenox beam' is the terminal surface, not a hidden alias")
 	}
-	if acpProfileBeam.host {
-		t.Fatal("the beam profile must not run the unattended host")
-	}
 	if !acpProfileBeam.beam {
 		t.Fatal("the beam profile must select the terminal surface")
-	}
-	if acpProfileServe.beam {
-		t.Fatal("'contenox serve' must stay unattended")
-	}
-	if acpProfileBeam.name == acpProfileServe.name {
-		t.Fatalf("beam and serve must not share a log name: both are %q", acpProfileBeam.name)
 	}
 }
 
@@ -75,5 +66,13 @@ func TestUnit_BeamRoot_RefusesANonDirectory(t *testing.T) {
 	}
 	if _, err := beamRoot(cmd, "/launch/dir"); err == nil {
 		t.Fatal("expected a file to be refused as a workspace root")
+	}
+}
+
+func TestUnit_Beam_CarriesOracleFlags(t *testing.T) {
+	for _, flag := range []string{"oracle", "oracle-policy", "oracle-approves-tool-calls"} {
+		if beamCmd.Flags().Lookup(flag) == nil {
+			t.Fatalf("beam must declare --%s", flag)
+		}
 	}
 }

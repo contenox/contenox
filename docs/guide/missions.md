@@ -82,7 +82,6 @@ The unit's lifetime is its host's lifetime. To fire a mission and keep working, 
 |---|---|---|
 | `contenox beam` (a terminal session) | `/mission <intent>` | Reports stream back into the firing session as they land |
 | `contenox acp` (an editor session) | `/mission <intent>` | Same, routed through the editor |
-| `contenox serve` (a standing host) | from the app | The host outlives every session attached to it |
 | `contenox mission fire --wait` | the CLI | Blocking; the unit dies when the command returns |
 
 There is no daemon and no background mission service. This is stated plainly rather than worked around: process supervision is the host's job, and the durable record is what makes a dead host survivable.
@@ -181,7 +180,7 @@ Nothing catches an over-declared bound at author time. `contenox vet` is silent 
 Set the default envelope once, then fire.
 
 ```bash
-contenox config set default-mission-policy hitl-policy-default.json
+contenox config set execution.missions.permissions.policy hitl-policy-default.json
 contenox agent list                      # what you can fire at
 ```
 
@@ -244,7 +243,7 @@ contenox mission stop 9f3c… --reason "requirements changed"
 
 ## Next
 
-- [Declaring agents](/docs/guide/agents/) — the file you fire at
+- [Declaring agents](/docs/guide/declarations/) — the file you fire at
 - [HITL policies](/docs/guide/hitl/) — where an envelope comes from, the shipped set, and the `attention` bounds
 - [`[envelopes.<name>]`](/docs/reference/agents-config/#envelopesname) — the axis grammar you write one in
 - [Troubleshooting](/docs/guide/troubleshooting/) — a mission stuck in `open`, recovering after a crash, and `doctor --bundle`

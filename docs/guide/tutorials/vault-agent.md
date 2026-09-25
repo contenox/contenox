@@ -217,7 +217,7 @@ Writing a policy file does not make it the active one. Name it as the mission
 envelope:
 
 ```bash
-contenox config set default-mission-policy hitl-policy-vault.json
+contenox config set execution.missions.permissions.policy hitl-policy-vault.json
 ```
 
 ```
@@ -356,6 +356,6 @@ change shape — only the tool names in the rules do.
 ## Next
 
 - [Guardrails](/docs/guide/confinement/guardrails/) — the six declarations that scope an agent.
-- [Declaring agents](/docs/guide/agents/) — the one-file road, for the next agent that does not need a fence this hard.
+- [Declaring agents](/docs/guide/declarations/) — the one-file road, for the next agent that does not need a fence this hard.
 - [Writing a chain by hand](/docs/guide/chains/writing-a-chain/) — the chain format in full.
 - [HITL policies](/docs/guide/hitl/) — the envelope grammar and every operator.

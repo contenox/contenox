@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/contenox/contenox/internal/models/modelrepo"
+	"github.com/stretchr/testify/assert"
 )
 
 // An image attachment becomes an OpenAI content-parts array; a text-only
@@ -157,7 +158,7 @@ func TestUnit_StreamDecoder_EmitsRawDeltasForAssembler(t *testing.T) {
 		`{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"fs_list","arguments":"{\"pa"}}]}}]}`,
 		`{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"th\":\"/x\"}"}}]}}]}`,
 		`{"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`,
-		`{"choices":[],"usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}}`,
+		`{"choices":[],"usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18,"completion_tokens_details":{"reasoning_tokens":5}}}`,
 	}
 	for _, l := range lines {
 		parcels, err := d.DecodeLine([]byte(l))
@@ -192,7 +193,27 @@ func TestUnit_StreamDecoder_EmitsRawDeltasForAssembler(t *testing.T) {
 	if res.FinishReason != "tool_calls" {
 		t.Fatalf("finish reason: %q", res.FinishReason)
 	}
-	if res.Usage == nil || res.Usage.PromptTokens != 11 || res.Usage.CompletionTokens != 7 || res.Usage.TotalTokens != 18 {
+	if res.Usage == nil || res.Usage.PromptTokens != 11 || res.Usage.CompletionTokens != 7 || res.Usage.ThinkingTokens != 5 || res.Usage.TotalTokens != 18 {
 		t.Fatalf("usage: %+v", res.Usage)
 	}
+}
+
+func TestReasoningEffortMapsThinkOntoTheWire(t *testing.T) {
+	none := ReasoningEffort(nil)
+	assert.Equal(t, "", none)
+
+	auto := "auto"
+	assert.Equal(t, "", ReasoningEffort(&auto))
+
+	on := "on"
+	assert.Equal(t, "high", ReasoningEffort(&on))
+
+	off := "off"
+	assert.Equal(t, "off", ReasoningEffort(&off))
+
+	low := "LOW"
+	assert.Equal(t, "low", ReasoningEffort(&low))
+
+	invalid := "very-much"
+	assert.Equal(t, "", ReasoningEffort(&invalid))
 }

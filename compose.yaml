@@ -1,0 +1,135 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: contenox-gateway:local
+    user: "0"
+    entrypoint: ["/usr/local/bin/gateway-container-entrypoint"]
+    command:
+      - gateway
+      - serve
+      - --listen
+      - 0.0.0.0:11435
+      - --authority-private-key-file
+      - /tmp/gateway-authority
+      - --lease-file
+      - /leases/gateway.lease
+      - --meter-lease
+      - /leases/meter-writer.lease
+    environment:
+      CONTENOX_TOKEN_KEY_FILE: /tmp/gateway-token-key
+      CONTENOX_POSTGRES_URL: postgres://contenox:${CONTENOX_POSTGRES_PASSWORD:?Set a URL-safe PostgreSQL password}@postgres:5432/contenox?sslmode=disable
+      CONTENOX_NATS_URL: nats://nats:4222
+      CONTENOX_VALKEY_URL: redis://valkey:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${CONTENOX_GATEWAY_PORT:-11435}:11435"
+    volumes:
+      - test-scripts:/fixtures:ro
+      - type: bind
+        source: ${CONTENOX_GATEWAY_LEASE_DIR:?Set a host lease directory writable by container uid 10001}
+        target: /leases
+        bind:
+          create_host_path: false
+    secrets:
+      - authority
+      - token_key
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+  postgres:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_USER: contenox
+      POSTGRES_DB: contenox
+      POSTGRES_PASSWORD: ${CONTENOX_POSTGRES_PASSWORD:?Set a URL-safe PostgreSQL password}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U contenox -d contenox"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  nats:
+    image: nats:2.11-alpine
+    command: ["--http_port", "8222"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8222/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    command: ["valkey-server", "--appendonly", "yes"]
+    volumes:
+      - valkey-data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api-test-setup:
+    image: contenox-gateway:local
+    user: "0"
+    entrypoint: ["/bin/sh", "/setup.sh"]
+    environment:
+      CONTENOX_TOKEN_KEY_FILE: /run/secrets/token_key
+      CONTENOX_POSTGRES_URL: postgres://contenox:${CONTENOX_POSTGRES_PASSWORD:?Set a URL-safe PostgreSQL password}@postgres:5432/contenox?sslmode=disable
+      CONTENOX_NATS_URL: nats://nats:4222
+      CONTENOX_VALKEY_URL: redis://valkey:6379
+    volumes:
+      - ./scripts/gateway-apitest-setup.sh:/setup.sh:ro
+      - test-scripts:/fixtures
+      - test-config:/test-config
+    secrets:
+      - authority
+      - token_key
+    depends_on:
+      gateway:
+        condition: service_healthy
+    restart: "no"
+
+  api-tests:
+    build:
+      context: .
+      dockerfile: internal/apitests/Dockerfile
+    environment:
+      CONTENOX_GATEWAY_BASE_URL: http://gateway:11435
+      CONTENOX_GATEWAY_TOKEN_FILE: /test-config/token
+      CONTENOX_GATEWAY_LIMITED_TOKEN_FILE: /test-config/limited-token
+      CONTENOX_GATEWAY_TEST_MODEL: sdk-test-text
+      CONTENOX_GATEWAY_TOOL_MODEL: sdk-test-tools
+    volumes:
+      - test-config:/test-config:ro
+    depends_on:
+      api-test-setup:
+        condition: service_completed_successfully
+    restart: "no"
+
+
+secrets:
+  authority:
+    file: ${CONTENOX_GATEWAY_AUTHORITY_FILE:?Set the path to the gateway authority private key}
+  token_key:
+    file: ${CONTENOX_GATEWAY_TOKEN_KEY_FILE:?Set the path to the gateway ledger signing key}
+
+volumes:
+  test-scripts:
+  test-config:
+  postgres-data:
+  valkey-data:

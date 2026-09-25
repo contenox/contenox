@@ -2,7 +2,7 @@
 
 You do not write one to get one. An agent is a Markdown file with a YAML
 frontmatter header in `.contenox/agents/`, and contenox generates the chain
-behind it — [declaring agents](https://contenox.com/docs/guide/agents/) is the
+behind it — [declaring agents](https://contenox.com/docs/guide/declarations/) is the
 front door.
 
 This page is about the generated artifact: what it is for, and when you take
@@ -107,6 +107,6 @@ policies. The Chain defines what the workflow can ask for; the active policy
 decides what must pause for approval before execution.
 
 Declare an agent:
-**[contenox.com/docs/guide/agents](https://contenox.com/docs/guide/agents/)**.
+**[contenox.com/docs/guide/agents](https://contenox.com/docs/guide/declarations/)**.
 Write a chain by hand:
 **[contenox.com/docs/guide/first-chain](https://contenox.com/docs/guide/chains/writing-a-chain/)**.

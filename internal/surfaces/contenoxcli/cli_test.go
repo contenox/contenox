@@ -20,15 +20,6 @@ func TestUnit_acpxIsReservedSubcommand(t *testing.T) {
 	}
 }
 
-func TestUnit_serveIsReservedSubcommand(t *testing.T) {
-	if !reservedSubcommands["serve"] {
-		t.Fatal(`"serve" must stay reserved so the host command is not injected as run input`)
-	}
-	if !firstNonFlagIsReserved([]string{"serve"}) {
-		t.Fatal(`expected "serve" to be recognized as a reserved subcommand`)
-	}
-}
-
 func TestUnit_newIsReservedSubcommand(t *testing.T) {
 	if !reservedSubcommands["new"] {
 		t.Fatal(`"new" must be reserved so 'contenox new' opens the TUI instead of being injected as a chat prompt ("beam" alone covers only the retired name)`)

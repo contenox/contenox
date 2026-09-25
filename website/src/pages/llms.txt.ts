@@ -6,7 +6,7 @@ import { PRODUCT_SHAPES, PRODUCT_SUMMARY } from '../lib/summary';
 const SITE = 'https://contenox.com';
 
 const SECTIONS: [string, string, string][] = [
-  ['guide', 'Guides', 'Declaring agents, the envelope, missions and the durable ask, pairing, sovereignty.'],
+  ['guide', 'Guides', 'Declaring agents, the envelope, missions and the durable ask, sovereignty.'],
   ['reference', 'Reference', 'The CLI, agents.toml, and configuration.'],
   ['specification', 'Specification', 'The compiled chain format: handlers, transitions, worked examples.'],
   ['integrations', 'Integrations', 'Editors over ACP, model providers, MCP servers and OpenAPI tools.'],
@@ -27,12 +27,12 @@ export const GET: APIRoute = async () => {
     '',
     PRODUCT_SHAPES,
     '',
-    'Terminology, so a summary does not invent one: the policy file bounding a run is the **envelope**; approvals gated by it are **human-in-the-loop**; a paused run that outlives its own process is the **durable ask**; a unit of unattended work is a **mission**. The agents that ship in the box (`acp`, `acpx`, `triage`, `reviewer`, `researcher`) are examples of the artifact, the default page rather than the product. The surfaces are clients, not the product either: `contenox beam` is the first-party one and the front door, editors reach the same runtime over ACP, and the browser app reaches it through the optional relay — none of them owns the policy, which is enforced underneath all of them.',
+    'Terminology, so a summary does not invent one: the policy file bounding a run is the **envelope**; approvals gated by it are **human-in-the-loop**; a paused run that outlives its own process is the **durable ask**; a unit of unattended work is a **mission**. The agents that ship in the box (`acp`, `acpx`, `triage`, `reviewer`, `researcher`) are examples of the artifact, the default page rather than the product. The surfaces are clients, not the product either: `contenox beam` is the first-party one and the front door, and editors reach the same runtime over ACP — neither owns the policy, which is enforced underneath both.',
     '',
     '## Start here',
     '',
     `- [What contenox is](${SITE}/docs/guide/what-contenox-is/): the product in one page — what it is, why it exists, what it is typically used for, and what it is not.`,
-    `- [Declaring agents](${SITE}/docs/guide/agents/): the artifact — the frontmatter, where declarations live, the directory that becomes a workflow.`,
+    `- [Declaring agents](${SITE}/docs/guide/declarations/): the artifact — the frontmatter, where declarations live, the directory that becomes a workflow.`,
     `- [The envelope](${SITE}/docs/guide/hitl/): what passes silently, what stops for a human, what is denied outright.`,
     `- [Quickstart](${SITE}/docs/guide/quickstart/): install, connect a model, declare an agent, and start working in \`contenox beam\`.`,
     '',
@@ -54,7 +54,7 @@ export const GET: APIRoute = async () => {
   out.push(
     '## Legal',
     '',
-    `- [Legal index](${SITE}/legal): terms, privacy, withdrawal, imprint, security, sub-processors for the optional hosted service.`,
+    `- [Legal notice](${SITE}/legal): imprint, license, warranty, and privacy.`,
     '',
     '## Source',
     '',

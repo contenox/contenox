@@ -42,7 +42,12 @@ type CapturedStateUnit struct {
 type TokenUsage struct {
 	Prompt     int `json:"prompt"`
 	Completion int `json:"completion"`
+	Thinking   int `json:"thinking,omitempty"`
 	Total      int `json:"total"`
+	// CacheRead and CacheWrite are prompt tokens the provider served from or
+	// wrote to its prefix cache; zero where the provider does not report them.
+	CacheRead  int `json:"cacheRead,omitempty"`
+	CacheWrite int `json:"cacheWrite,omitempty"`
 }
 
 type ErrorResponse struct {

@@ -28,21 +28,21 @@ func (p toolsetRegistry) GetToolsForToolsByName(context.Context, string) ([]task
 // TestUnit_LocalFSBrowseTools_AllowlistVocabulary asserts what an operator can express about the browse toolset: "*" admits it, "!name" removes it, a bare name grants exactly it, an empty allowlist grants nothing.
 func TestUnit_LocalFSBrowseTools_AllowlistVocabulary(t *testing.T) {
 	ctx := context.Background()
-	registry := toolsetRegistry{localtools.LocalFSToolsName, localtools.LocalFSBrowseToolsName}
+	registry := toolsetRegistry{localtools.LocalFSToolsName}
 
 	star, err := taskengine.ExportedResolveToolsNames(ctx, []string{"*"}, registry)
 	require.NoError(t, err)
-	require.Equal(t, []string{localtools.LocalFSToolsName, localtools.LocalFSBrowseToolsName}, star,
-		"\"*\" must admit every connected toolset; the scope is a namespace, not a hidden exclusion")
+	require.Equal(t, []string{localtools.LocalFSToolsName}, star,
+		"\"*\" must admit the toolset; the scope is a namespace, not a hidden exclusion")
 
-	removed, err := taskengine.ExportedResolveToolsNames(ctx, []string{"*", "!" + localtools.LocalFSBrowseToolsName}, registry)
+	removed, err := taskengine.ExportedResolveToolsNames(ctx, []string{"*", "!" + localtools.LocalFSToolsName}, registry)
 	require.NoError(t, err)
-	require.Equal(t, []string{localtools.LocalFSToolsName}, removed,
+	require.Empty(t, removed,
 		"\"!\"+the toolset name is how an operator drops exactly this toolset")
 
-	only, err := taskengine.ExportedResolveToolsNames(ctx, []string{localtools.LocalFSBrowseToolsName}, registry)
+	only, err := taskengine.ExportedResolveToolsNames(ctx, []string{localtools.LocalFSToolsName}, registry)
 	require.NoError(t, err)
-	require.Equal(t, []string{localtools.LocalFSBrowseToolsName}, only,
+	require.Equal(t, []string{localtools.LocalFSToolsName}, only,
 		"a bare name grants exactly it")
 
 	none, err := taskengine.ExportedResolveToolsNames(ctx, nil, registry)
@@ -57,14 +57,17 @@ func TestUnit_LocalFSBrowseTools_RegistersUnderTheAddressedName(t *testing.T) {
 	h := localtools.NewLocalFSBrowseTools(t.TempDir(), nil)
 	supported, err := h.Supports(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, localtools.LocalFSBrowseToolsName, supported[0])
+	require.Equal(t, localtools.LocalFSToolsName, supported[0])
 	require.Equal(t, []string{"list_dir", "grep", "find_files", "count_stats", "stat_file"}, supported[1:])
 }
 
-// TestUnit_LocalFSBrowseTools_NameIsUnmintableByDeclaredMCP asserts the browse
-// name cannot collide with a decl- row, which PersistentRepo.Exec would resolve
-// to the local toolset first and so silently substitute for a declared server.
+// TestUnit_LocalFSBrowseTools_NameIsUnmintableByDeclaredMCP asserts the one
+// namespace name cannot collide with a decl- row, which PersistentRepo.Exec
+// would resolve to the local toolset first and so silently substitute for a
+// declared server. Content and browse used to be two names precisely so that
+// both were unmintable; they are one name now, and the guard is that the name
+// is a core one.
 func TestUnit_LocalFSBrowseTools_NameIsUnmintableByDeclaredMCP(t *testing.T) {
-	require.False(t, runtimetypes.IsDeclaredToolName(localtools.LocalFSBrowseToolsName))
-	require.NotEqual(t, localtools.LocalFSToolsName, localtools.LocalFSBrowseToolsName)
+	require.False(t, runtimetypes.IsDeclaredToolName(localtools.LocalFSToolsName))
+	require.Equal(t, localtools.LocalFSToolsName, localtools.LocalFSToolsName)
 }

@@ -172,6 +172,28 @@ func TestUnit_Tracker_RedactsKVArgsAndChangeData(t *testing.T) {
 	require.Contains(t, out, "alice")
 }
 
+func TestUnit_Tracker_RedactsPrivatePayloadFieldsButKeepsAccounting(t *testing.T) {
+	var buf bytes.Buffer
+	tracker := NewTextActivityTracker(&buf)
+
+	_, reportChange, end := tracker.Start(context.Background(), "task_attempt", "agent",
+		"args", map[string]any{"path": "private.go"},
+		"prompt_tokens", 17,
+	)
+	reportChange("agent", map[string]any{
+		"messages":      []any{map[string]any{"content": "private source", "provider_meta": map[string]any{"thought_signature": "opaque-signature"}}},
+		"output_tokens": 9,
+	})
+	end()
+
+	out := buf.String()
+	require.NotContains(t, out, "private.go")
+	require.NotContains(t, out, "private source")
+	require.NotContains(t, out, "opaque-signature")
+	require.Contains(t, out, "prompt_tokens=17")
+	require.Contains(t, out, "output_tokens:9")
+}
+
 func TestUnit_Tracker_DisablingRedactionIsPossible(t *testing.T) {
 	var buf bytes.Buffer
 	tracker := NewTextActivityTracker(&buf, WithRedactedFields())

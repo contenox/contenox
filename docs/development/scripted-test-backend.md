@@ -63,8 +63,8 @@ prints:
 
 ```bash
 contenox backend add scripted --type scripted-test --script ./dialog.json
-contenox config set default-provider scripted-test
-contenox config set default-model scripted-test
+contenox config set inference.provider scripted-test
+contenox config set inference.model scripted-test
 ```
 
 That is the ordinary backend path — no special flag on `beam`, `run`, `chat` or
@@ -179,8 +179,8 @@ cat > dialog.json <<'JSON'
 JSON
 
 contenox backend add scripted --type scripted-test --script ./dialog.json
-contenox config set default-provider scripted-test
-contenox config set default-model scripted-test
+contenox config set inference.provider scripted-test
+contenox config set inference.model scripted-test
 
 contenox run --policy run "report what you know"
 # stdout: scripted run reporting home

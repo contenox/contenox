@@ -16,6 +16,7 @@ import (
 	"github.com/contenox/contenox/internal/version"
 	libdb "github.com/contenox/contenox/libdbexec"
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseCommand(t *testing.T) {
@@ -178,44 +179,24 @@ func TestUnit_HandleThinkStatusSetAndInvalid(t *testing.T) {
 }
 
 func TestUnit_HandleMaxTokensStatusSetAndInvalid(t *testing.T) {
-	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "max-tokens-acp.db")
-	db, err := libdb.NewSQLiteDBManager(ctx, path, runtimetypes.SchemaSQLite)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-
+	ctx, db := setupConfigOptionsDB(t)
 	tr := &Transport{deps: Deps{DB: db}, defaultMaxTokens: "4096"}
-	out, err := tr.handleMaxTokens(ctx, "")
-	if err != nil {
-		t.Fatalf("handleMaxTokens status: %v", err)
-	}
-	if out != "Max tokens: 4096 | provider ceiling: unknown" {
-		t.Fatalf("status = %q, want Max tokens: 4096 | provider ceiling: unknown", out)
-	}
-
-	out, err = tr.handleMaxTokens(ctx, " 8192 ")
-	if err != nil {
-		t.Fatalf("handleMaxTokens set: %v", err)
-	}
-	if out != "Max tokens set to 8192." {
-		t.Fatalf("set output = %q", out)
-	}
-	if got := tr.maxTokens(); got != "8192" {
-		t.Fatalf("transport max tokens = %q, want 8192", got)
-	}
-	if got := ReadConfigValue(ctx, db, "default-max-tokens"); got != "8192" {
-		t.Fatalf("persisted max tokens = %q, want 8192", got)
-	}
-
-	_, err = tr.handleMaxTokens(ctx, "many")
-	if err == nil || !strings.Contains(err.Error(), "max-tokens must be") {
-		t.Fatalf("invalid max-tokens error = %v", err)
-	}
-	if got := tr.maxTokens(); got != "8192" {
-		t.Fatalf("invalid /max-tokens mutated value to %q", got)
-	}
+	sess := &sessionEntry{driver: &nativeDriver{t: tr}}
+	other := &sessionEntry{driver: &nativeDriver{t: tr}}
+	out, err := tr.handleSessionSetting(ctx, sess, configIDOutputTokens, "")
+	require.NoError(t, err)
+	require.Contains(t, out, "4096")
+	_, err = tr.handleSessionSetting(ctx, sess, configIDOutputTokens, "8192")
+	require.NoError(t, err)
+	require.Equal(t, "8192", tr.chainTemplateVars(sess)["max_tokens"])
+	require.Equal(t, "4096", tr.chainTemplateVars(other)["max_tokens"])
+	require.Empty(t, ReadConfigValue(ctx, db, "default-max-tokens"))
+	_, err = tr.handleSessionSetting(ctx, sess, configIDOutputTokens, "many")
+	require.Error(t, err)
+	require.Equal(t, "8192", tr.sessionOutputTokens(sess))
+	_, err = tr.handleSessionSetting(ctx, sess, configIDOutputTokens, "inherit")
+	require.NoError(t, err)
+	require.Equal(t, "4096", tr.sessionOutputTokens(sess))
 }
 
 func TestUnit_HandleCapabilitySetShowUnset(t *testing.T) {

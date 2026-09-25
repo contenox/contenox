@@ -86,19 +86,22 @@ func oracleChainCandidates(name string) []string {
 		out = append(out, name+".json")
 		if !strings.HasPrefix(name, "chain-") {
 			out = append(out, "chain-"+name+".json")
+			if !strings.HasPrefix(name, "oracle-") && name != "oracle" {
+				out = append(out, "chain-oracle-"+name+".json")
+			}
 		}
 	}
 	return out
 }
 
-func loadOracleChain(contenoxDir string, c oracleConfig) (*taskengine.TaskChainDefinition, string, error) {
+func loadOracleChain(ctx context.Context, contenoxDir string, c oracleConfig) (*taskengine.TaskChainDefinition, string, error) {
 	candidates := oracleChainCandidates(c.chain)
 	for _, name := range candidates {
 		path, err := lookupSystemFile(contenoxDir, name)
 		if err != nil {
 			continue
 		}
-		chain, err := loadChainFromFile(path)
+		chain, err := loadChainFromFile(ctx, path)
 		if err != nil {
 			return nil, "", fmt.Errorf("oracle: load %s: %w", path, err)
 		}

@@ -451,7 +451,7 @@ type TaskChainDefinition struct {
 
 	Tasks []TaskDefinition `yaml:"tasks" json:"tasks" openapi_include_type:"taskengine.TaskDefinition" jsonschema:"required,minItems=1"`
 
-	// TokenLimit is the token limit for the context window used during execution.
+	// TokenLimit is an additional context ceiling; zero inherits the requested window or the bounded fallback.
 	TokenLimit int64 `yaml:"token_limit" json:"token_limit"`
 }
 

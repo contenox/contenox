@@ -204,6 +204,8 @@ func execConfig(ir *AgentIR, cfg Config, agentID string, withPrompt bool) *taske
 		}
 		ec.Temperature = ir.Temperature
 		ec.MaxTokensTemplate = cfg.Chain.MaxTokens
+		ec.Shift = cfg.Chain.Shift
+		ec.RetryPolicy = cfg.Chain.RetryPolicy
 	}
 	return ec
 }
@@ -253,6 +255,8 @@ func summariseConfig(cfg Config) *taskengine.LLMExecutionConfig {
 		Think:             cfg.Chain.Think,
 		MaxTokensTemplate: cfg.Chain.MaxTokens,
 		PassClientsTools:  false,
+		Shift:             cfg.Chain.Shift,
+		RetryPolicy:       cfg.Chain.RetryPolicy,
 	}
 }
 

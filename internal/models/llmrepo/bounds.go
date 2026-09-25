@@ -15,6 +15,17 @@ var ErrResolutionOutOfBounds = errors.New("resolution outside the mission envelo
 
 const resolutionBoundLead = "compute bound refused"
 
+// BackendHealth reports whether a backend may be asked at all. A caller that
+// quarantines an endpoint
+type BackendHealth func(backendID string) bool
+
+// WithBackendHealth returns a copy of req carrying a health view; a nil view
+// changes nothing.
+func (req Request) WithBackendHealth(health BackendHealth) Request {
+	req.BackendHealth = health
+	return req
+}
+
 // ResolutionBounds is the envelope's model/backend allowlist enforced at the resolution seam; matching is exact and case-insensitive, and applies across chat, prompt, stream, and embed alike.
 type ResolutionBounds struct {
 	// Models bounds which model names may be resolved; empty means unbounded.

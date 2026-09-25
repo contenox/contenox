@@ -1,11 +1,10 @@
 package agentdecl
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -59,50 +58,55 @@ func (t *AgentTree) Labels() []string {
 
 // LoadTree reads a directory as an agent tree. A directory qualifies when it
 // holds an agent.md; subdirectories that hold one become branches.
-func LoadTree(dir string, cfg Config) (*AgentTree, error) {
-	agentPath := filepath.Join(dir, AgentFilename)
-	data, err := os.ReadFile(agentPath)
+func LoadTree(ctx context.Context, dir Root, cfg Config) (*AgentTree, error) {
+	if dir.FS == nil {
+		return nil, fmt.Errorf("agentdecl: %s holds no handle", dir.Key)
+	}
+	data, err := dir.FS.ReadFile(ctx, AgentFilename)
 	if err != nil {
-		return nil, fmt.Errorf("agentdecl: %s: %w", agentPath, err)
+		return nil, fmt.Errorf("agentdecl: %s: %w", dir.Path(AgentFilename), err)
 	}
 	// Parsed as the native dialect rather than sniffed: a file at a tree node is
 	// contenox's own declaration by construction.
-	ir, err := ParseAs(TreeDialect, agentPath, data, cfg)
+	ir, err := ParseAs(TreeDialect, dir.Path(AgentFilename), data, cfg)
 	if err != nil {
 		return nil, err
 	}
-	node := &AgentTree{Name: filepath.Base(dir), Agent: ir, Default: ir.DefaultBranch}
+	node := &AgentTree{Name: dir.Base(), Agent: ir, Default: ir.DefaultBranch}
 
-	if rec, rErr := os.ReadFile(filepath.Join(dir, RecoveryFilename)); rErr == nil {
-		recIR, pErr := ParseAs(TreeDialect, filepath.Join(dir, RecoveryFilename), rec, cfg)
+	if rec, rErr := dir.FS.ReadFile(ctx, RecoveryFilename); rErr == nil {
+		recIR, pErr := ParseAs(TreeDialect, dir.Path(RecoveryFilename), rec, cfg)
 		if pErr != nil {
 			return nil, pErr
 		}
 		node.Recovery = recIR
 	}
 
-	if fail, fErr := os.ReadFile(filepath.Join(dir, FailureFilename)); fErr == nil {
-		failIR, pErr := ParseAs(TreeDialect, filepath.Join(dir, FailureFilename), fail, cfg)
+	if fail, fErr := dir.FS.ReadFile(ctx, FailureFilename); fErr == nil {
+		failIR, pErr := ParseAs(TreeDialect, dir.Path(FailureFilename), fail, cfg)
 		if pErr != nil {
 			return nil, pErr
 		}
 		node.Failure = failIR
 	}
 
-	entries, err := os.ReadDir(dir)
+	entries, err := dir.FS.ReadDir(ctx, ".")
 	if err != nil {
-		return nil, fmt.Errorf("agentdecl: read %s: %w", dir, err)
+		return nil, fmt.Errorf("agentdecl: read %s: %w", dir.Key, err)
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
-		child := filepath.Join(dir, e.Name())
-		if _, sErr := os.Stat(filepath.Join(child, AgentFilename)); sErr != nil {
+		child, cErr := dir.Child(e.Name())
+		if cErr != nil {
+			return nil, cErr
+		}
+		if _, sErr := child.FS.Stat(ctx, AgentFilename); sErr != nil {
 			continue
 		}
-		sub, sErr := LoadTree(child, cfg)
+		sub, sErr := LoadTree(ctx, child, cfg)
 		if sErr != nil {
 			return nil, sErr
 		}
@@ -112,9 +116,9 @@ func LoadTree(dir string, cfg Config) (*AgentTree, error) {
 	if node.IsRouter() {
 		if node.Recovery != nil {
 			return nil, fmt.Errorf("agentdecl: %s: a router has no recovery of its own — put %s beside the leaf that needs it",
-				dir, RecoveryFilename)
+				dir.Key, RecoveryFilename)
 		}
-		if err := node.validateDefault(dir); err != nil {
+		if err := node.validateDefault(dir.Key); err != nil {
 			return nil, err
 		}
 	}

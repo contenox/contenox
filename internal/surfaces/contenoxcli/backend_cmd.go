@@ -46,6 +46,7 @@ var backendCmd = &cobra.Command{
 	Long: `Register and manage LLM backend endpoints.
 
 A backend points at an LLM provider. Supported types:
+  modeld                        Native inference worker (local or remote gRPC).
   ollama                        Local Ollama daemon (requires: ollama serve) or hosted Ollama Cloud.
   openai                        api.openai.com (requires --api-key-env).
   gemini                        Google Gemini (requires --api-key-env).
@@ -91,6 +92,8 @@ Examples:
 // for the rest, where the caller must pass --url.
 func defaultBaseURLForType(typ string) (string, error) {
 	switch typ {
+	case "modeld", "local":
+		return "local", nil
 	case "ollama":
 		return "http://localhost:11434", nil
 	case "openai":
@@ -118,6 +121,7 @@ var backendAddCmd = &cobra.Command{
 The --type flag determines which provider protocol is used.
   openai, anthropic,
   gemini                        Cloud providers. Base URL inferred if --url is omitted. Requires --api-key-env.
+  modeld                        Native inference worker (local or remote gRPC).
   ollama                        Local daemon (requires 'ollama serve') or hosted Ollama Cloud (use
                                 --url https://ollama.com/api and --api-key-env OLLAMA_API_KEY).
   vllm                          Self-hosted OpenAI-compatible endpoint (requires --url).
@@ -139,6 +143,7 @@ Examples:
   contenox backend add openai     --type openai      --api-key-env OPENAI_API_KEY
   contenox backend add gemini     --type gemini      --api-key-env GEMINI_API_KEY
   contenox backend add myvllm    --type vllm         --url http://gpu-host:8000
+  contenox backend add contenox --type contenox
   contenox backend add scripted  --type scripted-test --script ./dialog.json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -216,7 +221,7 @@ Examples:
 		}
 
 		if apiKey != "" {
-			if err := setProviderConfigKV(ctx, runtimetypes.New(db.WithoutTransaction()), typ, apiKey); err != nil {
+			if err := setBackendCredentialKV(ctx, runtimetypes.New(db.WithoutTransaction()), typ, backend.ID, apiKey); err != nil {
 				return fmt.Errorf("backend added but failed to store API key: %w", err)
 			}
 		}
@@ -227,7 +232,7 @@ Examples:
 		fmt.Fprintf(cmd.OutOrStdout(), "Backend %q added (%s → %s).\n", name, typ, baseURL)
 		if typ == modelrepo.ScriptedTestBackendType {
 			fmt.Fprintf(cmd.OutOrStdout(), "WARNING: %s is a TEST backend. It calls no model — every reply is replayed from %s in order.\n", modelrepo.ScriptedTestBackendType, baseURL)
-			fmt.Fprintf(cmd.OutOrStdout(), "         Point the defaults at it with:\n           contenox config set default-provider %s\n           contenox config set default-model %s\n", modelrepo.ScriptedTestBackendType, scriptedTestModelName(baseURL))
+			fmt.Fprintf(cmd.OutOrStdout(), "         Point the defaults at it with:\n           contenox config set inference.provider %s\n           contenox config set inference.model %s\n", modelrepo.ScriptedTestBackendType, scriptedTestModelName(baseURL))
 		}
 		return nil
 	},
@@ -381,7 +386,7 @@ func globalContenoxDir() (string, error) {
 }
 
 func init() {
-	backendAddCmd.Flags().String("type", "ollama", "Backend type: ollama, openai, anthropic, bedrock, gemini, vllm, vertex-google")
+	backendAddCmd.Flags().String("type", "ollama", "Backend type: modeld, ollama, openai, anthropic, bedrock, gemini, vllm, vertex-google")
 	backendAddCmd.Flags().String("url", "", "Base URL of the backend (auto-inferred for openai/anthropic/gemini if omitted; set https://ollama.com/api for hosted Ollama)")
 	backendAddCmd.Flags().String("script", "", "Path to the dialog file for a --type scripted-test backend (TEST ONLY: replays turns instead of calling a model)")
 	backendAddCmd.Flags().String("api-key-env", "", "Name of the environment variable holding the API key (preferred over --api-key)")

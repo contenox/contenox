@@ -118,3 +118,25 @@ func TestUnit_BusInspector_PublishesSanitizedStateButKeepsInnerHistoryFull(t *te
 	require.Equal(t, true, summary["truncated"])
 	require.Equal(t, "payload_exceeds_limit", summary["reason"])
 }
+
+func TestUnit_KVInspector_ClearExecutionStateKeepsNoTraceRequests(t *testing.T) {
+	ctx := context.Background()
+	kv := testKVManager(t)
+	inspector := NewKVInspector(NewSimpleInspector(), kv, libtracker.NoopTracker{})
+	for _, reqID := range []string{"req-one", "req-two"} {
+		requestCtx := context.WithValue(ctx, libtracker.ContextKeyRequestID, reqID)
+		inspector.Start(requestCtx).RecordStep(CapturedStateUnit{TaskID: "task", Output: "result"})
+	}
+
+	removed, err := inspector.ClearExecutionState(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, removed)
+	ids, err := inspector.GetStatefulRequests(ctx)
+	require.NoError(t, err)
+	require.Empty(t, ids)
+	for _, reqID := range []string{"req-one", "req-two"} {
+		steps, err := inspector.GetExecutionStateByRequestID(ctx, reqID)
+		require.NoError(t, err)
+		require.Empty(t, steps)
+	}
+}

@@ -62,7 +62,7 @@ configuration gives it:
                sweeps it, and it is still listed here after a restart
 
 An ask whose grant named no timeout shows the wait this host's approval ceiling
-gave it ('contenox config set approval-ceiling <duration|never>', seven days
+gave it ('contenox config set execution.approval.timeout <duration|never>', seven days
 until you set it) — not a wait of its own.
 
 Listing is not passive: this command first sweeps asks whose window closed to
@@ -281,7 +281,7 @@ func respondToAsk(cmd *cobra.Command, askID string, approve bool, answer, asAgen
 		// process has.
 		_, cleanup, buildErr := buildResumeDeps(cmd, ctx, svc)
 		if buildErr != nil {
-			return fmt.Errorf("ask %s has a suspended run checkpointed under it, and this process cannot build an engine to resume it: %v\nThe verdict was NOT recorded — the ask is still pending. Fix the configuration here ('contenox setup', or 'contenox config set default-model ...'), or answer from a terminal that can reach your models", askID, buildErr)
+			return fmt.Errorf("ask %s has a suspended run checkpointed under it, and this process cannot build an engine to resume it: %v\nThe verdict was NOT recorded — the ask is still pending. Fix the configuration here ('contenox setup', or 'contenox config set inference.model ...'), or answer from a terminal that can reach your models", askID, buildErr)
 		}
 		defer cleanup()
 	}

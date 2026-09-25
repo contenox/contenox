@@ -242,6 +242,8 @@ func (a *app) resetForSession(id libacp.SessionID, name, title string) {
 	a.missions = make(map[string]bool)
 	a.echoSeq = 0
 	a.history = nil
+	a.queuedPrompts = nil
+	a.stats = nil
 	a.comp.SetHistory(nil)
 	a.lastPrompt, a.hasLastPrompt = "", false
 }

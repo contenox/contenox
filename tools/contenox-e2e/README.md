@@ -190,10 +190,10 @@ Three facts a case gets wrong exactly once:
 - **Script only the tools the shape actually has.** `local_fs` (`read_file`,
   `write_file`, `edit_file`, `sed`) and `local_shell` are forwarded to a
   connected ACP client, so they exist under `beam` and an editor but NOT under
-  `run`, `mission fire` or `serve`. Scripting one there comes back `tool
+  `run` or `mission fire`. Scripting one there comes back `tool
   <name> not found`, the scripted model shrugs and files its next turn anyway,
   and the case passes while proving nothing. What an unattended run can call is
-  the in-process sets: `native-fs-browse` (`list_dir`, `grep`, `find_files`,
+  the in-process sets: `local_fs` (`list_dir`, `grep`, `find_files`,
   `stat_file`, `count_stats`), `native-git`, `native-go`, `native-jq`,
   `native-goja` and the `mission` tools. `contenox doctor` prints the roster
   with the client capability each entry needs.
@@ -324,23 +324,6 @@ spec, records every request it receives as a JSON line, and optionally demands a
 login before it answers. It reaches nothing, so a case that uses it still needs
 no network and no credentials. `tests/tools_remote_service.rs` shows the shape.
 
-### A relay to pair with
-
-Pairing is the other direction: the machine dials out. Redemption is one POST,
-so `relay_stub` is a loopback stand-in for the relay a case points
-`CONTENOX_RELAY_ENDPOINT` (or `contenox pair <key> <endpoint>`) at. It answers
-`/v1/pair/redeem`, records every request as a JSON line, can refuse a key the
-way a spent or expired one is refused, and notes the TLS connections a paired
-machine opens when it dials out — which is how a case tells "pairing attaches the
-machine" from "something running keeps it reachable". It listens on 127.0.0.1
-and reaches nothing. `tests/pairing.rs` shows the shape.
-
-What the stand-in cannot stand in for is the connection itself: `relaylink`
-dials `https` only and verifies the relay's Ed25519 signature, so a case here
-can observe that a machine dialled and nothing past it. Anything downstream of a
-completed handshake — a revoked instance refused at its next dial, an ask
-answered from the app — needs a relay that can finish one.
-
 ## Layout
 
 ```
@@ -353,6 +336,5 @@ src/table.rs      the column-offset reader every table helper uses
 src/pty.rs        drive an interactive surface
 src/acp.rs        speak ACP to the editor surface over stdio
 src/bin/openapi_stub.rs  a loopback OpenAPI service a case can register
-src/bin/relay_stub.rs    a loopback stand-in for the relay, for the pairing cases
 tests/            the cases
 ```

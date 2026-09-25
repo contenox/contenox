@@ -40,6 +40,25 @@ func supportedAudioMimeList() string {
 	return strings.Join(types, ", ")
 }
 
+// MessagesAudioBytes is how many audio attachments a request carries and how
+// many bytes they are, which is what an audio-priced turn is charged for: a
+// provider reports tokens for the transcription it produced, not the seconds of
+// audio it was handed.
+func MessagesAudioBytes(messages []Message) (parts int, totalBytes int) {
+	return countAudioParts(messages)
+}
+
+// WAVMimeType is the only audio media type the wire carries: the contract
+// upstream models audio input as raw bytes and tells WAV apart by its magic, so
+// there is no format field to carry a different one in.
+const WAVMimeType = "audio/wav"
+
+// IsWAV reports whether data starts with the RIFF/WAVE header, which is how the
+// contract identifies audio without a media type beside it.
+func IsWAV(data []byte) bool {
+	return len(data) >= 12 && string(data[0:4]) == "RIFF" && string(data[8:12]) == "WAVE"
+}
+
 func countAudioParts(messages []Message) (parts int, totalBytes int) {
 	for _, m := range messages {
 		for _, a := range m.Audio {

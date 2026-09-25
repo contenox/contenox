@@ -1,6 +1,6 @@
 // Package brand renders beam's identity device: the fresh-session welcome
 // header and the persistent status-bar identity segment, both built around
-// the vertical brand-mint beam-bar `▌` and, once per session, the logo-mark as
+// the vertical signal-yellow beam-bar `▌` and, once per session, the logo-mark as
 // block art. Everything is a pure function of (state, width) → []frame.Line
 // — no terminal reads, no SGR — with ASCII fallback via the caller's Caps.
 package brand
@@ -20,8 +20,8 @@ const CompactWidth = 66
 // in unicode, plain hyphen in ASCII — do not paraphrase either string.
 const (
 	wordmark       = "contenox"
-	taglineUnicode = " — open agentic harness"
-	taglineASCII   = " - open agentic harness"
+	taglineUnicode = " — advance with excellence"
+	taglineASCII   = " - advance with excellence"
 )
 
 // ASCIIGutter is the beam-bar a Mono terminal sees, exported so testkit's
@@ -98,13 +98,16 @@ var fullHints = []hint{
 }
 
 // editorHint is the compose-in-editor affordance, spliced ahead of the keys
-// hint when Info.Editor says the chord actually does something.
-var editorHint = hint{"Ctrl+X Ctrl+E", "editor"}
+// hint when Info.Editor says an editor is wired. It names the /editor command
+// rather than the Ctrl+X, Ctrl+E chord: the chord is a convenience a terminal
+// may swallow before beam sees it, while the command is the path that is
+// always enforced.
+var editorHint = hint{"/editor", "compose"}
 
 // compactHints/compactHintsNoEditor are the same sets at narrow widths,
 // abbreviated so every affordance survives.
 const (
-	compactHints         = "/ cmds  @ files  ! shell  ^X^E editor  ? keys"
+	compactHints         = "/ cmds  @ files  ! shell  /editor compose  ? keys"
 	compactHintsNoEditor = "/ cmds  @ files  ! shell  ? keys"
 )
 
@@ -118,9 +121,9 @@ const identity = "contenox"
 // ASCII selects the character fallback and must be true exactly when the
 // caller's caps profile is Mono; this package never probes for it itself.
 //
-// Editor must be true exactly when the Ctrl+X, Ctrl+E handoff is wired (the
-// app-shell's Deps.Editor is non-nil): the hint line advertises the chord
-// only then, because nothing may be advertised that is not enforced.
+// Editor must be true exactly when a compose-in-editor handoff is wired (the
+// app-shell's Deps.Editor is non-nil): the hint line advertises /editor only
+// then, because nothing may be advertised that is not enforced.
 type Info struct {
 	ASCII    bool
 	Model    string
@@ -232,12 +235,12 @@ func compact(info Info) []frame.Line {
 
 // hintLine lists the keys a first-run user cannot guess: keys unstyled (a
 // literal keystroke), labels muted, joined so the whole line dims as a unit.
-// The editor chord joins the list only when the caller wired an editor,
+// The editor command joins the list only when the caller wired an editor,
 // keeping the line an inventory of what works rather than what could.
 func hintLine(g string, editor bool) frame.Line {
 	hints := fullHints
 	if editor {
-		// The chord slots ahead of the keys hint, mirroring compactHints.
+		// The editor command slots ahead of the keys hint, mirroring compactHints.
 		last := len(fullHints) - 1
 		hints = append(append([]hint(nil), fullHints[:last]...), editorHint, fullHints[last])
 	}
@@ -271,7 +274,7 @@ func sessionText(info Info) string {
 	return b.String()
 }
 
-// StatusSegment is the persistent identity: the mint beam-bar and product
+// StatusSegment is the persistent identity: the yellow beam-bar and product
 // name, muted. It is the status bar's leftmost segment, never animated; the
 // caller drops it whole below minimum width rather than abbreviating it.
 func StatusSegment(ascii bool) frame.Line {

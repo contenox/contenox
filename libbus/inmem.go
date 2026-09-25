@@ -18,11 +18,14 @@ type InMem struct {
 	mu       sync.RWMutex
 	closed   bool
 	streams  map[string][]*inmemSubscription
-	handlers map[string]Handler
+	handlers map[string][]inmemServeEntry
 }
 
-// inmemSubscription owns a per-subscriber queue and the goroutine draining it
-// into the caller's channel, decoupling Publish from a slow consumer.
+type inmemServeEntry struct {
+	handler Handler
+	owner   *inmemServeSubscription
+}
+
 type inmemSubscription struct {
 	subject string
 	ch      chan<- []byte
@@ -39,7 +42,7 @@ type inmemSubscription struct {
 func NewInMem() *InMem {
 	return &InMem{
 		streams:  make(map[string][]*inmemSubscription),
-		handlers: make(map[string]Handler),
+		handlers: make(map[string][]inmemServeEntry),
 	}
 }
 
@@ -132,8 +135,6 @@ func (s *inmemSubscription) deliver() {
 	}
 }
 
-// Request invokes the Serve handler registered for the subject, in the caller's
-// goroutine. A missing handler fails immediately rather than at the deadline.
 func (p *InMem) Request(ctx context.Context, subject string, data []byte) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -144,7 +145,11 @@ func (p *InMem) Request(ctx context.Context, subject string, data []byte) ([]byt
 		p.mu.RUnlock()
 		return nil, ErrConnectionClosed
 	}
-	handler := p.handlers[subject]
+	registered := p.handlers[subject]
+	var handler Handler
+	if len(registered) > 0 {
+		handler = registered[len(registered)-1].handler
+	}
 	p.mu.RUnlock()
 
 	if handler == nil {
@@ -162,17 +167,16 @@ func (p *InMem) Request(ctx context.Context, subject string, data []byte) ([]byt
 	return reply, nil
 }
 
-// Serve registers a handler for the subject.
 func (p *InMem) Serve(ctx context.Context, subject string, handler Handler) (Subscription, error) {
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
 		return nil, ErrConnectionClosed
 	}
-	p.handlers[subject] = handler
+	sub := &inmemServeSubscription{subject: subject, inmem: p}
+	p.handlers[subject] = append(p.handlers[subject], inmemServeEntry{handler: handler, owner: sub})
 	p.mu.Unlock()
 
-	sub := &inmemServeSubscription{subject: subject, inmem: p}
 	go func() {
 		<-ctx.Done()
 		_ = sub.Unsubscribe()
@@ -190,7 +194,7 @@ func (p *InMem) Close() error {
 		subs = append(subs, list...)
 	}
 	p.streams = make(map[string][]*inmemSubscription)
-	p.handlers = make(map[string]Handler)
+	p.handlers = make(map[string][]inmemServeEntry)
 	p.mu.Unlock()
 
 	for _, sub := range subs {
@@ -227,7 +231,18 @@ type inmemServeSubscription struct {
 
 func (s *inmemServeSubscription) Unsubscribe() error {
 	s.inmem.mu.Lock()
-	delete(s.inmem.handlers, s.subject)
+	registered := s.inmem.handlers[s.subject]
+	for i, entry := range registered {
+		if entry.owner == s {
+			registered = append(registered[:i], registered[i+1:]...)
+			break
+		}
+	}
+	if len(registered) == 0 {
+		delete(s.inmem.handlers, s.subject)
+	} else {
+		s.inmem.handlers[s.subject] = registered
+	}
 	s.inmem.mu.Unlock()
 	return nil
 }

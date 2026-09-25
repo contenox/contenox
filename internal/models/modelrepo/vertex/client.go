@@ -190,6 +190,7 @@ func buildVertexRequest(modelName string, messages []modelrepo.Message, args []m
 	}
 
 	contents := convertToVertexContents(filtered)
+	contents = trimTrailingModelTurn(contents)
 	if len(contents) == 0 {
 		return vertexRequest{}, fmt.Errorf("vertex: refusing to send empty contents for model %s after filtering %d message(s); provide at least one non-empty user/model/tool message, tool call, or tool response", modelName, len(messages))
 	}
@@ -377,13 +378,53 @@ func convertToVertexContents(messages []modelrepo.Message) []vertexContent {
 		}
 
 		if len(out) > 0 && out[len(out)-1].Role == role {
-			out[len(out)-1].Parts = append(out[len(out)-1].Parts, parts...)
+			out[len(out)-1].Parts = mergeVertexParts(out[len(out)-1].Parts, parts)
 		} else {
 			out = append(out, vertexContent{Role: role, Parts: parts})
 		}
 	}
 
 	return out
+}
+
+// mergeVertexParts appends one message's parts to the parts of the turn of the
+// same role that precedes it, keeping every functionResponse after that turn's
+// prose and media. Vertex wants one user turn per function-call cycle — two
+// user-role contents in a row fail its alternation check — so a tool result and
+// the operator's next prompt share a turn; text placed after a functionResponse
+// is the shape Vertex answers with "Requests ending with a model turn are not
+// supported".
+func mergeVertexParts(existing, incoming []vertexPart) []vertexPart {
+	responses := make([]vertexPart, 0, len(incoming))
+	merged := make([]vertexPart, 0, len(existing)+len(incoming))
+	keep := func(parts []vertexPart) {
+		for _, p := range parts {
+			if p.FunctionResponse != nil {
+				responses = append(responses, p)
+				continue
+			}
+			merged = append(merged, p)
+		}
+	}
+	keep(existing)
+	keep(incoming)
+	return append(merged, responses...)
+}
+
+// trimTrailingModelTurn drops trailing model-role contents. Vertex rejects a
+// request whose last content is a model turn ("Requests ending with a model
+// turn are not supported"), and a model content that called a tool is no more
+// sendable when it trails: the functionResponse Vertex requires must follow its
+// functionCall, and nothing follows a trailing turn.
+func trimTrailingModelTurn(contents []vertexContent) []vertexContent {
+	last := len(contents) - 1
+	for last >= 0 && contents[last].Role == "model" {
+		last--
+	}
+	if last == len(contents)-1 {
+		return contents
+	}
+	return contents[:last+1]
 }
 
 func vertexToolResponseMap(content string) map[string]interface{} {

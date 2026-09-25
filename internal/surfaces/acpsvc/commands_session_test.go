@@ -21,7 +21,7 @@ func TestLoopback_NewAndSessionsCommands_WorkWithoutASessionUI(t *testing.T) {
 	require.NoError(t, err)
 	first, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: cwd, McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1) // deferred available_commands_update
+	h.lc.drain(t, 2) // command menu and initial context gauge
 
 	resp, err := h.client.Prompt(ctx, libacp.PromptRequest{
 		SessionID: first.SessionID,

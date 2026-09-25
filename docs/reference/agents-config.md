@@ -6,7 +6,7 @@ order: 1
 
 # `agents.toml`
 
-An [agent declaration](/docs/guide/agents/) says one prompt, one tool list, one
+An [agent declaration](/docs/guide/declarations/) says one prompt, one tool list, one
 model and one permission setting. Everything else lives here.
 
 It is TOML rather than JSON because it exists to be read and argued with, and
@@ -86,12 +86,32 @@ not have to touch the declaration.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `token_limit` | int | `131072` | Context budget for chat history, and the source of the per-call tool-result cap. **Must be positive** — a zero budget reports every tool result as too large regardless of its real size. |
-| `max_tokens` | string | `"{{var:max_tokens\|16384}}"` | Output cap per model call. [Macros](/docs/guide/concepts/#macros) are honoured, so a caller overrides it per run without editing the chain. |
+| `token_limit` | int | `0` | Additional context ceiling in tokens. Zero inherits the session window, bounded by the selected model; a positive value narrows it. The effective window also sizes the per-call tool-result cap. See [configuration inheritance](/docs/reference/config/#defaults-overrides-and-limits). |
+| `max_tokens` | string | `"{{var:max_tokens}}"` | Output cap per model call. [Macros](/docs/guide/declarations/#macros) are honoured, so a caller overrides it per run without editing the chain. |
 | `think` | string | `"{{var:think}}"` | Reasoning effort. A declaration's own `effort` overrides this; the vocabularies coincide. |
-| `main_rounds` | int | `60` | Edge traversals before the main stage hands to recovery. **Must be positive.** |
+| `main_rounds` | int | `100` | Edge traversals before the main stage hands to recovery. **Must be positive.** |
 | `recovery_rounds` | int | `10` | Traversals before recovery summarises the failure rather than looping. **Must be positive.** |
 | `retry_on_failure` | int | `0` | Per-task retries, for transient provider errors. |
+| `shift` | bool | `true` | Slide the context window on overflow instead of failing the task: the oldest messages are dropped, the system prompt and the most recent turns are kept. Off means an over-budget call fails, and the failure handler and the terminal summary are handed the same over-budget history. |
+
+### `[chain.retry_policy]`
+
+Retries every model call of an emitted chain, classified by the failure: a rate
+limit, a 5xx or a timeout is retried with backoff, while an auth, context-length
+or cancelled call is not. A call whose response has already begun streaming
+content is not replayed — the retry would duplicate what the client was shown —
+so it fails the task instead. Omitted entirely, each call is made once. The
+hand-written system chains ship this shape.
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `max_attempts` | int | `4` | Total attempts including the first. `0` or `1` disables retry. |
+| `initial_backoff` | string | `"1s"` | Wait before the second attempt; doubled before each later one, capped at `max_backoff`. |
+| `max_backoff` | string | `"30s"` | Cap on the exponential backoff. |
+| `jitter` | float | `0.25` | Fraction (`0`–`1`) added to each backoff. |
+| `rate_limit_min_wait` | string | `"10s"` | Floor for the backoff after a rate limit. |
+| `fallback_model_id` | string | — | Model to swap to after `fallback_after` consecutive failures. |
+| `fallback_after` | int | — | Consecutive failures that trigger the swap. `0` disables fallback. |
 
 ### `[routing]`
 
@@ -103,7 +123,7 @@ not have to touch the declaration.
 
 Templates are the default deliberately: an agent written against one vendor
 must not pin this machine to that vendor — routing stays whatever
-`contenox config set default-provider` says. The model the declaration named is
+`contenox config set inference.provider` says. The model the declaration named is
 kept in provenance either way. Turn it on for a single agent that genuinely
 needs a specific model with `[agents.<name>.routing]`.
 
@@ -354,7 +374,7 @@ files.write = "deny"
 **Omit them and nothing changes.** The rendered rule carries no `timeout_s` and
 no `on_timeout`, exactly as before these keys existed. That is not "waits
 forever": with no rule deadline the ask is bounded by the host's approval
-ceiling — `contenox config set approval-ceiling <duration|never>`, seven days
+ceiling — `contenox config set execution.approval.timeout <duration|never>`, seven days
 until you set it — and then denied. Writing `timeout` is how that number stops
 being one nobody chose.
 
@@ -543,7 +563,7 @@ accept edits gets a shell.
 
 `agents.toml` maps names onto tools **you** connected. A declaration can also
 bring its own MCP servers and OpenAPI services — see
-[Tools an agent brings with it](/docs/guide/agents/#tools-an-agent-brings-with-it).
+[Tools an agent brings with it](/docs/guide/declarations/#tools-an-agent-brings-with-it).
 Those are a different tier and this file does not describe them:
 
 | | Registered by | Scope | Retired when |
@@ -578,7 +598,7 @@ A declaration's `tools:` line is read through this table, and admission is by
 toolset. The vocabulary that line and every chain allowlist share — `*` for
 every connected toolset with no exceptions, `!name` to remove one, a bare name
 to grant exactly it, an empty list to grant nothing — is in
-[What `tools:` grants](/docs/guide/agents/#what-tools-grants).
+[What `tools:` grants](/docs/guide/declarations/#what-tools-grants).
 
 **A mapping makes a tool reachable, not permitted.** The emitted policy carries
 rules for the tools contenox hosts; a name you mapped yourself matches none of

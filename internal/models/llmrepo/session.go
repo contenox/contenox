@@ -105,3 +105,17 @@ func withCanonicalRequestShape(opts []libmodelprovider.ChatArgument, hints libmo
 	out = append(out, canonicalToolOrder{})
 	return out
 }
+
+type usageSessionKey struct{}
+
+// WithUsageSession associates model calls with the user's session for accounting.
+// It does not change the provider cache key or routing policy.
+func WithUsageSession(ctx context.Context, sessionID string) context.Context {
+	return context.WithValue(ctx, usageSessionKey{}, sessionID)
+}
+
+// UsageSessionFromContext returns the session associated with metered calls.
+func UsageSessionFromContext(ctx context.Context) string {
+	sessionID, _ := ctx.Value(usageSessionKey{}).(string)
+	return sessionID
+}

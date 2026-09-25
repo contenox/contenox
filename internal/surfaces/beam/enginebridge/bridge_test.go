@@ -1359,6 +1359,7 @@ func everyNotifiedUpdate() []libacp.SessionUpdate {
 		{SessionUpdate: libacp.SessionUpdateCurrentMode, CurrentModeID: "plan"},
 		{SessionUpdate: libacp.SessionUpdateConfigOption, ConfigOptions: thinkOptions()},
 		{SessionUpdate: libacp.SessionUpdateUsageUpdate, Used: 12, Size: 4096},
+		{SessionUpdate: libacp.SessionUpdateUsageStats, Stats: &libacp.SessionStats{SessionID: "beam-live", Turns: 1}},
 		{SessionUpdate: libacp.SessionUpdateSessionInfo, Title: "Fix the parser", UpdatedAt: "2026-07-27T10:00:00Z"},
 		missionUpdate(missionReportMetaKey, map[string]any{"missionId": "mis-1", "reportId": "rep-1", "kind": "progress"}),
 		missionUpdate(missionAskMetaKey, map[string]any{"missionId": "mis-1", "askId": "ask-1", "summary": "which branch?"}),
@@ -1619,6 +1620,15 @@ func TestUnit_Translate_CoversEverySessionUpdateKind(t *testing.T) {
 				require.EqualValues(t, 42, e.Offset)
 				require.Equal(t, "$ ls\n", e.Chunk)
 				require.False(t, e.Reset)
+			},
+		},
+		{
+			name:   "usage_stats parses into StatsUpdated",
+			update: libacp.SessionUpdate{SessionUpdate: libacp.SessionUpdateUsageStats, Stats: &libacp.SessionStats{SessionID: string(sid), Turns: 1}},
+			assert: func(t *testing.T, ev Event) {
+				e := requireType[StatsUpdated](t, ev)
+				require.Equal(t, sid, e.SessionID)
+				require.Equal(t, int64(1), e.Stats.Turns)
 			},
 		},
 		{

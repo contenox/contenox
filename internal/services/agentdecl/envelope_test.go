@@ -1,6 +1,7 @@
 package agentdecl_test
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -18,7 +19,7 @@ func envelopeConfig(t *testing.T, body string) agentdecl.Config {
 	t.Helper()
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, agentdecl.ConfigFilename), []byte(body), 0o644))
-	cfg, err := agentdecl.Load(dir)
+	cfg, err := agentdecl.Load(context.Background(), rootOf(t, dir))
 	require.NoError(t, err)
 	return cfg
 }
@@ -86,11 +87,10 @@ missions.fire = "allow"
 		{tools: "local_fs", tool: "read_file", action: hitlservice.ActionAllow},
 		{tools: "local_fs", tool: "read_file_range", action: hitlservice.ActionAllow},
 		{tools: "local_fs", tool: "list_dir", action: hitlservice.ActionAllow},
-		{tools: "native-fs-browse", tool: "grep", action: hitlservice.ActionAllow},
-		{tools: "native-fs-browse", tool: "find_files", action: hitlservice.ActionAllow},
-		{tools: "native-fs-browse", tool: "stat_file", action: hitlservice.ActionAllow},
-		{tools: "native-fs-browse", tool: "count_stats", action: hitlservice.ActionAllow},
-		{tools: "native-fs-browse", tool: "list_dir", action: hitlservice.ActionAllow},
+		{tools: "local_fs", tool: "grep", action: hitlservice.ActionAllow},
+		{tools: "local_fs", tool: "find_files", action: hitlservice.ActionAllow},
+		{tools: "local_fs", tool: "stat_file", action: hitlservice.ActionAllow},
+		{tools: "local_fs", tool: "count_stats", action: hitlservice.ActionAllow},
 		{tools: "local_fs", tool: "write_file", action: hitlservice.ActionApprove},
 		{tools: "local_fs", tool: "edit_file", action: hitlservice.ActionApprove},
 		{tools: "local_fs", tool: "sed", action: hitlservice.ActionApprove},
@@ -142,21 +142,19 @@ tool = "git_status"
 		{tools: "local_fs", tool: "read_file", action: hitlservice.ActionApprove, op: hitlservice.OpGlob, value: "**/.env"},
 		{tools: "local_fs", tool: "read_file_range", action: hitlservice.ActionApprove, op: hitlservice.OpGlob, value: "**/.env"},
 		{tools: "local_fs", tool: "list_dir", action: hitlservice.ActionApprove, op: hitlservice.OpGlob, value: "**/.env"},
-		{tools: "native-fs-browse", tool: "grep", action: hitlservice.ActionApprove, op: hitlservice.OpGlob, value: "**/.env"},
-		{tools: "native-fs-browse", tool: "find_files", action: hitlservice.ActionApprove, op: hitlservice.OpGlob, value: "**/.env"},
-		{tools: "native-fs-browse", tool: "stat_file", action: hitlservice.ActionApprove, op: hitlservice.OpGlob, value: "**/.env"},
-		{tools: "native-fs-browse", tool: "count_stats", action: hitlservice.ActionApprove, op: hitlservice.OpGlob, value: "**/.env"},
-		{tools: "native-fs-browse", tool: "list_dir", action: hitlservice.ActionApprove, op: hitlservice.OpGlob, value: "**/.env"},
+		{tools: "local_fs", tool: "grep", action: hitlservice.ActionApprove, op: hitlservice.OpGlob, value: "**/.env"},
+		{tools: "local_fs", tool: "find_files", action: hitlservice.ActionApprove, op: hitlservice.OpGlob, value: "**/.env"},
+		{tools: "local_fs", tool: "stat_file", action: hitlservice.ActionApprove, op: hitlservice.OpGlob, value: "**/.env"},
+		{tools: "local_fs", tool: "count_stats", action: hitlservice.ActionApprove, op: hitlservice.OpGlob, value: "**/.env"},
 		{tools: "tavily", tool: "search", action: hitlservice.ActionAllow},
 		{tools: "git", tool: "git_status", action: hitlservice.ActionAllow},
 		{tools: "local_fs", tool: "read_file", action: hitlservice.ActionAllow},
 		{tools: "local_fs", tool: "read_file_range", action: hitlservice.ActionAllow},
 		{tools: "local_fs", tool: "list_dir", action: hitlservice.ActionAllow},
-		{tools: "native-fs-browse", tool: "grep", action: hitlservice.ActionAllow},
-		{tools: "native-fs-browse", tool: "find_files", action: hitlservice.ActionAllow},
-		{tools: "native-fs-browse", tool: "stat_file", action: hitlservice.ActionAllow},
-		{tools: "native-fs-browse", tool: "count_stats", action: hitlservice.ActionAllow},
-		{tools: "native-fs-browse", tool: "list_dir", action: hitlservice.ActionAllow},
+		{tools: "local_fs", tool: "grep", action: hitlservice.ActionAllow},
+		{tools: "local_fs", tool: "find_files", action: hitlservice.ActionAllow},
+		{tools: "local_fs", tool: "stat_file", action: hitlservice.ActionAllow},
+		{tools: "local_fs", tool: "count_stats", action: hitlservice.ActionAllow},
 		{tools: "local_fs", tool: "write_file", action: hitlservice.ActionAllow},
 		{tools: "local_fs", tool: "edit_file", action: hitlservice.ActionAllow},
 		{tools: "local_fs", tool: "sed", action: hitlservice.ActionAllow},

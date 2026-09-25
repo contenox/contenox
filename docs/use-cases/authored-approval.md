@@ -50,7 +50,7 @@ Write a HITL (human-in-the-loop) policy that pauses only on the tool calls you n
 4. Activate it:
 
    ```bash
-   contenox config set hitl-policy-name hitl-policy-<name>.json
+   contenox config set execution.permissions.policy hitl-policy-<name>.json
    ```
 
 5. Run a chain that calls a gated tool and confirm the approval prompt appears only where your policy said it should.
@@ -61,7 +61,7 @@ Reads and other `allow` rules run without interruption. Every `approve` rule pau
 
 ## Shipped envelopes
 
-Contenox ships its envelopes as `[envelopes.<name>]` sections in `agents.toml`, transpiled into `.generated/hitl-policy-<name>.json` on every run. Switch between them with `contenox config set hitl-policy-name <file>`, or per run with `--hitl-policy <name>`.
+Contenox ships its envelopes as `[envelopes.<name>]` sections in `agents.toml`, transpiled into `.generated/hitl-policy-<name>.json` on every run. Switch between them with `contenox config set execution.permissions.policy <file>`, or per run with `--hitl-policy <name>`.
 
 | Envelope | File | Behavior |
 |---|---|---|
@@ -70,7 +70,6 @@ Contenox ships its envelopes as `[envelopes.<name>]` sections in `agents.toml`, 
 | `acpx` | `hitl-policy-acpx.json` | For a driver you did not write: headless/untrusted sessions (OpenClaw). Deny-by-default with no approval tier. |
 | `read_only` / `ask_always` / `auto_edit` | `hitl-policy-<name>.json` | The three postures a declaration's `permissionMode` resolves through. |
 | `oracle` | `hitl-policy-oracle.json` | The [oracle's](/docs/use-cases/auto-attention/) pinned envelope: the `oracle.*` toolset and nothing else. |
-| `serve` | `hitl-policy-serve.json` | The MCP host: missions and the servers you connected, nothing local. |
 
 There is no `dev` and no `acp` envelope — `acp` folded into `default`, and only envelopes that mean something ship. If you want the older permissive local-development posture, write one:
 

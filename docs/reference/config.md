@@ -1,13 +1,15 @@
 ---
 title: Configuration
-description: Backends, defaults, and workspace state — all stored in SQLite, managed with CLI commands.
+description: Saved defaults, session choices, agent limits and model capacity.
 order: 2
 ---
 
 # Configuration
 
-Contenox stores all configuration in a single SQLite database at `~/.contenox/local.db`.
-There is no YAML file — register backends and set defaults using CLI commands.
+Use `contenox config` for everyday defaults and `/settings` for the current
+session. Saved defaults live in SQLite; agent definitions, permission rules and
+native inference profiles have their own files. A saved default is an input to
+resolution, not a claim about a running session.
 
 ## Workspaces vs global
 
@@ -15,7 +17,7 @@ Contenox has two layers of state:
 
 - **Global state** — one shared database at `~/.contenox/local.db`. Holds backends, provider configuration, sessions, MCP registrations, and defaults. Shared by every project on your machine.
 - **Global runtime files** — `~/.contenox/` also holds `agents.toml` (which carries the `[envelopes.*]` sections), an `agents/` directory for agents you want everywhere, the transpiled envelopes and compiled chains under `~/.contenox/.generated/`, and the shipped chain files under `~/.contenox/system/`.
-- **Workspace state** — one `.contenox/` directory per project, containing a `workspace.id` file (a UUID written on `contenox init`), this project's [agent declarations](/docs/guide/agents/) and `agents.toml`, and any chain or policy files that override a global one by name. Each workspace scopes its own messages and workspace-specific config overrides inside the single global database.
+- **Workspace state** — one `.contenox/` directory per project, containing a `workspace.id` file (a UUID written on `contenox init`), this project's [agent declarations](/docs/guide/declarations/) and `agents.toml`, and any chain or policy files that override a global one by name. Each workspace scopes its own messages and workspace-specific config overrides inside the single global database.
 
 Files resolve by name, workspace first: the workspace `.contenox/`, then `~/.contenox/`, then `~/.contenox/system/`. Copying a shipped chain up out of `system/` is how you take ownership of it.
 
@@ -25,17 +27,11 @@ Backends and global defaults survive across every workspace. A workspace's sessi
 
 ## Local models
 
-For local inference, run [Ollama](https://ollama.com) (or point at a self-hosted vLLM endpoint) and register it:
-
-```bash
-ollama pull qwen3:8b
-contenox backend add ollama --type ollama
-contenox config set default-provider ollama
-contenox config set default-model qwen3:8b
-contenox doctor
-```
-
-`contenox setup` walks you through the same steps interactively.
+Run `contenox auto` to choose and pull a native model for this machine and open
+the TUI. Use `contenox auto --dry-run` to inspect the choice first. See
+[native modeld](/docs/integrations/providers/modeld/) for backend installation,
+model downloads and hardware requirements. A larger context setting does not
+allocate additional GPU memory: modeld reports the capacity it can serve.
 
 ## Register cloud or external backends
 
@@ -79,48 +75,116 @@ Backends are **global** — they live in `~/.contenox/local.db` and are visible 
 
 ## Set persistent defaults
 
-```bash
-contenox config set default-provider ollama
-contenox config set default-model    qwen3:8b
-contenox config set default-alt-model gemini-3.6-flash
-contenox config set default-alt-provider gemini
-contenox config set default-autocomplete-model qwen2.5-coder:7b
-contenox config set default-autocomplete-provider ollama
-contenox config set default-audio-model gemini-2.5-flash
-contenox config set default-audio-provider gemini
-contenox config set default-max-tokens 8192
-contenox config set default-think high
-contenox config set default-chain    .contenox/my-chain.json
-contenox config set hitl-policy-name hitl-policy-strict.json
+Setting names use dotted namespaces and `snake_case` fields. Numeric names state
+the unit where applicable: `window_tokens`, `max_output_tokens`, `max_age_days`.
+The model name and its provider are a selection; context and output are separate
+budgets, and permission policy selects a set of rules.
 
-contenox config list   # review current settings and their scope
+```bash
+contenox config list
+contenox config set inference.context.window_tokens 230000
+contenox config set inference.generation.max_output_tokens 8192
+contenox config set inference.reasoning.effort high
+contenox config set execution.permissions.policy hitl-policy-strict.json
+contenox config get inference.context.window_tokens --explain
+contenox config get inference.context.window_tokens --json
 ```
 
-| Key | Scope | Description |
-|---|---|---|
-| `default-model` | global | Model name used when `--model` is not passed |
-| `default-provider` | global | Provider type used when `--provider` is not passed |
-| `default-alt-model` | global | Secondary model exposed to chains through `{{var:alt_model}}` |
-| `default-alt-provider` | global | Secondary provider exposed to chains through `{{var:alt_provider}}` |
-| `default-autocomplete-model` | global | Model used for editor code-completion (FIM autocomplete) requests over ACP, independent of `default-model` |
-| `default-autocomplete-provider` | global | Provider for the autocomplete model, independent of `default-provider` |
-| `default-audio-model` | global | Model preferred for requests carrying audio attachments, independent of `default-model`. Unset falls back to `default-model`; audio requests resolve only to audio-capable models either way |
-| `default-audio-provider` | global | Provider for the audio model, independent of `default-provider`. Unset uses `default-provider` |
-| `default-max-tokens` | global | Optional response token cap exposed through `{{var:max_tokens}}` |
-| `default-think` | global | Default reasoning level for supported models (`auto`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh`) |
-| `telemetry-enabled` | global | Enable local telemetry logs (`true` / `false`) |
-| `update-check` | global | Enable automatic update checks (`true` / `false`) |
-| `opt-in-beta` | global | Enable beta features (`true` / `false`; default off): the agent roster (`contenox agent`, user-authored `chain-agent-*` chain discovery), and the [event tier](/docs/guide/events/) (`contenox events`, trigger loading). Off means the features are absent, not disabled. The `CONTENOX_OPT_IN_BETA` environment variable (`1`/`true` on, any other value off) overrides this key for a single invocation |
-| `default-mission-agent` | global | Declared agent the ACP `/mission <intent>` slash command falls back to when none is named. `contenox mission fire` always takes the agent as a required argument, so this key does not affect it |
-| `default-mission-policy` | global | Envelope (HITL policy) both `/mission` and `contenox mission fire --policy` fall back to when none is named |
-| `fleet-max-parallel` | global | Max concurrently open mission units across the fleet (integer; `0` = unlimited; default 8) |
-| `log-max-size` | global | Size at which a host log starts a new part, written as a number with an optional unit (`10MB`, `512KB`, `1GB`, or bytes). Applies to [`contenox serve`](/docs/reference/contenox-cli/#contenox-serve-path); default 10MB |
-| `log-max-files` | global | How many host log files to keep, counted across every date and part (integer; `0` = unlimited; default 14) |
-| `log-max-age-days` | global | Delete host logs whose date is older than this many days (integer; `0` = no age limit; default 14) |
-| `default-chain` | workspace | Chain file used in this workspace; falls back to the global value when unset |
-| `hitl-policy-name` | workspace | Active HITL policy for this workspace; falls back to the global value when unset. Takes an envelope's filename (`hitl-policy-strict.json`) |
+The default listing shows common settings. `config list --all` includes advanced
+defaults. `config list --describe` prints each setting's meaning, effect, readers,
+environment override and fallback, plus the locations of configuration outside
+SQLite. Command help and these descriptions come from the same registry.
 
-`contenox config list` shows each key's current value **and its scope** (`global` / `workspace`) so you can see whether a setting is inherited or overridden locally.
+`config get` without flags returns the stored default and its scope. `--explain`
+and `--json` also resolve environment overrides and built-in defaults. They do
+not query a running session or start a model to discover hardware capacity.
+
+Saved inference defaults are global. The chain selection and permission policy
+are workspace-scoped and fall back to the global row. Use `--scope global` to
+set that fallback explicitly:
+
+```bash
+contenox config set execution.permissions.policy hitl-policy-strict.json --scope global
+contenox config reset execution.permissions.policy
+contenox config reset inference.context.window_tokens
+```
+
+Reset removes the override at the selected scope. A workspace reset can expose
+a global value; it does not necessarily restore the shipped default. Changes
+apply when the relevant reader next loads them; start a new Contenox invocation for saved
+inference defaults, and restart the surface for startup settings such as logging.
+
+### Current session
+
+In the TUI or a native ACP session:
+
+```text
+/settings
+/context 131072
+/output 8192
+/reasoning high
+/model provider/model-name
+/permissions hitl-policy-strict.json
+/settings inference.context.window_tokens 230000
+```
+
+These commands change the current session only. ACP selects expose the same
+choices and descriptions; TUI slash completion uses the advertised values.
+`/model` accepts an unambiguous bare model name as well as a provider/model pair.
+`/think`, `/max-tokens` and `/policy` remain aliases. Unlike older versions,
+`/model`, `/provider`, `/max-tokens` and `/policy` no longer save defaults.
+Use `contenox config set` explicitly when a choice should apply on future launches.
+Session changes are held in memory; reopening a native session uses the launch
+and saved defaults again. An external ACP agent owns its own settings.
+
+For context and output, `inherit` removes a session override. `auto` is a choice:
+
+- `/context auto` follows the selected model's reported capacity, still bounded
+  by an explicit agent ceiling. It does not mean unlimited. Unknown capacity
+  uses a bounded fallback, reported in `/settings`.
+- `/output auto` sends no explicit generation cap. The engine reserves one
+  eighth of the context window as output headroom.
+- `/context inherit` and `/output inherit` return to invocation or saved defaults.
+
+For saved token defaults, `auto` is stored as `0`; `config reset` removes the
+stored value. The output setting is tokens **per model call**, not a session
+spending cap. A long tool loop can consume many times that amount. Aggregate
+mission budgets belong to the permission envelope's compute limits.
+
+### Defaults, overrides and limits
+
+For common inference settings, an explicit invocation flag wins over a supported
+environment variable, which wins over the saved default, which wins over the
+built-in fallback. The legacy `CONTENOX_DEFAULT_*` environment names remain
+supported; `config get <setting> --explain` names the variable for that setting.
+A session control then replaces the inherited choice for that session.
+
+Agent and model limits are constraints, not weaker defaults. The effective
+history window is the smallest positive value among the chosen window, the
+agent chain ceiling and the selected model's reported capacity. `/settings`
+shows that result, the chain source and the limits. Output headroom is reserved
+within this window; increasing the output cap leaves less room for history.
+The backend may further clamp generation to its output capability.
+
+Shipped agents use `[chain] token_limit = 0` to inherit. A positive value is an
+additional ceiling. The shipped `max_tokens` template inherits the session
+output setting; a literal in a custom chain pins that stage. A declaration's
+explicit reasoning effort or pinned model also remains authoritative.
+
+### Existing installations
+
+Old names such as `default-token-limit` and `default-max-tokens` remain aliases
+of the same database rows. There is no second store and no value-copy migration.
+`config get <setting> --explain` shows the old spelling when needed.
+
+Existing `agents.toml` files and custom chains are preserved. For example, a
+saved window of `230000` with an existing agent ceiling of `131072` still yields
+`131072`. To make that agent inherit, change the applicable `[chain] token_limit`
+to `0` and start a new Contenox invocation. Check both `~/.contenox/agents.toml` and the
+workspace `.contenox/agents.toml`, including `[agents.<name>.chain]`. A workspace
+or per-agent override can still narrow the global setting. Keep a positive
+ceiling when it is deliberate. Generated chain files are outputs; edit their
+agent configuration rather than the generated JSON.
 
 ### Which envelope a surface runs under
 
@@ -140,13 +204,30 @@ steps:
 
 ```bash
 contenox beam --hitl-policy strict                       # by envelope name
-contenox serve ~/src/api --hitl-policy ./ops/locked.json # by path, verbatim
+contenox beam --hitl-policy ./ops/locked.json            # by path, verbatim
 ```
 
 Full detail, including what happens when a name resolves to nothing, is in
 [Policy resolution order](/docs/guide/hitl/#policy-resolution-order).
 
-The `default-*` model settings can also be overridden per process — without persisting anything — via the `CONTENOX_DEFAULT_*` environment variables, and `opt-in-beta` via `CONTENOX_OPT_IN_BETA`; see the [environment variables table](/docs/reference/contenox-cli/#environment-variables) in the CLI reference.
+Environment overrides are invocation-local and do not rewrite stored values. See the [environment reference](/docs/reference/contenox-cli/#environment-variables).
+
+## Native inference settings
+
+`inference.context.window_tokens` controls the harness history budget. Native
+memory allocation, cache precision and device selection belong to modeld and
+its backend profiles. Increasing the harness budget cannot raise a physical
+capacity limit. A positive explicit window that exceeds the selected model's
+reported capacity stops the turn with both values; `auto` follows the reported
+capacity. Use `contenox show <model>` to inspect the selected model and
+[modeld's reference](/docs/integrations/providers/modeld/) for native settings.
+
+`modeld --min-hot-context=0` disables the hot-context floor, as do zero in the
+capacity JSON and environment forms. An omitted setting retains the native
+default. `CONTENOX_OPENVINO_DEVICE` overrides a model's `contenox-openvino.json`
+`device`; without the environment override, the profile chooses the device.
+These settings affect model loading, not an already running conversation's
+saved preferences.
 
 ## Manage backends
 

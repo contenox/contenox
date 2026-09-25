@@ -23,6 +23,9 @@ type openAIChatCompletionUsage struct {
 	PromptTokensDetails struct {
 		CachedTokens int `json:"cached_tokens"`
 	} `json:"prompt_tokens_details"`
+	CompletionTokensDetails struct {
+		ReasoningTokens int `json:"reasoning_tokens"`
+	} `json:"completion_tokens_details"`
 }
 
 func (u *openAIChatCompletionUsage) neutralUsage() *modelrepo.TokenUsage {
@@ -36,6 +39,7 @@ func (u *openAIChatCompletionUsage) neutralUsage() *modelrepo.TokenUsage {
 	return &modelrepo.TokenUsage{
 		PromptTokens:     u.PromptTokens,
 		CompletionTokens: u.CompletionTokens,
+		ThinkingTokens:   u.CompletionTokensDetails.ReasoningTokens,
 		TotalTokens:      total,
 		CacheReadTokens:  u.PromptTokensDetails.CachedTokens,
 	}

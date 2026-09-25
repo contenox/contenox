@@ -21,11 +21,11 @@ const (
 	gutterGap     = "  "
 )
 
-// The brand ramp, lightest rung first, as ANSI 256-colour foregrounds.
+// The brand ramp follows the mark from top to spine to bottom.
 const (
-	ramp1 = "\x1b[38;5;85m"
-	ramp2 = "\x1b[38;5;78m"
-	ramp3 = "\x1b[38;5;29m"
+	ramp1 = "\x1b[38;5;221m"
+	ramp2 = "\x1b[38;5;178m"
+	ramp3 = "\x1b[38;5;228m"
 	dim   = "\x1b[2m"
 	reset = "\x1b[0m"
 )

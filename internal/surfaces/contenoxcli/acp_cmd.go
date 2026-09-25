@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -19,10 +20,14 @@ import (
 	"github.com/contenox/contenox/internal/services/eventlog"
 	"github.com/contenox/contenox/internal/services/fleetservice"
 	"github.com/contenox/contenox/internal/services/hitlservice"
+	"github.com/contenox/contenox/internal/services/localfileservice"
 	"github.com/contenox/contenox/internal/services/localtools"
 	"github.com/contenox/contenox/internal/services/missionservice"
+	"github.com/contenox/contenox/internal/services/operatorinbox"
 	"github.com/contenox/contenox/internal/services/oracletools"
 	"github.com/contenox/contenox/internal/services/presence"
+	"github.com/contenox/contenox/internal/services/settings"
+	"github.com/contenox/contenox/internal/services/shellsession"
 	"github.com/contenox/contenox/internal/services/updatecheck"
 	"github.com/contenox/contenox/internal/services/vfs"
 	"github.com/contenox/contenox/internal/store/runtimetypes"
@@ -53,7 +58,7 @@ wins if present, then .generated/, then the system/ fallback). Override the path
 the CONTENOX_ACP_CHAIN_PATH environment variable.
 
 The default model is read from the global 'default-model' / 'default-provider' configuration
-(set via 'contenox config set default-model …'). Logging goes to stderr; stdin/stdout are
+(set via 'contenox config set inference.model …'). Logging goes to stderr; stdin/stdout are
 reserved for the JSON-RPC stream.
 
 HITL is on by default — gated tool calls route through the ACP session/request_permission
@@ -126,10 +131,8 @@ type acpProfile struct {
 	chainEnv     string
 	embedFleet   bool
 	seedFIMChain func(contenoxDir string) error
-	// host runs a long-lived host instead of an ACP connection over stdio.
-	host bool
-	beam bool
-	name string
+	beam         bool
+	name         string
 }
 
 var acpProfileACP = acpProfile{
@@ -139,17 +142,6 @@ var acpProfileACP = acpProfile{
 	embedFleet:   true,
 	seedFIMChain: seedFIMChainIfMissing,
 	name:         "acp",
-}
-
-// acpProfileServe is the editor profile with the stdio connection removed.
-var acpProfileServe = acpProfile{
-	hitlEnvelope: "serve",
-	chainFile:    chainAgentACPFilename,
-	chainEnv:     "CONTENOX_ACP_CHAIN_PATH",
-	embedFleet:   true,
-	seedFIMChain: seedFIMChainIfMissing,
-	host:         true,
-	name:         "serve",
 }
 
 var acpProfileBeam = acpProfile{
@@ -220,18 +212,16 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 
 	logDest := io.Writer(os.Stderr)
 	var surfaceLog *liblog.Writer
-	if profile.host || profile.beam {
+	if profile.beam {
 		rot, logErr := openHostLog(cmd, profile.name)
 		switch {
 		case logErr == nil:
 			surfaceLog = rot
 			logDest = rot
 			defer rot.Close()
-		case profile.beam:
+		default:
 			fmt.Fprintf(os.Stderr, "contenox beam: logging is unavailable, running without logs: %v\n", logErr)
 			logDest = io.Discard
-		default:
-			fmt.Fprintf(os.Stderr, "contenox %s: logging to a file is unavailable, using stderr: %v\n", profile.name, logErr)
 		}
 	}
 	noticeOut := io.Writer(os.Stderr)
@@ -280,7 +270,7 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	// this surface offers and the names /policy accepts are resolved by
 	// filename, so they have to be rendered before a session asks for one. The
 	// profile's own is ensured again below, where a failure is fatal.
-	if _, err := syncEnvelopePolicies(contenoxDir); err != nil {
+	if _, err := syncEnvelopePolicies(ctx, contenoxDir); err != nil {
 		fmt.Fprintf(noticeOut, "contenox acp: rendering envelopes: %v\n", err)
 	}
 	reportChange("phase", "render_envelopes")
@@ -314,22 +304,30 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 
 	// Config reads are environment-first: CONTENOX_DEFAULT_* overrides the stored value without persisting.
 	optInBeta := betaEnabled(ctx, runtimetypes.New(db.WithoutTransaction()))
-	defaultModel := configValueWithEnv(ctx, db, "default-model", envDefaultModel)
-	defaultProvider := configValueWithEnv(ctx, db, "default-provider", envDefaultProvider)
-	defaultAltModel := configValueWithEnv(ctx, db, "default-alt-model", envDefaultAltModel)
-	defaultAltProvider := configValueWithEnv(ctx, db, "default-alt-provider", envDefaultAltProvider)
-	defaultMaxTokens, err := normalizeMaxTokensConfig(configValueWithEnv(ctx, db, "default-max-tokens", envDefaultMaxTokens))
+	defaultModel := invocationConfigValue(ctx, cmd, db, "default-model", "model")
+	defaultProvider := invocationConfigValue(ctx, cmd, db, "default-provider", "provider")
+	defaultAltModel := invocationConfigValue(ctx, cmd, db, "default-alt-model", "alt-model")
+	defaultAltProvider := invocationConfigValue(ctx, cmd, db, "default-alt-provider", "alt-provider")
+	defaultMaxTokens, err := normalizeMaxTokensConfig(invocationConfigValue(ctx, cmd, db, "default-max-tokens", "max-tokens"))
 	if err != nil {
 		return err
 	}
 	defaultThink := reasoning.Default
-	if configuredThink := configValueWithEnv(ctx, db, "default-think", envDefaultThink); configuredThink != "" {
+	if configuredThink := invocationConfigValue(ctx, cmd, db, "default-think", "think"); configuredThink != "" {
 		level, err := reasoning.Normalize(configuredThink)
 		if err != nil {
 			return fmt.Errorf("config default-think: %w", err)
 		}
 		defaultThink = level
 	}
+
+	contextDefault := settings.Resolve(settings.ContextWindowTokens, acpsvc.ReadConfigValue(ctx, db, "default-token-limit"), "global", "0", invocationFlagValue(cmd, "context"))
+	normalizedContext, err := normalizeTokenLimitConfig(contextDefault.Value)
+	if err != nil {
+		return err
+	}
+	contextTokens, _ := strconv.Atoi(normalizedContext)
+	defaultContextTokens := &contextTokens
 
 	if err := ensureProfileChain(ctx, contenoxDir, profile.chainFile, profile.chainEnv, tracker); err != nil {
 		reportErr(err)
@@ -368,33 +366,32 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	trigHook := eventlog.NewTriggerHolder()
 	missionPub := missionEventPublisher(ctx, db, bus, workspaceID, tracker, trigHook)
 	missions := missionservice.New(db, missionservice.WithEventPublisher(missionPub))
+	operatorInbox := operatorinbox.New(db)
 
 	acpHITL := hitlservice.NewWithDefaultPolicy(policy.source(contenoxDir), runtimetypes.LocalTenantID, runtimetypes.New(db.WithoutTransaction()), tracker, policy.Name)
-	// /policy and `contenox config set hitl-policy-name` both write this workspace's row; the evaluator must read the same one.
+	// /policy and `contenox config set execution.permissions.policy` both write this workspace's row; the evaluator must read the same one.
 	hitlservice.SetWorkspaceID(acpHITL, workspaceID)
 	applyApprovalCeiling(ctx, acpHITL, runtimetypes.New(db.WithoutTransaction()))
-	askBridge := newRelayAskBridge(acpHITL, tracker)
-	hitlservice.SetAskWatcher(acpHITL, askBridge)
-	resumeBridge := newRelayResumeBridge(tracker)
 
 	// Assigned once the fleet is built below; the toolset resolves it per call.
 	var inProcessFleet fleetservice.Service
 
-	tools := acpToolset(profile, db, tracker, workspaceID,
-		routedTransport(sessionRouter, func() *acpsvc.Transport { return transport }),
-		missions, acpHITL, missionPub, optInBeta,
-		func() fleetservice.Service { return inProcessFleet })
-	printUnservedToolsets(noticeOut, unservedToolsets(chains.Default(), tools))
-
 	// The agent-reachable terminal — beam's and every dispatched unit's shared
 	// server — takes the shell scrub (ScrubDenySecrets by default), never the raw
-	// os.Environ(). Resolved once here so the in-process fleet and the beam surface
-	// below share it.
+	// os.Environ(). Resolved once here so the web surface, the in-process fleet and
+	// the beam surface below share it.
 	agentShellScrub, _, scrubErr := resolvedSandboxEnv(db, tracker, noticeOut)
 	if scrubErr != nil {
 		fmt.Fprintf(noticeOut, "sandbox env scrub unavailable, using deny-secrets default: %v\n", scrubErr)
 		agentShellScrub = nil
 	}
+
+	// The local browser surface owns its machine: it serves local_fs and
+	// local_shell in-process from the contained server beam uses, rather than
+	tools := acpToolset(db, tracker, workspaceID,
+		routedTransport(sessionRouter, func() *acpsvc.Transport { return transport }),
+		missions, acpHITL, missionPub, optInBeta,
+		func() fleetservice.Service { return inProcessFleet })
 
 	oracleStore := runtimetypes.New(db.WithoutTransaction())
 	oracleCfg := resolveOracleConfig(ctx, oracleStore, cmd)
@@ -405,7 +402,7 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	}
 	if oracleCfg.enabled() {
 		tools[oracletools.ToolsProviderName] = oracletools.New(oracleResolver{
-			hitl: acpHITL, missions: missions, store: oracleStore, out: noticeOut,
+			hitl: acpHITL, missions: missions, store: oracleStore, out: noticeOut, approves: oracleCfg.approves,
 		})
 	}
 
@@ -436,6 +433,7 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 		fmt.Fprintln(noticeOut, "contenox acp: no default-model configured; serving setup-only. Run the \"Setup Contenox\" auth method or `contenox acp --setup` to configure a provider and model.")
 	} else {
 		cfg := enginesvc.Config{
+			WrapModels:         localMeter(db, tracker),
 			DefaultModel:       defaultModel,
 			DefaultProvider:    defaultProvider,
 			AltDefaultModel:    defaultAltModel,
@@ -460,15 +458,13 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 			return fmt.Errorf("build engine: %w", err)
 		}
 		defer engine.Stop()
-		// A verdict landing with no waiter parked resumes the suspended run here,
-		// and a triggered run's outcome goes back to the relay from there.
-		hitlservice.SetResumeHook(acpHITL, resumeBridge.hook(agentservice.Deps{
+		hitlservice.SetResumeHook(acpHITL, agentservice.ResumeHook(agentservice.Deps{
 			Engine:      engine,
 			DB:          db,
 			WorkspaceID: workspaceID,
 		}))
 		if oracleCfg.enabled() {
-			oracleChain, oracleChainRef, oracleErr := loadOracleChain(contenoxDir, oracleCfg)
+			oracleChain, oracleChainRef, oracleErr := loadOracleChain(ctx, contenoxDir, oracleCfg)
 			if oracleErr != nil {
 				return oracleErr
 			}
@@ -519,10 +515,9 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 			},
 			WorkspaceID: workspaceID,
 			DBPath:      dbPath,
-			// Non-host units get fs and terminal from the shared clientfsterm
-			// server; the host (serve) mounts neither. Same scrub the beam terminal
-			// and the ACP shell take.
-			MountFSTerminal: !profile.host,
+			// fs and terminal come from the shared clientfsterm server; the same
+			// scrub the beam terminal and the ACP shell take.
+			MountFSTerminal: true,
 			WorkspaceEnv:    agentShellScrub,
 		})
 		if buildErr != nil {
@@ -541,23 +536,14 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 		reportErr(err)
 		return fmt.Errorf("resolve working directory: %w", err)
 	}
-	// serve and beam are both single-workspace HOSTS: each serves exactly one
-	// workspace, fixed here for its lifetime, so a session created against it —
-	// by an app, an event trigger, or its own operator — resolves the "/"
-	// sentinel to that one root. Only the editor profile (acp) builds no
-	// factory: there the editor owns the cwd and sends a real path per session,
-	// per the protocol.
+	// beam is a single-workspace HOST: it serves exactly one workspace, fixed
+	// here for its lifetime, so a session created against it — by an event
+	// trigger or its own operator — resolves the "/" sentinel to that one root.
+	// The editor profiles build no factory: there the editor owns the cwd and
+	// sends a real path per session, per the protocol.
 	defaultRoot := launchDir
 	var workspaceRoots *vfs.Factory
-	switch {
-	case profile.host:
-		defaultRoot = defaultHostRoot(cmd, launchDir)
-		workspaceRoots, err = buildWorkspaceFactory(defaultRoot)
-		if err != nil {
-			reportErr(err)
-			return err
-		}
-	case profile.beam:
+	if profile.beam {
 		defaultRoot, err = beamRoot(cmd, launchDir)
 		if err != nil {
 			reportErr(err)
@@ -570,10 +556,34 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 		}
 	}
 
+	var hostFiles localfileservice.Service
+	if workspaceRoots != nil {
+		hostFiles, err = localfileservice.New(defaultRoot)
+		if err != nil {
+			reportErr(err)
+			return err
+		}
+	}
+
+	// The warm per-session PTY behind the `!` passthrough, served by the same
+	// single-workspace host profiles that mount the fs extension. The editor
+	// profile keeps ShellSessions nil: its terminal lives client-side.
+	var shells shellsession.Manager
+	if workspaceRoots != nil {
+		shells = shellsession.NewManager(shellsession.Config{
+			CwdResolver: func(context.Context) string { return defaultRoot },
+			Workspace:   workspaceRoots,
+			ScrubEnv:    agentShellScrub,
+		})
+		defer shells.Shutdown()
+	}
+
 	transportFactory := acpsvc.New(acpsvc.Deps{
 		Engine:                engine,
 		DB:                    db,
 		WorkspaceRoots:        workspaceRoots,
+		Files:                 hostFiles,
+		ShellSessions:         shells,
 		ChainRegistry:         chains,
 		FIMChainRegistry:      fimChains,
 		DefaultModel:          defaultModel,
@@ -581,16 +591,20 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 		DefaultAltModel:       defaultAltModel,
 		DefaultAltProvider:    defaultAltProvider,
 		DefaultMaxTokens:      defaultMaxTokens,
+		DefaultContextTokens:  defaultContextTokens,
+		DefaultContextSource:  contextDefault.Source,
 		DefaultThink:          defaultThink,
 		WorkspaceID:           workspaceID,
 		ContenoxDir:           contenoxDir,
 		SessionRouter:         sessionRouter,
-		KnownPolicies:         knownPolicyNames(contenoxDir),
+		KnownPolicies:         knownPolicyNames(ctx, contenoxDir),
 		HITLDefaultPolicyName: policy.Name,
 		UpdateBanner:          updateBanner,
 		Fleet:                 missionFleet,
 		Agents:                missionAgents,
 		Asks:                  acpHITL,
+		Missions:              missions,
+		Inbox:                 operatorInbox,
 		MissionEnvelopes:      newMissionEnvelopes(contenoxDir),
 		OptInBeta:             optInBeta,
 		EnvSetup: &acpsvc.EnvSetupSpec{
@@ -601,17 +615,9 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 		},
 	})
 
-	stopRelay := serveRemoteAttachments(ctx, contenoxDir, transportFactory,
-		buildRelayChainTriggers(db, contenoxDir, workspaceID, engine, triggerOpts, resumeBridge), askBridge, tracker, noticeOut)
-	defer stopRelay()
-
 	acpCwd, _ := os.Getwd()
-	presenceKind := presence.KindACP
-	if profile.host {
-		presenceKind = presence.KindServe
-	}
 	presenceReporter := presence.StartReporter(ctx, presenceStore, presence.Record{
-		Kind: presenceKind,
+		Kind: presence.KindACP,
 		Cwd:  acpCwd,
 	})
 	defer presenceReporter.Stop()
@@ -630,22 +636,6 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 			engineReady:   engine != nil,
 			logPath:       surfaceLogPath(surfaceLog),
 			workspaceEnv:  agentShellScrub,
-		})
-	}
-
-	// A host has no stdin to serve ACP over; the relay tunnel is its only
-	// inbound path.
-	if profile.host {
-		return runHost(ctx, cmd, hostScreen{
-			contenoxDir:  contenoxDir,
-			workspaceID:  workspaceID,
-			root:         defaultRoot,
-			model:        defaultModel,
-			provider:     defaultProvider,
-			engineReady:  engine != nil,
-			setupCheck:   hostSetupCheck(ctx, engine),
-			log:          surfaceLog,
-			relayEnabled: relayIsConfigured(contenoxDir),
 		})
 	}
 
@@ -692,5 +682,44 @@ func acpUpdateBanner(ctx context.Context, db libdb.DBManager, contenoxDir string
 		return fmt.Sprintf("contenox %s is available (current: %s) — run `contenox update` to upgrade.", r.tag, CLIVersion())
 	case <-time.After(500 * time.Millisecond):
 		return ""
+	}
+}
+
+type approvalRouter interface {
+	AskApproval(ctx context.Context, req hitlservice.ApprovalRequest) (bool, error)
+}
+
+func routedAskApproval(router approvalRouter, local func() *acpsvc.Transport) localtools.AskApproval {
+	return func(ctx context.Context, req hitlservice.ApprovalRequest) (bool, error) {
+		if router != nil {
+			allowed, err := router.AskApproval(ctx, req)
+			if !errors.Is(err, acpsvc.ErrNoBoundSession) {
+				return allowed, err
+			}
+		}
+		var t *acpsvc.Transport
+		if local != nil {
+			t = local()
+		}
+		if t == nil {
+			return false, fmt.Errorf("acpsvc: HITL approval requested before transport initialization")
+		}
+		return t.AskApproval(ctx, req)
+	}
+}
+
+// routedTransport resolves which connection a proxied tool call acts through:
+// the transport holding this call's session first, then the process's local
+// connection. One process may be driving several sessions at once, so the
+// transport is a property of the call, not of the process.
+func routedTransport(router *acpsvc.SessionRouter, local func() *acpsvc.Transport) acpsvc.TransportResolver {
+	return func(ctx context.Context) *acpsvc.Transport {
+		if t := router.TransportForContext(ctx); t != nil {
+			return t
+		}
+		if local == nil {
+			return nil
+		}
+		return local()
 	}
 }

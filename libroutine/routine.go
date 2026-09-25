@@ -62,6 +62,11 @@ func NewRoutine(threshold int, resetTimeout time.Duration) *Routine {
 // Allow reports whether the circuit breaker permits an operation. It may
 // transition the state from Open to HalfOpen if the reset timeout has passed.
 func (rm *Routine) Allow() bool {
+	return rm.AllowAt(time.Now())
+}
+
+// AllowAt reports whether the circuit breaker permits an operation at now.
+func (rm *Routine) AllowAt(now time.Time) bool {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 
@@ -69,7 +74,7 @@ func (rm *Routine) Allow() bool {
 	case Closed:
 		return true
 	case Open:
-		if time.Since(rm.lastFailureAt) > rm.resetTimeout {
+		if now.Sub(rm.lastFailureAt) > rm.resetTimeout {
 			rm.state = HalfOpen
 			rm.inTest = false
 		} else {
@@ -105,6 +110,12 @@ func (rm *Routine) MarkSuccess() {
 // MarkFailure records a failed operation, tripping the circuit to Open once the
 // threshold is reached or a HalfOpen test fails.
 func (rm *Routine) MarkFailure() {
+	rm.MarkFailureAt(time.Now())
+}
+
+// MarkFailureAt records a failed operation at now, tripping the circuit to Open
+// once the threshold is reached or a HalfOpen test fails.
+func (rm *Routine) MarkFailureAt(now time.Time) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 
@@ -113,11 +124,11 @@ func (rm *Routine) MarkFailure() {
 		rm.failureCount++
 		if rm.failureCount >= rm.threshold {
 			rm.state = Open
-			rm.lastFailureAt = time.Now().UTC()
+			rm.lastFailureAt = now.UTC()
 		}
 	case HalfOpen:
 		rm.state = Open
-		rm.lastFailureAt = time.Now().UTC()
+		rm.lastFailureAt = now.UTC()
 		rm.inTest = false
 	}
 }
@@ -187,11 +198,16 @@ func (rm *Routine) Loop(ctx context.Context, interval time.Duration, triggerChan
 
 // ForceOpen sets the circuit breaker to the Open state.
 func (rm *Routine) ForceOpen() {
+	rm.ForceOpenAt(time.Now())
+}
+
+// ForceOpenAt sets the circuit breaker to the Open state at now.
+func (rm *Routine) ForceOpenAt(now time.Time) {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 	log.Println("Forcing circuit breaker to Open state")
 	rm.state = Open
-	rm.lastFailureAt = time.Now()
+	rm.lastFailureAt = now.UTC()
 	rm.failureCount = rm.threshold
 	rm.inTest = false
 }
@@ -204,6 +220,21 @@ func (rm *Routine) ForceClose() {
 	rm.state = Closed
 	rm.failureCount = 0
 	rm.inTest = false
+}
+
+func (rm *Routine) WouldAllowAt(now time.Time) bool {
+	rm.mu.Lock()
+	defer rm.mu.Unlock()
+
+	switch rm.state {
+	case Closed:
+		return true
+	case Open:
+		return now.Sub(rm.lastFailureAt) > rm.resetTimeout
+	case HalfOpen:
+		return !rm.inTest
+	}
+	return false
 }
 
 // GetState returns the current State of the circuit breaker.

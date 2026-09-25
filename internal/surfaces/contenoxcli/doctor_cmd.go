@@ -144,9 +144,9 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		if ceiling > 0 {
 			if n, convErr := strconv.Atoi(maxTokStr); convErr == nil && n > ceiling {
 				fmt.Fprintf(cmd.OutOrStdout(),
-					"\n⚠️  Advisory: default-max-tokens=%d exceeds %s provider ceiling (%d).\n"+
+					"\n⚠️  Advisory: inference.generation.max_output_tokens=%d exceeds %s provider ceiling (%d).\n"+
 						"   Requests will be clamped automatically; set a lower value to silence this warning:\n"+
-						"   contenox config set default-max-tokens %d\n",
+						"   contenox config set inference.generation.max_output_tokens %d\n",
 					n, res.DefaultProvider, ceiling, ceiling)
 			}
 		}
@@ -387,7 +387,7 @@ func printBuildProvenance(w io.Writer, v string, p version.Provenance) {
 // is enumerated here, never executed, so nothing may reach a DB, a fleet, or a
 // live transport.
 func acpRosterToolsets(optInBeta bool) map[string]taskengine.ToolsRepo {
-	return acpToolset(acpProfileACP, nil, libtracker.NoopTracker{}, "",
+	return acpToolset(nil, libtracker.NoopTracker{}, "",
 		func(context.Context) *acpsvc.Transport { return nil },
 		missionservice.New(nil), nil, nil, optInBeta,
 		func() fleetservice.Service { return nil })
@@ -436,9 +436,12 @@ func printToolRoster(ctx context.Context, w io.Writer, sets map[string]taskengin
 		}
 		clientBacked := acpsvc.IsClientBacked(repo)
 		for _, tool := range tools {
+			// One toolset can hold both kinds now (local_fs reads and writes
+			// through the client, and lists and greps in process), so the
+			// backing is a property of the tool, not of the toolset.
 			origin := "local (in-process)"
-			if clientBacked {
-				origin = "needs client capability " + acpsvc.RequiredClientCapability(name, tool.Function.Name)
+			if cap := acpsvc.RequiredClientCapability(name, tool.Function.Name); clientBacked && cap != "" {
+				origin = "needs client capability " + cap
 			}
 			fmt.Fprintf(w, "  %s — %s — %s\n", tool.Function.Name, name, origin)
 		}
@@ -450,8 +453,6 @@ func printToolRoster(ctx context.Context, w io.Writer, sets map[string]taskengin
 		}
 		fmt.Fprintf(w, "  %s — MCP server (%s); its tools are served live per session\n", srv.Name, mcpServerTarget(srv))
 	}
-	fmt.Fprintf(w, "  %s — not mounted under `contenox serve`: %s\n",
-		strings.Join(hostUnservedToolsets, ", "), hostUnservedToolsetRefusal)
 }
 
 // mcpServerTarget is the transport plus whichever endpoint the server has: a

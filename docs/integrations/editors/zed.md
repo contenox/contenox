@@ -58,8 +58,8 @@ The ACP chain looks like any other Contenox chain. Its `"tools": ["*"]` exposes 
 ACP reads from your global model/provider config — the same one the CLI uses:
 
 ```bash
-contenox config set default-model qwen3:8b
-contenox config set default-provider ollama
+contenox config set inference.model qwen3:8b
+contenox config set inference.provider ollama
 ```
 
 Models are global config, shared across every surface that reads `default-model` — switching it here switches it everywhere.
@@ -94,13 +94,13 @@ To skip Contenox HITL entirely (trusted/scripted contexts), launch with `--auto`
 
 Type `/mission <intent>` (or `/mission <agent-name> <intent>`) in the agent panel to fire a [mission](/docs/reference/contenox-cli/#the-mission-slash-command) without leaving the conversation: a declared agent runs the intent unattended under its envelope, as a child subprocess of this editor session. The unit's reports stream live back into the session that fired it.
 
-> **Beta:** naming an agent of your own — a declaration in `.contenox/agents/`, or a hand-authored `chain-agent-*` chain — requires `contenox config set opt-in-beta true` (or `CONTENOX_OPT_IN_BETA=1`); `/mission` itself and the shipped `agent-planner` work without it.
+> **Beta:** naming an agent of your own — a declaration in `.contenox/agents/`, or a hand-authored `chain-agent-*` chain — requires `contenox config set features.beta.enabled true` (or `CONTENOX_OPT_IN_BETA=1`); `/mission` itself and the shipped `agent-planner` work without it.
 
 Set the fallbacks the bare form uses first:
 
 ```bash
-contenox config set default-mission-agent  <agent-name>
-contenox config set default-mission-policy <hitl-policy-file>
+contenox config set execution.missions.default_agent  <agent-name>
+contenox config set execution.missions.permissions.policy <hitl-policy-file>
 ```
 
 
@@ -110,12 +110,12 @@ contenox config set default-mission-policy <hitl-policy-file>
 
 **Nothing happens when I select Contenox.** Make sure `contenox` is on Zed's `PATH`. Zed inherits the shell environment of the GUI process — on Linux that's usually your login shell's `PATH`. Test with `which contenox` in a shell launched from the same desktop session.
 
-**The default-model error.** ACP needs a configured default model. Run `contenox config set default-model <name>` and `contenox config set default-provider <type>` before launching from Zed.
+**The default-model error.** ACP needs a configured default model. Run `contenox config set inference.model <name>` and `contenox config set inference.provider <type>` before launching from Zed.
 
 **I want to see what's happening.** Enable file logging:
 
 ```bash
-contenox config set telemetry-enabled true
+contenox config set observability.telemetry.enabled true
 ```
 
 Subsequent ACP sessions write structured operation traces to `~/.contenox/telemetry.log` (chain steps, tool calls, model requests, session updates sent to Zed). Stderr from the agent process also lands in Zed's `Zed.log`.
@@ -124,7 +124,7 @@ Subsequent ACP sessions write structured operation traces to `~/.contenox/teleme
 
 ## Where to next
 
-- [Declaring agents](/docs/guide/agents/) — one Markdown file is the agent, regardless of which client drives it.
+- [Declaring agents](/docs/guide/declarations/) — one Markdown file is the agent, regardless of which client drives it.
 - [Writing a chain by hand](/docs/guide/chains/writing-a-chain/) — for the agent that has outgrown a declaration.
 - [HITL policies](/docs/guide/hitl/) — choose what requires approval and what doesn't.
 - [MCP](/docs/integrations/tools/mcp/) — register MCP servers once globally; ACP sessions pick them up automatically.

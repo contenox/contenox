@@ -2,14 +2,18 @@ package contenoxcli
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"strconv"
+
 	"github.com/contenox/contenox/internal/kernel/taskengine"
 	"github.com/contenox/contenox/internal/services/hitlservice"
 	"github.com/contenox/contenox/internal/services/localtools"
+	"github.com/contenox/contenox/internal/services/settings"
 	"github.com/contenox/contenox/internal/store/runtimetypes"
 	"github.com/contenox/contenox/libdbexec"
 	"github.com/contenox/contenox/libtracker"
 	"github.com/spf13/cobra"
-	"io"
 )
 
 type chatOpts struct {
@@ -62,9 +66,10 @@ type chatOpts struct {
 
 func buildTemplateVars(opts chatOpts) map[string]string {
 	templateVars := map[string]string{
-		"model":    opts.EffectiveDefaultModel,
-		"provider": opts.EffectiveDefaultProvider,
-		"think":    opts.EffectiveThink,
+		"model":      opts.EffectiveDefaultModel,
+		"provider":   opts.EffectiveDefaultProvider,
+		"think":      opts.EffectiveThink,
+		"max_tokens": settings.DefaultOutputTokens,
 	}
 
 	defaultModel := opts.EffectiveConfiguredModel
@@ -116,11 +121,7 @@ func buildRunOpts(cmd *cobra.Command, db libdbexec.DBManager, contenoxDir string
 
 	effectiveModel, _ := flags.GetString("model")
 	if !flags.Changed("model") && (effectiveModel == "" || effectiveModel == defaultModel) {
-		if kvModel != "" {
-			effectiveModel = kvModel
-		} else {
-			effectiveModel = defaultModel
-		}
+		effectiveModel = kvModel
 	}
 
 	effectiveDefaultProvider := kvProvider
@@ -145,12 +146,21 @@ func buildRunOpts(cmd *cobra.Command, db libdbexec.DBManager, contenoxDir string
 	}
 
 	effectiveContext, _ := flags.GetInt("context")
+	if !flags.Changed("context") {
+		value, _ := getConfigKV(ctx, store, "default-token-limit")
+		normalized, err := normalizeTokenLimitConfig(value)
+		if err != nil {
+			return chatOpts{}, err
+		}
+		effectiveContext, _ = strconv.Atoi(normalized)
+	}
+	if effectiveContext < 0 {
+		return chatOpts{}, fmt.Errorf("inference.context.window_tokens must be non-negative")
+	}
 	effectiveTracing, _ := flags.GetBool("trace")
 
 	effectiveEnableLocalExec, _ := flags.GetBool("shell")
 	effectiveLocalExecAllowedDir, _ := flags.GetString("local-exec-allowed-dir")
-	autoMode, _ := cmd.Flags().GetBool("auto")
-	effectiveHITL := !autoMode
 
 	return chatOpts{
 		EffectiveDB:                  "", // resolved separately in RunE
@@ -166,7 +176,7 @@ func buildRunOpts(cmd *cobra.Command, db libdbexec.DBManager, contenoxDir string
 		EffectiveNoDeleteModels:      true,
 		EffectiveEnableLocalExec:     effectiveEnableLocalExec,
 		EffectiveLocalExecAllowedDir: effectiveLocalExecAllowedDir,
-		EffectiveHITL:                effectiveHITL,
+		EffectiveHITL:                true,
 		EffectiveTracing:             effectiveTracing,
 		EffectiveThink:               effectiveThink,
 		EffectiveOptInBeta:           betaEnabled(ctx, store),

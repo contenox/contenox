@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/contenox/contenox/internal/surfaces/beam/dialect"
 	"github.com/contenox/contenox/internal/surfaces/beam/enginebridge"
 	"github.com/contenox/contenox/internal/surfaces/beam/frame"
 	"github.com/contenox/contenox/internal/surfaces/beam/sanitize"
@@ -214,6 +215,10 @@ type missionUnit struct {
 	agent string
 	kind  string
 	text  string
+	// askID names the answerable ask. It is rendered as the reply command,
+	// since the id is a uuid nothing else on screen shows and a unit stays
+	// blocked until a human names it.
+	askID string
 	ask   bool
 }
 
@@ -231,7 +236,7 @@ func (u missionUnit) render(_ int, g glyphs) []frame.Line {
 	}
 	out := []frame.Line{buildLine(header...)}
 
-	if u.text == "" {
+	if u.text == "" && u.askID == "" {
 		return out
 	}
 	// The gutter marks every body line as a quotation, not this session's own
@@ -239,6 +244,11 @@ func (u missionUnit) render(_ int, g glyphs) []frame.Line {
 	gutter := frame.S(frame.StyleBorder, g.quote)
 	for _, src := range splitSourceLines(u.text) {
 		out = append(out, buildLine(gutter, frame.S(frame.StyleNone, src)))
+	}
+	if u.askID != "" {
+		out = append(out, buildLine(gutter,
+			frame.S(frame.StyleMuted, fmt.Sprintf(dialect.AskAnswerHint, u.askID))),
+		)
 	}
 	return out
 }

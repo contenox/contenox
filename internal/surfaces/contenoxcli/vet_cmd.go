@@ -37,7 +37,7 @@ envelope and axis named, so a defect this reports in a hitl-policy-*.json under
 .generated/ is one to fix in [envelopes.<name>].
 
 A rule carrying no timeout_s is not a rule that waits forever: it falls to this
-host's approval ceiling ('contenox config set approval-ceiling <duration|never>',
+host's approval ceiling ('contenox config set execution.approval.timeout <duration|never>',
 seven days until you set it) and is denied there. The rule that does wait
 forever carries timeout_s: -1, written in agents.toml as timeout = "never".
 

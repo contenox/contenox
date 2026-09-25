@@ -22,7 +22,8 @@ captured step records (CapturedStateUnit) that survive process restart.
 
   contenox state list             # list request IDs that have captured state
   contenox state show <reqID>     # print step rows for a request
-  contenox state show <reqID> --raw   # JSON dump of the captured units`,
+  contenox state show <reqID> --raw   # JSON dump of the captured units
+  contenox state clear            # delete captured state; keep sessions`,
 }
 
 var stateListCmd = &cobra.Command{
@@ -113,6 +114,35 @@ IDs.`,
 	},
 }
 
+var stateClearCmd = &cobra.Command{
+	Use:   "clear",
+	Short: "Delete all captured execution state.",
+	Long: `Delete the inspector's per-request execution traces. This does not delete
+sessions, messages, checkpoints, approvals, configuration, or model data.`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		db, _, err := openConfigDB(cmd)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+
+		ctx := libtracker.WithNewRequestID(cmd.Context())
+		kv, releaseKV, err := substrate.OpenKV(ctx, db)
+		if err != nil {
+			return err
+		}
+		defer releaseKV()
+		inspector := taskengine.NewKVInspector(taskengine.NewSimpleInspector(), kv, libtracker.NoopTracker{})
+		removed, err := inspector.ClearExecutionState(ctx)
+		if err != nil {
+			return fmt.Errorf("clear captured state: %w", err)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Cleared captured execution state for %d requests. Sessions and checkpoints were not changed.\n", removed)
+		return nil
+	},
+}
+
 func formatStateDuration(d time.Duration) string {
 	if d == 0 {
 		return "-"
@@ -137,4 +167,5 @@ func init() {
 	stateShowCmd.Flags().Bool("raw", false, "Print captured units as JSON instead of a table.")
 	stateCmd.AddCommand(stateListCmd)
 	stateCmd.AddCommand(stateShowCmd)
+	stateCmd.AddCommand(stateClearCmd)
 }

@@ -1,15 +1,21 @@
 package contenoxcli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"os"
+	"path/filepath"
 
 	"github.com/contenox/contenox/internal/kernel/taskengine"
+	"github.com/contenox/contenox/internal/services/vfs"
 )
 
-func loadChainFromFile(path string) (*taskengine.TaskChainDefinition, error) {
-	data, err := os.ReadFile(path)
+func loadChainFromFile(ctx context.Context, path string) (*taskengine.TaskChainDefinition, error) {
+	view, vErr := vfs.OpenPrivilegedView(filepath.Dir(path))
+	if vErr != nil {
+		return nil, fmt.Errorf("failed to read chain file %q: %w", path, vErr)
+	}
+	data, err := view.ReadFile(ctx, filepath.Base(path))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read chain file %q: %w", path, err)
 	}

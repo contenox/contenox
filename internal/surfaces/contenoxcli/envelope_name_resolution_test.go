@@ -23,7 +23,7 @@ func renderShippedEnvelopesForTest(t *testing.T, contenoxDir string) {
 	require.NoError(t, err)
 	generated := filepath.Join(contenoxDir, agentdecl.GeneratedDirName)
 	for _, name := range cfg.EnvelopeNames() {
-		_, _, err := agentdecl.SyncEnvelopePolicy(cfg, name, generated, agentdecl.ConfigFilename)
+		_, _, err := agentdecl.SyncEnvelopePolicy(context.Background(), cfg, name, declRootForTest(t, generated), agentdecl.ConfigFilename)
 		require.NoErrorf(t, err, "sync envelope %q", name)
 	}
 }

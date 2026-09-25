@@ -14,6 +14,8 @@ import (
 	"github.com/contenox/contenox/internal/services/chatservice"
 	"github.com/contenox/contenox/internal/services/missiontools"
 	"github.com/contenox/contenox/internal/services/sessionservice"
+	"github.com/contenox/contenox/internal/services/settings"
+	"github.com/contenox/contenox/internal/services/setupcheck"
 	"github.com/contenox/contenox/internal/store/runtimetypes"
 	libdb "github.com/contenox/contenox/libdbexec"
 	"github.com/contenox/contenox/libtracker"
@@ -153,8 +155,16 @@ func (a *agent) Prompt(ctx context.Context, req PromptRequest) (*PromptResponse,
 	if templateVars == nil {
 		templateVars = map[string]string{}
 	}
+	if templateVars["max_tokens"] == "" {
+		templateVars["max_tokens"] = settings.DefaultOutputTokens
+	}
 	templateVars["chain"] = chain.ID
 	ctx = taskengine.WithTemplateVars(ctx, templateVars)
+	modelLimit := 0
+	if a.deps.Engine != nil && a.deps.Engine.State != nil {
+		modelLimit = setupcheck.ResolveContextLength(setupcheck.StatesFromMap(a.deps.Engine.State.Get(ctx)), templateVars["provider"], templateVars["model"])
+	}
+	req.ContextLength = settings.ContextBudget(req.ContextLength, int(chain.TokenLimit), modelLimit)
 	ctx = taskengine.WithRequestedContextLength(ctx, req.ContextLength)
 	if req.ToolsAllowlist != nil {
 		ctx = taskengine.WithRuntimeToolsAllowlist(ctx, req.ToolsAllowlist)
@@ -178,6 +188,7 @@ func (a *agent) Prompt(ctx context.Context, req PromptRequest) (*PromptResponse,
 		ctx = context.WithValue(ctx, runtimetypes.SessionIDContextKey, req.SessionID)
 		// Cache-affinity key, one-way hashed so the raw ID never reaches providers.
 		ctx = llmrepo.WithSessionKey(ctx, llmrepo.DeriveSessionKey(req.SessionID))
+		ctx = llmrepo.WithUsageSession(ctx, req.SessionID)
 	}
 
 	if req.Observer != nil {

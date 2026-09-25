@@ -8,7 +8,7 @@ order: 2
 
 In contenox the ReAct loop — model reasons, calls a tool, observes, reasons again — is not hidden vendor plumbing. It is an authored task graph: a `chat_completion` task with tools, a branch on whether the model called one, an `execute_tool_calls` task, and an edge back. Every decision is a visible JSON key; every loop is bounded by a budget you can read. The shipped chains stage that loop deliberately: a main loop that works, a recovery loop with a fresh instruction and a smaller budget, and a terminal task with `"tools": []` that can only report. Each stage that follows a failure gets fewer powers and a clearer mandate — the graph never lets confusion default into unattended mutation.
 
-You do not have to author one to get one. [Declare an agent](/docs/guide/agents/) and contenox generates the chain behind it, staged the way the shipped ones are. This page is for reading that chain, and for the case where you write your own: a branch, a different model per step, a recovery path, a declared point where a human stands.
+You do not have to author one to get one. [Declare an agent](/docs/guide/declarations/) and contenox generates the chain behind it, staged the way the shipped ones are. This page is for reading that chain, and for the case where you write your own: a branch, a different model per step, a recovery path, a declared point where a human stands.
 
 It maps the loop as the shipped chains actually implement it, then shows how to derive your own. Authoring basics — tasks, handlers, transitions — are covered in [Writing a chain by hand](/docs/guide/chains/writing-a-chain/); this page is about loop engineering: the topology, the budgets, and the doctrine for adapting it.
 
@@ -68,7 +68,7 @@ Read in order: budget first, tool loop second, done last. The model keeps the lo
 
 ## The staged production shape
 
-An agent declared as a directory tree (see [Declaring agents](/docs/guide/agents/)) wraps that two-task loop in the same production staging, expressed as files rather than as JSON stages:
+An agent declared as a directory tree (see [Declaring agents](/docs/guide/declarations/)) wraps that two-task loop in the same production staging, expressed as files rather than as JSON stages:
 
 - **Entry classification** is the tree's root `agent.md` — a router whose branches are its subdirectory names. `contenox` appends each branch's `description` to the classifier prompt, so the model is told exactly which labels are valid, and a `default:` branch says where an unclassified request goes. A flat, single-file declaration has no classifier — the one prompt is its own classification.
 - **The main bounded loop** is a leaf's `agent.md` — chat task, execute task, back-edge, budget. The budget branch routes to that leaf's recovery, not straight to `end`: spending the budget is treated as a signal the loop is stuck, not as a place to stop mid-thought.
@@ -82,7 +82,7 @@ A hand-authored chain follows the same skeleton without any of that machinery. `
 
 ## Creating one: copy, then delete
 
-For most agents, don't write a chain by hand at all — [declare it](/docs/guide/agents/) as a Markdown file and `contenox` generates the chain behind it. This section is for what a declaration cannot say: a branch, a different model per step, a point where a human is required. There the doctrine is the same one, applied to a file instead of a directory tree: **do not invent a loop topology. Copy the leanest real chain you have and strip or extend it.** `chain-planner-default.json` under `~/.contenox/system/` is the leanest currently-shipped example — four tasks, no classifier, one persona — and already encodes the answers to the questions a hand-rolled loop gets wrong: where the budget branch goes, what `on_failure` catches, why the recovery loop has its own smaller budget.
+For most agents, don't write a chain by hand at all — [declare it](/docs/guide/declarations/) as a Markdown file and `contenox` generates the chain behind it. This section is for what a declaration cannot say: a branch, a different model per step, a point where a human is required. There the doctrine is the same one, applied to a file instead of a directory tree: **do not invent a loop topology. Copy the leanest real chain you have and strip or extend it.** `chain-planner-default.json` under `~/.contenox/system/` is the leanest currently-shipped example — four tasks, no classifier, one persona — and already encodes the answers to the questions a hand-rolled loop gets wrong: where the budget branch goes, what `on_failure` catches, why the recovery loop has its own smaller budget.
 
 Walk one adaptation end-to-end — a narrow diff-review loop, single tool, attended use:
 

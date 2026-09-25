@@ -153,7 +153,27 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 
 	t.clearToolCallState(req.SessionID)
 	_, isExternal := entry.driver.(*externalDriver)
-	t.replayMessages(ctx, req.SessionID, messages, isExternal)
+	// A load naming SinceSeq replaces the full-history replay with the session
+	// journal's gap replay: the client kept its transcript up to that cursor
+	// and needs only the events it missed, at full fidelity, instead of the
+	// reconstructed (and for native sessions lossy) message replay. When the
+	// journal cannot serve the gap (no router, unknown session, or nothing
+	// newer), fall back to the ordinary full replay rather than under-deliver.
+	journalReplayed := false
+	if req.SinceSeq > 0 && t.deps.SessionRouter != nil {
+		if contenoxID, ok := t.contenoxSessionForACPID(req.SessionID); ok {
+			entries, lastSeq := t.deps.SessionRouter.ReplaySince(contenoxID, req.SinceSeq)
+			if lastSeq >= req.SinceSeq {
+				for _, entry := range entries {
+					t.writeUpdate(ctx, entry.Notification)
+				}
+				journalReplayed = true
+			}
+		}
+	}
+	if !journalReplayed {
+		t.replayMessages(ctx, req.SessionID, messages, isExternal)
+	}
 	t.reattachNativeTurn(ctx, req.SessionID)
 	t.reofferParkedAsks(ctx, req.SessionID, contenoxSessionID)
 	// The menu goes out only after the session/load result is on the wire.
@@ -729,8 +749,16 @@ func (t *Transport) ResumeSession(ctx context.Context, req libacp.ResumeSessionR
 	}
 
 	// Resume keeps the client's transcript but not its gauge, and nothing may
-	// precede its response.
+	// precede its response. A resume naming SinceSeq gets the events it missed
+	// while disconnected, replayed after the response from the session journal
+	// (SSE resume: exactly the updates newer than its cursor, full fidelity).
 	libacp.AfterResponse(ctx, func() {
+		if req.SinceSeq > 0 && t.deps.SessionRouter != nil {
+			entries, _ := t.deps.SessionRouter.ReplaySince(contenoxSessionID, req.SinceSeq)
+			for _, entry := range entries {
+				t.writeUpdate(ctx, entry.Notification)
+			}
+		}
 		t.sendResumedUsageUpdate(ctx, req.SessionID, entry)
 	})
 
@@ -773,6 +801,7 @@ func (t *Transport) CloseSession(ctx context.Context, req libacp.CloseSessionReq
 	}
 	t.clearToolCallState(req.SessionID)
 	// Unlike a bare connection drop, an explicit close tears the shell down.
+	t.closeTerminal(req.SessionID, entry)
 	reportChange(string(req.SessionID), map[string]any{"was_open": entry != nil})
 	return libacp.CloseSessionResponse{}, nil
 }
@@ -817,6 +846,7 @@ func (t *Transport) DeleteSession(ctx context.Context, req libacp.DeleteSessionR
 		t.deps.NativeTurns.Cancel(req.SessionID)
 	}
 	t.clearToolCallState(req.SessionID)
+	t.closeTerminal(req.SessionID, entry)
 
 	ag := agentservice.New(agentservice.Deps{
 		Engine:      t.deps.Engine,
@@ -1294,6 +1324,49 @@ func sessionTitleOverride(ctx context.Context, store runtimetypes.Store, interna
 		return ""
 	}
 	return truncateSessionListTitle(rec.Title)
+}
+
+func (t *Transport) ensureSessionMission(ctx context.Context, sess *sessionEntry, sessionID string, input string) {
+	if t == nil || t.deps.Missions == nil || sess == nil {
+		return
+	}
+	policyName := t.resolveSessionHITLPolicy(sess)
+	if sess.MissionID == "" {
+		missionID := "mis-" + sessionID
+		m := &missionservice.Mission{
+			ID:             missionID,
+			Intent:         input,
+			AgentName:      "beam",
+			HITLPolicyName: policyName,
+			Status:         missionservice.StatusOpen,
+			SessionID:      sessionID,
+		}
+		if err := t.deps.Missions.Create(ctx, m); err == nil {
+			sess.MissionID = missionID
+			if t.deps.DB != nil {
+				store := runtimetypes.New(t.deps.DB.WithoutTransaction())
+				t.persistSessionMission(ctx, store, libacp.SessionID(sessionID), missionservice.MissionMeta{
+					MissionID:      missionID,
+					HITLPolicyName: policyName,
+				})
+			}
+		} else if existing, getErr := t.deps.Missions.Get(ctx, missionID); getErr == nil && existing != nil {
+			sess.MissionID = missionID
+			if strings.TrimSpace(input) != "" && existing.Intent != input {
+				existing.Intent = input
+				_ = t.deps.Missions.Update(ctx, existing)
+			}
+		}
+		return
+	}
+	if strings.TrimSpace(input) != "" {
+		if m, err := t.deps.Missions.Get(ctx, sess.MissionID); err == nil && m != nil {
+			if m.Intent != input {
+				m.Intent = input
+				_ = t.deps.Missions.Update(ctx, m)
+			}
+		}
+	}
 }
 
 const acpSessionCwdKVPrefix = "acp:session_cwd:"

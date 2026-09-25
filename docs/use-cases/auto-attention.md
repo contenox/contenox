@@ -24,28 +24,32 @@ The oracle is a configured default, not a flag you remember to pass:
 
 ```bash
 # Which oracle. Setting this is what turns it on; unset means no oracle at all.
-contenox config set default-oracle-chain chain-oracle-default.json
+contenox config set execution.oracle.chain chain-oracle-default.json
 
 # Optional: the envelope the oracle chain itself runs under.
 # Unset already uses hitl-policy-oracle.json, transpiled from [envelopes.oracle].
-contenox config set default-oracle-policy hitl-policy-oracle.json
+contenox config set execution.oracle.permissions.policy hitl-policy-oracle.json
 
 # Optional: let it rule on gated TOOL CALLS, not just questions.
-contenox config set oracle-approves-tool-calls true
+contenox config set execution.oracle.allow_tool_approvals true
 ```
 
 Every value is overridable per run, the way every contenox default is:
 
 ```bash
-contenox acp --oracle chain-oracle-default.json --oracle-approves-tool-calls
+# In your terminal (beam): live visibility, auto-approved routine calls, Ctrl+C kill switch
+contenox beam --new --oracle default --oracle-approves-tool-calls
+
+# Over ACP (editors):
+contenox acp --oracle default --oracle-approves-tool-calls
 contenox acp --oracle off          # this run only, no oracle
 ```
 
-The oracle mounts on the **ACP host**, which is where subagents actually come from: `/plan` and the `mission_start` tool. Its lifetime is the host's — when the editor session ends, the oracle is gone with it.
+The oracle mounts on the **host** (whether `contenox beam` or `contenox acp`), which is where sessions and subagents come from. The short name `default` resolves directly to `chain-oracle-default.json`.
 
 ## The two grants
 
-Turning the oracle on is not enough to let it release a gated call. The **subagent's own envelope** decides that, and it is a separate envelope from the oracle's:
+For background **subagents**, turning the oracle on is not enough to let it release a gated call. The **subagent's own envelope** decides that, and it is a separate envelope from the oracle's:
 
 ```toml
 # agents.toml
@@ -120,6 +124,22 @@ missions.answer = "deny"
 `default_action: deny` with the in-process `oracle` toolset allowed and nothing else — its whole surface is the verdict tool and the deterministic state gate behind it. No file axis, no shell axis, no network axis, and therefore no `command_prefix_allowlist` to subvert through `PATH`. Denied rather than approved because nobody watches this chain to answer an ask, and an ask it raised would be offered back to itself.
 
 `missions.answer = "deny"` is human-only on both halves: the oracle never adjudicates its own asks. An ask the oracle chain raises waits for a person, which is also what stops it from being offered its own question in a loop.
+
+## Interactive sessions with the oracle (`contenox beam`)
+
+When working directly in the terminal with `contenox beam`, you often want the agent to execute routine steps without interrupting you every few seconds to confirm every file edit or test run — while still retaining live visibility and the `Ctrl+C` interrupt kill-switch.
+
+Starting `beam` with the oracle enabled:
+
+```bash
+contenox beam --new --oracle default --oracle-approves-tool-calls
+```
+
+binds each prompt turn to an active session mission. As the agent works:
+- **Routine in-scope actions** (editing named files, running tests specified in your prompt) are reviewed against your prompt's intent and approved automatically.
+- **Out-of-scope or destructive actions** are denied with steering guidance or returned as `wait`.
+- Any call returned as `wait` renders the standard approval card in your `beam` terminal for you to decide.
+- You see every action streamed to your terminal in real time, with the ability to pause or interrupt the turn (`Ctrl+C`) at any moment.
 
 ## Reading what it did
 

@@ -6,12 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/contenox/contenox/internal/kernel/taskengine"
+	"github.com/contenox/contenox/internal/services/shellline"
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
@@ -26,8 +26,11 @@ type LocalExecResult struct {
 	Error           string  `json:"error,omitempty"`
 	DurationSeconds float64 `json:"duration_seconds"`
 	Command         string  `json:"command,omitempty"`
-	Shell           string  `json:"shell,omitempty"`
-	OS              string  `json:"os,omitempty"`
+	// Steps are the commands a multi-step line ran, in order, each with the
+	// directory it ran in. Empty for a single command.
+	Steps []string `json:"steps,omitempty"`
+	Shell string   `json:"shell,omitempty"`
+	OS    string   `json:"os,omitempty"`
 }
 
 // LocalExecTools runs commands on the local host (same machine as the process), opt-in and restrictable by an allowlist and optional denylist (enable via -enable-local-exec).
@@ -100,6 +103,13 @@ func NewLocalExecToolsWith(runner CommandRunner, opts ...LocalExecOption) tasken
 	return h
 }
 
+// policy is the resolved command policy for one call: the chain's tools_policies
+// entry when the call runs under one, the struct defaults otherwise.
+func (h *LocalExecTools) policy(ctx context.Context) commandPolicy {
+	allowedCommands, allowedDir, deniedCommands := h.resolvePolicy(ctx)
+	return commandPolicy{allowed: allowedCommands, denied: deniedCommands, dir: allowedDir}
+}
+
 func (h *LocalExecTools) resolvePolicy(ctx context.Context) (allowedCommands []string, allowedDir string, deniedCommands []string) {
 	if args := taskengine.ToolsArgsFromContext(ctx, LocalExecToolsName); len(args) > 0 {
 		if v := args["_allowed_commands"]; v != "" {
@@ -139,11 +149,11 @@ func (h *LocalExecTools) Exec(ctx context.Context, startTime time.Time, input an
 	if err != nil {
 		return nil, taskengine.DataTypeAny, err
 	}
-	allowedCommands, allowedDir, deniedCommands := h.resolvePolicy(ctx)
-	if err := h.checkAllowlist(command, useShell, allowedCommands, allowedDir, deniedCommands); err != nil {
+	steps, err := h.planLine(command, argsSlice, cwd, useShell, h.policy(ctx))
+	if err != nil {
 		return nil, taskengine.DataTypeAny, err
 	}
-	result, err := h.run(ctx, command, argsSlice, cwd, timeout, useShell, stdin)
+	result, err := h.runPlan(ctx, command, steps, timeout, stdin)
 	if err != nil {
 		return nil, taskengine.DataTypeAny, err
 	}
@@ -157,12 +167,12 @@ func (h *LocalExecTools) Precheck(ctx context.Context, input any, tools *taskeng
 	if tools == nil {
 		return errors.New("local_shell: tools required")
 	}
-	command, _, _, _, useShell, _, err := h.parseArgs(tools, input)
+	command, argsSlice, cwd, _, useShell, _, err := h.parseArgs(tools, input)
 	if err != nil {
 		return err
 	}
-	allowedCommands, allowedDir, deniedCommands := h.resolvePolicy(ctx)
-	return h.checkAllowlist(command, useShell, allowedCommands, allowedDir, deniedCommands)
+	_, err = h.planLine(command, argsSlice, cwd, useShell, h.policy(ctx))
+	return err
 }
 
 func (h *LocalExecTools) parseArgs(tools *taskengine.ToolsCall, input any) (command string, argsSlice []string, cwd string, timeout time.Duration, useShell bool, stdin string, err error) {
@@ -237,72 +247,6 @@ func (h *LocalExecTools) parseArgs(tools *taskengine.ToolsCall, input any) (comm
 	return command, argsSlice, cwd, timeout, useShell, stdin, nil
 }
 
-func (h *LocalExecTools) checkAllowlist(command string, useShell bool, allowedCommands []string, allowedDir string, deniedCommands []string) error {
-	// Security: shell mode is refused whenever any policy is active, since a raw shell string cannot be statically checked for pipes/operators/subshells and would let a model escape the policy via shell injection.
-	if useShell && (len(allowedCommands) > 0 || allowedDir != "" || len(deniedCommands) > 0) {
-		return fmt.Errorf("local_shell: 'shell: true' is strictly forbidden when security " +
-			"policies (allowlist / denylist / allowed-dir) are active to prevent command injection; " +
-			"set shell:false and supply the command and args separately")
-	}
-
-	resolved := command
-	if !filepath.IsAbs(command) {
-		if path, err := exec.LookPath(command); err == nil {
-			resolved = path
-		} else {
-			resolved = filepath.Clean(command)
-		}
-	} else {
-		resolved = filepath.Clean(command)
-	}
-	// 1. Denylist: never allow these basenames or paths
-	if len(deniedCommands) > 0 {
-		base := filepath.Base(resolved)
-		for _, d := range deniedCommands {
-			dClean := filepath.Clean(d)
-			if dClean == resolved || dClean == command || filepath.Base(dClean) == base || dClean == base {
-				return fmt.Errorf("local_shell: command %s is denied by policy", command)
-			}
-		}
-	}
-	// 2. Allowlist checks (enforced only when configured; otherwise authorization is the responsibility of upstream layers, typically the HITL wrapper).
-	if allowedDir != "" {
-		absDir, err := filepath.Abs(allowedDir)
-		if err != nil {
-			return fmt.Errorf("local_shell: allowed dir invalid: %w", err)
-		}
-		absCmd, err := filepath.Abs(resolved)
-		if err != nil {
-			return fmt.Errorf("local_shell: command path invalid: %w", err)
-		}
-		rel, err := filepath.Rel(absDir, absCmd)
-		if err != nil || strings.HasPrefix(rel, "..") {
-			return fmt.Errorf("local_shell: command %s is not under allowed dir %s", command, allowedDir)
-		}
-	}
-	if len(allowedCommands) > 0 {
-		allowed := false
-		for _, c := range allowedCommands {
-			cClean := filepath.Clean(c)
-			if cClean == resolved || cClean == command {
-				allowed = true
-				break
-			}
-			if path, err := exec.LookPath(c); err == nil && path == resolved {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			return fmt.Errorf("local_shell: command %s is not in this chain's allowed commands (%s); "+
-				"no approval can grant it — add it to _allowed_commands under the local_shell entry in "+
-				"the chain's tools_policies, or run it outside the agent",
-				command, strings.Join(allowedCommands, ", "))
-		}
-	}
-	return nil
-}
-
 type capWriter struct {
 	buf       bytes.Buffer
 	limit     int64
@@ -330,7 +274,7 @@ func (cw *capWriter) Write(p []byte) (n int, err error) {
 	return n, err
 }
 
-func (h *LocalExecTools) run(ctx context.Context, command string, argsSlice []string, cwd string, timeout time.Duration, useShell bool, stdinStr string) (*LocalExecResult, error) {
+func (h *LocalExecTools) runPlan(ctx context.Context, command string, steps []commandStep, timeout time.Duration, stdinStr string) (*LocalExecResult, error) {
 	start := time.Now()
 	shell := h.shell.WithDefaults()
 	result := &LocalExecResult{Command: command, Shell: shell.Summary(), OS: shell.OS}
@@ -346,22 +290,58 @@ func (h *LocalExecTools) run(ctx context.Context, command string, argsSlice []st
 	stdout := newSpoolWriter(ctx, "local_shell-stdout", limit)
 	stderr := newSpoolWriter(ctx, "local_shell-stderr", limit)
 
-	spec := CommandSpec{
-		Command:  command,
-		Args:     argsSlice,
-		Cwd:      cwd,
-		Timeout:  timeout,
-		UseShell: useShell,
-		Shell:    shell,
-		Stdin:    stdinStr,
+	// A line's steps share one budget and one timeout, the way one shell line would. `&&` runs the next step only after a success, `||` only after a failure, `;` either way; the line's own status is the last status it reached.
+	var failures []string
+	lastCode := 0
+	lastOK := true
+	lastErr := error(nil)
+	shortCircuit := ""
+	for i, step := range steps {
+		switch step.op {
+		case shellline.OpAnd:
+			if !lastOK {
+				shortCircuit = fmt.Sprintf("step %d (%s) exited with status %d, so the steps joined to it with '&&' did not run", i, steps[i-1].display(), lastCode)
+			}
+		case shellline.OpOr:
+			if lastOK {
+				continue
+			}
+		}
+		if shortCircuit != "" {
+			break
+		}
+		if len(steps) > 1 {
+			result.Steps = append(result.Steps, stepDisplay(step))
+		}
+		if len(step.argv) == 0 {
+			// A `cd` step ran nothing: it named the directory of the steps that
+			// follow, and the planner already checked that it is one.
+			continue
+		}
+		spec := CommandSpec{
+			Command:  step.argv[0],
+			Args:     step.argv[1:],
+			Cwd:      step.cwd,
+			Timeout:  timeout,
+			UseShell: step.useShell,
+			Shell:    shell,
+		}
+		if i == 0 {
+			spec.Stdin = stdinStr
+		}
+		code, runErr := h.runner.Run(runCtx, spec, stdout, stderr)
+		lastCode, lastErr, lastOK = code, runErr, runErr == nil && code == 0
+		if !lastOK {
+			failures = append(failures, stepFailure(i, step, code, runErr))
+		}
 	}
-	exitCode, runErr := h.runner.Run(runCtx, spec, stdout, stderr)
 	result.DurationSeconds = time.Since(start).Seconds()
 
-	if errors.Is(runErr, ErrOutputBudgetExceeded) {
+	if errors.Is(lastErr, ErrOutputBudgetExceeded) {
 		// Backend already truncated its own stream; the partial bytes are from an incomplete write and must be discarded, not surfaced (a poisoned partial is worse than nothing).
 		stdout.discard()
 		stderr.discard()
+		result.Steps = nil
 		result.Success = false
 		result.ExitCode = -1
 		result.Error = fmt.Sprintf("Output truncated: command exceeded the context budget (%d bytes). Re-run with a narrower scope or redirect output to a file. %s", limit, severityRecoverable)
@@ -389,18 +369,36 @@ func (h *LocalExecTools) run(ctx context.Context, command string, argsSlice []st
 		return result, nil
 	}
 
-	if runErr != nil {
-		result.Error = runErr.Error() + " " + severityRecoverable
-		result.Success = false
-		result.ExitCode = exitCode
-		return result, nil
-	}
-	result.ExitCode = exitCode
-	result.Success = exitCode == 0
-	if !result.Success && result.Error == "" {
-		result.Error = fmt.Sprintf("command exited with status %d %s", exitCode, severityRecoverable)
+	result.ExitCode = lastCode
+	result.Success = lastOK
+	switch {
+	case shortCircuit != "":
+		result.Error = shortCircuit + " " + severityRecoverable
+	case lastErr != nil:
+		result.Error = lastErr.Error() + " " + severityRecoverable
+	case len(failures) > 0:
+		// The line carried on past a failure because of how it is joined, and the
+		// last status is what the caller branches on — so say what failed anyway.
+		result.Error = strings.Join(failures, "; ") + " " + severityRecoverable
+	case !lastOK:
+		result.Error = fmt.Sprintf("command exited with status %d %s", lastCode, severityRecoverable)
 	}
 	return result, nil
+}
+
+func stepFailure(index int, step commandStep, code int, runErr error) string {
+	reason := fmt.Sprintf("exited with status %d", code)
+	if runErr != nil {
+		reason = runErr.Error()
+	}
+	return fmt.Sprintf("step %d (%s) %s", index, step.display(), reason)
+}
+
+func stepDisplay(step commandStep) string {
+	if step.cd != "" {
+		return "cd " + step.cd
+	}
+	return fmt.Sprintf("%s [in %s]", step.display(), step.cwd)
 }
 
 func spoolNotice(stream string, w *spoolWriter, path string, budget int64) string {
@@ -473,7 +471,7 @@ func (h *LocalExecTools) GetSchemasForSupportedTools(ctx context.Context) (map[s
 	shellDesc := h.shell.ShellModeDescription()
 	schema := &openapi3.T{
 		OpenAPI: "3.1.0",
-		Info:    &openapi3.Info{Title: "Local Exec Tools", Description: "Run commands on the local host. The executable goes in command alone and every flag and operand in args. " + shellDesc, Version: "1.0.0"},
+		Info:    &openapi3.Info{Title: "Local Exec Tools", Description: "Run commands on the local host. command is a command line — `git status`, `cd sub && go test ./...` — and every program in it is checked against the command policy. " + shellDesc, Version: "1.0.0"},
 		Paths:   openapi3.NewPaths(),
 		Components: &openapi3.Components{
 			Schemas: map[string]*openapi3.SchemaRef{
@@ -481,7 +479,7 @@ func (h *LocalExecTools) GetSchemasForSupportedTools(ctx context.Context) (map[s
 					Value: &openapi3.Schema{
 						Type: &openapi3.Types{openapi3.TypeObject},
 						Properties: map[string]*openapi3.SchemaRef{
-							"command": {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeString}, Description: "Executable path or name alone; flags and operands go in args, so {\"command\": \"ls\", \"args\": [\"-F\"]}, never {\"command\": \"ls -F\"}"}},
+							"command": {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeString}, Description: "The command line to run: {\"command\": \"ls -F\"} or {\"command\": \"cd sub && go test ./...\"}. Every program in it must be allowed by the command policy; cd moves the commands after it and needs no allowlist entry"}},
 							"args": {Value: &openapi3.Schema{
 								OneOf: []*openapi3.SchemaRef{
 									{Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeString}, Description: "Space-separated arguments string"}},
@@ -507,6 +505,7 @@ func (h *LocalExecTools) GetSchemasForSupportedTools(ctx context.Context) (map[s
 							"error":            {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeString}}},
 							"duration_seconds": {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeNumber}}},
 							"command":          {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeString}}},
+							"steps":            {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeArray}, Items: &openapi3.SchemaRef{Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeString}}}, Description: "Each command a multi-step line ran, with the directory it ran in"}},
 							"shell":            {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeString}}},
 							"os":               {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeString}}},
 						},
@@ -525,7 +524,7 @@ func (h *LocalExecTools) GetToolsForToolsByName(ctx context.Context, name string
 	}
 	allowedCommands, allowedDir, deniedCommands := h.resolvePolicy(ctx)
 	shellDesc := h.shell.ShellModeDescription()
-	desc := "Run a terminal command on the local host. The executable goes in command alone and every flag and operand in args: {\"command\": \"ls\", \"args\": [\"-F\"]}, never {\"command\": \"ls -F\"}, which is read as an executable of that name and refused. Pipes, redirection, &&, globs and $(...) are not interpreted unless shell is passed; without it the argv is executed directly, so run the steps of a pipeline as separate calls. A refusal against a command policy is machine configuration that no approval can widen, so answer it with a different command rather than an escalation. Returns {stdout, stderr, exitCode, success, durationSeconds}. Output is capped at the remaining context budget; when it exceeds the cap the FULL output is spooled to a file and stdout/stderr instead carry a 20%-head/80%-tail slice (errors cluster at the tail) with an inline pointer, while the error field names the spool concretely ('full output: <path> (N KiB)') so nothing is lost silently. Errors carry a severity marker you can key on: '(recoverable: adjust parameters and retry)' for anything a corrected call fixes (output too large, bad command, denied path), and '(fatal: <reason>)' only when the environment is broken (disk full, spool unwritable) and retrying will not help. For file operations prefer local_fs.* tools: read_file, read_file_range, write_file, edit_file, sed. They enforce sandbox boundaries, size limits, and a read-before-write contract that local_shell does not. Use local_shell for operations with no dedicated tool: running tests, builds, git commands, environment inspection. " + shellDesc
+	desc := "Run a terminal command on the local host. command is a command line: {\"command\": \"git status\"} runs git status, {\"command\": \"cd sub && go test ./...\"} moves into sub first. Every program in the line is checked against the command policy; `cd` is interpreted — it moves the commands after it, cannot leave the allowed directory, and needs no allowlist entry. Alternatively put the executable in command and its operands in args, which are passed through as one argv and never read as syntax. shell: true is accepted but spawns no shell while a policy is active: the line is read either way, and a shape that needs a real shell is refused rather than interpreted. Under a command policy the tool refuses anything it cannot check before it runs: pipes, redirection, globs, $VAR and $(...) expansions, escapes, & backgrounding, `!`, variable assignments as prefixes, and compound constructs (if/for/while/case/subshell). Run those as separate calls, and select paths with find or grep instead of a glob. A refusal against a command policy is machine configuration that no approval can widen, so answer it with a different command rather than an escalation. Returns {stdout, stderr, exitCode, success, durationSeconds}. Output is capped at the remaining context budget; when it exceeds the cap the FULL output is spooled to a file and stdout/stderr instead carry a 20%-head/80%-tail slice (errors cluster at the tail) with an inline pointer, while the error field names the spool concretely ('full output: <path> (N KiB)') so nothing is lost silently. Errors carry a severity marker you can key on: '(recoverable: adjust parameters and retry)' for anything a corrected call fixes (output too large, bad command, denied path), and '(fatal: <reason>)' only when the environment is broken (disk full, spool unwritable) and retrying will not help. For file operations prefer local_fs.* tools: read_file, read_file_range, write_file, edit_file, sed. They enforce sandbox boundaries, size limits, and a read-before-write contract that local_shell does not. Use local_shell for operations with no dedicated tool: running tests, builds, git commands, environment inspection. " + shellDesc
 	if len(allowedCommands) > 0 {
 		desc += " Allowed commands: " + strings.Join(allowedCommands, ", ") + "."
 	}
@@ -542,7 +541,7 @@ func (h *LocalExecTools) GetToolsForToolsByName(ctx context.Context, name string
 	if policyActive {
 		shellProp = map[string]interface{}{
 			"type":        "boolean",
-			"description": "Shell mode is disabled by the active command policy. Omit or set false; provide command and args as separate parameters.",
+			"description": "Accepted but inert while a command policy is active: no shell is spawned, command is read as a command line, and anything needing a real shell is refused.",
 		}
 	} else {
 		shellProp = map[string]interface{}{
@@ -562,7 +561,7 @@ func (h *LocalExecTools) GetToolsForToolsByName(ctx context.Context, name string
 					"properties": map[string]interface{}{
 						"command": map[string]interface{}{
 							"type":        "string",
-							"description": "Executable path or name alone (required); flags and operands go in args, so {\"command\": \"ls\", \"args\": [\"-F\"]}, never {\"command\": \"ls -F\"}",
+							"description": "The command line to run (required): {\"command\": \"ls -F\"}, or {\"command\": \"cd sub && go test ./...\"}. Every program in it must be allowed by the command policy; `cd` moves the commands after it and needs no allowlist entry",
 						},
 						"args": map[string]interface{}{
 							"oneOf": []interface{}{
@@ -576,7 +575,7 @@ func (h *LocalExecTools) GetToolsForToolsByName(ctx context.Context, name string
 									"description": "Array of argument strings",
 								},
 							},
-							"description": "Everything after the executable, as an array of strings or a space-separated string",
+							"description": "Operands for a single executable, as an array of strings or a space-separated string; passed through literally, never read as syntax",
 						},
 						"cwd": map[string]interface{}{
 							"type":        "string",

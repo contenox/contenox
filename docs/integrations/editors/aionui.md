@@ -49,9 +49,9 @@ That's it — pick **Contenox** as the active agent and start a session.
 
 **Approvals in the UI.** When the chain hits a tool in your active [HITL policy](/docs/guide/hitl/), AionUi shows an Allow/Deny dialog instead of a terminal prompt.
 
-**Same everything else.** Models, chains, and MCP servers come from your global contenox config — switch the model with `contenox config set default-model …`, register MCP once with `contenox mcp add`, and AionUi sessions pick it up.
+**Same everything else.** Models, chains, and MCP servers come from your global contenox config — switch the model with `contenox config set inference.model …`, register MCP once with `contenox mcp add`, and AionUi sessions pick it up.
 
-**Missions from the composer.** `/mission <intent>` (or `/mission <agent-name> <intent>`) fires a declared agent at the intent unattended, as a child subprocess of this editor session, and its reports stream live back into the firing session. Configure the fallbacks first (`contenox config set default-mission-agent` / `default-mission-policy`); details in the [Zed guide](/docs/integrations/editors/zed/#fire-missions-with-mission) and the [CLI reference](/docs/reference/contenox-cli/#the-mission-slash-command).
+**Missions from the composer.** `/mission <intent>` (or `/mission <agent-name> <intent>`) fires a declared agent at the intent unattended, as a child subprocess of this editor session, and its reports stream live back into the firing session. Configure the fallbacks first (`contenox config set execution.missions.default_agent` / `default-mission-policy`); details in the [Zed guide](/docs/integrations/editors/zed/#fire-missions-with-mission) and the [CLI reference](/docs/reference/contenox-cli/#the-mission-slash-command).
 
 AionUi layers its own chat UI and skill ecosystem on top; the agent itself — declared in a file, with its tools and its policy — is your contenox.
 
@@ -72,8 +72,8 @@ The ACP chain's `"tools": ["*"]` exposes everything the engine has registered �
 ACP reads from your global model/provider config — the same one the CLI uses:
 
 ```bash
-contenox config set default-model qwen3:8b
-contenox config set default-provider ollama
+contenox config set inference.model qwen3:8b
+contenox config set inference.provider ollama
 ```
 
 Models are global config, shared across every surface that reads `default-model` — switching it here switches it everywhere.
@@ -86,7 +86,7 @@ Models are global config, shared across every surface that reads `default-model`
 
 **Nothing happens when I select Contenox.** Make sure `contenox` is on AionUi's `PATH`. AionUi inherits the environment of the process that launched it; starting it from a terminal (or using an absolute path in **Command**) is the reliable test.
 
-**The default-model error.** Run `contenox config set default-model <name>` and `contenox config set default-provider <type>` before starting a session.
+**The default-model error.** Run `contenox config set inference.model <name>` and `contenox config set inference.provider <type>` before starting a session.
 
 ---
 
@@ -98,7 +98,7 @@ Models are global config, shared across every surface that reads `default-model`
 
 ## Where to next
 
-- [Declaring agents](/docs/guide/agents/) — one Markdown file is the agent, regardless of which client drives it.
+- [Declaring agents](/docs/guide/declarations/) — one Markdown file is the agent, regardless of which client drives it.
 - [Writing a chain by hand](/docs/guide/chains/writing-a-chain/) — for the agent that has outgrown a declaration.
 - [HITL policies](/docs/guide/hitl/) — choose what requires approval.
 - [MCP](/docs/integrations/tools/mcp/) — register servers once globally; ACP sessions pick them up.

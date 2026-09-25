@@ -19,7 +19,7 @@ import (
 )
 
 // TestUnit_NewHITLService_EvaluatesThePolicyConfigSetWrote drives the exact
-// pair an operator does: `contenox config set hitl-policy-name deny.json` in
+// pair an operator does: `contenox config set execution.permissions.policy deny.json` in
 // a project, then a gated tool call in that same project.
 func TestUnit_NewHITLService_EvaluatesThePolicyConfigSetWrote(t *testing.T) {
 	ctx := context.Background()
@@ -40,7 +40,7 @@ func TestUnit_NewHITLService_EvaluatesThePolicyConfigSetWrote(t *testing.T) {
 
 	svc := newHITLService(context.Background(), contenoxDir, store, libtracker.NoopTracker{}, "")
 
-	// What `contenox config set hitl-policy-name deny.json` persists.
+	// What `contenox config set execution.permissions.policy deny.json` persists.
 	require.NoError(t, clikv.WriteConfig(ctx, store, ResolveWorkspaceID(contenoxDir),
 		clikv.KeyHITLPolicyName, "deny.json"))
 

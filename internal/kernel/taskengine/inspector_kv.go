@@ -122,6 +122,34 @@ func (i *KVInspector) GetStatefulRequests(ctx context.Context) ([]string, error)
 	return out, nil
 }
 
+// ClearExecutionState deletes every persisted inspector trace and returns the
+// number of request IDs removed.
+func (i *KVInspector) ClearExecutionState(ctx context.Context) (int, error) {
+	op, err := i.kv.Executor(ctx)
+	if err != nil {
+		return 0, err
+	}
+	raw, err := op.SetMembers(ctx, kvStateRequestsSet)
+	if err != nil {
+		return 0, err
+	}
+	removed := 0
+	for _, member := range raw {
+		var reqID string
+		if err := json.Unmarshal(member, &reqID); err != nil {
+			return removed, fmt.Errorf("decode state request id: %w", err)
+		}
+		if err := op.Delete(ctx, kvStatePrefix+reqID); err != nil {
+			return removed, fmt.Errorf("delete state for %s: %w", reqID, err)
+		}
+		removed++
+	}
+	if err := op.Delete(ctx, kvStateRequestsSet); err != nil {
+		return removed, fmt.Errorf("delete state request index: %w", err)
+	}
+	return removed, nil
+}
+
 type kvStackTrace struct {
 	inner   StackTrace
 	kv      libkv.KVManager

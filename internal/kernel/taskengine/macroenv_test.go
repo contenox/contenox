@@ -553,3 +553,33 @@ func TestUnit_MacroEnv_NothingIsAppendedImplicitly(t *testing.T) {
 		t.Fatalf("system instruction was modified without a macro:\n%s", out)
 	}
 }
+
+// TestUnit_MacroEnv_CwdIsOptionalAndReal pins the macro the ACP prompts use to state
+// the workspace root. It must not fail a render when a session carries no cwd — the
+// var macro errors on a missing name, which is why the prompts carry a fallback — and
+// must resolve to the session path when one exists.
+func TestUnit_MacroEnv_CwdIsOptionalAndReal(t *testing.T) {
+	env, err := taskengine.NewMacroEnv(&noopEnv{}, nil)
+	if err != nil {
+		t.Fatalf("NewMacroEnv: %v", err)
+	}
+	chain := newMacroChain("root={{var:cwd|.}}", nil)
+
+	unset := taskengine.WithTemplateVars(libtracker.WithNewRequestID(context.Background()), map[string]string{})
+	raw, _, _, err := env.ExecEnv(unset, chain, "", taskengine.DataTypeString)
+	if err != nil {
+		t.Fatalf("a session without a cwd must still render: %v", err)
+	}
+	if raw != "root=." {
+		t.Fatalf("unset cwd rendered %q, want root=.", raw)
+	}
+
+	set := taskengine.WithTemplateVars(libtracker.WithNewRequestID(context.Background()), map[string]string{"cwd": "/w/repo"})
+	raw, _, _, err = env.ExecEnv(set, chain, "", taskengine.DataTypeString)
+	if err != nil {
+		t.Fatalf("ExecEnv: %v", err)
+	}
+	if raw != "root=/w/repo" {
+		t.Fatalf("cwd rendered %q, want root=/w/repo", raw)
+	}
+}

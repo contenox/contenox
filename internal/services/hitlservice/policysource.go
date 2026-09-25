@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
+	"io/fs"
 	"strings"
+
+	"github.com/contenox/contenox/internal/services/vfs"
 )
 
 // PolicySource reads a named HITL policy document for a tenant; any error
@@ -16,27 +17,47 @@ type PolicySource interface {
 	ReadPolicy(ctx context.Context, tenantID, name string) ([]byte, error)
 }
 
-type fsPolicySource struct{ dirs []string }
+// filePolicySource looks a policy up through open handles, nearest first.
+type filePolicySource struct{ roots []vfs.Files }
+
+// NewFilesPolicySource returns a PolicySource that reads "<root>/<name>" from
+// each handle in order, returning the first hit. It is the form a host holding
+// the rendered policies in a store uses: the tenant is already the handle's,
+// and the name is looked up beside the declarations that produced it.
+func NewFilesPolicySource(roots ...vfs.Files) PolicySource {
+	return &filePolicySource{roots: roots}
+}
 
 // NewFSPolicySource returns a PolicySource that looks up "<dir>/<name>" in
 // each dir in order, returning the first hit; tenantID is ignored and empty
-// dirs are skipped.
+// directories are skipped.
 func NewFSPolicySource(dirs ...string) PolicySource {
-	return &fsPolicySource{dirs: dirs}
-}
-
-func (f *fsPolicySource) ReadPolicy(_ context.Context, _, name string) ([]byte, error) {
-	file := policyFileName(name)
-	var lastErr error = os.ErrNotExist
-	for _, dir := range f.dirs {
-		if dir == "" {
+	roots := make([]vfs.Files, 0, len(dirs))
+	for _, dir := range dirs {
+		if strings.TrimSpace(dir) == "" {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(dir, file))
+		view, err := vfs.OpenPrivilegedView(dir)
+		if err != nil {
+			continue
+		}
+		roots = append(roots, view)
+	}
+	return &filePolicySource{roots: roots}
+}
+
+func (f *filePolicySource) ReadPolicy(ctx context.Context, _, name string) ([]byte, error) {
+	file := policyFileName(name)
+	var lastErr error = fs.ErrNotExist
+	for _, root := range f.roots {
+		if root == nil {
+			continue
+		}
+		data, err := root.ReadFile(ctx, file)
 		if err == nil {
 			return data, nil
 		}
-		if !errors.Is(err, os.ErrNotExist) {
+		if !errors.Is(err, fs.ErrNotExist) {
 			return nil, err
 		}
 		lastErr = err

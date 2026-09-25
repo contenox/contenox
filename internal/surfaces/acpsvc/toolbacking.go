@@ -94,6 +94,9 @@ func PotentialClientTools(ctx context.Context, repo taskengine.ToolsRepo, name s
 func RequiredClientCapability(toolsName, toolName string) string {
 	switch toolsName {
 	case localtools.LocalFSToolsName:
+		if localtools.IsLocalFSBrowseTool(toolName) {
+			return ""
+		}
 		switch toolName {
 		case "read_file", "read_file_range":
 			return "fs.readTextFile"
@@ -138,6 +141,9 @@ func filterToolsForCaps(toolsName string, tools []taskengine.Tool, caps libacp.C
 func clientCanServe(toolsName, toolName string, caps libacp.ClientCapabilities) bool {
 	switch toolsName {
 	case localtools.LocalFSToolsName:
+		if localtools.IsLocalFSBrowseTool(toolName) {
+			return true
+		}
 		switch toolName {
 		case "read_file", "read_file_range":
 			return caps.FS.ReadTextFile

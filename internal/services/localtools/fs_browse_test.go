@@ -301,10 +301,10 @@ func TestUnit_LocalFSBrowseTools_PublishesSchemaForEveryDeclaredTool(t *testing.
 
 	docs, err := h.GetSchemasForSupportedTools(ctx)
 	require.NoError(t, err)
-	doc, ok := docs[localtools.LocalFSBrowseToolsName]
+	doc, ok := docs[localtools.LocalFSToolsName]
 	require.True(t, ok, "the doc must be keyed by the gated toolset name")
 
-	declared, err := h.GetToolsForToolsByName(ctx, localtools.LocalFSBrowseToolsName)
+	declared, err := h.GetToolsForToolsByName(ctx, localtools.LocalFSToolsName)
 	require.NoError(t, err)
 	require.Len(t, declared, 5)
 	for _, tool := range declared {

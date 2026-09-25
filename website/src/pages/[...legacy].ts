@@ -38,7 +38,6 @@ export async function getStaticPaths() {
     'development/beam-serve-auth': 'rnd/beam-web',
     'rnd/vscode-extension': 'rnd/editor-agent',
     'integrations/editors/vscode-vscodium': 'rnd/editor-agent',
-    'integrations/providers/modeld': 'rnd/modeld',
     'integrations/providers/modeld-architecture': 'rnd/modeld',
     'integrations/providers/local-models': 'rnd/modeld',
     'development/modeld-llama-backend': 'rnd/modeld',

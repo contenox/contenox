@@ -26,13 +26,12 @@ type service struct {
 }
 
 type duplicateBackendError struct {
-	typ     string
-	baseURL string
-	cause   error
+	name  string
+	cause error
 }
 
 func (e duplicateBackendError) Error() string {
-	return fmt.Sprintf("backend already exists for type %q and base URL %q", e.typ, e.baseURL)
+	return fmt.Sprintf("backend %q already exists", e.name)
 }
 
 func (e duplicateBackendError) Unwrap() error {
@@ -97,9 +96,9 @@ func validate(backend *runtimetypes.Backend) error {
 		return fmt.Errorf("%w: baseURL is required", ErrInvalidBackend)
 	}
 	switch modelrepo.CanonicalBackendType(backend.Type) {
-	case "ollama", "vllm", "openai", "anthropic", "bedrock", "gemini", "vertex-google", modelrepo.ScriptedTestBackendType:
+	case "ollama", "vllm", "openai", "anthropic", "bedrock", "gemini", "vertex-google", "modeld", "local", modelrepo.ScriptedTestBackendType:
 	default:
-		return fmt.Errorf("%w: Type must be ollama, vllm, openai, anthropic, bedrock, gemini, vertex-google, or %s", ErrInvalidBackend, modelrepo.ScriptedTestBackendType)
+		return fmt.Errorf("%w: Type must be modeld, ollama, vllm, openai, anthropic, bedrock, gemini, vertex-google, or %s", ErrInvalidBackend, modelrepo.ScriptedTestBackendType)
 	}
 
 	return nil
@@ -110,11 +109,7 @@ func sanitizeBackendStoreError(backend *runtimetypes.Backend, err error) error {
 		return nil
 	}
 	if errors.Is(err, libdb.ErrUniqueViolation) && backend != nil {
-		return duplicateBackendError{
-			typ:     backend.Type,
-			baseURL: backend.BaseURL,
-			cause:   err,
-		}
+		return duplicateBackendError{name: backend.Name, cause: err}
 	}
 	return err
 }

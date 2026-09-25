@@ -10,7 +10,7 @@ Every contenox subcommand, flag, and environment variable. Agents, tools, models
 
 ![A natural-language task in the terminal: contenox reads the repo and answers](/hero.gif)
 
-Three commands are the ones you reach for; the rest configure what they run. [`contenox beam`](#contenox-beam) is the front door — you, at a terminal. [`contenox run`](#contenox-run) is the scripting shape — a program is the caller. [`contenox serve`](#contenox-serve-path) is the standing host — an organization is accountable for it.
+Two commands are the ones you reach for; the rest configure what they run. [`contenox beam`](#contenox-beam) is the front door — you, at a terminal. [`contenox run`](#contenox-run) is the scripting shape — a program is the caller.
 
 ## Global Flags
 
@@ -18,12 +18,12 @@ Persistent flags on the root command (also shown under **Global Flags** on subco
 
 | Flag                             | Description                                                                                                                       |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `--model <name>`                 | Model override for this invocation; persistent default is `contenox config set default-model <name>`                               |
+| `--model <name>`                 | Model override for this invocation; persistent default is `contenox config set inference.model <name>`                               |
 | `--provider <type>`              | Provider override for this invocation. See `contenox backend add --help` for supported backend types. |
 | `--db <path>`                    | SQLite DB path (default: `~/.contenox/local.db`). The one global database is shared by every workspace. |
 | `--data-dir <path>`              | Override the `.contenox` data directory (skips walk-up search). Used to locate the workspace's `workspace.id` and chain files; does not change the database location. |
 | `--timeout`                      | Max execution time per invocation (default `2h`)                                                                                  |
-| `--context`                      | Context length hint for the tokenizer                                                                                             |
+| `--context`                      | Requested history window in tokens; 0 follows model capacity, bounded by agent limits                                                                                             |
 | `--ollama`                       | Ollama base URL (default `http://127.0.0.1:11434`)                                                                                |
 | `--no-delete-models`             | Legacy compatibility flag; a no-op in the OSS runtime (model deletion is disabled). Defaults to **true**.                          |
 | `--trace`                        | Structured operation telemetry on stderr                                                                                          |
@@ -31,7 +31,7 @@ Persistent flags on the root command (also shown under **Global Flags** on subco
 | `--think <level>`                | Set reasoning level for supported models: `auto`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh`                              |
 | `--alt-model <name>`             | Alt model name (for chains referencing `{{var:alt_model}}`). Overrides `default-alt-model` config.                                  |
 | `--alt-provider <type>`          | Alt provider type (for chains referencing `{{var:alt_provider}}`). Overrides `default-alt-provider` config.                          |
-| `--max-tokens <N>`               | Response token cap (for chains referencing `{{var:max_tokens}}`). Overrides `default-max-tokens` config.                             |
+| `--max-tokens <N>`               | Response token cap (for chains referencing `{{var:max_tokens}}`). Overrides `inference.generation.max_output_tokens`; 0 uses the backend generation default.                             |
 
 ## Subcommands
 
@@ -43,7 +43,27 @@ Runs an interactive setup wizard to configure your primary provider, model, and 
 contenox setup
 ```
 
-The wizard guides you through picking a provider (local Ollama, Ollama Cloud, OpenAI, Anthropic, Google Gemini, Vertex AI, AWS Bedrock, or self-hosted vLLM), entering an API key or base URL where needed, and setting your first default model. It needs a real terminal (reads answers from stdin) and will not guess a default from a closed or piped stdin.
+The wizard guides you through picking a provider, entering an API key or base URL where needed, and setting your first default model. Native modeld is offered first; see [local setup](/docs/integrations/providers/modeld/) for worker installation and model downloads. It needs a real terminal (reads answers from stdin) and will not guess a default from a closed or piped stdin.
+
+### `contenox auto [us|eu|china|gus]`
+
+Selects a local model for available hardware, installs its native worker and
+weights, verifies tool calling, then opens the TUI. Selection prefers 128K–280K
+hot context over larger weights. `--dry-run` shows the estimate without changes;
+`--no-tui` finishes setup without starting the interface; `--refresh` selects
+again instead of reusing the configured eligible model. The optional region is
+the model developer's origin, not the download host. See
+[automatic local setup](/docs/integrations/providers/modeld/#local-setup).
+
+### `contenox modeld`
+
+Installs or inspects the native inference worker. Run `contenox modeld install --help`
+for release-store and backend selection, or `contenox modeld status --json` to
+inspect its lease and endpoint. `contenox model registry-list` lists downloadable
+models; `contenox model pull <name>` downloads one into the worker's model store.
+
+See [native modeld](/docs/integrations/providers/modeld/) and the
+[build and packaging guide](/docs/development/modeld-build/).
 
 ### `contenox beam`
 
@@ -56,7 +76,7 @@ contenox beam --new          # start a fresh session instead of resuming
 contenox beam --session 9f2c1a4e     # open a session by id
 ```
 
-The transcript is written into your native scrollback rather than a managed pane, so it scrolls, copies and searches like everything else in that window. The composer takes `/` for commands and `@` to put a file in front of the agent. A gated tool call raises an **approval card** inline — the tool, its arguments, and the rule that gated it — answered with one keystroke, and the turn carries straight on. The card is the visible half of a [durable ask](#contenox-approvals) written before it appeared, so the same question is answerable from another terminal or your phone, it resolves to its on-timeout verdict if the wait runs out, and quitting beam checkpoints the turn beside the still-pending row so answering later resumes it. A card that outlives its turn keeps working and says so — its key line reads `answering resumes the run` in place of the `Esc cancels turn` it offers over a live one.
+The transcript is written into your native scrollback rather than a managed pane, so it scrolls, copies and searches like everything else in that window. The composer takes `/` for commands and `@` to put a file in front of the agent. A gated tool call raises an **approval card** inline — the tool, its arguments, and the rule that gated it — answered with one keystroke, and the turn carries straight on. The card is the visible half of a [durable ask](#contenox-approvals) written before it appeared, so the same question is answerable from another terminal, it resolves to its on-timeout verdict if the wait runs out, and quitting beam checkpoints the turn beside the still-pending row so answering later resumes it. A card that outlives its turn keeps working and says so — its key line reads `answering resumes the run` in place of the `Esc cancels turn` it offers over a live one.
 
 `local_fs` and `local_shell` work natively here: beam is the ACP client, so it performs the filesystem and terminal calls itself, in the workspace the instance was launched with.
 
@@ -67,6 +87,9 @@ The transcript is written into your native scrollback rather than a managed pane
 | `--light` | Light-background colour scheme |
 | `--plain` | Plain output: no colour and no redrawing, for terminals and captures that want neither |
 | `--hitl-policy <name\|path>` | Envelope this session runs under: a name from `[envelopes]` in `agents.toml`, or a path to a policy file used verbatim. Default `default` |
+| `--oracle <chain>` | Chain that adjudicates asks (e.g. `default` or `chain-oracle-default.json`), overriding `config set default-oracle-chain`. `"off"` disables it for this run |
+| `--oracle-policy <envelope>` | Envelope the oracle chain itself runs under, overriding `config set default-oracle-policy` |
+| `--oracle-approves-tool-calls` | Let the oracle rule on gated tool calls, not just questions, overriding `config set oracle-approves-tool-calls` |
 | `--log-dir <dir>` | Write structured logs here (default: `<data-dir>/logs`) |
 
 ### `contenox run`
@@ -87,7 +110,7 @@ The first argument is a declared agent when it names one, and part of the task o
 | `--policy <envelope>` | The envelope bounding the unit. Falls back to the `default-mission-policy` config; a run with neither is refused rather than bounded by a guess |
 | `--timeout <duration>` | How long to wait for a terminal status before tearing the unit down (default `30m`). This is `run`'s own bound, distinct from the global `--timeout` |
 
-There is no client in front of `run` — no editor, no terminal — so the runtime serves `local_fs` and `local_shell` itself, from the same client-side server `beam` consumes: rooted at the directory the command was started in, its launched commands running under the sandbox env scrub. Alongside them ride the in-process toolsets: `mission`, `native-git`, `native-fs-browse`, `native-go`, `native-goja`, `native-jq`, `native-web`, `native-echo`. What a task may actually touch is bounded by its envelope, not by tool absence — a gated call raises a durable ask like any other.
+There is no client in front of `run` — no editor, no terminal — so the runtime serves `local_fs` and `local_shell` itself, from the same client-side server `beam` consumes: rooted at the directory the command was started in, its launched commands running under the sandbox env scrub. Alongside them ride the in-process toolsets: `mission`, `native-git`, `local_fs`, `native-go`, `native-goja`, `native-jq`, `native-web`, `native-echo`. What a task may actually touch is bounded by its envelope, not by tool absence — a gated call raises a durable ask like any other.
 
 A gated call therefore has nobody to ask: it becomes a durable ask like any other and the run waits on it. Answering it with [`contenox approvals respond`](#contenox-approvals) releases that waiting call and the run finishes; if `--timeout` ended the command first, the same answer resumes its checkpoint exactly once. Bound what a scripted run may do unattended in its envelope rather than by watching it.
 
@@ -134,7 +157,6 @@ Which directory that is depends on the shape:
 | Shape | The workspace is |
 | --- | --- |
 | [`contenox beam`](#contenox-beam), [`contenox run`](#contenox-run) | the directory you started it in |
-| [`contenox serve [path]`](#contenox-serve-path) | the path you named, or your home directory when you name none |
 | [`contenox acp`](#contenox-acp--contenox-acpx) | whatever the editor opened — per the protocol, the client owns the cwd |
 
 A client does not propose a working directory and the runtime does not offer a menu of them. An app or an editor **discovers** instances and the sessions they are already holding, and attaches to one; the workspace is a property of the instance it attached to. Serving a second workspace means starting a second instance — which is also how the process list says so.
@@ -173,7 +195,7 @@ Inspect models from configured LLM backends and manage capability overrides. Man
 
 #### `contenox model list`
 
-Query every registered backend in real time and show models that can be used now, with observed capabilities (chat, embed, prompt, think, vision) and context length.
+Query every registered backend in real time and show models that can be used now, with observed capabilities (chat, embed, prompt, think, vision, audio) and context length.
 
 ```bash
 contenox model list
@@ -195,16 +217,28 @@ contenox model set-context gemini-flash-latest  --context 1m
 
 #### `contenox model capability`
 
-Manage manual provider/model capability overrides — the reasoning (`think`) and image-input (`vision`) capabilities the runtime assumes for a given provider/model when the catalog doesn't declare them.
+Manage what is stated about a provider/model pair that the provider's own catalog does not report. Two tiers, and the more specific one wins.
+
+| Tier | Flags | Scope |
+| ---- | ----- | ----- |
+| Provider | `--think`, `--vision` | every backend of that provider type |
+| Backend | `--context`, `--max-output`, `--capabilities`, `--input-price`, `--output-price`, `--cache-read-price`, `--cache-write-price`, `--image-price`, `--audio-price` | one backend, or every backend of the type |
 
 ```bash
-contenox model capability set   <provider> <model> --think true   # mark the model as supporting reasoning
-contenox model capability set   <provider> <model> --vision true  # mark the model as accepting image input
-contenox model capability show  <provider> <model>                # show the current override
-contenox model capability unset <provider> <model>                # remove the override (revert to catalog)
+contenox model capability set openai gpt-5-mini --think true          # reasoning controls
+contenox model capability set openai gpt-5-mini --vision true         # accepts image input
+contenox model capability set openai gpt-5-mini --context 400k --max-output 128k
+contenox model capability set openai gpt-5-mini --capabilities completion,tools,vision
+contenox model capability set ollama gemma3n        --capabilities completion,audio
+contenox model capability set openai gpt-5-mini --input-price 1.25 --output-price 10
+contenox model capability set openai gpt-5-mini --context 1m --backend reseller
+contenox model capability show  openai gpt-5-mini                     # both tiers
+contenox model capability unset openai gpt-5-mini                     # revert to the catalogs
 ```
 
-`capability set` requires at least one of `--think` or `--vision` (each `true`/`false`).
+`--context` and `--max-output` accept a bare integer or the `k`/`m` shorthand (`32k`, `1m`). `--capabilities` REPLACES the observed set rather than adding to it, so it states the whole set — so `--think`/`--vision` cannot be scoped to one backend with `--backend`: a partial list would drop the rest. The vocabulary is the one upstream names: `completion`, `tools`, `vision`, `thinking`, `embedding`, `audio`. Prices are USD per million tokens, and are what the monthly spend ceiling is metered against. `--image-price` and `--audio-price` are the exceptions and say so in their names: USD per image attachment, and USD per mebibyte of inline audio — at 128 kbps a mebibyte is about a minute.
+
+A declaration is folded into the model list on the next discovery cycle (15s), and reaches a client through `/api/show`.
 
 ### `contenox tools`
 
@@ -255,9 +289,9 @@ The login-flow flags and `--insecure-skip-tls-verify` can only be set at `tools 
 
 ### `contenox agent`
 
-> **Beta:** this command's interface may change. It is not gated: `contenox agent` is listed in `contenox --help` and `contenox agent list` shows every discovered agent whether or not `opt-in-beta` is set. Among them is the shipped `agent-planner` — the chain's `id`, declared inside `chain-planner-default.json` (see [Chain files: naming, roles, and resolution](/docs/guide/chains/naming/)). What `contenox config set opt-in-beta true` (or `CONTENOX_OPT_IN_BETA=1`) does turn on is the [event-trigger tier](/docs/guide/events/) and the beta line `contenox doctor` prints.
+> **Beta:** this command's interface may change. It is not gated: `contenox agent` is listed in `contenox --help` and `contenox agent list` shows every discovered agent whether or not `opt-in-beta` is set. Among them is the shipped `agent-planner` — the chain's `id`, declared inside `chain-planner-default.json` (see [Chain files: naming, roles, and resolution](/docs/guide/chains/naming/)). What `contenox config set features.beta.enabled true` (or `CONTENOX_OPT_IN_BETA=1`) does turn on is the [event-trigger tier](/docs/guide/events/) and the beta line `contenox doctor` prints.
 
-Inspect and manage the runtime's declared agents. Most agents are [declared in a Markdown file](/docs/guide/agents/) under `.contenox/agents/`; agents you already keep in `.claude/agents/` or `.agents/agents/` are found there too, and a task chain on disk is an agent as well. Every one is registered automatically by discovery — this command inspects them, toggles their enabled state, and removes stale registrations. Declared agents are what `/mission` and `contenox mission fire` dispatch.
+Inspect and manage the runtime's declared agents. Most agents are [declared in a Markdown file](/docs/guide/declarations/) under `.contenox/agents/`; agents you already keep in `.claude/agents/` or `.agents/agents/` are found there too, and a task chain on disk is an agent as well. Every one is registered automatically by discovery — this command inspects them, toggles their enabled state, and removes stale registrations. Declared agents are what `/mission` and `contenox mission fire` dispatch.
 
 ```bash
 contenox agent list                       # id, name, source, kind, enabled
@@ -312,9 +346,9 @@ A `--policy` that resolves to a **rendered envelope** under `.generated/` is **r
 
 ### `contenox init [provider]`
 
-Initializes a workspace (`.contenox/`) and ensures default runtime presets exist globally (`~/.contenox/`). It's best to run `contenox setup` first for a guided configuration.
+Initializes a workspace (`.contenox/`) and ensures default runtime presets exist globally (`~/.contenox/`). Use `contenox auto` for automatic local setup, or `contenox setup` to select an existing server or hosted API.
 
-`init` creates the `.contenox/workspace.id` marker — a project's portable identity. The marker carries a stable workspace UUID (the database scoping token every session under the project is filed under) plus an optional friendly **name**. It travels *with* the directory, so a project means one thing to the CLI and every ACP session alike. It also seeds `agents.toml` and an `agents/` directory — where you [declare an agent](/docs/guide/agents/) — plus the [oracle](/docs/use-cases/auto-attention/) chain (`chain-oracle-default.json`, inert until `default-oracle-chain` names one) under `~/.contenox/`, and the shipped chain files under `~/.contenox/system/`, unless they already exist. Workspace-local `.contenox/` files can override these global presets by name; `init --local` seeds those workspace copies for you instead of writing to `~/.contenox/`. The seeded chain files follow the `chain-<role>-<variant>.json` convention — [Chain files: naming, roles, and resolution](/docs/guide/chains/naming/) covers the grammar and the exact touch/never-touch matrix of every init flag.
+`init` creates the `.contenox/workspace.id` marker — a project's portable identity. The marker carries a stable workspace UUID (the database scoping token every session under the project is filed under) plus an optional friendly **name**. It travels *with* the directory, so a project means one thing to the CLI and every ACP session alike. It also seeds `agents.toml` and an `agents/` directory — where you [declare an agent](/docs/guide/declarations/) — plus the [oracle](/docs/use-cases/auto-attention/) chain (`chain-oracle-default.json`, inert until `default-oracle-chain` names one) under `~/.contenox/`, and the shipped chain files under `~/.contenox/system/`, unless they already exist. Workspace-local `.contenox/` files can override these global presets by name; `init --local` seeds those workspace copies for you instead of writing to `~/.contenox/`. The seeded chain files follow the `chain-<role>-<variant>.json` convention — [Chain files: naming, roles, and resolution](/docs/guide/chains/naming/) covers the grammar and the exact touch/never-touch matrix of every init flag.
 
 **Approval policies are not seeded.** Each `[envelopes.<name>]` section in `agents.toml` is transpiled into `.generated/hitl-policy-<name>.json` instead, on every run rather than once at init — so a name resolves because the envelope behind it was rendered, not because a copy was written where your own file goes. `init` renders them and prints each one it wrote. A `hitl-policy-<name>.json` you write at the top level of `.contenox/` or `~/.contenox/` shadows the render and is never rewritten. See [Where a policy comes from](/docs/guide/hitl/#where-a-policy-comes-from).
 
@@ -386,8 +420,8 @@ path and turn index rather than inventing a reply.
 
 ```bash
 contenox backend add scripted --type scripted-test --script ./dialog.json
-contenox config set default-provider scripted-test
-contenox config set default-model scripted-test
+contenox config set inference.provider scripted-test
+contenox config set inference.model scripted-test
 ```
 
 It is a test fixture, not a model. A scripted run proves the machinery — that
@@ -400,48 +434,25 @@ script format and how turns are consumed.
 
 ### `contenox config`
 
-Manage persistent CLI defaults stored in SQLite.
+Inspect and change saved defaults. Common settings appear first; advanced
+settings and their owners are discoverable from the command itself.
 
 ```bash
-contenox config set default-provider ollama
-contenox config set default-model    qwen3:8b
-contenox config set default-alt-model gemini-3.6-flash
-contenox config set default-alt-provider gemini
-contenox config set default-autocomplete-model qwen2.5-coder:7b
-contenox config set default-autocomplete-provider ollama
-contenox config set default-audio-model gemini-2.5-flash
-contenox config set default-audio-provider gemini
-contenox config set default-max-tokens 8192
-contenox config set default-think high
-contenox config set default-chain    .contenox/my-chain.json
-contenox config set hitl-policy-name hitl-policy-strict.json
-contenox config set approval-ceiling 24h
-contenox config set approval-ceiling never
-
-contenox config get default-model
 contenox config list
+contenox config list --all
+contenox config list --describe
+contenox config set inference.generation.max_output_tokens 8192
+contenox config set inference.context.window_tokens 230000
+contenox config get inference.context.window_tokens --explain
+contenox config get inference.context.window_tokens --json
+contenox config reset inference.context.window_tokens
 ```
 
-Valid global keys: `default-model`, `default-provider`, `default-alt-model`, `default-alt-provider`, `default-autocomplete-model`, `default-autocomplete-provider`, `default-audio-model`, `default-audio-provider`, `default-max-tokens`, `default-think`, `telemetry-enabled`, `update-check`, `opt-in-beta`, `default-mission-agent`, `default-mission-policy`, `default-oracle-chain`, `default-oracle-policy`, `oracle-approves-tool-calls`, `fleet-max-parallel`, `approval-ceiling`. `opt-in-beta` (`true`/`false`) enables the beta features — the agent roster and the [event tier](/docs/guide/events/) — which are otherwise absent entirely.
+Names, scopes, inheritance, old-name compatibility and session controls are
+explained in [Configuration](/docs/reference/config/). In a native session,
+`/settings` reports current choices and context limits. `/context`, `/output`,
+`/model`, `/reasoning` and `/permissions` change that session without saving defaults.
 
-Valid workspace keys: `default-chain`, `hitl-policy-name`.
-
-| Key | Description |
-|---|---|
-| `approval-ceiling` | How long an ask whose grant names no `timeout` waits for a human: a duration (`30m`, `24h`), or `never` (also `forever`, `indefinite`) for no deadline at all — the ask then stays pending until somebody answers it, across restarts. Unset it is `168h`, seven days: the longest wait a grant itself may state. This is the fleet-wide default only; a grant's own `timeout` always wins. Refused at `config set` time if it is not a wait, so a typo never becomes a silent hour. |
-| `hitl-policy-name` | Envelope this workspace runs under, as the filename it transpiles to (`hitl-policy-strict.json`). Empty uses `hitl-policy-default.json`. Overridden per run by `--hitl-policy` on `beam`, `acp`, `acpx` and `serve` — see [Policy resolution order](/docs/guide/hitl/#policy-resolution-order). |
-| `default-audio-model` | Model preferred for requests carrying audio attachments, independent from `default-model`. Unset falls back to `default-model`; audio requests resolve only to audio-capable models either way. |
-| `default-audio-provider` | Provider type for the audio model, independent from `default-provider`. Unset uses `default-provider`. |
-| `default-mission-agent` | Declared agent the ACP `/mission <intent>` slash command falls back to when none is named. `contenox mission fire` always requires the agent name as a positional argument, so this key does not affect it. |
-| `default-mission-policy` | Envelope (HITL policy) name that both `/mission` and `contenox mission fire --policy` fall back to when none is named. `/mission --policy <envelope>` overrides it for one mission. It is also the envelope a subagent started by `/plan` or the `mission_start` tool runs under. |
-| `default-oracle-chain` | Chain that adjudicates a subagent's asks, e.g. `chain-oracle-default.json`. **Setting it is what turns the [oracle](/docs/use-cases/auto-attention/) on**; unset means no oracle and every ask waits for a human. `contenox acp --oracle <chain>` overrides it for one run, and `--oracle off` disables it. |
-| `default-oracle-policy` | Envelope the oracle chain itself runs under. Unset uses `hitl-policy-oracle.json`, transpiled from `[envelopes.oracle]`. Override per run with `--oracle-policy`. |
-| `oracle-approves-tool-calls` | `true`/`false` (default false). Lets the oracle rule on a subagent's `approve`-tier **tool calls**, not just its questions. The subagent's own envelope must also grant `attention.allowAgentApprovals` — both have to agree. Override per run with `--oracle-approves-tool-calls`. |
-| `fleet-max-parallel` | Fleet-wide admission cap: max concurrently open mission units (integer; `0` = unlimited; default 8). |
-
-`contenox config list` shows each key's current value **and its scope** (`global` / `workspace`) so you can see whether a setting is inherited or overridden locally.
-
-The `default-*` model settings can also be overridden per process — without persisting anything — via the `CONTENOX_DEFAULT_*` environment variables; see the [environment variables table](#environment-variables) below.
 
 ### `contenox mcp`
 
@@ -527,7 +538,7 @@ contenox mission stop <mission-id> --reason "no longer needed"
 
 `mission fire <agent> <intent...>` dispatches the fleet **in-process**: the unit is a child subprocess of this CLI invocation, so `--wait` is required — a detached fire from a one-shot CLI would tear its own mission down when the command exits. Fire-and-detach needs a long-lived session: `contenox beam`, an editor over `contenox acp`, or a host — each with the `/mission` command. Exit status is 0 when the mission lands; non-zero when it derails, gets stuck, is abandoned, or the wait times out.
 
-> **Beta:** user-authored agents (custom `chain-agent-*` chain files, like the one declaring `agent-reviewer` above) require `contenox config set opt-in-beta true` (or `CONTENOX_OPT_IN_BETA=1`) and their interface may change; missions themselves and the shipped `agent-planner` work without it.
+> **Beta:** user-authored agents (custom `chain-agent-*` chain files, like the one declaring `agent-reviewer` above) require `contenox config set features.beta.enabled true` (or `CONTENOX_OPT_IN_BETA=1`) and their interface may change; missions themselves and the shipped `agent-planner` work without it.
 
 Answering a mission's pending question or permission gate is not a mission verb — use `contenox approvals respond`, which answers every pending ask in the system, mission-bound or not; `mission asks` only narrows the view to one mission (or every open one).
 
@@ -554,7 +565,7 @@ contenox approvals respond <ask-id> --answer "use the staging database"
 
 `EXPIRES-IN` is how long an ask has left; an expired ask resolves to a denial. How long that is comes from the envelope that gated the call — a grant written as `shell = { grant = "approve", timeout = "30m", on_timeout = "deny" }` gives its asks thirty minutes, and `{ grant = "approve", timeout = "never" }` gives them no deadline at all: `EXPIRES-IN` reads `never`, no sweep touches them, and they are still listed here after a restart. A grant that names no timeout leaves its asks on this host's `approval-ceiling` (seven days until you set one). See [Bounding the wait](/docs/reference/agents-config/#bounding-the-wait).
 
-> **Beta:** `--as-agent` requires `contenox config set opt-in-beta true` (or `CONTENOX_OPT_IN_BETA=1`); without the opt-in the flag is absent, not hidden.
+> **Beta:** `--as-agent` requires `contenox config set features.beta.enabled true` (or `CONTENOX_OPT_IN_BETA=1`); without the opt-in the flag is absent, not hidden.
 
 `--as-agent <name>` attributes a question's answer to a named agent, and it is enforced against the mission envelope's attention bounds: it is refused when the ask belongs to no mission, when the envelope carries no `attention.allowAgentAnswers` grant, or when the mission's agent-answer bound is already spent — in every refusal the question waits for a human instead. An accepted agent answer counts against the bound, and the durable ask records which agent answered. See [who may answer a unit's question](/docs/guide/hitl/#who-may-answer-a-subagent-attention).
 
@@ -578,7 +589,7 @@ A mission dispatched directly by an operator (`contenox mission fire`, not from 
 
 ### `contenox events`
 
-> **Beta:** the event tier requires `contenox config set opt-in-beta true` (or `CONTENOX_OPT_IN_BETA=1`) and its interface may change; without it this command is hidden and no trigger file loads.
+> **Beta:** the event tier requires `contenox config set features.beta.enabled true` (or `CONTENOX_OPT_IN_BETA=1`) and its interface may change; without it this command is hidden and no trigger file loads.
 
 Operate the durable event-dispatch tier: internal domain events (mission reports, status changes, plan revisions, attention asks) land in a durable local log, and operator-authored `trigger-*.json` files fire task chains from them. See [Events & triggers (beta)](/docs/guide/events/) for the event shape, trigger authoring, and the exact guarantees.
 
@@ -646,25 +657,11 @@ Envelopes are discovered the way the runtime's policy loader resolves them — t
 
 The two agent forms are the same shape, so contenox resolves the first token against the declared-agent registry: a hit is the named form, a miss means the whole line is the intent for the default agent. The confirmation states which agent was chosen, the envelope, where that envelope came from (`--policy` or `default-mission-policy`), and the envelope's character — so the bounds just accepted are in the transcript, not only in a config file.
 
-> **Beta:** naming a user-authored agent (a custom `chain-agent-*` chain) requires `contenox config set opt-in-beta true` (or `CONTENOX_OPT_IN_BETA=1`) and its interface may change; `/mission` itself and the shipped `agent-planner` work without it.
+> **Beta:** naming a user-authored agent (a custom `chain-agent-*` chain) requires `contenox config set features.beta.enabled true` (or `CONTENOX_OPT_IN_BETA=1`) and its interface may change; `/mission` itself and the shipped `agent-planner` work without it.
 
 The dispatch runs **in-process**: the fired unit is a child subprocess of the calling session's own process, no daemon is needed, and the unit's reports stream live back into the firing session as they land. A mission with no agent or no envelope is refused. The hardened `acpx` profile never offers `/mission`.
 
-The [oracle](/docs/use-cases/auto-attention/) needs no `/mission` equivalent: it mounts on the ACP host itself, from `contenox config set default-oracle-chain`, so every subagent this session fires — through `/mission`, `/plan`, or the `mission_start` tool — is already covered. Whether it may rule on a given subagent's asks is the envelope's `attention` bounds, not a per-command flag.
-
-### The `/pair` and `/unpair` slash commands
-
-Pairing attaches the machine to a relay, so the sessions this process serves can be reached from somewhere else — the [contenox app](https://app.contenox.com) on a phone, typically. A pairing describes the **machine**, so the credential lands in `~/.contenox/relay.json` and every contenox process on that machine uses it; these slash commands and the [`contenox pair`](#contenox-pair--contenox-unpair) CLI verbs are two entry points to the same stored pairing.
-
-From inside a session — `contenox beam`, or an editor over `contenox acp`:
-
-- `/pair <key>` — redeem a key minted in the app (**Pair device**) against the hosted relay whose address ships in the binary.
-- `/pair <key> <endpoint>` — redeem against a relay you run yourself; the `CONTENOX_RELAY_ENDPOINT` environment variable sets the same thing for every `/pair` without an inline endpoint.
-- `/pair` — report what this machine is attached to (relay, instance, account), changing nothing. It never prints the credential.
-- `/unpair` — delete the stored credential, so this machine stops dialling. Local only: revoking the instance is done in the app, and a revoked machine is refused at its next dial whether or not it still holds the file.
-- `/link` — print the link that opens **this session** in the app, so a session started at the desk can be picked up on a phone. It is just a URL — opening it still requires signing in to the account this machine is paired to. On an unpaired machine it points you at `/pair` instead.
-
-What is sent when a key is redeemed (the key and this machine's hostname, nothing else), what lands in `~/.contenox/relay.json`, and how the relay's identity is verified from then on: [Pairing a machine with a relay](/docs/guide/pairing/).
+The [oracle](/docs/use-cases/auto-attention/) needs no `/mission` equivalent: it mounts on the ACP host itself, from `contenox config set execution.oracle.chain`, so every subagent this session fires — through `/mission`, `/plan`, or the `mission_start` tool — is already covered. Whether it may rule on a given subagent's asks is the envelope's `attention` bounds, not a per-command flag.
 
 ### `contenox state`
 
@@ -674,7 +671,13 @@ Inspects captured execution state from past chain runs — the per-task steps, h
 contenox state list             # list request IDs with captured execution state
 contenox state show <reqID>     # print the captured steps for a request
 contenox state show <reqID> --raw   # print the raw captured state as JSON
+contenox state clear            # remove traces; keep sessions and checkpoints
 ```
+
+Captured traces persist until you clear them. `state clear` deletes only this
+inspector history. It leaves conversations, resumable checkpoints, approvals,
+configuration, and downloaded models intact. SQLite reuses the freed pages for
+future state; the database file may not immediately shrink on disk.
 
 ### `contenox cache clear`
 
@@ -692,6 +695,124 @@ Updates `contenox` to the latest release, or just checks for one.
 contenox update             # download and install the latest release
 contenox update check       # report whether a newer version exists, without installing
 ```
+
+### `contenox gateway`
+
+Serve a model gateway: an Ollama-compatible HTTP API in front of the backends this runtime already knows, metered per caller.
+
+It answers `/api/tags`, `/api/show`, `/api/chat`, `/api/generate`, `/api/embed` and `/api/version`. Messages on the chat and generate calls carry images and audio, the audio on the `audios` field as raw WAV.
+
+`/api/version` answers as vanilla Ollama — `{"version":"0.5.1"}`, nothing else. The handshake is `GET /api/contenox`, which vanilla Ollama does not serve:
+
+```json
+{"product":"contenox-gateway","version":"v1.0.0","build":"revision …",
+ "ollama_version":"0.5.1","extensions":["audios"]}
+```
+
+A contenox client probes it once per backend and offers audio only when `audios` is declared; a `404` is vanilla, and leaves the extension off.
+
+Every caller presents a license token as its bearer. The gateway verifies the signature against your licensing authority, decrypts the claims, and — when a token signing key is configured — checks the token against the key ledger, so only a key minted for this gateway works and revoking one takes effect on the next request. Allowances travel in the claims: per model a weekly output and input ceiling, an optional five-hour burst window and an optional monthly spend ceiling.
+
+```bash
+# single box: the authority's own private key carries both the public key and the payload key
+contenox gateway serve --authority-private-key-file ~/.contenox/authority
+
+# split deployment: the gateway holds only what it needs to verify
+contenox gateway serve \
+  --authority-key-file ~/.contenox/authority.pub \
+  --payload-key-file ~/.contenox/payload.key \
+  --listen 0.0.0.0:11435
+```
+
+| Flag | Description |
+| ---- | ----------- |
+| `--listen` | Address to serve on. Default `127.0.0.1:11435`. |
+| `--global-weekly-tokens` | Operator cap on tokens proxied per model in a trailing week, across every key. Zero disables it. |
+| `--meter-lease` | Path of the meter-writer lease shared by every gateway over one database (default `<data-dir>/meter-writer.lease`). |
+| `--authority-key` / `--authority-key-file` | The authority's SSH or PEM public key. Needs `--payload-key`. |
+| `--authority-private-key-file` | The authority's SSH private key, which carries both the public key and the payload decryption key. |
+| `--authority-passphrase` | Passphrase for `--authority-private-key-file`, when it is encrypted. |
+| `--payload-key` / `--payload-key-file` | The 32-byte payload key the licenses were encrypted with, in hex or base64. |
+
+With no authority flag at all it uses the pinned Contenox authority compiled into an official release build, and fails closed if this build has none.
+
+Clients point at it the way they point at Ollama:
+
+```bash
+contenox backend add gateway --type ollama --url http://127.0.0.1:11435
+```
+
+The key ledger is what makes a minted key authoritative and revocable, and it is read from the deployment's token signing key (see [Environment variables](#environment-variables)). Without one the gateway still verifies licenses, but accepts any token your authority signed and can revoke nothing — a warning is printed at startup rather than left to be discovered.
+
+#### `contenox gateway key create`
+
+Mint a license for one client and record its digest. Requires the same token signing key the gateway serves with, so the key it prints is one the gateway can verify.
+
+```bash
+contenox gateway key create --client laptop-alex --models qwen3:8b,llama3.1:8b \
+  --output-allowance 5m --input-allowance 25m --five-hour-allowance 400k --monthly-budget 20 \
+  --ttl 30d --tier team --authority-private-key-file ~/.contenox/authority
+```
+
+| Flag | Description |
+| ---- | ----------- |
+| `--client` | The durable client identity the key is minted for. Required. |
+| `--models` | Comma-separated models the key may use, or `*` (the default) for whatever the gateway serves. |
+| `--ttl` | Validity: a Go duration (`720h`) or days/weeks (`30d`, `4w`). Default `720h`. |
+| `--default-model` | Model the caller should use when it names none. |
+| `--tier` | Free-form label on the ledger row, for your own reporting. |
+| `--issuer` | Value written as the license issuer. Default `contenox`. |
+| `--output-allowance` | Weekly output-token ceiling per model (`5m`, `400k`). |
+| `--input-allowance` | Weekly input-token ceiling per model (`25m`). Embeddings are measured on it too. |
+| `--five-hour-allowance` | Burst ceiling per model over five hours (`400k`). |
+| `--monthly-budget` | Monthly spend ceiling per model, in USD (`20`). |
+| `--cache-discount` | Share of a cached prompt token that counts against the input ceilings, per model: `0.25` or `25%`. A key stating none gets a tenth. |
+| `--image-allowance` | Weekly ceiling on image attachments per model, counted per image (`100`). |
+| `--audio-allowance` | Weekly ceiling on inline audio per model, in mebibytes (`10`). |
+| `--claims-file` | JSON object of raw claims to merge, for anything the flags do not cover. |
+| `--authority-private-key-file` | The authority's SSH private key, which signs the license. Required. |
+| `--authority-passphrase` | Passphrase for that key, when it is encrypted. |
+
+Allowances are per model and apply to every model named by `--models`, so naming `*` together with an allowance is refused. An `--input-allowance` follows from the output one when it is not stated: five times it. The token goes to stdout and the summary to stderr:
+
+```bash
+contenox gateway key create --client laptop-alex --models qwen3:8b > alex.key
+```
+
+#### `contenox gateway key list`
+
+Print the ledger newest first. Reads `--limit` (default 50) rows, or every key of one client with `--client`.
+
+```
+h1$ucb66xFDk  laptop-alex  team  2026-09-20 → 2026-10-20  active
+```
+
+#### `contenox gateway key revoke`
+
+```bash
+contenox gateway key revoke h1$ucb66xFDk          # a digest prefix unique in the ledger
+contenox gateway key revoke --client laptop-alex  # every key that client still holds
+contenox gateway key revoke h1$ucb66xFDk --broadcast
+```
+
+Revocation is durable — it is the ledger row, so every gateway reading this database refuses the key whether or not it is running. `--broadcast` also publishes the cutoff on the message bus, by digest and never by client, reaching a gateway that keeps its own database.
+
+#### `contenox gateway usage`
+
+```bash
+contenox gateway usage --client laptop-alex --model qwen3:8b
+contenox gateway usage --model qwen3:8b --window month
+contenox gateway usage --by-model
+```
+
+| Flag | Description |
+| ---- | ----------- |
+| `--client` | Metered client to report; the deployment when omitted. |
+| `--model` | Model to report. Required unless `--by-model`. |
+| `--window` | `5h`, `week` (default), `month` or `total`. |
+| `--by-model` | The deployment's all-time totals, one line per model. |
+
+The meter keeps the newest total per scope and no history, so a window that has rolled reads as zero. Realized cost comes from the rate cards stated with [`contenox model capability`](#contenox-model-capability), so a model with no declared pricing spends nothing as far as the `--monthly-budget` ceiling is concerned. Image attachments and inline audio are reported beside the tokens when a turn carried any, and are charged from `--image-price` and `--audio-price` even when the provider reports no tokens for them.
 
 ### `contenox acp` / `contenox acpx`
 
@@ -715,60 +836,15 @@ Each profile names the [envelope](/docs/guide/hitl/#shipped-envelopes) it runs u
 
 Each profile's chain resolves in order: an operator copy at `~/.contenox/<name>.json`, then a compiled `~/.contenox/.generated/<name>.json`, then the shipped `~/.contenox/system/<name>.json` — first match wins. `CONTENOX_ACP_CHAIN_PATH` (acp) and `CONTENOX_ACPX_CHAIN_PATH` (acpx) override this for one run. See the [editor integration guides](/docs/integrations/editors/zed/) for client setup.
 
-### `contenox serve [path]`
-
-Run contenox as a long-lived host — the organization's shape: a standing process on a box nobody is sitting at, reachable from the [contenox app](https://app.contenox.com) through the relay.
-
-Where `acp` serves one client over stdio and `beam` serves the person who started it, `serve` has no client of its own: the relay tunnel is its inbound path, so it checks its setup, prints a status screen, and stays up until interrupted.
-
-```bash
-contenox serve              # the workspace is your home directory
-contenox serve .            # the directory you are standing in
-contenox serve ~/src/api    # one project
-```
-
-The optional path is **the** workspace this instance serves, fixed for the life of the process — see [Workspace authority](#workspace-authority). With no path the host serves your home directory: a host outlives the shell that started it and is reached from a device that knows nothing about that shell's working directory, so scoping it to the launch directory would make its scope depend on where you happened to be standing. `contenox serve .` asks for the narrow scope explicitly.
-
-A host has **no `local_fs` and no `local_shell`**, under any policy. Those tools are forwarded to a connected client's `fs/*` and `terminal/*` capabilities, and a standing host has no such client; every capability it has is an MCP server or OpenAPI service you attached. Its `serve` envelope says so structurally — `files.read`, `files.write` and `shell` all deny — so an operator reading the policy sees the shape of the host rather than having to read the source. `default_action` stays `approve`, because what does arrive is the servers you connected and nothing here can know what they do; name them under `[envelopes.serve.tools]` to change that. See [contenox serve: the standing host](/docs/guide/serve/).
-
-The status screen reports what the process actually is — setup readiness (the same check `contenox doctor` runs), the workspace, the model, the relay and app URL when paired, and the log directory with the retention bounds in force. An unpaired host says so and prints the steps to pair it; it still runs, it is simply reachable on that machine only.
-
-| Flag           | Description                                                              |
-| -------------- | ------------------------------------------------------------------------ |
-| `--hitl-policy <name\|path>` | Envelope this host runs under: a name from `[envelopes]` in `agents.toml`, or a path to a policy file used verbatim. Default `serve` |
-| `--log-dir <dir>` | Write host logs here (default: `<data-dir>/logs`)                     |
-
-Structured logs go to the log directory rather than the screen, so the screen stays a status display. Files are named `serve-<YYYY-MM-DD>.log`, and a day that outgrows its size bound continues in `serve-<YYYY-MM-DD>.2.log`, `.3.log`, and so on. Retention is bounded by the `log-*` [config keys](/docs/reference/config/#set-persistent-defaults); restarting a host continues the current part rather than starting a new file per launch.
-
-Running a host: [contenox serve: the standing host](/docs/guide/serve/).
-
-### `contenox pair` / `contenox unpair`
-
-Attach this machine to a relay, or detach it, without opening an editor session. Same stored pairing as the [`/pair` slash command](#the-pair-and-unpair-slash-commands) — a pairing describes the machine, so whichever entry point writes it, every later process finds it.
-
-```bash
-contenox pair                    # what is this machine attached to?
-contenox pair K7M-3PQ            # redeem a key minted in the app
-contenox pair K7M-3PQ https://relay.example.internal   # a relay you run yourself
-contenox unpair                  # delete the stored credential
-```
-
-- `contenox pair` with no key reports the relay, instance and account, and the app URL. It never prints the credential.
-- The key is short-lived and redeemable exactly once; mint a new one in the app (**Pair device**) if it expires.
-- A self-hosted relay hands out its own public key at redemption and is verified against that key from then on. `CONTENOX_RELAY_ENDPOINT` sets the same endpoint for every `pair` without an inline one.
-- `contenox unpair` is local: it stops this machine dialling but does not revoke. Revoke an instance in the app — a revoked machine is refused at its next dial whether or not it still holds the file.
-
-Pairing alone attaches the machine; run [`contenox serve`](#contenox-serve-path) — or keep a [`contenox beam`](#contenox-beam) session open — to keep it reachable.
-
 ### `contenox autocomplete --stdio`
 
 Serve fill-in-the-middle code completions over a JSON-lines stdio protocol, for editor integrations that want completions without a full ACP session. Uses the `default-autocomplete-model` / `default-autocomplete-provider` config role — the same keys the ACP editor surface reads.
 
-With no autocomplete model configured it still **starts and exits 0**: it warns once on stderr and then answers every request on the protocol with `{"id":"…","error":"no autocomplete model is configured; set one with: contenox config set default-autocomplete-model <name>"}`. That is deliberate — an editor client learns about the misconfiguration in the reply to the request it made, rather than by watching the process it spawned vanish.
+With no autocomplete model configured it still **starts and exits 0**: it warns once on stderr and then answers every request on the protocol with `{"id":"…","error":"no autocomplete model is configured; set one with: contenox config set inference.autocomplete.model <name>"}`. That is deliberate — an editor client learns about the misconfiguration in the reply to the request it made, rather than by watching the process it spawned vanish.
 
 ```bash
-contenox config set default-autocomplete-model qwen2.5-coder:7b
-contenox config set default-autocomplete-provider ollama
+contenox config set inference.autocomplete.model qwen2.5-coder:7b
+contenox config set inference.autocomplete.provider ollama
 contenox autocomplete --stdio
 ```
 
@@ -800,8 +876,8 @@ contenox version
 | `CONTENOX_DEFAULT_MAX_TOKENS` / `CONTENOX_DEFAULT_THINK` | Same, for the response token cap and reasoning level. |
 | `CONTENOX_BASE_URL` | Endpoint URL for account-specific providers whose URL cannot be defaulted (e.g. Vertex: project + region). |
 | `CONTENOX_OPT_IN_BETA` | Per-invocation override of the `opt-in-beta` config key (`1`/`true` enables the beta features, any other value disables them; unset falls back to config). |
-| `CONTENOX_RELAY_ENDPOINT` | The relay `/pair` redeems against when none is given inline, instead of the hosted relay compiled into the binary — see [Pairing a machine with a relay](/docs/guide/pairing/). |
 | `CONTENOX_SANDBOX_NETWORK_WALL` | Set to `1` to build the [agent sandbox](/docs/guide/confinement/sandbox/)'s network wall with no route at all, for a fully offline foreign agent. |
+| `CONTENOX_TOKEN_KEY_FILE` / `CONTENOX_TOKEN_KEY` | The deployment's token signing key, read by `contenox gateway serve` and `gateway key create`. The file form is preferred. Without it the gateway enforces no key ledger: every license your authority signed is accepted and none can be revoked. The pre-gateway names `RELAY_TOKEN_KEY_FILE` / `RELAY_TOKEN_KEY` are still read as a fallback. |
 | `CONTENOX_POSTGRES_URL` | Move the store off the SQLite file onto a Postgres database. Requires `CONTENOX_NATS_URL` and `CONTENOX_VALKEY_URL` too — see [External backends for state](/docs/reference/config/#external-backends-for-state-opt-in). |
 | `CONTENOX_NATS_URL` | Move the message bus off the database onto a NATS server (`nats://host:4222`; comma-separate a server list). |
 | `CONTENOX_VALKEY_URL` | Move the key-value cache off the database onto a Valkey server (`valkey://host:6379`, or a bare `host:6379`). Add a user, a database index and a key namespace to keep it out of the way of whatever else uses that server: `valkey://appuser:secret@host:6379/3?namespace=contenox` — see [Isolating contenox inside a Valkey you already run](/docs/reference/config/#isolating-contenox-inside-a-valkey-you-already-run). |

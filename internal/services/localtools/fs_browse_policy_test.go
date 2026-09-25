@@ -16,12 +16,13 @@ import (
 )
 
 func browsePolicyCtx(args map[string]string) context.Context {
-	return taskengine.WithToolsArgs(context.Background(), localtools.LocalFSBrowseToolsName, args)
+	return taskengine.WithToolsArgs(context.Background(), localtools.LocalFSToolsName, args)
 }
 
-// TestUnit_LocalFSBrowseTools_PolicyArgsKeyedByToolsetName asserts the toolset
-// reads its own tools_policies block and nothing else: the same keys under
-// local_fs must not reach it.
+// TestUnit_LocalFSBrowseTools_PolicyArgsKeyedByToolsetName asserts the browse
+// half reads the namespace's tools_policies block — content and browsing are
+// one namespace, so one section governs both — and that another toolset's keys
+// do not reach it.
 func TestUnit_LocalFSBrowseTools_PolicyArgsKeyedByToolsetName(t *testing.T) {
 	root := t.TempDir()
 	for i := 0; i < 5; i++ {
@@ -42,8 +43,8 @@ func TestUnit_LocalFSBrowseTools_PolicyArgsKeyedByToolsetName(t *testing.T) {
 	require.True(t, got.Truncated)
 	require.Contains(t, got.Note, "capped at 2 results")
 
-	// The same key under the write half's toolset name governs nothing here.
-	strayCtx := taskengine.WithToolsArgs(context.Background(), localtools.LocalFSToolsName, map[string]string{"_max_find_results": "2"})
+	// Another toolset's keys do not reach the namespace.
+	strayCtx := taskengine.WithToolsArgs(context.Background(), localtools.LocalExecToolsName, map[string]string{"_max_find_results": "2"})
 	full, _, err := h.Exec(strayCtx, time.Now(), map[string]any{"pattern": "*.go"}, false,
 		&taskengine.ToolsCall{ToolName: "find_files"})
 	require.NoError(t, err)
@@ -89,7 +90,7 @@ func TestUnit_LocalFSBrowseTools_PolicyMaxGrepMatchesTruncatesWithNamedKey(t *te
 	out := res.(string)
 	require.Equal(t, 3, strings.Count(out, ": needle"))
 	require.Contains(t, out, "grep truncated")
-	require.Contains(t, out, "tools_policies."+localtools.LocalFSBrowseToolsName+"._max_grep_matches")
+	require.Contains(t, out, "tools_policies."+localtools.LocalFSToolsName+"._max_grep_matches")
 	require.Contains(t, out, "(recoverable:")
 }
 
@@ -126,7 +127,7 @@ func TestUnit_LocalFSBrowseTools_PolicyDeniedPathSubstringsRefuse(t *testing.T) 
 		map[string]any{"path": "secrets/key.txt"}, false, &taskengine.ToolsCall{ToolName: "stat_file"})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "matches denied substring")
-	require.Contains(t, err.Error(), "tools_policies."+localtools.LocalFSBrowseToolsName+"._denied_path_substrings")
+	require.Contains(t, err.Error(), "tools_policies."+localtools.LocalFSToolsName+"._denied_path_substrings")
 }
 
 // TestUnit_LocalFSBrowseTools_PolicyUseGitignoreCanBeDisabled asserts the
@@ -176,14 +177,14 @@ func TestUnit_LocalFSBrowseTools_HITLGateWrapsEveryCall(t *testing.T) {
 
 	denied := localtools.NewHITLWrapper(inner, alwaysDeny, denyPolicy(), nil)
 	res, dt, err := denied.Exec(context.Background(), time.Now(), map[string]any{"path": "."}, false,
-		&taskengine.ToolsCall{Name: localtools.LocalFSBrowseToolsName, ToolName: "list_dir"})
+		&taskengine.ToolsCall{Name: localtools.LocalFSToolsName, ToolName: "list_dir"})
 	require.NoError(t, err)
 	require.Equal(t, taskengine.DataTypeString, dt)
 	require.Contains(t, res, "Denied by the active policy")
 
 	allowed := localtools.NewHITLWrapper(inner, alwaysApprove, allowPolicy(), nil)
 	res, _, err = allowed.Exec(context.Background(), time.Now(), map[string]any{"path": "."}, false,
-		&taskengine.ToolsCall{Name: localtools.LocalFSBrowseToolsName, ToolName: "list_dir"})
+		&taskengine.ToolsCall{Name: localtools.LocalFSToolsName, ToolName: "list_dir"})
 	require.NoError(t, err)
 	require.Equal(t, "a.txt", res)
 }
@@ -195,7 +196,7 @@ func TestUnit_LocalFSBrowseTools_HITLApprovalPathReachesTheTool(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "a.txt"), []byte("x"), 0o644))
 	inner := localtools.NewLocalFSBrowseTools(root, nil)
-	call := &taskengine.ToolsCall{Name: localtools.LocalFSBrowseToolsName, ToolName: "list_dir"}
+	call := &taskengine.ToolsCall{Name: localtools.LocalFSToolsName, ToolName: "list_dir"}
 
 	approved := localtools.NewHITLWrapper(inner, alwaysApprove, approvePolicy(), nil)
 	res, _, err := approved.Exec(context.Background(), time.Now(), map[string]any{"path": "."}, false, call)

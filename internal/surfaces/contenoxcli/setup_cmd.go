@@ -28,7 +28,7 @@ import (
 var setupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Interactive wizard to configure your LLM provider and model.",
-	Long: `Run the setup wizard to pick an LLM provider (Ollama local or Cloud,
+	Long: `Run the setup wizard to pick an LLM provider (native modeld, Ollama local or Cloud,
 OpenAI, Anthropic, Gemini, Vertex AI, AWS Bedrock, or self-hosted vLLM), enter
 credentials, and set defaults. This is the same wizard that runs inside IDE
 terminals via ACP.
@@ -51,15 +51,22 @@ type setupProvider struct {
 	fixedBaseURL string
 }
 
-var setupProviders = []setupProvider{
-	{key: "ollama", label: "Ollama (local daemon)", defaultModel: "qwen3:8b", needsAPIKey: false},
-	{key: "ollama", label: "Ollama Cloud", defaultModel: "gpt-oss:20b", envKey: "OLLAMA_API_KEY", needsAPIKey: true, fixedBaseURL: "https://ollama.com/api"},
-	{key: "openai", label: "OpenAI", defaultModel: "gpt-5-mini", envKey: "OPENAI_API_KEY", needsAPIKey: true},
-	{key: "anthropic", label: "Anthropic", defaultModel: "claude-sonnet-4-5", envKey: "ANTHROPIC_API_KEY", needsAPIKey: true},
-	{key: "gemini", label: "Google Gemini", defaultModel: "gemini-flash-latest", envKey: "GEMINI_API_KEY", needsAPIKey: true},
-	{key: "vertex-google", label: "Google Vertex AI (Gemini via gcloud ADC)", defaultModel: "gemini-3.6-flash", needsAPIKey: false, needsBaseURL: true, baseURLHint: "https://aiplatform.googleapis.com/v1/projects/YOUR_PROJECT/locations/global"},
-	{key: "bedrock", label: "AWS Bedrock", defaultModel: "us.anthropic.claude-3-5-sonnet-20241022-v2:0", needsAPIKey: false, needsBaseURL: true, baseURLHint: "https://bedrock-runtime.eu-central-1.amazonaws.com"},
-	{key: "vllm", label: "vLLM (self-hosted)", needsAPIKey: false, needsBaseURL: true, baseURLHint: "http://localhost:8000"},
+// setupProviders is the wizard's menu, built once at start-up.
+var setupProviders = buildSetupProviders()
+
+func buildSetupProviders() []setupProvider {
+	providers := []setupProvider{
+		{key: "modeld", label: "Contenox native (modeld)", defaultModel: "qwen2.5-coder-7b", fixedBaseURL: "local"},
+		{key: "ollama", label: "Ollama (local daemon)", defaultModel: "qwen3:8b", needsAPIKey: false},
+		{key: "ollama", label: "Ollama Cloud", defaultModel: "gpt-oss:20b", envKey: "OLLAMA_API_KEY", needsAPIKey: true, fixedBaseURL: "https://ollama.com/api"},
+		{key: "openai", label: "OpenAI", defaultModel: "gpt-5-mini", envKey: "OPENAI_API_KEY", needsAPIKey: true},
+		{key: "anthropic", label: "Anthropic", defaultModel: "claude-sonnet-4-5", envKey: "ANTHROPIC_API_KEY", needsAPIKey: true},
+		{key: "gemini", label: "Google Gemini", defaultModel: "gemini-flash-latest", envKey: "GEMINI_API_KEY", needsAPIKey: true},
+		{key: "vertex-google", label: "Google Vertex AI (Gemini via gcloud ADC)", defaultModel: "gemini-3.6-flash", needsAPIKey: false, needsBaseURL: true, baseURLHint: "https://aiplatform.googleapis.com/v1/projects/YOUR_PROJECT/locations/global"},
+		{key: "bedrock", label: "AWS Bedrock", defaultModel: "us.anthropic.claude-3-5-sonnet-20241022-v2:0", needsAPIKey: false, needsBaseURL: true, baseURLHint: "https://bedrock-runtime.eu-central-1.amazonaws.com"},
+		{key: "vllm", label: "vLLM (self-hosted)", needsAPIKey: false, needsBaseURL: true, baseURLHint: "http://localhost:8000"},
+	}
+	return providers
 }
 
 func setupProviderKeys() []string {
@@ -84,7 +91,7 @@ func runSetup(cmd *cobra.Command, out io.Writer) error {
 	fmt.Fprintln(out, "  Welcome to Contenox!")
 	fmt.Fprintln(out, "")
 
-	if err := RunGlobalInit(out); err != nil {
+	if err := RunGlobalInit(cmd.Context(), out); err != nil {
 		return fmt.Errorf("global init: %w", err)
 	}
 
@@ -145,7 +152,7 @@ func runSetup(cmd *cobra.Command, out io.Writer) error {
 		fmt.Fprintln(out, "")
 		fmt.Fprintln(out, "  No input received — `contenox setup` is interactive and made no changes.")
 		fmt.Fprintln(out, "  Run it in a terminal, or configure non-interactively with `contenox config set`")
-		fmt.Fprintln(out, "  (e.g. `contenox config set default-provider ollama`).")
+		fmt.Fprintln(out, "  (e.g. `contenox config set inference.provider ollama`).")
 		fmt.Fprintln(out, "")
 		return errSetupNoInput
 	}
@@ -229,6 +236,8 @@ func runSetup(cmd *cobra.Command, out io.Writer) error {
 
 	model := sp.defaultModel
 	switch {
+	case sp.key == "modeld":
+		model = promptModeldModel(out, scanner, model)
 	case sp.key == "ollama" && sp.fixedBaseURL == "":
 		model = promptOllamaModel(out, scanner, model)
 	case model == "":
@@ -328,6 +337,8 @@ func registerSetupBackend(ctx context.Context, db libdb.DBManager, providerType,
 	backendURL := strings.TrimSpace(baseURL)
 	if backendURL == "" {
 		switch providerType {
+		case "modeld", "local":
+			backendURL = "local"
 		case "ollama":
 			if base, ok := setupcheck.ProbeLocalOllamaAPI(ctx); ok {
 				backendURL = base

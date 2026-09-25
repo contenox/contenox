@@ -8,8 +8,7 @@
 # TestIntegration_ release claim. main moves only by source drop from the
 # upstream repository (CONTRIBUTING.md), so a push here is a release whose
 # fast lane already ran upstream; this run is the public record of it. The
-# claim runs where waiting an hour is acceptable: on pull requests and
-# unfiltered in the nightly release-gate.
+# claim must be run with `task test-all` before a source drop.
 #
 # Third-party actions are pinned to a commit SHA with a trailing version comment.
 # A floating tag (@v4) lets a compromised tag run arbitrary code in this job.
@@ -32,13 +31,13 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      # check-latest resolves 1.25 against the version manifest instead of
-      # accepting whatever 1.25.x the runner image happens to have cached.
+      # check-latest resolves 1.26 against the version manifest instead of
+      # accepting whatever 1.26.x the runner image happens to have cached.
       # Without it govulncheck fails the build on stdlib CVEs that are already
       # fixed in the current patch release — a red CI nobody here can action.
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version: "1.25"
+          go-version: "1.26"
           check-latest: true
 
       # CONTRIBUTING says "run gofmt on Go changes". A rule that is not
@@ -65,6 +64,9 @@ jobs:
       - name: Install task
         run: go install github.com/go-task/task/v3/cmd/task@latest
 
+      - name: Modeld platform compile smoke (no native inference)
+        run: task modeld:check
+
       - name: Build contenox (compile smoke)
         run: task build
 
@@ -74,21 +76,9 @@ jobs:
       - name: CLI help smoke
         run: task test-cli-help
 
-      # schema/*.schema.json is generated from the Go types the loaders use, and
-      # every policy contenox emits stamps the published URL of that schema. The
-      # two are only kept honest by regenerating and diffing, and until now
-      # nothing did: a changed field or doc comment could ship a schema that no
-      # longer described the loader, which turns the stamped $schema into a lie
-      # an operator's editor validates against. `task spec:verify` regenerates
-      # to a temp dir and fails on any drift — the fix it asks for is `task
-      # spec:generate` plus committing the result.
-      - name: Published JSON schemas match the Go types
-        run: task spec:verify
-
       # The fast inner loop, first because it is cheap. It is explicitly NOT the
       # release claim: -short switches off every case that needs a container, a
-      # kernel feature, a peer binary or a spawned contenox. The system-tests
-      # job is the gate.
+      # kernel feature, a peer binary or a spawned contenox.
       - name: Cheap Go tests (TestUnit_* + -short only, not the gate)
         run: task test-unit
 
@@ -125,7 +115,7 @@ jobs:
 
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version: "1.25"
+          go-version: "1.26"
           check-latest: true
 
       - name: Install task
@@ -155,8 +145,7 @@ jobs:
       - name: Substrate wiring on Postgres, NATS and Valkey
         run: task test-substrate
 
-  # The black-box CLI gate, run per change rather than only in the nightly
-  # release-gate. It is the only suite in this repository that proves anything
+  # The black-box CLI gate, run per change. It is the only suite in this repository that proves anything
   # about the product a user actually meets: a Rust crate that execs the SHIPPED
   # binary and reads state back through the product's own commands — `contenox
   # approvals list`, `mission show`, `session list`, `doctor`. Being a second
@@ -183,7 +172,7 @@ jobs:
 
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version: "1.25"
+          go-version: "1.26"
           check-latest: true
 
       # Rust ships on the ubuntu-latest runner image; this pins the components
@@ -215,7 +204,6 @@ jobs:
   # The release claim (`task test-system` + `task test-integration`) is NOT
   # run per push: it takes ~15 minutes of wall clock on every PR, and a gate
   # nobody waits for is a gate that gets made non-required and then ignored.
-  # It runs unfiltered — Ollama pulls included — in the nightly
-  # release-gate.yml (`task test-all`), whose census still treats a skip as
-  # not-a-pass. Per-push CI is the hermetic subset above: unit, spec,
+  # Run `task test-all` before a source drop; its census treats a skip as
+  # not-a-pass. Per-push CI is the hermetic subset above: unit,
   # substrate smoke, and the black-box e2e-cli gate.

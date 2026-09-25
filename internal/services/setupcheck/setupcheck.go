@@ -790,6 +790,8 @@ func providerFixPathForChecks(provider string, checks []BackendCheck) string {
 
 func providerAddCommand(provider string) string {
 	switch modelrepo.CanonicalBackendType(provider) {
+	case "modeld", "local":
+		return "contenox backend add modeld --type modeld"
 	case "openai":
 		return "contenox backend add openai --type openai --api-key-env OPENAI_API_KEY"
 	case "anthropic":
@@ -801,12 +803,14 @@ func providerAddCommand(provider string) string {
 	case "bedrock":
 		return "contenox backend add bedrock --type bedrock --url \"https://bedrock-runtime.us-east-1.amazonaws.com\"   # uses the ambient AWS credential chain"
 	default:
-		return "contenox backend add ollama --type ollama  # or: contenox backend add ollama-cloud --type ollama --url https://ollama.com/api --api-key-env OLLAMA_API_KEY"
+		return "contenox backend add modeld --type modeld  # or: contenox backend add ollama --type ollama"
 	}
 }
 
 func noChatModelsCommand(provider string) string {
 	switch modelrepo.CanonicalBackendType(provider) {
+	case "modeld", "local":
+		return "contenox model list   # if empty, pull a local model (e.g. contenox model pull qwen2.5-coder-7b)"
 	case "openai", "anthropic", "gemini":
 		return "contenox model list   # confirm which chat models the provider exposes"
 	case "vertex-google":
@@ -820,6 +824,8 @@ func noChatModelsCommand(provider string) string {
 
 func primaryDiagnosticCommand(provider string) string {
 	switch modelrepo.CanonicalBackendType(provider) {
+	case "modeld", "local":
+		return "contenox modeld status   # check native engine status"
 	case "openai", "anthropic", "gemini":
 		return "contenox doctor --json   # inspect backendChecks.error for the provider backend"
 	case "vertex-google":
@@ -887,6 +893,8 @@ func chooseBaseURL(baseURL, fallback string) string {
 
 func providerDisplayName(provider string) string {
 	switch modelrepo.CanonicalBackendType(provider) {
+	case "modeld", "local":
+		return "Contenox Native Engine (modeld)"
 	case "ollama":
 		return "Ollama"
 	case "openai":
@@ -906,4 +914,28 @@ func providerDisplayName(provider string) string {
 	default:
 		return "backend"
 	}
+}
+
+// ResolveContextLength returns the smallest known context capacity among healthy
+// backends serving the selected provider/model, or zero when unknown.
+func ResolveContextLength(states []runtimestate.BackendRuntimeState, provider, model string) int {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return 0
+	}
+	limit := 0
+	for _, state := range states {
+		if state.Error != "" || (provider != "" && !providerTypeMatches(provider, state.Backend.Type)) {
+			continue
+		}
+		for _, pulled := range state.PulledModels {
+			if pulled.Model != model && pulled.Name != model {
+				continue
+			}
+			if pulled.ContextLength > 0 && (limit == 0 || pulled.ContextLength < limit) {
+				limit = pulled.ContextLength
+			}
+		}
+	}
+	return limit
 }

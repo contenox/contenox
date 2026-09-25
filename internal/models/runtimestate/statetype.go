@@ -40,6 +40,22 @@ type ModelPullStatus struct {
 	CanThink        bool         `json:"canThink,omitempty" example:"true"`
 	CanVision       bool         `json:"canVision,omitempty" example:"true"`
 	CanAudio        bool         `json:"canAudio,omitempty" example:"true"`
+	// AudioExtension is whether the endpoint declared the audio wire extension on
+	// its own route, so the field is safe to send it. Carried per model because
+	// the provider is built from one.
+	AudioExtension bool `json:"audioExtension,omitempty"`
+	// SessionExtension is whether the endpoint declared the session wire
+	// extension, so this conversation may be named on the request. Carried per
+	// model because the provider is built from one.
+	SessionExtension bool `json:"sessionExtension,omitempty"`
+	// Pricing is the operator's declared upstream rate card for this model, read
+	// by whatever meters a turn. Nil when the backend states none.
+	Pricing *runtimetypes.ModelPricing `json:"pricing,omitempty"`
+	// DeclaredCapabilities is the operator's capability list verbatim. The
+	// booleans above are what routing reads, but they cannot carry "tools"
+	// distinctly — the runtime records tools as chat — so the wire vocabulary is
+	// kept as stated. Empty when the backend declares none.
+	DeclaredCapabilities []string `json:"declaredCapabilities,omitempty"`
 }
 
 type ModelDetails struct {

@@ -153,7 +153,7 @@ func TestUnit_ResolveAutocompleteRole(t *testing.T) {
 
 	_, _, err := resolveAutocompleteRole(ctx, store)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "default-autocomplete-model")
+	require.Contains(t, err.Error(), "inference.autocomplete.model")
 
 	data, _ := json.Marshal("qwen2.5-coder:7b")
 	require.NoError(t, store.SetKV(ctx, clikv.Prefix+"default-autocomplete-model", data))

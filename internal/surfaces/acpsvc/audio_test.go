@@ -158,7 +158,7 @@ func TestLoopback_AudioBlock_RidesTheUserMessage(t *testing.T) {
 	require.NoError(t, err)
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	wav := []byte{'R', 'I', 'F', 'F', 0x10, 0x00, 0x00, 0x00}
 	var got []taskengine.AudioPart
@@ -196,7 +196,7 @@ func TestLoopback_RefusedAudio_ReachesTheClientOnTheWire(t *testing.T) {
 	require.NoError(t, err)
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	h.swapAgent(newResp.SessionID, &loopbackAgent{
 		promptFunc: func(context.Context, agentservice.PromptRequest) (*agentservice.PromptResponse, error) {
@@ -302,7 +302,7 @@ func TestLoopback_AudioWithoutAudioCapableModel_RefusedBeforeDispatch(t *testing
 	require.NoError(t, err)
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	installNonAudioRuntimeState(t, h)
 
@@ -360,7 +360,7 @@ func TestLoopback_PinnedNonAudioModel_RefusalNamesTheModel(t *testing.T) {
 	require.NoError(t, err)
 	newResp, err := h.client.NewSession(ctx, libacp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []libacp.McpServer{}})
 	require.NoError(t, err)
-	h.lc.drain(t, 1)
+	h.lc.drain(t, 2)
 
 	installNonAudioRuntimeState(t, h)
 

@@ -99,3 +99,19 @@ func TestUnit_SetHITLPolicy_LandsWhereConfigSetWrites(t *testing.T) {
 	require.Equal(t, "hitl-policy-dev.json", clikv.ReadHITLPolicy(ctx, store, "ws-a"),
 		"`config set` must be visible to /policy's own reader")
 }
+
+func TestUnit_CanonicalAndLegacyNamesShareRowsAndResetFallback(t *testing.T) {
+	ctx, store := scopeStore(t)
+	require.NoError(t, clikv.WriteConfig(ctx, store, "a", "execution.permissions.policy", "strict"))
+	require.Equal(t, "strict", clikv.ReadHITLPolicy(ctx, store, "a"))
+	require.Empty(t, clikv.ReadHITLPolicy(ctx, store, "b"))
+	require.NoError(t, clikv.WriteConfig(ctx, store, "", "hitl-policy-name", "default"))
+	require.NoError(t, clikv.WriteConfig(ctx, store, "a", "execution.permissions.policy", ""))
+	value, scope := clikv.ReadConfig(ctx, store, "a", "execution.permissions.policy")
+	require.Equal(t, "default", value)
+	require.Equal(t, "global", scope)
+	require.NoError(t, clikv.SetString(ctx, store, "inference.context.window_tokens", "230000"))
+	require.Equal(t, "230000", clikv.Read(ctx, store, "default-token-limit"))
+	require.NoError(t, clikv.SetString(ctx, store, "default-token-limit", "64000"))
+	require.Equal(t, "64000", clikv.Read(ctx, store, "inference.context.window_tokens"))
+}

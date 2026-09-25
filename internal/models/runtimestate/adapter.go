@@ -35,10 +35,13 @@ func LocalProviderAdapter(ctx context.Context, tracker libtracker.ActivityTracke
 		}
 
 		for _, model := range state.PulledModels {
-			providersByType[backendType] = append(
-				providersByType[backendType],
-				catalog.ProviderFor(observedModelFromPullStatus(model)),
-			)
+			p := catalog.ProviderFor(observedModelFromPullStatus(model))
+			if p == nil {
+				// A catalog that cannot build an execution provider for one of
+				// its own observed models must not poison the candidate list.
+				continue
+			}
+			providersByType[backendType] = append(providersByType[backendType], p)
 		}
 	}
 

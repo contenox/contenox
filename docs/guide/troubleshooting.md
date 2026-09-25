@@ -58,9 +58,9 @@ contenox setup
 Or set them directly:
 
 ```bash
-contenox config set default-provider ollama
-contenox config set default-model qwen3:8b
-contenox config get default-model
+contenox config set inference.provider ollama
+contenox config set inference.model qwen3:8b
+contenox config get inference.model
 ```
 
 ## Provider unreachable, or a bad key
@@ -183,7 +183,7 @@ A resume that itself fails is not lost: its checkpoint is retained with the fail
 | Failure | What survives | What you run |
 |---|---|---|
 | **The firing CLI exits** (`mission fire --wait` timed out, or you hit Ctrl-C) | The mission record and every report filed so far. The unit is a child of that process and is torn down with it. | `contenox mission show <id>` to read it; `contenox mission stop <id>` to close it now instead of waiting for reclaim |
-| **A host dies** (`contenox beam`, `contenox acp`, `contenox serve`, or the firing CLI is killed or crashes) | Everything durable. Its units die with it; their mission rows stay `open` with a heartbeat that will never advance. | `contenox mission list` (or `mission show`, or `doctor`) — each reclaims dead-host missions on the way. A host booting sweeps too. |
+| **A host dies** (`contenox beam`, `contenox acp`, or the firing CLI is killed or crashes) | Everything durable. Its units die with it; their mission rows stay `open` with a heartbeat that will never advance. | `contenox mission list` (or `mission show`, or `doctor`) — each reclaims dead-host missions on the way. A host booting sweeps too. |
 | **The asking process dies** while an ask is pending | The ask row, which exists from the moment the ask is raised, and the run's checkpoint, written beside it as the process leaves. | `contenox approvals respond <id> …` — it resumes the run here. If nothing was checkpointed under it, the verdict is recorded and it says so plainly. |
 | **A resumer dies mid-resume** | The checkpoint, with its claim. The claim goes stale after 10 minutes. | `contenox approvals list` — it re-derives the stranded set and finishes them in that process |
 | **The machine restarts** | All of it — missions, reports, asks, checkpoints, inbox, config are in the local database. Nothing resumes on its own; there is no daemon. | `contenox approvals list`, then `contenox mission list` (or `contenox doctor`) |
@@ -238,6 +238,13 @@ Bundle: /home/you/contenox-doctor-20260805-142230.zip
 | `logs/<source>/<name>` | The **last 256 KB** of each `telemetry.log` found, looked for in the workspace `.contenox`, beside the database, and in `~/.contenox` — the member name records which |
 
 **What is redacted.** Every member is passed through the same credential scrubber on the way in, including `doctor.json`, whose backend URLs can carry a key in the query string. It matches named assignments (`api_key=`, `token:`, `authorization=`, …), URL userinfo (`scheme://user:secret@host`), bearer tokens, and recognizable provider key shapes — OpenAI, Anthropic, Google, GitHub, AWS access key ids, Google OAuth tokens. The field names and punctuation survive so a redacted log stays greppable; the value becomes `[REDACTED]`.
+
+The runtime also redacts prompt, message, task input/output, tool-argument,
+model-thinking and opaque provider-metadata fields before writing new structured
+run-log or telemetry entries. This does not rewrite older log files. A diagnostic
+bundle applies its credential scrubber again, but you should still review the
+archive before sharing it because errors and other operational metadata may
+describe local paths or infrastructure.
 
 It errs toward over-redaction on purpose: a false positive costs one diagnostic line, a false negative costs a key. It is still a heuristic. **Review the file before sharing it** — the printed redaction count is there so you can sanity-check it rather than trust it silently.
 

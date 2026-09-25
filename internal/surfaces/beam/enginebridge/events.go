@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/contenox/contenox/internal/services/settings"
 	"github.com/contenox/contenox/internal/surfaces/beam/dialect"
 	libacp "github.com/contenox/contenox/libacp"
 )
@@ -109,6 +110,13 @@ type UsageUpdated struct {
 	Cost      *libacp.UsageCost
 }
 
+// StatsUpdated carries the session's cumulative usage statistics (usage_stats),
+// including prompt cache hit counts and latency/throughput metrics.
+type StatsUpdated struct {
+	SessionID libacp.SessionID
+	Stats     libacp.SessionStats
+}
+
 // CommandsUpdated is the slash-command menu the agent advertises
 // (available_commands_update). It exists for autocomplete only: an invoked
 // command goes back through SubmitPrompt as plain text and acpsvc's
@@ -155,7 +163,7 @@ const modelConfigOptionID = "model"
 // value carried no provider group.
 func SelectedModel(options []libacp.SessionConfigOption) (provider, model string, ok bool) {
 	for _, option := range options {
-		if option.ID != modelConfigOptionID {
+		if option.ID != modelConfigOptionID && option.ID != settings.Model {
 			continue
 		}
 		value := strings.TrimSpace(option.CurrentValue)
@@ -172,7 +180,11 @@ func SelectedModel(options []libacp.SessionConfigOption) (provider, model string
 	return "", "", false
 }
 
-// ModeUpdated reports the session's current mode id (current_mode_update).
+// ModeUpdated reports a session mode change (current_mode_update) for a wire
+// peer that sends one. No beam surface renders it: the local transport answers
+// a mode change with a config_option_update instead of forwarding this update,
+// so a mode already reaches the client through ConfigOptionUpdated, and
+// rendering both would show one fact twice.
 type ModeUpdated struct {
 	SessionID libacp.SessionID
 	ModeID    string
@@ -210,9 +222,11 @@ type MissionReport struct {
 }
 
 // MissionAsk is an attention question from a dispatched mission unit, which
-// blocks until it is answered (AskID is what an answer is given against).
+// blocks until it is answered. AskID names the ask; the reply itself is given
+// over the core's own answer command, not a Bridge method, so a surface carries
+// the id through to the operator rather than answering on its own authority.
 // Same wire shape as MissionReport (contenox.missionAsk _meta), emitted
-// instead of TextDelta. Answering is not yet a Bridge method.
+// instead of TextDelta.
 type MissionAsk struct {
 	SessionID libacp.SessionID
 	MissionID string
@@ -420,6 +434,7 @@ func (e ToolCallOpened) SessionOf() libacp.SessionID       { return e.SessionID 
 func (e ToolCallUpdated) SessionOf() libacp.SessionID      { return e.SessionID }
 func (e PlanUpdated) SessionOf() libacp.SessionID          { return e.SessionID }
 func (e UsageUpdated) SessionOf() libacp.SessionID         { return e.SessionID }
+func (e StatsUpdated) SessionOf() libacp.SessionID         { return e.SessionID }
 func (e CommandsUpdated) SessionOf() libacp.SessionID      { return e.SessionID }
 func (e ConfigOptionUpdated) SessionOf() libacp.SessionID  { return e.SessionID }
 func (e ModeUpdated) SessionOf() libacp.SessionID          { return e.SessionID }
@@ -450,6 +465,7 @@ func (ToolCallOpened) isBridgeEvent()       {}
 func (ToolCallUpdated) isBridgeEvent()      {}
 func (PlanUpdated) isBridgeEvent()          {}
 func (UsageUpdated) isBridgeEvent()         {}
+func (StatsUpdated) isBridgeEvent()         {}
 func (CommandsUpdated) isBridgeEvent()      {}
 func (ConfigOptionUpdated) isBridgeEvent()  {}
 func (ModeUpdated) isBridgeEvent()          {}
@@ -689,6 +705,12 @@ func translate(n libacp.SessionNotification) Event {
 
 	case libacp.SessionUpdateUsageUpdate:
 		return UsageUpdated{SessionID: sid, Used: u.Used, Size: u.Size, Cost: u.Cost}
+
+	case libacp.SessionUpdateUsageStats:
+		if u.Stats != nil {
+			return StatsUpdated{SessionID: sid, Stats: *u.Stats}
+		}
+		return UnknownUpdate{SessionID: sid, Kind: u.SessionUpdate, Update: u}
 
 	case libacp.SessionUpdateSessionInfo:
 		return SessionInfoUpdated{SessionID: sid, Title: u.Title, UpdatedAt: u.UpdatedAt}

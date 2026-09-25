@@ -6,7 +6,7 @@ order: 1
 
 # Writing a chain by hand
 
-Most agents never need this page. An agent is [a Markdown declaration](/docs/guide/agents/) plus [`agents.toml`](/docs/reference/agents-config/), and contenox builds the chain behind it.
+Most agents never need this page. An agent is [a Markdown declaration](/docs/guide/declarations/) plus [`agents.toml`](/docs/reference/agents-config/), and contenox builds the chain behind it.
 
 You are here because you need something a declaration cannot say: a branch, a different model per step, a recovery path, a point where a human is required. Then you write the state machine yourself, and the engine runs exactly what you wrote. This page walks you from a blank file to a working chain in five edits.
 

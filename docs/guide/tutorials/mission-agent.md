@@ -42,7 +42,7 @@ Four things, and it is worth knowing why before you write any JSON:
 
 ## 1. The file already has a name
 
-A [declared agent](/docs/guide/agents/) already has a name — its frontmatter
+A [declared agent](/docs/guide/declarations/) already has a name — its frontmatter
 gave it one. The vault agent is a chain you wrote by hand, so it earns its name
 the file convention's way instead: discovery registers every `chain-agent-*.json`
 file as a dispatchable agent, using the chain's `id` — **not the filename** — as
@@ -289,7 +289,7 @@ An **oracle** is a reviewer that may rule on the routine ones itself, inside the
 `attention` bounds you set in step 5. It is a configured default, not a flag:
 
 ```bash
-contenox config set default-oracle-chain chain-oracle-default.json
+contenox config set execution.oracle.chain chain-oracle-default.json
 ```
 
 That alone lets it answer *questions*. To let it rule on gated *tool calls* as
@@ -297,7 +297,7 @@ well, two separate grants have to agree — the host's, and this subagent's
 envelope:
 
 ```bash
-contenox config set oracle-approves-tool-calls true
+contenox config set execution.oracle.allow_tool_approvals true
 ```
 
 ```json
@@ -354,7 +354,7 @@ guessing.
 
 ## Next
 
-- [Declaring agents](/docs/guide/agents/) — the one-file road; a declared agent is dispatchable the moment it lands.
+- [Declaring agents](/docs/guide/declarations/) — the one-file road; a declared agent is dispatchable the moment it lands.
 - [Missions](/docs/guide/missions/) — sessions, missions and runs compared.
 - [The oracle](/docs/use-cases/auto-attention/) — the reviewer in step 8.
 - [Chain naming](/docs/guide/chains/naming/) — the file-to-agent rule in full.

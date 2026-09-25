@@ -17,7 +17,7 @@ nobody at the keyboard.
   is refused rather than guessing:
 
   ```bash
-  contenox config set default-mission-policy hitl-policy-default.json
+  contenox config set execution.missions.permissions.policy hitl-policy-default.json
   ```
 
   Or name one per invocation with `--policy`.

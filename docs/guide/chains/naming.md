@@ -39,7 +39,7 @@ The seeded set:
 
 ### Registering an agent chain you wrote yourself
 
-The usual way to add an agent is [a Markdown declaration](/docs/guide/agents/),
+The usual way to add an agent is [a Markdown declaration](/docs/guide/declarations/),
 and contenox files its generated chain under this convention for you. What
 follows is for a chain you authored by hand.
 
@@ -105,6 +105,6 @@ Your **own** files are yours: `--update` never renames or rewrites anything init
 ## Next
 
 - [Writing a chain by hand](/docs/guide/chains/writing-a-chain/) — author a chain from scratch
-- [Declaring agents](/docs/guide/agents/) — the shorter road, and the one most agents take
-- [Core concepts](/docs/guide/concepts/) — agents, chains, tasks, tools, transitions
+- [Declaring agents](/docs/guide/declarations/) — the shorter road, and the one most agents take
+- [Core concepts](/docs/guide/declarations/) — agents, chains, tasks, tools, transitions
 - [`contenox init` reference](/docs/reference/contenox-cli/#contenox-init-provider) — every flag

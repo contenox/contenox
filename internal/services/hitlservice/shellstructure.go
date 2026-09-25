@@ -5,70 +5,39 @@ import (
 	"path"
 	"runtime"
 	"strings"
-	"sync/atomic"
 
+	"github.com/contenox/contenox/internal/services/shellline"
 	"mvdan.cc/sh/v3/syntax"
 )
 
-// ShellKind names the shell that will interpret a gated command line; it
-// mirrors localtools.ShellKind by value rather than import to avoid a
-// dependency cycle.
-type ShellKind string
+// ShellKind names the shell that will interpret a gated command line. It is
+// [shellline.Kind], the same value the tool layer reads a command line with, so
+// the gate and the tool cannot disagree about what a line says.
+type ShellKind = shellline.Kind
 
 const (
 	// ShellKindPOSIX is the only kind structural analysis runs on: `sh -c`.
-	ShellKindPOSIX ShellKind = "sh"
+	ShellKindPOSIX = shellline.KindPOSIX
 	// ShellKindPowerShell is what local_shell spawns on Windows; mvdan
 	// cannot parse it, so it never reaches the parser.
-	ShellKindPowerShell ShellKind = "powershell"
+	ShellKindPowerShell = shellline.KindPowerShell
 	// ShellKindCmd is cmd.exe — same treatment as powershell.
-	ShellKindCmd ShellKind = "cmd"
+	ShellKindCmd = shellline.KindCmd
 	// ShellKindUnknown is any kind this package does not recognize; distinct
 	// from "" so an unrecognized kind fails closed.
-	ShellKindUnknown ShellKind = "unknown"
+	ShellKindUnknown = shellline.KindUnknown
 )
-
-type shellKindContextKey struct{}
 
 // WithShellKind marks ctx with the shell that will interpret command lines
 // evaluated under it, enabling structural analysis when the shell is POSIX.
 func WithShellKind(ctx context.Context, kind string) context.Context {
-	return context.WithValue(ctx, shellKindContextKey{}, normalizeShellKind(kind))
+	return shellline.WithKind(ctx, kind)
 }
 
 // ShellKindFromContext returns the trusted shell kind set by WithShellKind,
 // or "" when none was set.
 func ShellKindFromContext(ctx context.Context) ShellKind {
-	kind, _ := ctx.Value(shellKindContextKey{}).(ShellKind)
-	return kind
-}
-
-func normalizeShellKind(s string) ShellKind {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "":
-		return ""
-	case "sh", "bash", "dash", "ash", "posix":
-		// bash and dash parse the same cleared node set as POSIX.
-		return ShellKindPOSIX
-	case "powershell", "pwsh":
-		return ShellKindPowerShell
-	case "cmd", "cmd.exe":
-		return ShellKindCmd
-	default:
-		return ShellKindUnknown
-	}
-}
-
-func structuralShellEnabled(trusted ShellKind, goos string) bool {
-	switch normalizeShellKind(string(trusted)) {
-	case ShellKindPOSIX:
-		return true
-	case "":
-	default:
-		return false
-	}
-	// On non-Windows, local_shell's shell detection can only produce sh.
-	return goos != "windows"
+	return shellline.KindFromContext(ctx)
 }
 
 var clearedAssignmentNames = map[string]bool{}
@@ -97,15 +66,9 @@ type shellReading struct {
 	upgradable   bool
 }
 
-type shellCommandView struct {
-	name     string
-	base     string
-	words    []string
-	literal  bool
-	argCount int
-	assigns  []string
-	display  string
-}
+// shellCommandView is one simple command as read from the line, named leniently
+// so a command spelled through quotes or escapes still resolves.
+type shellCommandView = shellline.Step
 
 type shellRedirect struct {
 	op      string
@@ -113,77 +76,28 @@ type shellRedirect struct {
 	heredoc bool
 }
 
-var structuralParses atomic.Int64
-
 func analyzeShellArgs(trusted ShellKind, args map[string]any) shellReading {
 	var r shellReading
 	if len(args) == 0 {
 		return r
 	}
-	if !structuralShellEnabled(trusted, runtime.GOOS) {
-		return r
-	}
-	src, ok := shellLineFromArgs(args)
-	if !ok {
+	line, hasLine := shellline.LineFromArgs(args, trusted, runtime.GOOS)
+	if !hasLine || !line.Readable {
 		return r
 	}
 	r.analyzed = true
-	f, bashOnly, ok := parseShellLine(src)
-	if !ok {
+	if !line.Parsed {
 		return r
 	}
 	r.parsed = true
-	collectShellNodes(f, &r, 0)
+	collectShellNodes(line.File, &r, 0)
 	// bashOnly forces upgradable off: sh -c is the executor, so a reading sh itself would reject cannot ground an allow.
-	r.upgradable = !bashOnly && fileClearedForUpgrade(f)
+	r.upgradable = !line.BashOnly && fileClearedForUpgrade(line.File)
 	return r
 }
 
-const maxShellLineBytes = 64 * 1024
-
-func shellLineFromArgs(args map[string]any) (string, bool) {
-	cmd, _ := args["command"].(string)
-	cmd = strings.TrimSpace(cmd)
-	if cmd == "" {
-		return "", false
-	}
-	extra := argTokens(args["args"])
-	if shellModeRequested(args) {
-		line := cmd
-		if len(extra) > 0 {
-			line += " " + strings.Join(extra, " ")
-		}
-		return boundedLine(line)
-	}
-	if len(extra) > 0 {
-		return "", false
-	}
-	return boundedLine(cmd)
-}
-
-func boundedLine(line string) (string, bool) {
-	if len(line) > maxShellLineBytes {
-		return "", false
-	}
-	return line, true
-}
-
-func parseShellLine(src string) (f *syntax.File, bashOnly bool, ok bool) {
-	structuralParses.Add(1)
-	f, err := syntax.NewParser(syntax.Variant(syntax.LangPOSIX)).Parse(strings.NewReader(src), "")
-	if err == nil && f != nil {
-		return f, false, true
-	}
-	structuralParses.Add(1)
-	f, err = syntax.NewParser(syntax.Variant(syntax.LangBash)).Parse(strings.NewReader(src), "")
-	if err != nil || f == nil {
-		return nil, false, false
-	}
-	return f, true, true
-}
-
 func collectShellNodes(f *syntax.File, r *shellReading, depth int) {
-	assigns := literalAssignments(f)
+	assigns := shellline.LiteralAssignments(f)
 	syntax.Walk(f, func(node syntax.Node) bool {
 		switch n := node.(type) {
 		case *syntax.Stmt:
@@ -192,11 +106,11 @@ func collectShellNodes(f *syntax.File, r *shellReading, depth int) {
 			}
 			switch cmd := n.Cmd.(type) {
 			case *syntax.CallExpr:
-				if view, ok := commandView(cmd); ok {
-					r.commands = append(r.commands, view)
+				if len(cmd.Args) > 0 {
+					r.commands = append(r.commands, shellline.StepFromCall(cmd))
 				}
-				peelWrapper(lenientWords(cmd), r, depth)
-				if words, ok := resolveAssignedWords(cmd, assigns); ok {
+				peelWrapper(shellline.LenientWords(cmd), r, depth)
+				if words, ok := shellline.ResolveAssignedWords(cmd, assigns); ok {
 					revealWords(words, r, depth)
 				}
 			case *syntax.BinaryCmd:
@@ -225,18 +139,6 @@ var nestedShellNames = map[string]bool{
 	"ksh": true, "zsh": true, "fish": true,
 }
 
-func lenientWords(call *syntax.CallExpr) []string {
-	out := make([]string, 0, len(call.Args))
-	for _, w := range call.Args {
-		v, ok := wordName(w)
-		if !ok {
-			v = ""
-		}
-		out = append(out, v)
-	}
-	return out
-}
-
 func revealWords(words []string, r *shellReading, depth int) {
 	if depth > maxRevealDepth || len(r.commands) >= maxRevealedCommands {
 		return
@@ -244,7 +146,7 @@ func revealWords(words []string, r *shellReading, depth int) {
 	if len(words) == 0 || words[0] == "" {
 		return
 	}
-	r.commands = append(r.commands, viewFromWords(words))
+	r.commands = append(r.commands, shellline.WordsFromValues(words))
 	peelWrapper(words, r, depth)
 }
 
@@ -274,31 +176,14 @@ func revealSource(src string, r *shellReading, depth int) {
 		return
 	}
 	src = strings.TrimSpace(src)
-	if src == "" || len(src) > maxShellLineBytes {
+	if src == "" || len(src) > shellline.MaxLineBytes {
 		return
 	}
-	f, _, ok := parseShellLine(src)
+	f, _, ok := shellline.ParseFile(src)
 	if !ok {
 		return
 	}
 	collectShellNodes(f, r, depth)
-}
-
-func viewFromWords(words []string) shellCommandView {
-	out := shellCommandView{
-		name:     words[0],
-		base:     path.Base(words[0]),
-		argCount: len(words),
-		display:  displayWords(words),
-	}
-	for _, w := range words {
-		if w == "" {
-			return out
-		}
-	}
-	out.words = append([]string(nil), words...)
-	out.literal = true
-	return out
 }
 
 func dashCPayload(words []string) (string, bool) {
@@ -368,7 +253,7 @@ func stmtCallWords(st *syntax.Stmt) ([]string, bool) {
 	if !ok || len(call.Args) == 0 {
 		return nil, false
 	}
-	return lenientWords(call), true
+	return shellline.LenientWords(call), true
 }
 
 func consumerEvaluatesStdin(st *syntax.Stmt) bool {
@@ -399,7 +284,7 @@ func printedPayloads(words []string) []string {
 		return nil
 	}
 	out := []string{raw}
-	if decoded := decodeShellEscapes(raw); decoded != raw {
+	if decoded := shellline.DecodeEscapes(raw); decoded != raw {
 		out = append(out, decoded)
 	}
 	return out
@@ -425,347 +310,16 @@ func joinKnown(words []string) (string, bool) {
 	return strings.Join(words, " "), true
 }
 
-func decodeShellEscapes(s string) string {
-	if !strings.Contains(s, `\`) {
-		return s
-	}
-	var sb strings.Builder
-	for i := 0; i < len(s); i++ {
-		if s[i] != '\\' || i+1 >= len(s) {
-			sb.WriteByte(s[i])
-			continue
-		}
-		i++
-		switch c := s[i]; c {
-		case '\\':
-			sb.WriteByte('\\')
-		case 'a':
-			sb.WriteByte(0x07)
-		case 'b':
-			sb.WriteByte(0x08)
-		case 'e':
-			sb.WriteByte(0x1b)
-		case 'f':
-			sb.WriteByte(0x0c)
-		case 'n':
-			sb.WriteByte('\n')
-		case 'r':
-			sb.WriteByte('\r')
-		case 't':
-			sb.WriteByte('\t')
-		case 'v':
-			sb.WriteByte(0x0b)
-		case 'x':
-			if n, width, ok := parseEscapedNumber(s[i+1:], 16, 2); ok {
-				sb.WriteByte(n)
-				i += width
-				continue
-			}
-			sb.WriteString(`\x`)
-		case '0', '1', '2', '3', '4', '5', '6', '7':
-			start := i
-			if c == '0' {
-				start = i + 1 // printf's \0NNN form
-			}
-			if n, width, ok := parseEscapedNumber(s[start:], 8, 3); ok {
-				sb.WriteByte(n)
-				i = start + width - 1
-				continue
-			}
-			sb.WriteByte(c)
-		default:
-			sb.WriteByte('\\')
-			sb.WriteByte(c)
-		}
-	}
-	return sb.String()
-}
-
-func parseEscapedNumber(s string, base, maxDigits int) (value byte, width int, ok bool) {
-	n := 0
-	for width < len(s) && width < maxDigits {
-		d := digitValue(s[width])
-		if d < 0 || d >= base {
-			break
-		}
-		next := n*base + d
-		if next > 0xff {
-			break
-		}
-		n = next
-		width++
-	}
-	if width == 0 {
-		return 0, 0, false
-	}
-	return byte(n), width, true
-}
-
-func digitValue(c byte) int {
-	switch {
-	case c >= '0' && c <= '9':
-		return int(c - '0')
-	case c >= 'a' && c <= 'f':
-		return int(c-'a') + 10
-	case c >= 'A' && c <= 'F':
-		return int(c-'A') + 10
-	default:
-		return -1
-	}
-}
-
-func literalAssignments(f *syntax.File) map[string]string {
-	out := map[string]string{}
-	syntax.Walk(f, func(node syntax.Node) bool {
-		as, ok := node.(*syntax.Assign)
-		if !ok || as.Append || as.Naked || as.Name == nil || as.Index != nil || as.Value == nil {
-			return true
-		}
-		if v, ok := wordName(as.Value); ok && v != "" {
-			out[as.Name.Value] = v
-		}
-		return true
-	})
-	return out
-}
-
-func resolveAssignedWords(call *syntax.CallExpr, assigns map[string]string) ([]string, bool) {
-	if len(assigns) == 0 || len(call.Args) == 0 {
-		return nil, false
-	}
-	out := make([]string, 0, len(call.Args))
-	resolved := false
-	for _, w := range call.Args {
-		if v, ok := wordName(w); ok {
-			out = append(out, v)
-			continue
-		}
-		if name, ok := soleParamName(w); ok {
-			if v, ok := assigns[name]; ok {
-				out = append(out, v)
-				resolved = true
-				continue
-			}
-		}
-		out = append(out, "")
-	}
-	if !resolved || out[0] == "" {
-		return nil, false
-	}
-	return out, true
-}
-
-func soleParamName(w *syntax.Word) (string, bool) {
-	if w == nil || len(w.Parts) != 1 {
-		return "", false
-	}
-	pe, ok := w.Parts[0].(*syntax.ParamExp)
-	if !ok || pe.Param == nil {
-		return "", false
-	}
-	if pe.Excl || pe.Length || pe.Width || pe.IsSet ||
-		pe.Index != nil || pe.Slice != nil || pe.Repl != nil || pe.Exp != nil ||
-		len(pe.Modifiers) > 0 {
-		return "", false
-	}
-	return pe.Param.Value, true
-}
-
 func redirectView(rd *syntax.Redirect) shellRedirect {
 	out := shellRedirect{op: rd.Op.String(), heredoc: rd.Hdoc != nil}
 	if rd.Word != nil {
-		if target, ok := wordName(rd.Word); ok {
+		if target, ok := shellline.WordName(rd.Word); ok {
 			out.target = target
 		} else {
-			out.target = "(not statically knowable)"
+			out.target = shellline.UnknowableTarget
 		}
 	}
 	return out
-}
-
-func commandView(call *syntax.CallExpr) (shellCommandView, bool) {
-	var out shellCommandView
-	for _, as := range call.Assigns {
-		name := ""
-		if as.Name != nil {
-			name = as.Name.Value
-		}
-		out.assigns = append(out.assigns, name)
-	}
-	if len(call.Args) == 0 {
-		return out, false
-	}
-	out.argCount = len(call.Args)
-	if name, ok := wordName(call.Args[0]); ok && name != "" {
-		out.name = name
-		out.base = path.Base(name)
-	}
-	literal := true
-	words := make([]string, 0, len(call.Args))
-	for _, w := range call.Args {
-		lit, ok := wordLiteral(w)
-		if !ok {
-			literal = false
-			break
-		}
-		words = append(words, lit)
-	}
-	if literal {
-		out.words = words
-		out.literal = true
-	}
-	out.display = displayOf(call)
-	return out, true
-}
-
-const maxDisplayRunes = 60
-
-func displayOf(call *syntax.CallExpr) string {
-	parts := make([]string, 0, len(call.Args))
-	for _, w := range call.Args {
-		if v, ok := wordName(w); ok {
-			parts = append(parts, v)
-			continue
-		}
-		parts = append(parts, "…")
-	}
-	return flattenDisplay(parts)
-}
-
-func displayWords(words []string) string {
-	parts := make([]string, 0, len(words))
-	for _, w := range words {
-		if w == "" {
-			w = "…"
-		}
-		parts = append(parts, w)
-	}
-	return flattenDisplay(parts)
-}
-
-func flattenDisplay(parts []string) string {
-	// Control characters are flattened so a decision message cannot forge a log line or terminal escape.
-	s := strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
-			return ' '
-		}
-		return r
-	}, strings.Join(parts, " "))
-	if r := []rune(s); len(r) > maxDisplayRunes {
-		s = string(r[:maxDisplayRunes-1]) + "…"
-	}
-	return s
-}
-
-const wordUnsafeMeta = "*?[]{}~\\$"
-
-func wordLiteral(w *syntax.Word) (string, bool) {
-	if w == nil || len(w.Parts) == 0 {
-		return "", false
-	}
-	var sb strings.Builder
-	for _, part := range w.Parts {
-		switch p := part.(type) {
-		case *syntax.Lit:
-			if strings.ContainsAny(p.Value, wordUnsafeMeta) {
-				return "", false
-			}
-			sb.WriteString(p.Value)
-		case *syntax.SglQuoted:
-			if p.Dollar {
-				return "", false
-			}
-			sb.WriteString(p.Value)
-		case *syntax.DblQuoted:
-			if p.Dollar {
-				return "", false
-			}
-			for _, inner := range p.Parts {
-				lit, ok := inner.(*syntax.Lit)
-				if !ok || strings.Contains(lit.Value, "\\") {
-					return "", false
-				}
-				sb.WriteString(lit.Value)
-			}
-		default:
-			return "", false
-		}
-	}
-	return sb.String(), true
-}
-
-func wordName(w *syntax.Word) (string, bool) {
-	if w == nil || len(w.Parts) == 0 {
-		return "", false
-	}
-	var sb strings.Builder
-	for _, part := range w.Parts {
-		switch p := part.(type) {
-		case *syntax.Lit:
-			sb.WriteString(unescapeUnquoted(p.Value))
-		case *syntax.SglQuoted:
-			if p.Dollar {
-				return "", false
-			}
-			sb.WriteString(p.Value)
-		case *syntax.DblQuoted:
-			for _, inner := range p.Parts {
-				lit, ok := inner.(*syntax.Lit)
-				if !ok {
-					return "", false
-				}
-				sb.WriteString(unescapeDoubleQuoted(lit.Value))
-			}
-		default:
-			return "", false
-		}
-	}
-	return sb.String(), true
-}
-
-func unescapeUnquoted(s string) string {
-	if !strings.Contains(s, "\\") {
-		return s
-	}
-	var sb strings.Builder
-	for i := 0; i < len(s); i++ {
-		if s[i] != '\\' {
-			sb.WriteByte(s[i])
-			continue
-		}
-		if i+1 >= len(s) {
-			break // trailing backslash: line continuation
-		}
-		i++
-		if s[i] == '\n' {
-			continue
-		}
-		sb.WriteByte(s[i])
-	}
-	return sb.String()
-}
-
-func unescapeDoubleQuoted(s string) string {
-	if !strings.Contains(s, "\\") {
-		return s
-	}
-	var sb strings.Builder
-	for i := 0; i < len(s); i++ {
-		if s[i] != '\\' || i+1 >= len(s) {
-			sb.WriteByte(s[i])
-			continue
-		}
-		switch s[i+1] {
-		case '$', '`', '"', '\\':
-			i++
-			sb.WriteByte(s[i])
-		case '\n':
-			i++
-		default:
-			sb.WriteByte(s[i])
-		}
-	}
-	return sb.String()
 }
 
 func fileClearedForUpgrade(f *syntax.File) bool {
@@ -813,11 +367,11 @@ func callClearedForUpgrade(call *syntax.CallExpr) bool {
 		}
 	}
 	for _, w := range call.Args {
-		if _, ok := wordLiteral(w); !ok {
+		if _, ok := shellline.LiteralWord(w); !ok {
 			return false
 		}
 	}
-	name, ok := wordLiteral(call.Args[0])
+	name, ok := shellline.LiteralWord(call.Args[0])
 	if !ok || name == "" {
 		return false
 	}
@@ -829,11 +383,11 @@ func structuralCommandInList(r shellReading, list string) (shellCommandView, boo
 		return shellCommandView{}, false
 	}
 	for _, cmd := range r.commands {
-		if cmd.base == "" {
+		if cmd.Base == "" {
 			continue
 		}
 		for _, name := range strings.Split(list, ",") {
-			if name = strings.TrimSpace(name); name != "" && cmd.base == name {
+			if name = strings.TrimSpace(name); name != "" && cmd.Base == name {
 				return cmd, true
 			}
 		}
@@ -853,27 +407,27 @@ func structuralPrefixAllowed(r shellReading, prefixList string) bool {
 		return false
 	}
 	for _, cmd := range r.commands {
-		if !cmd.literal || len(cmd.words) == 0 || len(cmd.assigns) > 0 {
+		if !cmd.Literal || len(cmd.Words) == 0 || len(cmd.Assigns) > 0 {
 			return false
 		}
-		if unclearedCommandNames[cmd.base] {
+		if unclearedCommandNames[cmd.Base] {
 			return false
 		}
-		if !prefixListMatchesTokens(cmd.tokens(), prefixList) {
+		if !prefixListMatchesTokens(tokensOf(cmd), prefixList) {
 			return false
 		}
 	}
 	return true
 }
 
-func (c shellCommandView) tokens() []string {
+func tokensOf(cmd shellCommandView) []string {
 	var words []string
-	if c.literal && len(c.words) > 0 {
-		words = append([]string(nil), c.words...)
-	} else if c.name != "" {
+	if cmd.Literal && len(cmd.Words) > 0 {
+		words = append([]string(nil), cmd.Words...)
+	} else if cmd.Name != "" {
 		// An unknowable argument still has a knowable name; later slots get a sentinel no prefix word can equal.
-		words = []string{c.name}
-		for i := 1; i < c.argCount; i++ {
+		words = []string{cmd.Name}
+		for i := 1; i < cmd.ArgCount; i++ {
 			words = append(words, unknowableWord)
 		}
 	} else {
@@ -891,7 +445,7 @@ func structuralContradictsPrefix(r shellReading, prefixList string) bool {
 		return false
 	}
 	for _, cmd := range r.commands {
-		tokens := cmd.tokens()
+		tokens := tokensOf(cmd)
 		if len(tokens) == 0 {
 			// No statically knowable name: the tokenizer couldn't read it either.
 			continue

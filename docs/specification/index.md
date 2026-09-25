@@ -6,7 +6,7 @@ description: The reference for the JSON state machine behind an agent — the ar
 # The chain format
 
 This is a reference for a file you mostly do not write. An agent is
-[a Markdown declaration](/docs/guide/agents/); contenox generates the chain
+[a Markdown declaration](/docs/guide/declarations/); contenox generates the chain
 behind it and keeps it in step with the file you edited.
 
 You come here for two reasons. To **read** one — the chain is the audit

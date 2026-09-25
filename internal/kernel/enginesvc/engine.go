@@ -4,15 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/contenox/contenox/internal/kernel/taskengine"
 	"github.com/contenox/contenox/internal/kernel/tools"
-	"github.com/contenox/contenox/internal/models/llmrepo"
-	"github.com/contenox/contenox/internal/models/ollamatokenizer"
-	"github.com/contenox/contenox/internal/models/runtimestate"
-	"github.com/contenox/contenox/internal/services/clikv"
+	"github.com/contenox/contenox/internal/models/modelruntime"
 	"github.com/contenox/contenox/internal/services/execservice"
 	"github.com/contenox/contenox/internal/services/hitlservice"
 	"github.com/contenox/contenox/internal/services/localtools"
@@ -22,7 +18,6 @@ import (
 	"github.com/contenox/contenox/internal/services/stateservice"
 	"github.com/contenox/contenox/internal/services/toolguidance"
 	"github.com/contenox/contenox/internal/store/runtimetypes"
-	"github.com/contenox/contenox/internal/substrate"
 	libbus "github.com/contenox/contenox/libbus"
 	"github.com/contenox/contenox/libdbexec"
 	"github.com/contenox/contenox/libtracker"
@@ -33,131 +28,36 @@ const LocalTenantID = runtimetypes.LocalTenantID
 
 func Build(ctx context.Context, db libdbexec.DBManager, cfg Config) (*Engine, error) {
 	engineCtx, engineCancel := context.WithCancel(ctx)
-
-	bus := cfg.Bus
-	ownsBus := false
-	if bus == nil {
-		opened, err := substrate.OpenBus(engineCtx, db.WithoutTransaction())
-		if err != nil {
-			engineCancel()
-			return nil, err
-		}
-		bus, ownsBus = opened, true
+	models, err := modelruntime.Build(engineCtx, db, modelruntime.Config{
+		DefaultModel: cfg.DefaultModel, DefaultProvider: cfg.DefaultProvider,
+		DefaultAudioModel: cfg.DefaultAudioModel, DefaultAudioProvider: cfg.DefaultAudioProvider,
+		ContextLength: cfg.ContextLength, NoDeleteModels: cfg.NoDeleteModels,
+		SkipBackendCycle: cfg.SkipBackendCycle, Tracing: cfg.Tracing, TenantID: cfg.TenantID,
+		Bus: cfg.Bus, KVStore: cfg.KVStore, State: cfg.State, Tracker: cfg.Tracker,
+	})
+	if err != nil {
+		engineCancel()
+		return nil, err
 	}
-
-	closeBus := func() {
-		if ownsBus {
-			bus.Close()
-		}
+	engine := &Engine{Models: models.Models, AudioModel: models.AudioModel,
+		State: models.State, Bus: models.Bus, Tracker: models.Tracker,
+		Stop: func() { engineCancel(); models.Stop() },
 	}
-
-	releaseKV := func() {}
-
 	success := false
 	defer func() {
 		if !success {
-			engineCancel()
-			closeBus()
-			releaseKV()
+			engine.Stop()
 		}
 	}()
-
-	kvMgr := cfg.KVStore
-	if kvMgr == nil {
-		opened, release, err := substrate.OpenKV(engineCtx, db)
+	state, bus, tracker, kvMgr := models.State, models.Bus, models.Tracker, models.KVStore
+	repo := models.Models
+	if cfg.WrapModels != nil {
+		repo, err = cfg.WrapModels(repo, state)
 		if err != nil {
 			return nil, err
 		}
-		kvMgr, releaseKV = opened, release
+		engine.Models = repo
 	}
-
-	state := cfg.State
-	if state == nil {
-		stateOpts := []runtimestate.Option{
-			runtimestate.WithKVStore(kvMgr),
-			runtimestate.WithAutoDiscoverModels(),
-		}
-		if cfg.NoDeleteModels {
-			stateOpts = append(stateOpts, runtimestate.WithSkipDeleteUndeclaredModels())
-		}
-		var err error
-		state, err = runtimestate.New(engineCtx, db, bus, stateOpts...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create runtime state: %w", err)
-		}
-	}
-	engine := &Engine{Stop: func() {
-		engineCancel()
-		closeBus()
-		releaseKV()
-	}, Bus: bus, State: state}
-
-	tenantID := cfg.TenantID
-	if tenantID == "" {
-		tenantID = runtimetypes.LocalTenantID
-	}
-	config := &runtimestate.Config{
-		TenantID:   tenantID,
-		EmbedModel: cfg.DefaultModel,
-		TaskModel:  cfg.DefaultModel,
-		ChatModel:  cfg.DefaultModel,
-	}
-	if err := runtimestate.InitEmbeder(ctx, config, db, cfg.ContextLength, state); err != nil {
-		return nil, fmt.Errorf("failed to init embedder: %w", err)
-	}
-	if err := runtimestate.InitPromptExec(ctx, config, db, state, cfg.ContextLength); err != nil {
-		return nil, fmt.Errorf("failed to init prompt executor: %w", err)
-	}
-	if err := runtimestate.InitChatExec(ctx, config, db, state, cfg.ContextLength); err != nil {
-		return nil, fmt.Errorf("failed to init chat executor: %w", err)
-	}
-
-	specs := []runtimestate.ExtraModelSpec{
-		{
-			Name:          cfg.DefaultModel,
-			ContextLength: cfg.ContextLength,
-			CanChat:       true,
-			CanPrompt:     true,
-			CanEmbed:      false,
-		},
-	}
-	if err := runtimestate.EnsureModels(ctx, db, tenantID, specs); err != nil {
-		return nil, fmt.Errorf("failed to ensure models: %w", err)
-	}
-
-	tracker := cfg.Tracker
-	if tracker == nil {
-		if cfg.Tracing {
-			// nil, not slog.Default(): the constructor defaults it to the
-			// same logger, keeping the kernel out of the slog import graph.
-			tracker = libtracker.NewLogActivityTracker(nil)
-		} else {
-			tracker = libtracker.NoopTracker{}
-		}
-	}
-
-	if !cfg.SkipBackendCycle {
-		cycleReportErr, _, cycleEnd := tracker.Start(ctx, "sync", "backend_cycle")
-		if err := state.RunBackendCycle(ctx); err != nil {
-			cycleReportErr(err)
-		}
-		cycleEnd()
-	}
-	rt := state.Get(ctx)
-	anyReachable := false
-	_, reportReachable, reachableEnd := tracker.Start(ctx, "check", "backend_reachability")
-	for id, bs := range rt {
-		if bs.Error != "" {
-			reportReachable(id, map[string]any{"url": bs.Backend.BaseURL, "error": bs.Error})
-		} else {
-			anyReachable = true
-		}
-	}
-	if !anyReachable {
-		reportReachable("", "no reachable backends; subsequent model operations may fail")
-	}
-	reachableEnd()
-
 	ss := stateservice.New(state, db, cfg.WorkspaceID)
 	setupStatus := func(ctx context.Context) (setupcheck.Result, error) {
 		r, err := ss.SetupStatus(ctx)
@@ -172,21 +72,6 @@ func Build(ctx context.Context, db libdbexec.DBManager, cfg Config) (*Engine, er
 	}
 	engine.SetupCheck = res
 	engine.SetupStatus = setupStatus
-
-	tokenizer := ollamatokenizer.NewEstimateTokenizer()
-
-	audio := resolveAudioModel(ctx, runtimetypes.New(db.WithoutTransaction()), cfg)
-
-	repo, err := llmrepo.NewModelManager(state, tokenizer, llmrepo.ModelManagerConfig{
-		DefaultPromptModel: llmrepo.ModelConfig{Name: cfg.DefaultModel, Provider: cfg.DefaultProvider},
-		DefaultChatModel:   llmrepo.ModelConfig{Name: cfg.DefaultModel, Provider: cfg.DefaultProvider},
-		DefaultAudioModel:  audio,
-	}, tracker)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create model manager: %w", err)
-	}
-	engine.Models = repo
-	engine.AudioModel = audio
 
 	eventSink := cfg.TaskEventSink
 	if eventSink == nil {
@@ -235,23 +120,6 @@ func Build(ctx context.Context, db libdbexec.DBManager, cfg Config) (*Engine, er
 	}
 	success = true
 	return engine, nil
-}
-
-func resolveAudioModel(ctx context.Context, store runtimetypes.Store, cfg Config) llmrepo.ModelConfig {
-	model := strings.TrimSpace(cfg.DefaultAudioModel)
-	if model == "" {
-		model = clikv.Read(ctx, store, "default-audio-model")
-	}
-	provider := strings.TrimSpace(cfg.DefaultAudioProvider)
-	if provider == "" {
-		provider = clikv.Read(ctx, store, "default-audio-provider")
-	}
-	if model == "" {
-		// A provider without a model is not a usable role; resolution treats
-		// the whole role as unset rather than pinning a provider by accident.
-		return llmrepo.ModelConfig{}
-	}
-	return llmrepo.ModelConfig{Name: model, Provider: provider}
 }
 
 func buildTools(engineCtx context.Context, cfg Config, db libdbexec.DBManager, tracker libtracker.ActivityTracker, bus libbus.Messenger) (*mcpworker.Manager, []string, taskengine.ToolsRepo, error) {
