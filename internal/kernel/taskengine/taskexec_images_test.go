@@ -1,11 +1,20 @@
 package taskengine
 
 import (
+	"encoding/json"
 	"testing"
 
 	libmodelprovider "github.com/contenox/contenox/internal/models/modelrepo"
 	"github.com/stretchr/testify/require"
 )
+
+func TestUnit_ProviderMessagesFromEngine_Continuation(t *testing.T) {
+	continuation := &libmodelprovider.Continuation{Provider: "openai-codex", Model: "test", Items: json.RawMessage(`[{"type":"reasoning","encrypted_content":"opaque"}]`)}
+	got := providerMessagesFromEngine(nil, []Message{{Role: "assistant", Content: "hello", Continuation: continuation}})
+	require.Equal(t, continuation, got[0].Continuation)
+	stripped := stripToolProtocolMessages(got)
+	require.Nil(t, stripped[0].Continuation)
+}
 
 // TestUnit_ProviderMessagesFromEngine_ThreadsImages covers the engine->provider
 // message conversion: image attachments must travel with their message, beside

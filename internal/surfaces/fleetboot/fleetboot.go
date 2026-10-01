@@ -14,6 +14,7 @@ import (
 	"github.com/contenox/contenox/internal/services/fleetservice"
 	"github.com/contenox/contenox/internal/services/hitlservice"
 	"github.com/contenox/contenox/internal/services/missionservice"
+	"github.com/contenox/contenox/internal/services/missiontools"
 	"github.com/contenox/contenox/internal/services/reportrouter"
 	"github.com/contenox/contenox/internal/services/vfs"
 	"github.com/contenox/contenox/internal/surfaces/acpsvc"
@@ -28,7 +29,9 @@ type Deps struct {
 	DB       libdb.DBManager
 	Bus      libbus.Messenger
 	Missions missionservice.Service
-	Tracker  libtracker.ActivityTracker
+	// AttentionAsker serves external mission questions through the host's approval inbox.
+	AttentionAsker missiontools.AttentionAsker
+	Tracker        libtracker.ActivityTracker
 	// Transport late-binds the connection's live acpsvc.Transport; nil until the
 	// conn factory runs.
 	Transport func() *acpsvc.Transport
@@ -69,6 +72,7 @@ func BuildInProcessFleet(ctx context.Context, deps Deps) (fleetservice.Service, 
 		DB:             deps.DB,
 		Bus:            deps.Bus,
 		Missions:       deps.Missions,
+		AttentionAsker: deps.AttentionAsker,
 		ProjectRoot:    projectRoot,
 		WorkspaceRoots: deps.WorkspaceRoots,
 		WorkspaceID:    deps.WorkspaceID,

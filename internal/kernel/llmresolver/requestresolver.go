@@ -78,7 +78,7 @@ func filterCandidates(
 				}
 			}
 			if capable && largest > 0 && largest < req.ContextLength {
-				return nil, fmt.Errorf("%w: request needs %d tokens of context but the largest available model %q provides only %d; use a larger-context model or reduce the request size (fewer tools or shorter history)",
+				return nil, fmt.Errorf("%w: requested context capacity is %d tokens but the largest matching model %q provides only %d; choose a larger-context model or lower the requested context window",
 					ErrNoSatisfactoryModel, req.ContextLength, largestName, largest)
 			}
 		}

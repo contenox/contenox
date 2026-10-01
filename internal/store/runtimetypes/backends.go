@@ -80,6 +80,15 @@ func (s *store) UpdateBackend(ctx context.Context, backend *Backend) error {
 	return checkRowsAffected(result)
 }
 
+// LockBackend serializes mutations to a backend and its credentials within a transaction.
+func (s *store) LockBackend(ctx context.Context, id string) error {
+	result, err := s.Exec.ExecContext(ctx, `UPDATE llm_backends SET name = name WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	return checkRowsAffected(result)
+}
+
 func (s *store) DeleteBackend(ctx context.Context, id string) error {
 	result, err := s.Exec.ExecContext(ctx, `
 		DELETE FROM llm_backends

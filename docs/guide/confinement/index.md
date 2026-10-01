@@ -13,3 +13,4 @@ The envelope decides what stops for a human. These decide what is reachable at a
 - [**The sandbox wall**](/docs/guide/confinement/sandbox/) — Landlock and namespaces around a foreign agent
 - [**Trusted binaries**](/docs/guide/confinement/trusted-binaries/) — pinning what a shell command is allowed to be
 - [**Least-privilege shell environment**](/docs/guide/confinement/environment/) — what a spawned command inherits
+- [**External ACP agents**](/docs/integrations/agents/external-acp/) — register and verify a foreign agent inside the wall

@@ -46,12 +46,18 @@ type CatalogFactory interface {
 
 // CatalogOptions carries optional construction dependencies used by vendor implementations.
 type CatalogOptions struct {
+	Authorize  func(context.Context) (http.Header, error)
 	HTTPClient *http.Client
 	Tracker    libtracker.ActivityTracker
 }
 
 // CatalogOption mutates CatalogOptions before a provider is constructed.
 type CatalogOption func(*CatalogOptions)
+
+// WithCatalogAuthorizer supplies current per-request credentials without storing tokens in catalog specs.
+func WithCatalogAuthorizer(authorize func(context.Context) (http.Header, error)) CatalogOption {
+	return func(opts *CatalogOptions) { opts.Authorize = authorize }
+}
 
 // WithCatalogHTTPClient overrides the HTTP client used for observation and Provider construction.
 func WithCatalogHTTPClient(client *http.Client) CatalogOption {

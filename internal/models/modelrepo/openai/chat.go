@@ -66,6 +66,29 @@ type openAIChatCompletionMsg struct {
 }
 
 func (c *OpenAIChatClient) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (modelrepo.ChatResult, error) {
+	if c.codex != nil {
+		ctx, cancel := modelrepo.NonStreamingContext(ctx)
+		defer cancel()
+		client := &OpenAIStreamClient{openAIClient: c.openAIClient}
+		stream, err := client.Stream(ctx, messages, args...)
+		if err != nil {
+			return modelrepo.ChatResult{}, err
+		}
+		asm := modelrepo.NewStreamAssembler(c.codex.Type(), c.modelName)
+		for parcel := range stream {
+			if err := asm.Consume(parcel); err != nil {
+				return modelrepo.ChatResult{}, err
+			}
+		}
+		if err := ctx.Err(); err != nil {
+			return modelrepo.ChatResult{}, err
+		}
+		r, err := asm.Result()
+		if err != nil {
+			return modelrepo.ChatResult{}, err
+		}
+		return modelrepo.ChatResult{Message: modelrepo.Message{Role: "assistant", Content: r.Content, Thinking: r.Thinking, Continuation: r.Continuation}, ToolCalls: r.ToolCalls, Usage: r.Usage, FinishReason: r.FinishReason}, nil
+	}
 	reportErr, reportChange, end := c.tracker.Start(ctx, "chat", "openai", "model", c.modelName)
 	defer end()
 
@@ -76,8 +99,10 @@ func (c *OpenAIChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 	}
 
 	if openAIUsesResponsesEndpoint(c.modelName) {
-		req, nameMap := buildOpenAIResponsesRequestWithCapabilities(c.modelName, messages, args, c.supportsThink)
-		c.clampResponsesMaxOutputTokens(&req)
+		req, nameMap, err := c.buildResponsesRequest(messages, args)
+		if err != nil {
+			return modelrepo.ChatResult{}, err
+		}
 		var response openAIResponse
 		if err := c.sendRequest(ctx, "/responses", req, &response); err != nil {
 			reportErr(err)

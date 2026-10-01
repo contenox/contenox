@@ -30,7 +30,7 @@ less install.sh
 sh install.sh
 ```
 
-<!-- TAG=v1.1.0 -->
+<!-- TAG=v1.2.0 -->
 
 ```bash
 contenox auto                           # choose a local model, verify it, and open the TUI

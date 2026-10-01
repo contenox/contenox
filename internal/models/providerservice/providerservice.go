@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/contenox/contenox/internal/models/backendservice"
+	"github.com/contenox/contenox/internal/models/modelauth"
 	"github.com/contenox/contenox/internal/models/runtimestate"
 	"github.com/contenox/contenox/internal/services/clikv"
 	"github.com/contenox/contenox/internal/store/runtimetypes"
@@ -22,6 +23,7 @@ const (
 	ProviderTypeLocal        = "local"
 	ProviderTypeOllama       = "ollama"
 	ProviderTypeOpenAI       = "openai"
+	ProviderTypeOpenAICodex  = "openai-codex"
 	ProviderTypeAnthropic    = "anthropic"
 	ProviderTypeBedrock      = "bedrock"
 	ProviderTypeGemini       = "gemini"
@@ -89,6 +91,7 @@ var providerDefaultsByType = map[string]providerDefaults{
 	ProviderTypeLocal:        {Type: ProviderTypeLocal, RequiresBaseURL: true},
 	ProviderTypeOllama:       {Type: ProviderTypeOllama, DefaultBaseURL: "http://127.0.0.1:11434", RecommendedAPIKeyEnv: "OLLAMA_API_KEY"},
 	ProviderTypeOpenAI:       {Type: ProviderTypeOpenAI, DefaultBaseURL: "https://api.openai.com/v1", RequiresSecretConfig: true, RecommendedAPIKeyEnv: "OPENAI_API_KEY"},
+	ProviderTypeOpenAICodex:  {Type: ProviderTypeOpenAICodex, DefaultBaseURL: modelauth.BaseURL},
 	ProviderTypeAnthropic:    {Type: ProviderTypeAnthropic, DefaultBaseURL: "https://api.anthropic.com", RequiresSecretConfig: true, RecommendedAPIKeyEnv: "ANTHROPIC_API_KEY"},
 	ProviderTypeBedrock:      {Type: ProviderTypeBedrock, RequiresBaseURL: true},
 	ProviderTypeGemini:       {Type: ProviderTypeGemini, DefaultBaseURL: "https://generativelanguage.googleapis.com", RequiresSecretConfig: true, RecommendedAPIKeyEnv: "GEMINI_API_KEY"},
@@ -130,6 +133,9 @@ func (s *service) Configure(ctx context.Context, providerType string, req Config
 	req.APIKeyEnv = strings.TrimSpace(req.APIKeyEnv)
 	req.BaseURL = strings.TrimSpace(req.BaseURL)
 	req.DefaultModel = strings.TrimSpace(req.DefaultModel)
+	if providerType == modelauth.ProviderType && (req.APIKey != "" || req.APIKeyEnv != "" || (req.BaseURL != "" && req.BaseURL != modelauth.BaseURL)) {
+		return nil, fmt.Errorf("%w: openai-codex requires device login and the fixed ChatGPT endpoint", ErrInvalidProvider)
+	}
 
 	if req.APIKey != "" && req.APIKeyEnv != "" {
 		return nil, fmt.Errorf("%w: provide apiKey or apiKeyEnv, not both", ErrInvalidProvider)
@@ -351,6 +357,13 @@ func (s *service) statusFrom(ctx context.Context, store runtimetypes.Store, defa
 	}
 	hasBackend := backend != nil
 	status.Configured = hasBackend && (!defaults.RequiresSecretConfig || status.SecretConfigured)
+	if defaults.Type == modelauth.ProviderType && backend != nil {
+		status.SecretSource = "device-login"
+		auth, err := modelauth.New(s.dbInstance).Status(ctx, backend.ID)
+		status.SecretPresent = err == nil && auth.State != "login_required"
+		status.SecretConfigured = status.SecretPresent
+		status.Configured = status.SecretPresent
+	}
 	return status
 }
 

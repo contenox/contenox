@@ -10,6 +10,7 @@ import (
 )
 
 type OpenAIProvider struct {
+	codex           *codexCatalog
 	id              string
 	apiKey          string
 	modelName       string
@@ -72,6 +73,9 @@ func (p *OpenAIProvider) GetID() string {
 }
 
 func (p *OpenAIProvider) GetType() string {
+	if p.codex != nil {
+		return p.codex.Type()
+	}
 	return "openai"
 }
 
@@ -113,6 +117,7 @@ func (p *OpenAIProvider) GetChatConnection(ctx context.Context, backendID string
 	}
 	return &OpenAIChatClient{
 		openAIClient: openAIClient{
+			codex:           p.codex,
 			baseURL:         p.baseURL,
 			apiKey:          p.apiKey,
 			httpClient:      p.httpClient,
@@ -131,6 +136,7 @@ func (p *OpenAIProvider) GetPromptConnection(ctx context.Context, backendID stri
 	}
 	return &OpenAIPromptClient{
 		openAIClient: openAIClient{
+			codex:           p.codex,
 			baseURL:         p.baseURL,
 			apiKey:          p.apiKey,
 			httpClient:      p.httpClient,
@@ -165,6 +171,7 @@ func (p *OpenAIProvider) GetStreamConnection(ctx context.Context, backendID stri
 	}
 	return &OpenAIStreamClient{
 		openAIClient: openAIClient{
+			codex:           p.codex,
 			baseURL:         p.baseURL,
 			apiKey:          p.apiKey,
 			httpClient:      p.httpClient,

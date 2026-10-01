@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -13,9 +14,11 @@ import (
 
 	"github.com/contenox/contenox/internal/kernel/enginesvc"
 	"github.com/contenox/contenox/internal/kernel/taskengine"
+	"github.com/contenox/contenox/internal/libsandbox"
 	"github.com/contenox/contenox/internal/models/modelrepo"
 	"github.com/contenox/contenox/internal/models/modelrepo/scriptedtest"
 	"github.com/contenox/contenox/internal/services/agentdecl"
+	"github.com/contenox/contenox/internal/services/agentregistryservice"
 	"github.com/contenox/contenox/internal/services/chatservice"
 	"github.com/contenox/contenox/internal/services/hitlservice"
 	"github.com/contenox/contenox/internal/services/localtools"
@@ -46,6 +49,18 @@ type beamHost struct {
 	transport *acpsvc.Transport
 	bridge    *enginebridge.Bridge
 	stop      func()
+}
+
+// TestMain supports sandbox re-execution when the CLI tests host external agents.
+func TestMain(m *testing.M) {
+	if handled, err := libsandbox.ShimMain(); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
 }
 
 // startBeamHost composes what runBeamSurface composes: a workspace-scoped
@@ -121,6 +136,7 @@ func (h *beamHost) resolveSession(args ...string) (libacp.SessionID, bool) {
 	cmd := &cobra.Command{Use: "beam"}
 	cmd.Flags().String("session", "", "")
 	cmd.Flags().Bool("new", false, "")
+	cmd.Flags().String("agent", "", "")
 	require.NoError(h.t, cmd.ParseFlags(args))
 
 	ctx, cancel := context.WithTimeout(context.Background(), systemTestBudget)
@@ -146,6 +162,53 @@ func workspaceDir(t *testing.T, name string) string {
 	abs, err := filepath.Abs(dir)
 	require.NoError(t, err)
 	return abs
+}
+
+func TestSystem_Beam_ExternalAgentIsPrimary(t *testing.T) {
+	if err := libsandbox.Preflight(); err != nil {
+		t.Skipf("external agents require the sandbox: %v", err)
+	}
+	db := systemTestDB(t)
+	root := workspaceDir(t, "external-workspace")
+	stub := filepath.Join(t.TempDir(), "acp-stub-agent")
+	output, err := exec.Command("go", "build", "-o", stub, "github.com/contenox/contenox/libacp/cmd/acp-stub-agent").CombinedOutput()
+	require.NoError(t, err, "%s", output)
+	agent := &runtimetypes.Agent{Name: "codex-stub", Enabled: true}
+	require.NoError(t, agent.SetExternalACPConfig(runtimetypes.ExternalACPConfig{
+		Transport: runtimetypes.ExternalACPTransportStdio,
+		Command:   stub,
+	}))
+	require.NoError(t, agentregistryservice.New(db).Create(context.Background(), agent))
+	host := startBeamHost(t, db, &enginesvc.Engine{}, acpsvc.Deps{WorkspaceID: "beam-external"}, root)
+	native, _ := host.resolveSession("--new")
+	session, fresh := host.resolveSession("--agent", "codex-stub")
+	require.True(t, fresh)
+	require.NotEqual(t, native, session)
+	host.bridge.SetActiveSession(session)
+	require.NoError(t, host.bridge.SubmitPrompt(session, "hello"))
+	ctx, cancel := context.WithTimeout(context.Background(), systemTestBudget)
+	defer cancel()
+	var reply strings.Builder
+	for {
+		select {
+		case event := <-host.bridge.Events():
+			switch event := event.(type) {
+			case enginebridge.TextDelta:
+				reply.WriteString(event.Text)
+			case enginebridge.TurnFailed:
+				t.Fatalf("external primary turn failed: %+v", event)
+			case enginebridge.TurnEnded:
+				require.Equal(t, libacp.StopReasonEndTurn, event.StopReason)
+				require.Contains(t, reply.String(), "ack")
+				resumed, fresh := host.resolveSession("--session", string(session))
+				require.False(t, fresh)
+				require.Equal(t, session, resumed)
+				return
+			}
+		case <-ctx.Done():
+			t.Fatal("external primary agent did not finish its turn")
+		}
+	}
 }
 
 // seedForeignSession writes a named, freshly-messaged ACP session straight into
@@ -253,6 +316,10 @@ type beamRuntime struct {
 // model turns are replayed from; policy is the HITL envelope every gated call is
 // evaluated against.
 func newBeamRuntime(t *testing.T, dialog, policy string) *beamRuntime {
+	return newBeamRuntimeWithProvider(t, dialog, policy, modelrepo.ScriptedTestBackendType, scriptedtest.DefaultModelName, nil)
+}
+
+func newBeamRuntimeWithProvider(t *testing.T, dialog, policy, provider, model string, configure func(libdb.DBManager)) *beamRuntime {
 	t.Helper()
 	ctx := context.Background()
 
@@ -271,12 +338,16 @@ func newBeamRuntime(t *testing.T, dialog, policy string) *beamRuntime {
 	require.NoError(t, os.WriteFile(scriptPath, []byte(dialog), 0o644))
 
 	db := systemTestDB(t)
-	require.NoError(t, runtimetypes.New(db.WithoutTransaction()).CreateBackend(ctx, &runtimetypes.Backend{
-		ID:      "scripted-backend",
-		Name:    "scripted",
-		Type:    modelrepo.ScriptedTestBackendType,
-		BaseURL: scriptPath,
-	}))
+	if configure != nil {
+		configure(db)
+	} else {
+		require.NoError(t, runtimetypes.New(db.WithoutTransaction()).CreateBackend(ctx, &runtimetypes.Backend{
+			ID:      "scripted-backend",
+			Name:    "scripted",
+			Type:    modelrepo.ScriptedTestBackendType,
+			BaseURL: scriptPath,
+		}))
+	}
 
 	// Late-bound exactly as acp_cmd.go binds it: the toolset's cwd resolver and
 	// the approval router both read the transport the connection produces.
@@ -287,8 +358,8 @@ func newBeamRuntime(t *testing.T, dialog, policy string) *beamRuntime {
 	router := acpsvc.NewSessionRouter()
 
 	engine, err := BuildEngine(ctx, db, chatOpts{
-		EffectiveDefaultModel:    scriptedtest.DefaultModelName,
-		EffectiveDefaultProvider: modelrepo.ScriptedTestBackendType,
+		EffectiveDefaultModel:    model,
+		EffectiveDefaultProvider: provider,
 		ContenoxDir:              contenoxDir,
 		EffectiveHITL:            true,
 		EffectiveHITLService:     hitl,
@@ -307,8 +378,8 @@ func newBeamRuntime(t *testing.T, dialog, policy string) *beamRuntime {
 
 	host := startBeamHost(t, db, engine, acpsvc.Deps{
 		ChainRegistry:   chains,
-		DefaultModel:    scriptedtest.DefaultModelName,
-		DefaultProvider: modelrepo.ScriptedTestBackendType,
+		DefaultModel:    model,
+		DefaultProvider: provider,
 		WorkspaceID:     ResolveWorkspaceID(contenoxDir),
 		ContenoxDir:     contenoxDir,
 		SessionRouter:   router,

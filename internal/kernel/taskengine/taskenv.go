@@ -13,6 +13,7 @@ import (
 
 	"github.com/Masterminds/sprig/v3"
 	"github.com/contenox/contenox/errdefs"
+	"github.com/contenox/contenox/internal/models/modelrepo"
 	"github.com/contenox/contenox/internal/services/settings"
 	"github.com/contenox/contenox/libtracker"
 	"github.com/getkin/kin-openapi/openapi3"
@@ -244,6 +245,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 	// rootFailureErr holds the first taskErr routed through on_failure,
 	// reported ahead of a later failure handler's own error; cleared on success.
 	var rootFailureErr error
+	var recovering bool
 	var rootFailureTaskID string
 	var rootFailureRetries int
 
@@ -434,6 +436,10 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 				tokenLimit = settings.FallbackContextTokens
 			}
 
+			if recovering {
+				taskCtx = modelrepo.WithoutRequestedContextLength(taskCtx)
+			}
+
 			output, outputType, transitionEval, taskErr = env.exec.TaskExec(taskCtx, startingTime, tokenLimit, chainContext, &stepTask, taskInput, taskInputType)
 			if taskErr != nil {
 				taskErr = fmt.Errorf("task %s: %w", currentTask.ID, taskErr)
@@ -519,6 +525,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 		if taskErr != nil {
 			if currentTask.Transition.OnFailure != "" {
 				if rootFailureErr == nil {
+					recovering = true
 					rootFailureErr = taskErr
 					rootFailureTaskID = currentTask.ID
 					rootFailureRetries = maxRetries

@@ -106,6 +106,40 @@ func copyOfTestBinary(t *testing.T) string {
 	return dst
 }
 
+func TestSmoke_DefaultCarveoutsAllowCodexState(t *testing.T) {
+	if !landlockSupported() {
+		t.Skip("sandbox unavailable: landlock filesystem ABI not present on this kernel")
+	}
+	operatorHome := t.TempDir()
+	for _, dir := range []string{".codex/tmp/arg0", ".claude", ".config/goose", ".contenox"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(operatorHome, dir), 0o700))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd, err := libsandbox.Command(ctx, libsandbox.Spec{
+		WorkspaceRoot: t.TempDir(),
+		Home:          operatorHome,
+		FS:            defaultAgentCarveouts(),
+	}, "/bin/sh", "-c", `set -eu
+: > "$HOME/.codex/state.sqlite"
+: > "$HOME/.codex/state.sqlite-wal"
+: > "$HOME/.codex/tmp/arg0/probe"
+for dir in .claude .config/goose .contenox; do
+  if ( : > "$HOME/$dir/probe" ) 2>/dev/null; then
+    exit 1
+  fi
+done`)
+	require.NoError(t, err)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	for _, path := range []string{"state.sqlite", "state.sqlite-wal", "tmp/arg0/probe"} {
+		require.FileExists(t, filepath.Join(operatorHome, ".codex", path))
+	}
+	for _, dir := range []string{".claude", ".config/goose", ".contenox"} {
+		require.NoFileExists(t, filepath.Join(operatorHome, dir, "probe"))
+	}
+}
+
 // sandboxSupported reports whether this host can build the wall.
 func sandboxSupported() bool {
 	return landlockSupported() && usernsNetnsSupported()

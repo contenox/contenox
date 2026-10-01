@@ -260,7 +260,7 @@ tasks:
   # multi-GB model pulls out of the per-push run, the nightly gate passes
   # nothing so everything is attempted.
   apitests:
-    desc: VFS HTTP contracts and, with a configured gateway, vendor SDK contracts
+    desc: VFS HTTP contracts against VFSAPI_BASE_URL and, with a configured gateway, vendor SDK contracts
     cmds:
       - python3 -m pytest internal/apitests -q
 

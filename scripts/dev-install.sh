@@ -62,11 +62,14 @@ fi
 
 mkdir -p "$(dirname "$target")"
 if [ -e "$target" ] && [ ! -L "$target" ]; then
-  [ ! -e "$target.pre-dev-install" ] || {
-    echo "refusing to replace $target: backup already exists at $target.pre-dev-install" >&2
-    exit 1
-  }
-  mv "$target" "$target.pre-dev-install"
+  backup=$target.pre-dev-install
+  suffix=0
+  while [ -e "$backup" ] || [ -L "$backup" ]; do
+    suffix=$((suffix + 1))
+    backup=$target.pre-dev-install.$suffix
+  done
+  mv "$target" "$backup"
+  echo "Backed up $target -> $backup"
 fi
 ln -sfn "$cli" "$target"
 ln -sfn "$cli" "$local_target"

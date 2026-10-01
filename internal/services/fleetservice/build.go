@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/contenox/contenox/internal/kernel/agentinstance"
 	"github.com/contenox/contenox/internal/kernel/taskengine"
@@ -17,10 +18,12 @@ import (
 	"github.com/contenox/contenox/internal/services/clikv"
 	"github.com/contenox/contenox/internal/services/hitlservice"
 	"github.com/contenox/contenox/internal/services/missionservice"
+	"github.com/contenox/contenox/internal/services/missiontools"
 	"github.com/contenox/contenox/internal/services/operatorinbox"
 	"github.com/contenox/contenox/internal/services/reportrouter"
 	"github.com/contenox/contenox/internal/services/vfs"
 	"github.com/contenox/contenox/internal/store/runtimetypes"
+	"github.com/contenox/contenox/libacp"
 	"github.com/contenox/contenox/libbus"
 	libdb "github.com/contenox/contenox/libdbexec"
 	"github.com/contenox/contenox/libtracker"
@@ -31,6 +34,12 @@ type InProcessDeps struct {
 	DB       libdb.DBManager
 	Bus      libbus.Messenger
 	Missions missionservice.Service
+
+	// AttentionAsker connects external mission questions to the host's approval inbox.
+	AttentionAsker missiontools.AttentionAsker
+
+	// MissionProxyCommand overrides the host executable's mission bridge command.
+	MissionProxyCommand []string
 
 	// ProjectRoot is the working directory a dispatched mission defaults to when the request names none and no allowlist is configured (see service.resolveCwd).
 	ProjectRoot string
@@ -76,6 +85,13 @@ type InProcessDeps struct {
 
 // BuildInProcess embeds the fleet a host process dispatches missions through, returning the fleet Service, the agent registry, and one teardown func that stops the report router, closes the kernel, and reaps every dispatched child subprocess; the host must run it on shutdown.
 func BuildInProcess(ctx context.Context, deps InProcessDeps) (Service, agentregistryservice.Service, func(), error) {
+	lifetime, cancel := context.WithCancel(ctx)
+	built := false
+	defer func() {
+		if !built {
+			cancel()
+		}
+	}()
 	agents := agentregistryservice.New(deps.DB)
 
 	if deps.DiscoverAgents != nil {
@@ -134,6 +150,38 @@ func BuildInProcess(ctx context.Context, deps InProcessDeps) (Service, agentregi
 	}
 
 	var opts []Option
+	proxy := deps.MissionProxyCommand
+	if len(proxy) == 0 {
+		executable, err := os.Executable()
+		if err != nil {
+			stopRouter()
+			_ = kernel.Close()
+			return nil, nil, nil, err
+		}
+		proxy = []string{executable, "mission", "bridge"}
+	}
+	missionRepo := missiontools.New(deps.Missions, missiontools.WithAttentionAsker(deps.AttentionAsker))
+	var toolsMu sync.Mutex
+	toolClosers := make(map[string]func())
+	closeMissionTools := func(missionID string) {
+		toolsMu.Lock()
+		close := toolClosers[missionID]
+		delete(toolClosers, missionID)
+		toolsMu.Unlock()
+		if close != nil {
+			close()
+		}
+	}
+	opts = append(opts, WithMissionToolBridge(func(_ context.Context, missionID, cwd string) ([]libacp.McpServer, func(), error) {
+		server, close, err := missiontools.OpenMCP(lifetime, missionRepo, missionID, cwd, proxy)
+		if err != nil {
+			return nil, nil, err
+		}
+		toolsMu.Lock()
+		toolClosers[missionID] = close
+		toolsMu.Unlock()
+		return []libacp.McpServer{server}, func() { closeMissionTools(missionID) }, nil
+	}))
 	if deps.PolicySource != nil {
 		opts = append(opts, WithPolicyValidator(hitlservice.NewPolicyValidator(deps.PolicySource, runtimetypes.LocalTenantID, "")))
 		// A nil KVReader leaves the approval and checkpoint seams unbound, so this
@@ -155,7 +203,7 @@ func BuildInProcess(ctx context.Context, deps InProcessDeps) (Service, agentregi
 
 	// mission stop from any process reaches this host via the shared bus; the
 	// kernel hosting the unit reaps it (see stop.go).
-	stopTeardown, err := runStatusTeardown(ctx, deps.Bus, deps.Missions, kernel)
+	stopTeardown, err := runStatusTeardown(ctx, deps.Bus, deps.Missions, kernel, closeMissionTools)
 	if err != nil {
 		stopRouter()
 		_ = kernel.Close()
@@ -167,10 +215,12 @@ func BuildInProcess(ctx context.Context, deps InProcessDeps) (Service, agentregi
 	sweepAbandonedMissions(ctx, deps.Missions, deps.Tracker)
 
 	stop := func() {
+		cancel()
 		stopTeardown()
 		stopRouter()
 		_ = kernel.Close()
 	}
+	built = true
 	return fleet, agents, stop, nil
 }
 

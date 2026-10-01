@@ -233,7 +233,7 @@ func TestUnit_resolveContenoxDir(t *testing.T) {
 	}
 
 	// 2. Test from a directory with no .contenox anywhere in the tree.
-	noContenoxDir := filepath.Join(tempDir, "otherproject", "sub1")
+	noContenoxDir := filepath.Join(cleanAncestorRoot(t), "otherproject", "sub1")
 	if err := os.MkdirAll(noContenoxDir, 0755); err != nil {
 		t.Fatalf("Failed to create no-contenox subdirectories: %v", err)
 	}
@@ -248,6 +248,39 @@ func TestUnit_resolveContenoxDir(t *testing.T) {
 	fallbackDir := filepath.Join(noContenoxDir, ".contenox")
 	if resolvedDir2 != fallbackDir {
 		t.Errorf("Expected fallback dir %q, got %q", fallbackDir, resolvedDir2)
+	}
+}
+
+// cleanAncestorRoot returns a scratch root whose ancestors hold no .contenox
+// workspace marker: ResolveContenoxDir walks up to the filesystem root, so a
+// scratch tree below a home workspace resolves to that workspace instead of
+// reaching the cwd fallback.
+func cleanAncestorRoot(t *testing.T) string {
+	t.Helper()
+	for _, root := range []string{os.TempDir(), "/var/tmp"} {
+		dir, err := os.MkdirTemp(root, "contenox-clean-*")
+		if err != nil {
+			continue
+		}
+		t.Cleanup(func() { os.RemoveAll(dir) })
+		if !hasWorkspaceAncestor(dir) {
+			return dir
+		}
+	}
+	t.Skip("no scratch root with a workspace-free ancestor chain")
+	return ""
+}
+
+func hasWorkspaceAncestor(dir string) bool {
+	for {
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false
+		}
+		if _, err := os.Stat(filepath.Join(parent, ".contenox", "workspace.id")); err == nil {
+			return true
+		}
+		dir = parent
 	}
 }
 

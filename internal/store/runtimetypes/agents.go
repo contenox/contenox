@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Agent kinds: AgentKindChain is a user-declared task chain run as an ACP peer; AgentKindExternalACP is the internal spawn-config kind, not user-registerable.
+// Agent kinds distinguish a compiled task chain from a registered external ACP process.
 const (
 	AgentKindExternalACP = "external_acp"
 	AgentKindChain       = "chain"

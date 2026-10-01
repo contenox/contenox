@@ -2,6 +2,7 @@ package modelrepo
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 )
@@ -46,8 +47,9 @@ type AudioPart struct {
 // Message is a chat turn; assistant messages may carry ToolCalls, tool
 // messages carry ToolCallID (OpenAI/vLLM-compatible tool calling).
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Continuation *Continuation `json:"continuation,omitempty"`
+	Role         string        `json:"role"`
+	Content      string        `json:"content"`
 	// Images carries image attachments beside Content; routed only to providers reporting CanVision.
 	Images []ImagePart `json:"images,omitempty"`
 	// Audio carries audio attachments beside Content; routed only to providers reporting CanAudio.
@@ -126,8 +128,16 @@ type TokenUsage struct {
 // StreamTerminal is the typed terminal event of a stream: the provider's
 // verbatim finish reason plus final usage when reported there.
 type StreamTerminal struct {
+	Continuation *Continuation
 	FinishReason string
 	Usage        *TokenUsage
+}
+
+// Continuation carries opaque response items for replay only to the originating provider and model.
+type Continuation struct {
+	Provider string          `json:"provider"`
+	Model    string          `json:"model"`
+	Items    json.RawMessage `json:"items"`
 }
 
 // StreamParcel is one raw provider-stream delta, with exactly one field populated per parcel; a stream ends with one Terminal parcel or one Error parcel.

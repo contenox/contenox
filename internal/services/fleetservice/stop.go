@@ -36,7 +36,7 @@ func StopMission(ctx context.Context, missions missionservice.Service, hitl hitl
 	return nil
 }
 
-func runStatusTeardown(ctx context.Context, bus libbus.Messenger, missions missionservice.Service, kernel agentinstance.Manager) (func(), error) {
+func runStatusTeardown(ctx context.Context, bus libbus.Messenger, missions missionservice.Service, kernel agentinstance.Manager, closeMissionTools func(string)) (func(), error) {
 	ch := make(chan []byte, 16)
 	sub, err := bus.Stream(ctx, missionservice.StatusChangedSubject, ch)
 	if err != nil {
@@ -48,6 +48,7 @@ func runStatusTeardown(ctx context.Context, bus libbus.Messenger, missions missi
 			if err := json.Unmarshal(data, &ev); err != nil || ev.MissionID == "" {
 				continue
 			}
+			closeMissionTools(ev.MissionID)
 			// The event names no instance; the mission row holds which unit to reap.
 			m, err := missions.Get(ctx, ev.MissionID)
 			if err != nil || m.InstanceID == "" {

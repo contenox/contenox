@@ -20,18 +20,18 @@ type OpenAIStreamClient struct {
 
 // Stream emits raw StreamParcel deltas as they arrive, ending in exactly one terminal parcel.
 func (c *OpenAIStreamClient) Stream(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (<-chan *modelrepo.StreamParcel, error) {
-	reportErr, reportChange, end := c.tracker.Start(ctx, "stream", "openai", "model", c.modelName)
+	reportErr, reportChange, end := c.tracker.Start(ctx, "stream", c.providerType(), "model", c.modelName)
 	// end() is not deferred here; ownership passes to the goroutine below since the stream is asynchronous.
 
 	// No audio encoding on this wire format; refuse instead of dropping silently.
-	if err := modelrepo.RefuseAudioInput("openai", c.modelName, messages); err != nil {
+	if err := modelrepo.RefuseAudioInput(c.providerType(), c.modelName, messages); err != nil {
 		reportErr(err)
 		end()
 		return nil, err
 	}
 
 	streamCh := make(chan *modelrepo.StreamParcel)
-	usesResponses := openAIUsesResponsesEndpoint(c.modelName)
+	usesResponses := c.codex != nil || openAIUsesResponsesEndpoint(c.modelName)
 	endpoint := "/chat/completions"
 	var requestBody []byte
 	var nameMap map[string]string
@@ -39,8 +39,11 @@ func (c *OpenAIStreamClient) Stream(ctx context.Context, messages []modelrepo.Me
 
 	if usesResponses {
 		var req openAIResponsesRequest
-		req, nameMap = buildOpenAIResponsesRequestWithCapabilities(c.modelName, messages, args, c.supportsThink)
-		c.clampResponsesMaxOutputTokens(&req)
+		req, nameMap, err = c.buildResponsesRequest(messages, args)
+		if err != nil {
+			end()
+			return nil, err
+		}
 		req.Stream = true
 		requestBody, err = json.Marshal(req)
 		endpoint = "/responses"
@@ -57,15 +60,19 @@ func (c *OpenAIStreamClient) Stream(ctx context.Context, messages []modelrepo.Me
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+endpoint, bytes.NewBuffer(requestBody))
-	if err != nil {
-		end()
-		return nil, fmt.Errorf("failed to create request: %w", err)
+	var resp *http.Response
+	if c.codex != nil {
+		resp, err = c.codex.request(ctx, http.MethodPost, endpoint, requestBody)
+	} else {
+		httpReq, createErr := http.NewRequestWithContext(ctx, "POST", c.baseURL+endpoint, bytes.NewBuffer(requestBody))
+		if createErr != nil {
+			end()
+			return nil, fmt.Errorf("failed to create request: %w", createErr)
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+		resp, err = c.httpClient.Do(httpReq)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
-
-	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		err = fmt.Errorf("HTTP request failed for model %s: %w", c.modelName, err)
 		reportErr(err)
@@ -90,7 +97,7 @@ func (c *OpenAIStreamClient) Stream(ctx context.Context, messages []modelrepo.Me
 		defer end()
 
 		if usesResponses {
-			streamResponsesSSE(ctx, resp.Body, nameMap, streamCh, reportErr, reportChange)
+			streamResponsesSSE(ctx, resp.Body, nameMap, streamCh, reportErr, reportChange, c.responseContinuation)
 			return
 		}
 
@@ -169,7 +176,7 @@ type responsesSSEEvent struct {
 	} `json:"error"`
 }
 
-func (ev responsesSSEEvent) errorText(rawPayload string) string {
+func (ev responsesSSEEvent) errorText() string {
 	code, msg := ev.Code, ev.Message
 	if ev.Error != nil {
 		if code == "" {
@@ -188,7 +195,10 @@ func (ev responsesSSEEvent) errorText(rawPayload string) string {
 		}
 	}
 	if code == "" && msg == "" {
-		return truncateString(rawPayload, 512)
+		if ev.Response != nil && ev.Response.IncompleteDetails != nil {
+			return ev.Response.IncompleteDetails.Reason
+		}
+		return "no provider error detail"
 	}
 	return code + ": " + msg
 }
@@ -200,6 +210,7 @@ func streamResponsesSSE(
 	out chan<- *modelrepo.StreamParcel,
 	reportErr func(error),
 	reportChange func(string, any),
+	continuation func(*openAIResponse) *modelrepo.Continuation,
 ) {
 	sc := bufio.NewScanner(body)
 	sc.Buffer(make([]byte, 64*1024), 1024*1024)
@@ -227,7 +238,10 @@ func streamResponsesSSE(
 
 		var ev responsesSSEEvent
 		if err := json.Unmarshal([]byte(payload), &ev); err != nil {
-			continue
+			err := fmt.Errorf("responses: malformed stream event")
+			reportErr(err)
+			send(&modelrepo.StreamParcel{Error: err})
+			return
 		}
 
 		switch ev.Type {
@@ -250,7 +264,6 @@ func streamResponsesSSE(
 			}
 
 		case "response.output_item.added":
-			// A function_call item opens a tool-call slot; argument fragments follow as separate delta events.
 			if ev.Item == nil || strings.ToLower(ev.Item.Type) != "function_call" {
 				continue
 			}
@@ -283,7 +296,6 @@ func streamResponsesSSE(
 			}
 
 		case "response.completed":
-			// Fallback for gateways that never emitted reasoning-summary deltas.
 			if !emittedReasoning {
 				if summary := responsesReasoningSummaryText(ev.Response); summary != "" {
 					if !send(&modelrepo.StreamParcel{Thinking: summary}) {
@@ -292,6 +304,9 @@ func streamResponsesSSE(
 				}
 			}
 			term := &modelrepo.StreamTerminal{FinishReason: "stop"}
+			if continuation != nil {
+				term.Continuation = continuation(ev.Response)
+			}
 			if ev.Response != nil {
 				term.Usage = ev.Response.Usage.neutralUsage()
 			}
@@ -305,20 +320,24 @@ func streamResponsesSSE(
 			return
 
 		case "error":
-			err := fmt.Errorf("responses stream error %s", ev.errorText(payload))
+			err := modelrepo.ClassifyProviderError(fmt.Errorf("responses stream error %s", ev.errorText()), 0, ev.errorText(), ev.errorText())
 			reportErr(err)
 			send(&modelrepo.StreamParcel{Error: err})
 			return
 
 		case "response.failed", "response.incomplete":
-			// Without this, the stream would end silently as an empty completion.
-			err := fmt.Errorf("responses stream %s %s", ev.Type, ev.errorText(payload))
+			err := modelrepo.ClassifyProviderError(fmt.Errorf("responses stream %s %s", ev.Type, ev.errorText()), 0, ev.errorText(), ev.errorText())
 			reportErr(err)
 			send(&modelrepo.StreamParcel{Error: err})
 			return
 		}
 	}
 
+	if err := ctx.Err(); err != nil {
+		reportErr(err)
+		send(&modelrepo.StreamParcel{Error: err})
+		return
+	}
 	if err := sc.Err(); err != nil && err != io.EOF {
 		err = fmt.Errorf("responses: stream read: %w", err)
 		reportErr(err)
@@ -326,7 +345,6 @@ func streamResponsesSSE(
 		return
 	}
 
-	// Surface a stream that ended without response.completed/failed instead of reading as success.
 	err := fmt.Errorf("responses: stream ended without response.completed")
 	reportErr(err)
 	send(&modelrepo.StreamParcel{Error: err})

@@ -12,7 +12,7 @@ type OpenAIPromptClient struct {
 }
 
 func (c *OpenAIPromptClient) Prompt(ctx context.Context, systemInstruction string, temperature float32, prompt string) (string, *modelrepo.TokenUsage, error) {
-	reportErr, reportChange, end := c.tracker.Start(ctx, "prompt", "openai", "model", c.modelName)
+	reportErr, reportChange, end := c.tracker.Start(ctx, "prompt", c.providerType(), "model", c.modelName)
 	defer end()
 
 	messages := []modelrepo.Message{

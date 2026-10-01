@@ -17,6 +17,21 @@ const StalePolicyPresetsCode = "hitl_policy_presets_stale"
 // declarations no longer describe this host. Never blocking.
 const TrustedBinaryIssueCode = "hitl_trusted_binaries_drift"
 
+// AddMissionPolicyIssue reports a missing default mission envelope without blocking chat.
+func AddMissionPolicyIssue(r Result, policy string) Result {
+	if strings.TrimSpace(policy) != "" {
+		return r
+	}
+	r.Issues = append(append([]Issue(nil), r.Issues...), Issue{
+		Code:       "missing_default_mission_policy",
+		Severity:   "warning",
+		Category:   CategoryPolicy,
+		Message:    "No default mission envelope is set. Missions require --policy until one is configured; the default envelope permits ordinary reads and asks before writes or shell commands.",
+		CLICommand: "contenox config set execution.missions.permissions.policy hitl-policy-default.json",
+	})
+	return r
+}
+
 // TrustedBinaryDrift names one policy file together with the declaration
 // findings for it. The caller (the CLI, which knows the policy search path)
 // does the detection; this package only knows how to report it.

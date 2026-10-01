@@ -163,6 +163,7 @@ func (s *State) Get(ctx context.Context) map[string]BackendRuntimeState {
 		if err != nil {
 		}
 		backendCopy.SetAPIKey(backend.GetAPIKey())
+		backendCopy.authorize = backend.authorize
 		state[backend.ID] = backendCopy
 		return true
 	})
@@ -272,6 +273,8 @@ func (s *State) processBackend(ctx context.Context, backend *runtimetypes.Backen
 		s.processGeminiBackend(ctx, backend, declaredModels)
 	case "openai", "anthropic":
 		s.processOpenAIBackend(ctx, backend, declaredModels)
+	case "openai-codex":
+		s.processCodexBackend(ctx, backend, declaredModels)
 	case "vertex-google":
 		s.processVertexBackend(ctx, backend, declaredModels)
 	case "bedrock":

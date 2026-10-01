@@ -73,6 +73,7 @@ The first-party terminal client, and the front door: a person at the keyboard, o
 contenox                     # on a terminal, this is beam
 contenox beam                # the same, said explicitly
 contenox beam --new          # start a fresh session instead of resuming
+contenox beam --agent codex  # start a fresh session with a registered agent
 contenox beam --session 9f2c1a4e     # open a session by id
 ```
 
@@ -83,6 +84,7 @@ The transcript is written into your native scrollback rather than a managed pane
 | Flag | Description |
 | ---- | ----------- |
 | `--new` | Start a new session rather than resuming the active one |
+| `--agent <name>` | Start a fresh session with this registered agent as the main conversation partner; cannot be combined with `--session` |
 | `--session <id>` | Open the session with this id instead of the newest one in the directory. A session that is not there is an error, not a create — exit 1 |
 | `--light` | Light-background colour scheme |
 | `--plain` | Plain output: no colour and no redrawing, for terminals and captures that want neither |
@@ -291,16 +293,21 @@ The login-flow flags and `--insecure-skip-tls-verify` can only be set at `tools 
 
 > **Beta:** this command's interface may change. It is not gated: `contenox agent` is listed in `contenox --help` and `contenox agent list` shows every discovered agent whether or not `opt-in-beta` is set. Among them is the shipped `agent-planner` — the chain's `id`, declared inside `chain-planner-default.json` (see [Chain files: naming, roles, and resolution](/docs/guide/chains/naming/)). What `contenox config set features.beta.enabled true` (or `CONTENOX_OPT_IN_BETA=1`) does turn on is the [event-trigger tier](/docs/guide/events/) and the beta line `contenox doctor` prints.
 
-Inspect and manage the runtime's declared agents. Most agents are [declared in a Markdown file](/docs/guide/declarations/) under `.contenox/agents/`; agents you already keep in `.claude/agents/` or `.agents/agents/` are found there too, and a task chain on disk is an agent as well. Every one is registered automatically by discovery — this command inspects them, toggles their enabled state, and removes stale registrations. Declared agents are what `/mission` and `contenox mission fire` dispatch.
+Register, inspect, and drive agents. Most agents are [declared in a Markdown file](/docs/guide/declarations/) under `.contenox/agents/`; agents you already keep in `.claude/agents/` or `.agents/agents/` are found there too. Discovery registers those automatically. An installed program that speaks ACP can instead be registered as an external agent and driven through Contenox's ACP client host.
 
 ```bash
+contenox agent add claude -- npx -y @zed-industries/claude-code-acp
+contenox agent check claude               # one live ACP turn; permission asks denied
+contenox agent edit claude                # argv, env, cwd, MCP allowlist
 contenox agent list                       # id, name, source, kind, enabled
-contenox agent show agent-reviewer        # provenance + config_json
-contenox agent enable agent-reviewer      # (and: disable)
-contenox agent remove agent-reviewer      # (alias: rm)
+contenox agent show reviewer              # provenance + config_json
+contenox agent enable reviewer            # (and: disable)
+contenox agent remove reviewer            # (alias: rm)
 ```
 
-`remove` deletes only the local registration; discovery may re-register it on the next startup if its chain file still exists.
+`agent add` records the exact command after `--`; it does not install the agent. `agent check` streams one real ACP turn and returns a protocol-shaped rejection to every permission request, so connection verification cannot authorize an action. See [Host an external ACP agent](/docs/integrations/agents/external-acp/) for the run-config shape, MCP forwarding, and Linux sandbox boundary.
+
+`remove` deletes only the local registration. Discovery may re-register a declared agent when its Markdown or chain file still exists. Removing a manually registered external agent does not uninstall its command.
 
 ### `contenox vet [path]`
 
@@ -399,13 +406,34 @@ contenox backend remove myvllm
 
 | Flag            | Description                                                                               |
 | --------------- | ----------------------------------------------------------------------------------------- |
-| `--type`        | Backend type (default `ollama`). Not validated against a fixed enum — see below. |
+| `--type`        | Backend type (default `ollama`). See `contenox backend add --help` for supported types. |
 | `--url`         | Base URL. Inferred automatically for `ollama`, `openai`, `anthropic`, and `gemini` when omitted; **required** for `vllm`, `bedrock`, and `vertex-google` (`bedrock`/`vertex-google` error immediately if omitted, since their URL is account-specific and cannot be defaulted) |
 | `--api-key-env` | Environment variable holding the API key (preferred)                                      |
 | `--api-key`     | API key literal (avoid — use `--api-key-env`)                                             |
 | `--script`      | **`scripted-test` only.** Path to the JSON dialog the backend replays. Validated when the backend is added. |
 
-`--type` accepts any string; only `ollama`, `openai`, `anthropic`, and `gemini` get an inferred base URL. Pass `--url` explicitly for `vllm`, `bedrock`, `vertex-google`, or any other type.
+Backend registration validates the type. Types with account-specific or custom
+endpoints require `--url`; `openai-codex` uses a fixed subscription endpoint.
+
+#### ChatGPT device login
+
+```bash
+contenox backend add chatgpt --type openai-codex
+contenox backend login chatgpt
+contenox backend show chatgpt
+contenox model list
+contenox backend logout chatgpt
+```
+
+`login` prints a device-code authorization link and waits for completion. Enable
+device-code login in ChatGPT Security settings first. Login does not select a
+model or change inference defaults. `show` reports secret-free local authentication
+state; `logout` clears credentials without deleting the backend or revoking remote
+authorization. These authentication commands apply to `openai-codex`, which
+rejects API-key flags and endpoint overrides.
+
+See [ChatGPT subscription setup](/docs/integrations/providers/chatgpt/) for account
+requirements, model selection, Beam usage, credential handling, and troubleshooting.
 
 #### `scripted-test` — the backend that calls no model
 
@@ -516,7 +544,7 @@ For OAuth servers the full sequence is: `contenox mcp add <name> ... --auth-type
 
 ### `contenox mission`
 
-Fire and inspect missions: unattended work orders dispatched at a declared agent, run inside an envelope (a named HITL policy that bounds what the unit may do unattended), with durable reports.
+Fire and inspect missions: unattended work orders dispatched at a registered agent, run inside an envelope (a named HITL policy that bounds what the unit may do unattended), with durable reports.
 
 ```bash
 contenox mission list                       # newest first: id, agent, envelope, status, age
@@ -644,7 +672,7 @@ See [Least-privilege shell environment](/docs/guide/confinement/environment/) fo
 
 ### The `/mission` slash command
 
-Missions are the dual of chat mode. In chat you prompt turn by turn and approve each gated action yourself. In mission mode you fire a one-line intent at a declared agent under an **envelope** — a HITL policy that bounds what it may do unattended — and keep working; the unit acts inside the envelope, and only crossing it costs your attention.
+Missions are the dual of chat mode. In chat you prompt turn by turn and approve each gated action yourself. In mission mode you fire a one-line intent at a registered agent under an **envelope** — a HITL policy that bounds what it may do unattended — and keep working; the unit acts inside the envelope, and only crossing it costs your attention.
 
 From inside a session (`contenox beam`, or an editor over `contenox acp`) fire a mission without leaving the conversation:
 

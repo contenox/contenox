@@ -612,6 +612,7 @@ func classifyBackendError(err string) backendErrorKind {
 		strings.Contains(msg, "failed to retrieve api key configuration"):
 		return backendErrorAPIKeyMissing
 	case strings.Contains(msg, "401"),
+		strings.Contains(msg, "chatgpt login required"),
 		strings.Contains(msg, "403"),
 		strings.Contains(msg, "unauthorized"),
 		strings.Contains(msg, "forbidden"),
@@ -636,6 +637,9 @@ func classifyBackendError(err string) backendErrorKind {
 }
 
 func backendHint(backend runtimetypes.Backend, kind backendErrorKind) string {
+	if backend.Type == "openai-codex" {
+		return fmt.Sprintf("Check ChatGPT subscription access. Run: contenox backend show %s; to sign in, enable device login in ChatGPT Security settings and run: contenox backend login %s", backend.Name, backend.Name)
+	}
 	switch kind {
 	case backendErrorAPIKeyMissing:
 		switch modelrepo.CanonicalBackendType(backend.Type) {
@@ -790,6 +794,8 @@ func providerFixPathForChecks(provider string, checks []BackendCheck) string {
 
 func providerAddCommand(provider string) string {
 	switch modelrepo.CanonicalBackendType(provider) {
+	case "openai-codex":
+		return "contenox backend add chatgpt --type openai-codex && contenox backend login chatgpt"
 	case "modeld", "local":
 		return "contenox backend add modeld --type modeld"
 	case "openai":
@@ -809,6 +815,8 @@ func providerAddCommand(provider string) string {
 
 func noChatModelsCommand(provider string) string {
 	switch modelrepo.CanonicalBackendType(provider) {
+	case "openai-codex":
+		return "contenox model list   # check subscription access; select an available model, not an API-only model"
 	case "modeld", "local":
 		return "contenox model list   # if empty, pull a local model (e.g. contenox model pull qwen2.5-coder-7b)"
 	case "openai", "anthropic", "gemini":
@@ -824,6 +832,8 @@ func noChatModelsCommand(provider string) string {
 
 func primaryDiagnosticCommand(provider string) string {
 	switch modelrepo.CanonicalBackendType(provider) {
+	case "openai-codex":
+		return "contenox doctor --json   # check ChatGPT login and account model access"
 	case "modeld", "local":
 		return "contenox modeld status   # check native engine status"
 	case "openai", "anthropic", "gemini":

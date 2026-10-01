@@ -132,6 +132,7 @@ type BackendStore interface {
 	GetBackend(ctx context.Context, id string) (*Backend, error)
 	UpdateBackend(ctx context.Context, backend *Backend) error
 	DeleteBackend(ctx context.Context, id string) error
+	LockBackend(ctx context.Context, id string) error
 	ListAllBackends(ctx context.Context) ([]*Backend, error)
 	ListBackends(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*Backend, error)
 	GetBackendByName(ctx context.Context, name string) (*Backend, error)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -51,6 +52,67 @@ func (t *Transport) hasMissionCapability() bool {
 	return t.deps.Fleet != nil && t.deps.Agents != nil
 }
 
+func (t *Transport) missionCompletions() libacp.CommandCompletionMeta {
+	agents := []string{}
+	hasDefaultPolicy := false
+	if t.deps.DB != nil {
+		ctx := t.connCtx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		store := runtimetypes.New(t.deps.DB.WithoutTransaction())
+		hasDefaultPolicy = strings.TrimSpace(clikv.Read(ctx, store, missionPolicyConfigKey)) != ""
+		var cursor *time.Time
+		for {
+			page, err := store.ListAgents(ctx, cursor, runtimetypes.MAXLIMIT)
+			if err != nil || len(page) == 0 {
+				break
+			}
+			for _, agent := range page {
+				if agent.Enabled {
+					agents = append(agents, agent.Name)
+				}
+			}
+			if len(page) < runtimetypes.MAXLIMIT {
+				break
+			}
+			cursor = &page[len(page)-1].CreatedAt
+		}
+	}
+	sort.Strings(agents)
+	completions := map[string]libacp.CommandCompletion{
+		"": {Values: append([]string{"--policy"}, agents...), Hint: "Choose an agent or --policy; or type an intent for the default agent. Choosing never dispatches."},
+	}
+	intent := libacp.CommandCompletion{Hint: "Type the mission intent, then Enter to dispatch. Esc closes the picker; Ctrl+C clears the draft."}
+	for _, agent := range agents {
+		completions[agent] = intent
+	}
+	var envelopes []string
+	if t.deps.MissionEnvelopes != nil {
+		for _, envelope := range t.deps.MissionEnvelopes.ListEnvelopes() {
+			envelopes = append(envelopes, envelope.Name)
+			prefix := "--policy " + envelope.Name
+			completions[prefix] = libacp.CommandCompletion{Values: agents, Hint: "Choose an agent, or type an intent for the default agent."}
+			for _, agent := range agents {
+				completions[prefix+" "+agent] = intent
+			}
+		}
+	}
+	completions["--policy"] = libacp.CommandCompletion{Values: envelopes, Hint: "Choose a mission envelope, then an agent and intent. /mission alone lists defaults and envelopes."}
+	if !hasDefaultPolicy {
+		choices := make([]string, 0, len(envelopes))
+		for _, envelope := range envelopes {
+			choices = append(choices, "--policy "+envelope)
+		}
+		hint := "Choose a mission envelope with Up/Down and Enter or Tab, then an agent and intent. No mission is fired by selecting."
+		if len(choices) == 0 {
+			hint = "No mission envelopes are available. Run contenox init, then restart Beam."
+		}
+		completions[""] = libacp.CommandCompletion{Values: choices, Hint: hint}
+	}
+	return libacp.CommandCompletionMeta{Completions: completions}
+}
+
 func (t *Transport) handleMission(ctx context.Context, sess *sessionEntry, args string) (string, error) {
 	if !t.hasMissionCapability() {
 		return "", fmt.Errorf("mission dispatch is unavailable in this session: /mission needs a configured model and the in-process fleet. Configure a model with `contenox config set default-model …` and fire /mission from your editor session.")
@@ -69,6 +131,9 @@ func (t *Transport) handleMission(ctx context.Context, sess *sessionEntry, args 
 	}
 
 	agentName, intent, named := t.resolveMissionAgentAndIntent(ctx, store, rest)
+	if named && strings.TrimSpace(intent) == "" {
+		return "", fmt.Errorf("describe what %s should do: /mission %s <intent>; no mission dispatched", agentName, agentName)
+	}
 	if strings.TrimSpace(agentName) == "" {
 		return "", fmt.Errorf("no mission agent: name one as `/mission <agent-name> <intent>`, or set a default with `contenox config set execution.missions.default_agent <name>`")
 	}
@@ -222,7 +287,7 @@ func (t *Transport) missionStatus(ctx context.Context, store runtimetypes.Store)
 // `/mission <agent-name> <intent>`.
 func (t *Transport) resolveMissionAgentAndIntent(ctx context.Context, store runtimetypes.Store, args string) (agentName, intent string, named bool) {
 	first, rest := splitFirstToken(args)
-	if rest != "" && t.deps.Agents != nil {
+	if t.deps.Agents != nil {
 		if a, err := t.deps.Agents.GetByName(ctx, first); err == nil && a != nil {
 			return a.Name, rest, true
 		}

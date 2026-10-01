@@ -26,6 +26,7 @@ func LocalProviderAdapter(ctx context.Context, tracker libtracker.ActivityTracke
 			},
 			modelrepo.WithCatalogHTTPClient(modelrepo.SharedHTTPClient),
 			modelrepo.WithCatalogTracker(tracker),
+			modelrepo.WithCatalogAuthorizer(state.authorize),
 		)
 		if err != nil {
 			continue

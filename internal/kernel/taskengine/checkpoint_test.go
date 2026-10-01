@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/contenox/contenox/internal/models/modelrepo"
 	"reflect"
 	"testing"
 	"time"
@@ -14,9 +15,10 @@ import (
 
 func fullyPopulatedMessage() Message {
 	return Message{
-		ID:      "msg-1",
-		Role:    "assistant",
-		Content: "content-1",
+		Continuation: &modelrepo.Continuation{Provider: "openai-codex", Model: "test-model", Items: json.RawMessage(`[{"type":"reasoning","encrypted_content":"opaque"}]`)},
+		ID:           "msg-1",
+		Role:         "assistant",
+		Content:      "content-1",
 		Images: []ImagePart{
 			{Data: []byte{0x01, 0x02, 0xFF}, MimeType: "image/png"},
 		},

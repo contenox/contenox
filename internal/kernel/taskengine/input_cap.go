@@ -50,6 +50,7 @@ func capTaskChatHistory(h ChatHistory, maxBytes int) ChatHistory {
 		if msgBytes > remaining {
 			if len([]byte(msg.Content)) >= remaining || len(msg.Thinking) == 0 {
 				msg.Content = capTaskString(msg.Content, remaining)
+				msg.Continuation = nil
 				msg.Thinking = ""
 			} else {
 				remaining -= len([]byte(msg.Content))

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/contenox/contenox/internal/models/backendservice"
+	"github.com/contenox/contenox/internal/models/modelauth"
 	"github.com/contenox/contenox/internal/models/runtimestate"
 	"github.com/contenox/contenox/internal/services/clikv"
 	"github.com/contenox/contenox/internal/services/onboarding"
@@ -65,6 +66,7 @@ func buildSetupProviders() []setupProvider {
 		{key: "vertex-google", label: "Google Vertex AI (Gemini via gcloud ADC)", defaultModel: "gemini-3.6-flash", needsAPIKey: false, needsBaseURL: true, baseURLHint: "https://aiplatform.googleapis.com/v1/projects/YOUR_PROJECT/locations/global"},
 		{key: "bedrock", label: "AWS Bedrock", defaultModel: "us.anthropic.claude-3-5-sonnet-20241022-v2:0", needsAPIKey: false, needsBaseURL: true, baseURLHint: "https://bedrock-runtime.eu-central-1.amazonaws.com"},
 		{key: "vllm", label: "vLLM (self-hosted)", needsAPIKey: false, needsBaseURL: true, baseURLHint: "http://localhost:8000"},
+		{key: modelauth.ProviderType, label: "ChatGPT subscription (experimental, device login)", fixedBaseURL: modelauth.BaseURL},
 	}
 	return providers
 }
@@ -166,6 +168,9 @@ func runSetup(cmd *cobra.Command, out io.Writer) error {
 		return nil
 	}
 	sp := setupProviders[chosen]
+	if sp.key == modelauth.ProviderType {
+		return runCodexSetup(cmd, out, scanner)
+	}
 
 	var apiKey string
 	if sp.needsAPIKey {

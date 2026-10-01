@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/contenox/contenox/internal/kernel/llmresolver"
 	"github.com/contenox/contenox/internal/models/modelrepo"
 )
 
@@ -91,6 +92,23 @@ func ClassifyError(err error) ErrorClass {
 	// otherwise needs a marker added below to be classified at all.
 	if class, ok := classOfSentinel(err); ok {
 		return class
+	}
+
+	if errors.Is(err, llmresolver.ErrNoSatisfactoryModel) || errors.Is(err, llmresolver.ErrNoAvailableModels) {
+		return ClassPermanent
+	}
+	var httpErr *modelrepo.HTTPError
+	if errors.As(err, &httpErr) {
+		switch {
+		case httpErr.StatusCode == 429 || httpErr.StatusCode == 529:
+			return ClassRateLimit
+		case httpErr.StatusCode == 401 || httpErr.StatusCode == 403:
+			return ClassAuth
+		case httpErr.StatusCode >= 500:
+			return ClassServerError
+		default:
+			return ClassPermanent
+		}
 	}
 
 	s := strings.ToLower(err.Error())

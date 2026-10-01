@@ -2,6 +2,7 @@ package acpsvc
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"slices"
@@ -59,6 +60,9 @@ func (t *Transport) acpCommands() []libacp.AvailableCommand {
 	for _, c := range all {
 		if !t.commandAvailable(c.Name) {
 			continue
+		}
+		if c.Name == "mission" {
+			c.Meta, _ = json.Marshal(t.missionCompletions())
 		}
 		out = append(out, c)
 	}

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/contenox/contenox/internal/models/modelrepo"
 	"github.com/contenox/contenox/internal/models/runtimestate"
 	"github.com/contenox/contenox/internal/services/agentdecl"
+	"github.com/contenox/contenox/internal/services/clikv"
 	"github.com/contenox/contenox/internal/services/project"
 	"github.com/contenox/contenox/internal/services/setupcheck"
 	"github.com/contenox/contenox/internal/store/runtimetypes"
@@ -288,6 +290,31 @@ func RunGlobalInit(ctx context.Context, out io.Writer) error {
 	// before anything looks one up.
 	transpileSeededAgents(ctx, io.Discard, homeDir)
 	renderEnvelopePolicies(ctx, out, homeDir)
+	dbPath, err := globalDBPath()
+	if err != nil {
+		return err
+	}
+	db, err := OpenDBAt(ctx, dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	return seedMissionPolicy(ctx, out, runtimetypes.New(db.WithoutTransaction()))
+}
+
+func seedMissionPolicy(ctx context.Context, out io.Writer, store runtimetypes.Store) error {
+	var current string
+	err := store.GetKV(ctx, clikv.Prefix+"default-mission-policy", &current)
+	if err != nil && !errors.Is(err, libdb.ErrNotFound) {
+		return err
+	}
+	if strings.TrimSpace(current) != "" {
+		return nil
+	}
+	if err := clikv.WriteConfig(ctx, store, "", "execution.missions.permissions.policy", "hitl-policy-default.json"); err != nil {
+		return err
+	}
+	fmt.Fprintln(out, "  execution.missions.permissions.policy = hitl-policy-default.json (read freely; ask before writing or running)")
 	return nil
 }
 
@@ -548,6 +575,9 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 
 	if db != nil {
 		store := runtimetypes.New(db.WithoutTransaction())
+		if err := seedMissionPolicy(ctx, out, store); err != nil {
+			return err
+		}
 		curModel, err := getConfigKV(ctx, store, "default-model")
 		if err != nil {
 			return err

@@ -33,9 +33,10 @@ type streamToolAcc struct {
 
 // StreamResult is the assembled outcome of one stream.
 type StreamResult struct {
-	Content   string
-	Thinking  string
-	ToolCalls []ToolCall
+	Continuation *Continuation
+	Content      string
+	Thinking     string
+	ToolCalls    []ToolCall
 	// FinishReason is the provider's verbatim finish reason from the Terminal
 	// parcel, including length/content_filter class values.
 	FinishReason string
@@ -176,6 +177,7 @@ func (a *StreamAssembler) Result() (StreamResult, error) {
 	}
 
 	res := StreamResult{
+		Continuation: a.terminal.Continuation,
 		Content:      a.content.String(),
 		Thinking:     a.thinking.String(),
 		ToolCalls:    calls,

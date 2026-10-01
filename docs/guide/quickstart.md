@@ -177,6 +177,7 @@ Contenox needs at least one model to work. Pick the option that fits:
 | [Ollama](/docs/integrations/providers/ollama/) | Ollama installed locally, or an Ollama Cloud key |
 | [Google Gemini](/docs/integrations/providers/gemini/) | A free Gemini API key (no GPU) |
 | [OpenAI](/docs/integrations/providers/openai/) | An OpenAI API key |
+| [ChatGPT subscription](/docs/integrations/providers/chatgpt/) | ChatGPT account with Codex access; device-code login enabled (experimental) |
 | [Anthropic](/docs/integrations/providers/anthropic/) | An Anthropic API key (Claude) |
 | [AWS Bedrock](/docs/integrations/providers/bedrock/) | An AWS account with Bedrock model access |
 | [Vertex AI](/docs/integrations/providers/vertex/) | Gemini billed through your GCP project |

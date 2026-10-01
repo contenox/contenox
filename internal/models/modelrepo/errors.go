@@ -116,3 +116,26 @@ func ClassifyProviderError(err error, httpStatus int, code, message string) erro
 	}
 	return err
 }
+
+// HTTPError preserves the provider's HTTP status independently of its diagnostic text.
+type HTTPError struct {
+	StatusCode int
+	Code       string
+	Message    string
+	RequestID  string
+}
+
+// Error returns the status and available provider diagnostics.
+func (e *HTTPError) Error() string {
+	s := fmt.Sprintf("provider HTTP %d", e.StatusCode)
+	if e.Code != "" {
+		s += " (" + e.Code + ")"
+	}
+	if e.Message != "" {
+		s += ": " + e.Message
+	}
+	if e.RequestID != "" {
+		s += " [request " + e.RequestID + "]"
+	}
+	return s
+}

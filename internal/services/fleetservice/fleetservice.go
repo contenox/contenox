@@ -17,6 +17,7 @@ import (
 	"github.com/contenox/contenox/internal/services/missionservice"
 	"github.com/contenox/contenox/internal/services/missiontools"
 	"github.com/contenox/contenox/internal/services/vfs"
+	"github.com/contenox/contenox/internal/store/runtimetypes"
 	"github.com/contenox/contenox/libacp"
 	"github.com/contenox/contenox/libtracker"
 	"github.com/google/uuid"
@@ -75,6 +76,15 @@ type service struct {
 	guidance        guidanceReader
 	maxParallel     int
 	admission       sync.Mutex
+	missionTools    MissionToolBridge
+}
+
+// MissionToolBridge grants an external agent access to its own mission tools.
+type MissionToolBridge func(ctx context.Context, missionID, cwd string) ([]libacp.McpServer, func(), error)
+
+// WithMissionToolBridge supplies mission-scoped MCP servers for external agents.
+func WithMissionToolBridge(bridge MissionToolBridge) Option {
+	return func(s *service) { s.missionTools = bridge }
 }
 
 // Option configures a fleet Service at construction.
@@ -164,6 +174,27 @@ func (s *service) Dispatch(ctx context.Context, req DispatchRequest) (DispatchRe
 
 	// Generated before the session opens: the unit must hold it at construction (forwarded as session/new `_meta`); the mission row itself is written later.
 	missionID := uuid.NewString()
+	var servers []libacp.McpServer
+	closeTools := func() {}
+	if agent.Kind == runtimetypes.AgentKindExternalACP && s.missionTools != nil {
+		config, err := agent.ExternalACPConfig()
+		if err != nil {
+			return DispatchResult{}, err
+		}
+		if config.Transport != runtimetypes.ExternalACPTransportStdio {
+			return DispatchResult{}, fmt.Errorf("external missions require a local stdio agent for mission-tool delivery")
+		}
+		servers, closeTools, err = s.missionTools(ctx, missionID, cwd)
+		if err != nil {
+			return DispatchResult{}, fmt.Errorf("prepare external mission tools: %w", err)
+		}
+	}
+	toolsHandedOff := false
+	defer func() {
+		if !toolsHandedOff {
+			closeTools()
+		}
+	}()
 
 	// StartResolved (not Start): re-reading the row would open a TOCTOU window letting a newly disabled agent spawn; the lock spans admitUnit and StartResolved so concurrent dispatches cannot both pass the cap.
 	s.admission.Lock()
@@ -180,8 +211,9 @@ func (s *service) Dispatch(ctx context.Context, req DispatchRequest) (DispatchRe
 	// mission id and allowlist ride session/new `_meta`; on failure the fresh instance is torn down so a failed dispatch never leaks a subprocess.
 	dispatchBounds := s.dispatchResolutionBounds(ctx, req.HITLPolicyName)
 	sessionID, err := s.instances.OpenSession(ctx, instanceID, agentinstance.SessionSpec{
-		Cwd:  cwd,
-		Meta: missionservice.MarshalMissionMetaBounded(missionID, dispatchBounds.ModelAllowlist, dispatchBounds.BackendAllowlist, req.HITLPolicyName),
+		McpServers: servers,
+		Cwd:        cwd,
+		Meta:       missionservice.MarshalMissionMetaBounded(missionID, dispatchBounds.ModelAllowlist, dispatchBounds.BackendAllowlist, req.HITLPolicyName),
 	})
 	if err != nil {
 		_ = s.instances.Stop(instanceID)
@@ -211,13 +243,21 @@ func (s *service) Dispatch(ctx context.Context, req DispatchRequest) (DispatchRe
 	recordDispatch()
 
 	detached := context.WithoutCancel(ctx)
-	go s.driveUnattendedMission(detached, missionRun{
-		instanceID: instanceID,
-		sessionID:  sessionID,
-		missionID:  m.ID,
-		agentName:  req.AgentName,
-		intent:     req.Intent,
-	})
+	toolsHandedOff = true
+	go func() {
+		defer func() {
+			if m, err := s.missions.Get(detached, missionID); err == nil && missionservice.IsTerminalStatus(m.Status) {
+				closeTools()
+			}
+		}()
+		s.driveUnattendedMission(detached, missionRun{
+			instanceID: instanceID,
+			sessionID:  sessionID,
+			missionID:  m.ID,
+			agentName:  req.AgentName,
+			intent:     req.Intent,
+		})
+	}()
 
 	return result, nil
 }

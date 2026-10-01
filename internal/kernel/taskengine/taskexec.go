@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/contenox/contenox/internal/kernel/llmresolver"
 	"github.com/contenox/contenox/internal/kernel/taskengine/llmretry"
 	"github.com/contenox/contenox/internal/models/llmrepo"
 	libmodelprovider "github.com/contenox/contenox/internal/models/modelrepo"
@@ -1284,10 +1285,15 @@ func (exe *SimpleExec) executeLLM(
 	if !trimFired && len(messagesC) > 1 {
 		stableHistoryLen = len(messagesC) - 1
 	}
+	reserveContext := ctxLength
+	if requested := RequestedContextLengthFromContext(ctx); requested > 0 && (reserveContext <= 0 || requested < reserveContext) {
+		reserveContext = requested
+	}
+	outputReserve := reserveOutputTokens(llmCall, reserveContext)
 	req := llmrepo.Request{
 		ProviderTypes: providerNames,
 		ModelNames:    modelNames,
-		ContextLength: requestedContextRequirement(ctx, totalTokens),
+		ContextLength: requestedContextRequirement(ctx, totalTokens+outputReserve),
 		Tracker:       exe.tracker,
 		CacheHints: &llmrepo.CacheHints{
 			StableSystem:     true,
@@ -1299,7 +1305,7 @@ func (exe *SimpleExec) executeLLM(
 	// Every chat streams and is assembled engine-side; the non-streaming Chat
 	// call survives only as the fallback when stream setup fails.
 	streamed, resp, meta, err := exe.streamWithRetry(ctx, reportChange, llmCall, req, messagesC, chatArgs)
-	if !streamed && err != nil {
+	if !streamed && err != nil && streamSetupCanFallback(err) {
 		resp, meta, err = exe.chatWithRetry(ctx, reportChange, llmCall, req, messagesC, chatArgs)
 		if err != nil {
 			if len(tools) > 0 && isRecoverableToolSurfaceError(err) {
@@ -1308,7 +1314,7 @@ func (exe *SimpleExec) executeLLM(
 					"error":      err.Error(),
 				})
 				noToolReq := req
-				noToolReq.ContextLength = requestedContextRequirement(ctx, totalTokens-toolTokens)
+				noToolReq.ContextLength = requestedContextRequirement(ctx, totalTokens-toolTokens+outputReserve)
 				noToolMessages := stripToolProtocolMessages(messagesC)
 				noToolArgs := chatArgsForLLMCall(llmCall, nil)
 				resp, meta, err = exe.chatWithRetry(ctx, reportChange, llmCall, noToolReq, noToolMessages, noToolArgs)
@@ -1351,12 +1357,13 @@ func (exe *SimpleExec) executeLLM(
 	}
 	respMessage := resp.Message
 	input.Messages = append(input.Messages, Message{
-		ID:        uuid.NewString(),
-		Role:      respMessage.Role,
-		Content:   respMessage.Content,
-		Thinking:  respMessage.Thinking,
-		CallTools: callTools,
-		Timestamp: time.Now().UTC(),
+		Continuation: respMessage.Continuation,
+		ID:           uuid.NewString(),
+		Role:         respMessage.Role,
+		Content:      respMessage.Content,
+		Thinking:     respMessage.Thinking,
+		CallTools:    callTools,
+		Timestamp:    time.Now().UTC(),
 	})
 
 	// Count output tokens for the response content only, not tool calls.
@@ -1427,9 +1434,10 @@ func (exe *SimpleExec) streamChatOnce(
 
 	out := libmodelprovider.ChatResult{
 		Message: libmodelprovider.Message{
-			Role:     "assistant",
-			Content:  res.Content,
-			Thinking: res.Thinking,
+			Continuation: res.Continuation,
+			Role:         "assistant",
+			Content:      res.Content,
+			Thinking:     res.Thinking,
 		},
 		ToolCalls:    res.ToolCalls,
 		FinishReason: res.FinishReason,
@@ -1482,7 +1490,7 @@ func (exe *SimpleExec) streamWithRetry(
 		lastMeta = m
 		prevErr = e
 		if e != nil {
-			if !s {
+			if !s && streamSetupCanFallback(e) {
 				return nil, llmretry.NoRetry(e)
 			}
 			if produced > 0 {
@@ -1582,12 +1590,13 @@ func providerMessagesFromEngine(prelude, messages []Message) []libmodelprovider.
 			}
 		}
 		out = append(out, libmodelprovider.Message{
-			Role:       m.Role,
-			Content:    m.Content,
-			Images:     images,
-			Audio:      audio,
-			ToolCalls:  toolCalls,
-			ToolCallID: m.ToolCallID,
+			Role:         m.Role,
+			Content:      m.Content,
+			Images:       images,
+			Audio:        audio,
+			Continuation: m.Continuation,
+			ToolCalls:    toolCalls,
+			ToolCallID:   m.ToolCallID,
 		})
 	}
 	return out
@@ -1601,6 +1610,7 @@ func stripToolProtocolMessages(messages []libmodelprovider.Message) []libmodelpr
 		}
 		hadToolCalls := len(msg.ToolCalls) > 0
 		msg.ToolCalls = nil
+		msg.Continuation = nil
 		msg.ToolCallID = ""
 		if msg.Role == "assistant" && hadToolCalls && strings.TrimSpace(msg.Content) == "" {
 			continue
@@ -2138,4 +2148,13 @@ func (exe *SimpleExec) countToolTokens(ctx context.Context, modelName string, to
 		return 0, fmt.Errorf("failed to count tool tokens: %w", err)
 	}
 	return tokenCount, nil
+}
+
+func streamSetupCanFallback(err error) bool {
+	var httpErr *libmodelprovider.HTTPError
+	return !errors.As(err, &httpErr) &&
+		!errors.Is(err, llmresolver.ErrNoSatisfactoryModel) &&
+		!errors.Is(err, llmresolver.ErrNoAvailableModels) &&
+		!errors.Is(err, context.Canceled) &&
+		!errors.Is(err, context.DeadlineExceeded)
 }

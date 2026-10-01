@@ -1,6 +1,8 @@
 package runtimestate
 
 import (
+	"context"
+	"net/http"
 	"strings"
 	"time"
 
@@ -22,6 +24,7 @@ type BackendRuntimeState struct {
 	ResolvedInstance string `json:"resolvedInstance,omitempty"`
 	LiveEngine       string `json:"liveEngine,omitempty"` // "llama" or "openvino"
 	apiKey           string
+	authorize        func(context.Context) (http.Header, error)
 }
 
 type ModelPullStatus struct {

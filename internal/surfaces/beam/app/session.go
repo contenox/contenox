@@ -6,6 +6,7 @@ import (
 
 	"github.com/contenox/contenox/internal/surfaces/beam/comp/picker"
 	"github.com/contenox/contenox/internal/surfaces/beam/comp/transcript"
+	"github.com/contenox/contenox/internal/surfaces/beam/enginebridge"
 	"github.com/contenox/contenox/internal/surfaces/beam/frame"
 	"github.com/contenox/contenox/internal/surfaces/beam/input"
 	"github.com/contenox/contenox/internal/surfaces/beam/sessionvitals"
@@ -188,14 +189,14 @@ func (a *app) switchSession(ctx context.Context, target libacp.SessionID, label 
 // newSession mints a session and moves onto it. It opens the same unfiltered
 // window as a switch: acpsvc's available_commands_update for the new session
 // hits the wire before the caller can know the id to filter for.
-func (a *app) newSession(ctx context.Context) {
+func (a *app) newSession(ctx context.Context, agent string) {
 	if a.inFlight {
 		a.notice(frame.StyleWarn, "a turn is running — ctrl+c interrupts it, then /new")
 		return
 	}
 
 	a.deps.Bridge.SetActiveSession("")
-	resp, err := a.deps.Bridge.NewSession(ctx, libacp.NewSessionRequest{Cwd: a.deps.Cwd})
+	resp, err := a.deps.Bridge.NewSession(ctx, enginebridge.SessionRequest(a.deps.Cwd, agent))
 	if err != nil {
 		a.deps.Bridge.SetActiveSession(a.sessionID)
 		a.noticef(frame.StyleError, "could not start a session: %v — you are still on %s", err, a.sessionLabel())

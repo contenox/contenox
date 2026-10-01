@@ -1,86 +1,24 @@
-"""Shared fixtures for the VFS apitests.
-
-The suite drives internal/surfaces/vfsapi over HTTP. It needs no running
-product: internal/tools/vfsapitest is built and started once per session on a
-free port, with SQLite for storage and the acting identity read from the
-X-Actor header. Point VFSAPI_BASE_URL at an already-running host to use that
-instead.
-"""
+"""HTTP fixtures for a VFS host supplied through VFSAPI_BASE_URL."""
 from __future__ import annotations
 
 import json
 import os
-import shutil
-import socket
-import subprocess
-import tempfile
-import time
-from pathlib import Path
 
 import pytest
 import requests
 
-# conftest.py sits at <module root>/internal/apitests, and the host is a package
-# inside that module.
-MODULE_ROOT = Path(__file__).resolve().parent.parent.parent
-HOST_PACKAGE = "./internal/tools/vfsapitest"
 ACTOR_HEADER = "X-Actor"
 PREFIX = "/v1/vfs"
-
-
-def _free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
-def _wait_ready(origin: str, deadline: float = 30.0) -> None:
-    last: Exception | None = None
-    end = time.monotonic() + deadline
-    while time.monotonic() < end:
-        try:
-            if requests.get(f"{origin}/ready", timeout=2).status_code == 200:
-                return
-        except requests.RequestException as exc:  # the host is still coming up
-            last = exc
-        time.sleep(0.2)
-    raise RuntimeError(f"vfsapitest did not become ready at {origin} within {deadline}s (last error: {last})")
 
 
 @pytest.fixture(scope="session")
 def origin() -> str:
     """Scheme and authority of the surface's host, with no path prefix."""
     external = os.environ.get("VFSAPI_BASE_URL", "").strip()
-    if external:
-        url = external.rstrip("/")
-        return url[: -len(PREFIX)] if url.endswith(PREFIX) else url
-
-    port = _free_port()
-    workdir = tempfile.mkdtemp(prefix="vfsapitest-")
-    supplied = os.environ.get("VFSAPI_TEST_BIN")
-    binary = Path(supplied) if supplied else Path(workdir) / "vfsapitest"
-    if not supplied:
-        build = subprocess.run(
-            ["go", "build", "-o", str(binary), HOST_PACKAGE],
-            cwd=MODULE_ROOT, capture_output=True, text=True,
-        )
-        if build.returncode != 0:
-            raise RuntimeError(f"building the test host failed:\n{build.stdout}{build.stderr}")
-    proc = subprocess.Popen(
-        [str(binary), "-addr", f"127.0.0.1:{port}", "-db", str(Path(workdir) / "vfs.db")],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-    )
-    base = f"http://127.0.0.1:{port}"
-    try:
-        _wait_ready(base)
-        yield base
-    finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-        shutil.rmtree(workdir, ignore_errors=True)
+    if not external:
+        pytest.fail("Set VFSAPI_BASE_URL to a running VFS test host; Compose supplies it for api-tests.", pytrace=False)
+    url = external.rstrip("/")
+    return url[: -len(PREFIX)] if url.endswith(PREFIX) else url
 
 
 @pytest.fixture(scope="session")

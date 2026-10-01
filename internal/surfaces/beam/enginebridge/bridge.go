@@ -222,6 +222,15 @@ func (b *Bridge) Initialize(ctx context.Context) (libacp.InitializeResponse, err
 	})
 }
 
+// SessionRequest creates a workspace session request, optionally bound to a registered agent.
+func SessionRequest(cwd, agent string) libacp.NewSessionRequest {
+	req := libacp.NewSessionRequest{Cwd: cwd}
+	if agent != "" {
+		req.Meta, _ = json.Marshal(map[string]string{"contenox.agent": agent})
+	}
+	return req
+}
+
 func (b *Bridge) NewSession(ctx context.Context, req libacp.NewSessionRequest) (libacp.NewSessionResponse, error) {
 	if b.isClosed() {
 		return libacp.NewSessionResponse{}, ErrClosed

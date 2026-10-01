@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/contenox/contenox/internal/kernel/llmresolver"
 	"github.com/contenox/contenox/internal/kernel/taskengine/llmretry"
 	"github.com/contenox/contenox/internal/models/modelrepo"
 )
@@ -19,6 +20,9 @@ func TestUnit_ClassifyError(t *testing.T) {
 		want llmretry.ErrorClass
 	}{
 		{"nil", nil, llmretry.ClassNone},
+		{"resolver capacity containing 504", fmt.Errorf("%w: minicpm5-2b provides only 67504", llmresolver.ErrNoSatisfactoryModel), llmretry.ClassPermanent},
+		{"HTTP 400 containing 500", &modelrepo.HTTPError{StatusCode: 400, Message: "invalid item rs_500"}, llmretry.ClassPermanent},
+		{"HTTP 503 without status in message", &modelrepo.HTTPError{StatusCode: 503, Message: "try later"}, llmretry.ClassServerError},
 		{"canceled", context.Canceled, llmretry.ClassCanceled},
 		{"deadline", context.DeadlineExceeded, llmretry.ClassTimeout},
 		{"openai 429", fmt.Errorf("OpenAI API returned non-200 status: 429, body: rate limited for model gpt-4"), llmretry.ClassRateLimit},

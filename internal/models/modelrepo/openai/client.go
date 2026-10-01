@@ -16,6 +16,7 @@ import (
 )
 
 type openAIClient struct {
+	codex           *codexCatalog
 	baseURL         string
 	apiKey          string
 	httpClient      *http.Client
@@ -24,6 +25,13 @@ type openAIClient struct {
 	maxOutputTokens int
 	tracker         libtracker.ActivityTracker
 	supportsThink   bool
+}
+
+func (c *openAIClient) providerType() string {
+	if c.codex != nil {
+		return c.codex.Type()
+	}
+	return "openai"
 }
 
 type openAIChatRequest struct {

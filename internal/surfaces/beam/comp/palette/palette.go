@@ -6,6 +6,7 @@
 package palette
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -68,8 +69,10 @@ type Entry struct {
 // Palette is the command menu behind the composer's `/` trigger. The zero
 // value is not usable; call New.
 type Palette struct {
-	remote []libacp.AvailableCommand
-	locals map[string]Entry
+	argumentCompletions map[string]map[string]libacp.CommandCompletion
+	rawQuery            string
+	remote              []libacp.AvailableCommand
+	locals              map[string]Entry
 
 	// domains holds each command's accepted argument values (SetValueDomains).
 	domains map[string][]string
@@ -95,9 +98,25 @@ func New() *Palette {
 // overlay; the selection follows its command by name, clamping if it's gone.
 func (p *Palette) SetRemote(cmds []libacp.AvailableCommand) {
 	selected := p.selectedName()
+	p.argumentCompletions = make(map[string]map[string]libacp.CommandCompletion)
 
 	out := make([]libacp.AvailableCommand, 0, len(cmds))
 	for _, c := range cmds {
+		var meta libacp.CommandCompletionMeta
+		if json.Unmarshal(c.Meta, &meta) == nil && len(meta.Completions) > 0 {
+			clean := make(map[string]libacp.CommandCompletion)
+			for prefix, completion := range meta.Completions {
+				values := make([]string, 0, len(completion.Values))
+				for _, value := range completion.Values {
+					value = strings.TrimSpace(sanitize.Line(value))
+					if value != "" {
+						values = append(values, value)
+					}
+				}
+				clean[strings.Join(strings.Fields(sanitize.Line(prefix)), " ")] = libacp.CommandCompletion{Values: values, Hint: sanitize.Line(completion.Hint)}
+			}
+			p.argumentCompletions[normalize(c.Name)] = clean
+		}
 		c.Name = sanitize.Line(c.Name)
 		c.Description = sanitize.Line(c.Description)
 		if c.Input != nil {
@@ -179,6 +198,7 @@ func (p *Palette) Open(query string) {
 // not open or close the palette. Text past the command name can switch a
 // command with a known value domain into that domain (SetValueDomains).
 func (p *Palette) SetQuery(q string) {
+	p.rawQuery = q
 	p.query = normalize(q)
 	p.arg, p.hasArg = argument(q)
 	p.sel = 0
@@ -247,6 +267,9 @@ func (p *Palette) SetValueDomains(domains map[string][]string) {
 // valueDomain reports the values for the typed command name once the space
 // after it is typed; false means the ordinary command menu is showing.
 func (p *Palette) valueDomain() ([]string, bool) {
+	if completion, _, _, ok := p.argumentCompletion(p.rawQuery); ok {
+		return completion.Values, len(completion.Values) > 0
+	}
 	if !p.hasArg || len(p.domains) == 0 {
 		return nil, false
 	}
@@ -266,6 +289,9 @@ func (p *Palette) FilteredValues() []string {
 		return nil
 	}
 	q := strings.ToLower(strings.TrimSpace(p.arg))
+	if _, _, fragment, ok := p.argumentCompletion(p.rawQuery); ok {
+		q = strings.ToLower(fragment)
+	}
 	if q == "" {
 		out := make([]string, len(domain))
 		copy(out, domain)
@@ -305,7 +331,38 @@ func (p *Palette) CompleteValueText() (string, bool) {
 	if !ok {
 		return "", false
 	}
+	if _, prefix, _, ok := p.argumentCompletion(p.rawQuery); ok {
+		return "/" + p.query + " " + prefix + value + " ", true
+	}
 	return "/" + p.query + " " + value, true
+}
+
+// AwaitingArgument reports an advertised argument stage with no input yet.
+func (p *Palette) AwaitingArgument() bool {
+	completion, _, fragment, ok := p.argumentCompletion(p.rawQuery)
+	return ok && len(completion.Values) == 0 && fragment == ""
+}
+
+func (p *Palette) argumentCompletion(buffer string) (libacp.CommandCompletion, string, string, bool) {
+	name := normalize(buffer)
+	if entry, ok := p.locals[name]; ok && entry.Local {
+		return libacp.CommandCompletion{}, "", "", false
+	}
+	stages := p.argumentCompletions[name]
+	if len(stages) == 0 {
+		return libacp.CommandCompletion{}, "", "", false
+	}
+	s := strings.TrimPrefix(strings.TrimLeft(buffer, " \t"), "/")
+	_, rest, _ := strings.Cut(s, " ")
+	prefix, fragment := "", rest
+	if i := strings.LastIndexAny(rest, " \t\n"); i >= 0 {
+		prefix, fragment = strings.Join(strings.Fields(rest[:i]), " "), rest[i+1:]
+	}
+	completion, ok := stages[prefix]
+	if prefix != "" {
+		prefix += " "
+	}
+	return completion, prefix, fragment, ok
 }
 
 // argument splits the argument half off a buffer: text after the first
@@ -395,6 +452,9 @@ func (p *Palette) Lookup(name string) (Entry, bool) {
 // verbatim, read from the buffer directly so it survives the palette
 // closing. A command with a value domain also gets its size appended.
 func (p *Palette) ArgHint(buffer string) (string, bool) {
+	if completion, _, _, ok := p.argumentCompletion(buffer); ok && completion.Hint != "" {
+		return completion.Hint, true
+	}
 	s := strings.TrimLeft(buffer, " \t")
 	if !strings.HasPrefix(s, "/") {
 		return "", false

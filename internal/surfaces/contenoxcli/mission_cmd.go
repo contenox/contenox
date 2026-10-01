@@ -331,7 +331,8 @@ func fireMissionAndWait(cmd *cobra.Command, spec missionFireSpec) (*missionFireO
 	defer bus.Close()
 	workspaceID := ResolveWorkspaceID(contenoxDir)
 	trigHook := eventlog.NewTriggerHolder()
-	missions := missionservice.New(db, missionservice.WithEventPublisher(missionEventPublisher(ctx, db, bus, workspaceID, tracker, trigHook)))
+	missionPub := missionEventPublisher(ctx, db, bus, workspaceID, tracker, trigHook)
+	missions := missionservice.New(db, missionservice.WithEventPublisher(missionPub))
 
 	// One instance: a sibling cannot wake the waiters this one parked.
 	var driverHITL hitlservice.Service
@@ -368,11 +369,12 @@ func fireMissionAndWait(cmd *cobra.Command, spec missionFireSpec) (*missionFireO
 
 	projectRoot, _ := os.Getwd()
 	inproc := fleetservice.InProcessDeps{
-		DB:          db,
-		Bus:         bus,
-		Missions:    missions,
-		ProjectRoot: projectRoot,
-		WorkspaceID: workspaceID,
+		AttentionAsker: missionAttentionAsker{hitl: driverHITL, missions: missions, bus: missionPub},
+		DB:             db,
+		Bus:            bus,
+		Missions:       missions,
+		ProjectRoot:    projectRoot,
+		WorkspaceID:    workspaceID,
 		// The unit must report into the database this fire resolved.
 		DBPath:       dbPath,
 		Tracker:      tracker,

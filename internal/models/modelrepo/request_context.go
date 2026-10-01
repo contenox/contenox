@@ -22,3 +22,8 @@ func RequestedContextLengthFromContext(ctx context.Context) int {
 	}
 	return v
 }
+
+// WithoutRequestedContextLength removes an inherited context-capacity minimum without detaching cancellation.
+func WithoutRequestedContextLength(ctx context.Context) context.Context {
+	return context.WithValue(ctx, requestedContextLengthKey{}, 0)
+}

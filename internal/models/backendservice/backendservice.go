@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/contenox/contenox/internal/models/modelauth"
 	"time"
 
 	"github.com/contenox/contenox/internal/models/modelrepo"
@@ -79,8 +80,22 @@ func (s *service) Update(ctx context.Context, backend *runtimetypes.Backend) err
 }
 
 func (s *service) Delete(ctx context.Context, id string) error {
-	tx := s.dbInstance.WithoutTransaction()
-	return runtimetypes.New(tx).DeleteBackend(ctx, id)
+	tx, commit, release, err := s.dbInstance.WithTransaction(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
+	store := runtimetypes.New(tx)
+	if err := store.LockBackend(ctx, id); err != nil {
+		return err
+	}
+	if err := modelauth.DeleteCredentials(ctx, tx, id); err != nil {
+		return err
+	}
+	if err := store.DeleteBackend(ctx, id); err != nil {
+		return err
+	}
+	return commit(ctx)
 }
 
 func (s *service) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.Backend, error) {
@@ -96,6 +111,10 @@ func validate(backend *runtimetypes.Backend) error {
 		return fmt.Errorf("%w: baseURL is required", ErrInvalidBackend)
 	}
 	switch modelrepo.CanonicalBackendType(backend.Type) {
+	case modelauth.ProviderType:
+		if backend.BaseURL != modelauth.BaseURL {
+			return fmt.Errorf("%w: openai-codex requires the fixed ChatGPT endpoint", ErrInvalidBackend)
+		}
 	case "ollama", "vllm", "openai", "anthropic", "bedrock", "gemini", "vertex-google", "modeld", "local", modelrepo.ScriptedTestBackendType:
 	default:
 		return fmt.Errorf("%w: Type must be modeld, ollama, vllm, openai, anthropic, bedrock, gemini, vertex-google, or %s", ErrInvalidBackend, modelrepo.ScriptedTestBackendType)

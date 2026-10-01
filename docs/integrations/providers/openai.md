@@ -7,6 +7,9 @@ description: Connect Contenox to OpenAI or any OpenAI-compatible endpoint.
 
 Any OpenAI-compatible endpoint works — OpenAI, vLLM, LM Studio, or your own proxy.
 
+For ChatGPT subscription access without an API key, use the separate
+[ChatGPT subscription backend](/docs/integrations/providers/chatgpt/).
+
 ```bash
 export OPENAI_API_KEY=your-key
 

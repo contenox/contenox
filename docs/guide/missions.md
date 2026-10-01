@@ -1,12 +1,12 @@
 ---
 title: Missions
-description: Fire a one-line intent at a declared agent under an authored envelope, and read the durable record it leaves behind — states, hosts, reports, questions, reclaim, and compute bounds.
+description: Fire a one-line intent at a registered agent under an authored envelope, and read the durable record it leaves behind — states, hosts, reports, questions, reclaim, and compute bounds.
 order: 11
 ---
 
 # Missions
 
-A mission is a one-line intent fired at a declared agent, run unattended inside an **envelope** — a named HITL policy file that bounds what the unit may do without you. The unit works on its own and reaches you only through its mission tools: a report, a question, or a terminal verdict. Everything it produces is durable, so a mission survives the process that fired it, the terminal you closed, and the machine you rebooted.
+A mission is a one-line intent fired at a registered agent, run unattended inside an **envelope** — a named HITL policy file that bounds what the unit may do without you. The agent may be a [Markdown declaration](/docs/guide/declarations/) or an [external ACP program](/docs/integrations/agents/external-acp/). The unit works on its own and reaches you only through its mission tools: a report, a question, or a terminal verdict. Everything it produces is durable, so a mission survives the process that fired it, the terminal you closed, and the machine you rebooted.
 
 This page is the lifecycle: what a mission is, what fires one, what the states mean, how a question gets answered, and what the runtime does when nobody is left to ask.
 
@@ -87,6 +87,20 @@ The unit's lifetime is its host's lifetime. To fire a mission and keep working, 
 There is no daemon and no background mission service. This is stated plainly rather than worked around: process supervision is the host's job, and the durable record is what makes a dead host survivable.
 
 `/mission` on its own fires nothing — it prints the grammar, the defaults in force, and every envelope on the search path with its character. See [The `/mission` slash command](/docs/reference/contenox-cli/#the-mission-slash-command).
+
+Registered external agents use the same command. For example, after
+[registering Codex](/docs/integrations/agents/external-acp/#register-codex), start
+`contenox beam` in your project and enter:
+
+```text
+/mission --policy hitl-policy-strict.json codex Review the current changes for bugs. Do not edit files. Report actionable findings with file paths.
+```
+
+Reports arrive in the TUI while you continue the conversation. Keep the TUI
+open for the mission to keep running; its record survives the host exiting.
+See [From the TUI](/docs/integrations/agents/external-acp/#from-the-tui) for the
+workflow and [Approvals and results](/docs/integrations/agents/external-acp/#approvals-and-results)
+for answering asks and reading reports.
 
 ## The drive loop and the two-turn rule
 
@@ -176,6 +190,9 @@ In an envelope these are the `[envelopes.<name>.compute]` keys, in TOML spelling
 Nothing catches an over-declared bound at author time. `contenox vet` is silent about `max_tool_calls` and `max_tokens` — its `WARN` lines cover only trusted-binary declarations that no longer match this host. What carries the disclosure is this table, the `declared, not enforced` label in the `/mission` envelope picker, and — on a top-level policy copy an earlier build seeded — the `//compute-fields` note in the file itself. A transpiled envelope carries no such note: it states where it came from instead, and the enforcement table lives here.
 
 ## End to end
+
+For a registered Codex agent, see the [terminal workflow](/docs/integrations/agents/external-acp/#from-the-terminal)
+and its [approval and result commands](/docs/integrations/agents/external-acp/#approvals-and-results).
 
 Set the default envelope once, then fire.
 

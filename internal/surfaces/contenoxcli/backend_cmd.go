@@ -12,6 +12,7 @@ import (
 
 	"github.com/contenox/contenox/internal/kernel/agentinstance"
 	"github.com/contenox/contenox/internal/models/backendservice"
+	"github.com/contenox/contenox/internal/models/modelauth"
 	"github.com/contenox/contenox/internal/models/modelrepo"
 	"github.com/contenox/contenox/internal/models/modelrepo/scriptedtest"
 	"github.com/contenox/contenox/internal/models/runtimestate"
@@ -49,6 +50,7 @@ A backend points at an LLM provider. Supported types:
   modeld                        Native inference worker (local or remote gRPC).
   ollama                        Local Ollama daemon (requires: ollama serve) or hosted Ollama Cloud.
   openai                        api.openai.com (requires --api-key-env).
+  openai-codex                  ChatGPT subscription (experimental; use backend login).
   gemini                        Google Gemini (requires --api-key-env).
   vllm                          Self-hosted OpenAI-compatible endpoint (requires --url).
   vertex-google                 Google Cloud Vertex AI / Gemini (requires gcloud auth application-default
@@ -98,6 +100,8 @@ func defaultBaseURLForType(typ string) (string, error) {
 		return "http://localhost:11434", nil
 	case "openai":
 		return "https://api.openai.com/v1", nil
+	case modelauth.ProviderType:
+		return modelauth.BaseURL, nil
 	case "anthropic":
 		return "https://api.anthropic.com", nil
 	case "gemini":
@@ -121,6 +125,7 @@ var backendAddCmd = &cobra.Command{
 The --type flag determines which provider protocol is used.
   openai, anthropic,
   gemini                        Cloud providers. Base URL inferred if --url is omitted. Requires --api-key-env.
+  openai-codex                  ChatGPT subscription. Fixed endpoint; use backend login, no API key.
   modeld                        Native inference worker (local or remote gRPC).
   ollama                        Local daemon (requires 'ollama serve') or hosted Ollama Cloud (use
                                 --url https://ollama.com/api and --api-key-env OLLAMA_API_KEY).
@@ -158,6 +163,9 @@ Examples:
 		apiKeyLit, _ := flags.GetString("api-key")
 
 		typ = strings.ToLower(strings.TrimSpace(typ))
+		if typ == modelauth.ProviderType && (flags.Changed("api-key") || flags.Changed("api-key-env") || flags.Changed("url")) {
+			return fmt.Errorf("openai-codex uses device login and a fixed endpoint; omit --api-key, --api-key-env, and --url")
+		}
 		if typ == "" {
 			typ = "ollama"
 		}
@@ -230,6 +238,9 @@ Examples:
 		invalidateBackendModelCache(ctx, cmd.ErrOrStderr(), db, backend.ID)
 
 		fmt.Fprintf(cmd.OutOrStdout(), "Backend %q added (%s → %s).\n", name, typ, baseURL)
+		if typ == modelauth.ProviderType {
+			fmt.Fprintf(cmd.OutOrStdout(), "Experimental ChatGPT subscription provider. Sign in: contenox backend login %s\n", name)
+		}
 		if typ == modelrepo.ScriptedTestBackendType {
 			fmt.Fprintf(cmd.OutOrStdout(), "WARNING: %s is a TEST backend. It calls no model — every reply is replayed from %s in order.\n", modelrepo.ScriptedTestBackendType, baseURL)
 			fmt.Fprintf(cmd.OutOrStdout(), "         Point the defaults at it with:\n           contenox config set inference.provider %s\n           contenox config set inference.model %s\n", modelrepo.ScriptedTestBackendType, scriptedTestModelName(baseURL))
@@ -289,7 +300,18 @@ including its id, type, and base URL.`,
 		if err != nil {
 			return fmt.Errorf("backend %q not found: %w", args[0], err)
 		}
-		data, _ := json.MarshalIndent(b, "", "  ")
+		var view any = b
+		if b.Type == modelauth.ProviderType {
+			status, err := modelauth.New(db).Status(ctx, b.ID)
+			if err != nil {
+				return err
+			}
+			view = struct {
+				*runtimetypes.Backend
+				Authentication modelauth.Status `json:"authentication"`
+			}{b, status}
+		}
+		data, _ := json.MarshalIndent(view, "", "  ")
 		fmt.Fprintln(cmd.OutOrStdout(), string(data))
 		return nil
 	},
@@ -386,7 +408,7 @@ func globalContenoxDir() (string, error) {
 }
 
 func init() {
-	backendAddCmd.Flags().String("type", "ollama", "Backend type: modeld, ollama, openai, anthropic, bedrock, gemini, vllm, vertex-google")
+	backendAddCmd.Flags().String("type", "ollama", "Backend type: modeld, ollama, openai, openai-codex, anthropic, bedrock, gemini, vllm, vertex-google")
 	backendAddCmd.Flags().String("url", "", "Base URL of the backend (auto-inferred for openai/anthropic/gemini if omitted; set https://ollama.com/api for hosted Ollama)")
 	backendAddCmd.Flags().String("script", "", "Path to the dialog file for a --type scripted-test backend (TEST ONLY: replays turns instead of calling a model)")
 	backendAddCmd.Flags().String("api-key-env", "", "Name of the environment variable holding the API key (preferred over --api-key)")

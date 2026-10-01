@@ -3,8 +3,11 @@ package taskengine_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
+
+	"github.com/contenox/contenox/internal/kernel/llmresolver"
 
 	"github.com/contenox/contenox/internal/kernel/taskengine"
 	"github.com/contenox/contenox/internal/kernel/taskengine/llmretry"
@@ -14,6 +17,64 @@ import (
 	"github.com/contenox/contenox/libtracker"
 	"github.com/stretchr/testify/require"
 )
+
+func TestUnit_ChatCompletionDoesNotRepeatRejectedStreamAsChat(t *testing.T) {
+	for _, failure := range []error{
+		&libmodelprovider.HTTPError{StatusCode: 400, Message: "missing tool result"},
+		fmt.Errorf("%w: model provides only 67504 tokens", llmresolver.ErrNoSatisfactoryModel),
+	} {
+		attempts := 0
+		repo := &mockModelRepo{
+			streamFunc: func(context.Context, llmrepo.Request, []libmodelprovider.Message, ...libmodelprovider.ChatArgument) (<-chan *libmodelprovider.StreamParcel, llmrepo.Meta, error) {
+				attempts++
+				return nil, llmrepo.Meta{}, failure
+			},
+			chatFunc: func(context.Context, llmrepo.Request, []libmodelprovider.Message, ...libmodelprovider.ChatArgument) (libmodelprovider.ChatResult, llmrepo.Meta, error) {
+				t.Fatal("a rejected request must not be repeated through Chat")
+				return libmodelprovider.ChatResult{}, llmrepo.Meta{}, nil
+			},
+		}
+		exec, err := taskengine.NewExec(t.Context(), repo, tools.NewMockToolsRegistry(), libtracker.NoopTracker{})
+		require.NoError(t, err)
+		_, _, _, err = exec.TaskExec(t.Context(), time.Now(), 131072, &taskengine.ChainContext{}, chatTask(fastRetry()), chatInput(), taskengine.DataTypeChatHistory)
+		require.ErrorIs(t, err, failure)
+		require.Equal(t, 1, attempts)
+	}
+}
+
+func TestUnit_FailureRecoveryUsesActualContextWithOutputReserve(t *testing.T) {
+	var seen []int
+	repo := &mockModelRepo{
+		streamFunc: func(ctx context.Context, req llmrepo.Request, messages []libmodelprovider.Message, args ...libmodelprovider.ChatArgument) (<-chan *libmodelprovider.StreamParcel, llmrepo.Meta, error) {
+			seen = append(seen, req.ContextLength)
+			if req.ModelNames[0] == "primary" {
+				return nil, llmrepo.Meta{}, &libmodelprovider.HTTPError{StatusCode: 400, Message: "invalid input"}
+			}
+			require.Less(t, req.ContextLength, 67504)
+			require.GreaterOrEqual(t, req.ContextLength, 16384)
+			_, ok := ctx.Deadline()
+			require.True(t, ok)
+			return recoveredStream("recovered")(ctx, req, messages, args...)
+		},
+	}
+	registry := tools.NewMockToolsRegistry()
+	exec, err := taskengine.NewExec(t.Context(), repo, registry, libtracker.NoopTracker{})
+	require.NoError(t, err)
+	env, err := taskengine.NewEnv(t.Context(), libtracker.NoopTracker{}, exec, taskengine.NewSimpleInspector(), registry)
+	require.NoError(t, err)
+	chain := &taskengine.TaskChainDefinition{TokenLimit: 131072, Tasks: []taskengine.TaskDefinition{
+		{ID: "main", Handler: taskengine.HandleChatCompletion, ExecuteConfig: &taskengine.LLMExecutionConfig{Model: "primary"}, Transition: taskengine.TaskTransition{OnFailure: "recovery"}},
+		{ID: "recovery", Handler: taskengine.HandleChatCompletion, ExecuteConfig: &taskengine.LLMExecutionConfig{Model: "local"}, Transition: taskengine.TaskTransition{Branches: []taskengine.TransitionBranch{{Operator: taskengine.OpDefault, Goto: "summary"}}}},
+		{ID: "summary", Handler: taskengine.HandleChatCompletion, ExecuteConfig: &taskengine.LLMExecutionConfig{Model: "local"}, Transition: taskengine.TaskTransition{Branches: []taskengine.TransitionBranch{{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd}}}},
+	}}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	ctx = taskengine.WithRequestedContextLength(libtracker.WithNewRequestID(ctx), 131072)
+	_, _, _, err = env.ExecEnv(ctx, chain, chatInput(), taskengine.DataTypeChatHistory)
+	require.NoError(t, err)
+	require.Len(t, seen, 3)
+	require.Equal(t, 131072, seen[0])
+}
 
 func errorParcelStream(err error) func(context.Context, llmrepo.Request, []libmodelprovider.Message, ...libmodelprovider.ChatArgument) (<-chan *libmodelprovider.StreamParcel, llmrepo.Meta, error) {
 	return func(context.Context, llmrepo.Request, []libmodelprovider.Message, ...libmodelprovider.ChatArgument) (<-chan *libmodelprovider.StreamParcel, llmrepo.Meta, error) {

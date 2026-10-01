@@ -104,11 +104,22 @@ services:
         condition: service_healthy
     restart: "no"
 
+  vfs-test-host:
+    build:
+      context: .
+      dockerfile: internal/apitests/Dockerfile
+      target: vfs-test-host
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777
+    restart: "no"
+
   api-tests:
     build:
       context: .
       dockerfile: internal/apitests/Dockerfile
     environment:
+      VFSAPI_BASE_URL: http://vfs-test-host:8080
       CONTENOX_GATEWAY_BASE_URL: http://gateway:11435
       CONTENOX_GATEWAY_TOKEN_FILE: /test-config/token
       CONTENOX_GATEWAY_LIMITED_TOKEN_FILE: /test-config/limited-token
@@ -117,6 +128,8 @@ services:
     volumes:
       - test-config:/test-config:ro
     depends_on:
+      vfs-test-host:
+        condition: service_healthy
       api-test-setup:
         condition: service_completed_successfully
     restart: "no"

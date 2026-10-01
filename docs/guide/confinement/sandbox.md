@@ -9,7 +9,7 @@ order: 3
 The wall confines a **foreign agent**: an external ACP agent — code contenox did not write — spawned as a subprocess and given a workspace and a set of tools. It governs the surface no tool gate can see: the code the agent runs *inside its own process* — its own shell, its own file access, whatever its toolchain pulls in (an `npm install` postinstall script, for example). An agent that only uses its tools never touches the wall.
 
 > **Important:**
-> This page does not cover contenox's own chains. A `contenox beam` session, an editor `acp`/`acpx` session, and mission units the fleet dispatches all run outside the wall by design — see [what the wall does not confine](#what-the-wall-does-not-confine-contenox-itself). Registering a foreign agent is also not exposed yet: `external_acp` agents are internal-only, so a stock install never reaches the wall. The mechanism below is built and tested; it is waiting on the registration path.
+> This page does not cover contenox's own chains. A `contenox beam` session, an editor `acp`/`acpx` session, and mission units the fleet dispatches all run outside the wall by design — see [what the wall does not confine](#what-the-wall-does-not-confine-contenox-itself). Foreign agents registered with [`contenox agent add`](/docs/integrations/agents/external-acp/) run inside this wall.
 
 There are two layers: one is always on and needs no configuration, the other is opt-in.
 
@@ -17,7 +17,7 @@ There are two layers: one is always on and needs no configuration, the other is 
 
 Every confined agent gets this by default, with no configuration and no kernel privilege:
 
-- **Filesystem** — the agent may *write* only inside its workspace (its cwd), and *read* only its workspace plus a short list of auth/config directories (`~/.claude`, `~/.codex`, `~/.config/goose`, read-only). Everything else — `~/.ssh`, `~/.aws`, `~/.npmrc`, `~/.contenox`, the rest of the disk — is unreachable.
+- **Filesystem** — the agent may *write* inside its workspace (its cwd) and `~/.codex`, where Codex stores its SQLite state and temporary runtime files. The `~/.claude` and `~/.config/goose` auth/config directories are read-only. The writable Codex grant includes its configuration and credentials and applies to every external agent. Everything else — `~/.ssh`, `~/.aws`, `~/.npmrc`, `~/.contenox`, the rest of the disk — is unreachable.
 - **Exec** — the agent can run only programs it is allowed to reach.
 - **Environment** — the agent gets a scrubbed, minimal environment with a scoped `$HOME`, so no inherited credential rides along.
 

@@ -39,7 +39,9 @@ keystroke.
 beam drives the same ACP transport an editor drives, so its sessions, slash
 commands and approval flow are identical to 'contenox acp'. With no arguments it
 opens the newest session rooted in the current directory, or starts a fresh one
-when there is none; a path opens that directory instead.
+when there is none; a path opens that directory instead. --agent starts a fresh
+session with a registered agent as the main conversation partner. Inside beam,
+/new <agent> starts another agent session; /new starts a native Contenox session.
 
 ` + toolGrantLine + `
 
@@ -65,7 +67,8 @@ piped use run 'contenox run "<task>"' instead.
 Examples:
   contenox beam            # the directory you are standing in
   contenox beam ~/src/api  # somewhere else
-  contenox beam --new      # ignore the newest session and start clean`,
+  contenox beam --new      # ignore the newest session and start clean
+  contenox beam --agent codex # start a conversation with registered Codex`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireBeamTerminal(); err != nil {
@@ -86,6 +89,8 @@ func init() {
 	beamCmd.Flags().String("log-dir", "", "Write beam's logs here (default: <data-dir>/"+hostLogDirName+")")
 	beamCmd.Flags().String("session", "", "Open this session id instead of the newest one in the directory")
 	beamCmd.Flags().Bool("new", false, "Start a fresh session instead of reopening the newest one")
+	beamCmd.Flags().String("agent", "", "Start a fresh session with this registered agent")
+	beamCmd.MarkFlagsMutuallyExclusive("agent", "session")
 	beamCmd.Flags().Bool("light", false, "Render for a light terminal background (overrides detection)")
 	beamCmd.Flags().Bool("plain", false, "Drop all colour and unicode: ASCII glyphs, no styling")
 	registerOracleFlags(beamCmd)
@@ -121,6 +126,7 @@ func beamRoot(cmd *cobra.Command, launchDir string) (string, error) {
 }
 
 type beamSurface struct {
+	ready         func()
 	factory       libacp.AgentFactory
 	bindTransport func(*acpsvc.Transport)
 	reporter      *presence.Reporter
@@ -274,6 +280,9 @@ func driveBeam(ctx context.Context, cmd *cobra.Command, s beamSurface, bridge *e
 		files = nil
 	}
 
+	if s.ready != nil {
+		s.ready()
+	}
 	return app.Run(ctx, app.Deps{
 		Term:         engineTerm,
 		Bridge:       bridge,
@@ -292,7 +301,15 @@ func driveBeam(ctx context.Context, cmd *cobra.Command, s beamSurface, bridge *e
 }
 
 func resolveBeamSession(ctx context.Context, cmd *cobra.Command, bridge *enginebridge.Bridge, root string) (libacp.SessionID, bool, error) {
+	agent, _ := cmd.Flags().GetString("agent")
+	agent = strings.TrimSpace(agent)
+	if cmd.Flags().Changed("agent") && agent == "" {
+		return "", false, errors.New("--agent requires a registered agent name")
+	}
 	if named, _ := cmd.Flags().GetString("session"); strings.TrimSpace(named) != "" {
+		if agent != "" {
+			return "", false, errors.New("--agent starts a new session and cannot be combined with --session")
+		}
 		id := libacp.SessionID(strings.TrimSpace(named))
 		if _, err := bridge.LoadSession(ctx, libacp.LoadSessionRequest{SessionID: id, Cwd: root}); err != nil {
 			return "", false, fmt.Errorf("load session %q: %w", id, err)
@@ -300,7 +317,7 @@ func resolveBeamSession(ctx context.Context, cmd *cobra.Command, bridge *engineb
 		return id, false, nil
 	}
 
-	if startNew, _ := cmd.Flags().GetBool("new"); !startNew {
+	if startNew, _ := cmd.Flags().GetBool("new"); !startNew && agent == "" {
 		if id, ok := newestBeamSession(ctx, bridge, root); ok {
 			if _, err := bridge.LoadSession(ctx, libacp.LoadSessionRequest{SessionID: id, Cwd: root}); err == nil {
 				return id, false, nil
@@ -308,7 +325,7 @@ func resolveBeamSession(ctx context.Context, cmd *cobra.Command, bridge *engineb
 		}
 	}
 
-	resp, err := bridge.NewSession(ctx, libacp.NewSessionRequest{Cwd: root})
+	resp, err := bridge.NewSession(ctx, enginebridge.SessionRequest(root, agent))
 	if err != nil {
 		return "", false, fmt.Errorf("start session: %w", err)
 	}

@@ -249,7 +249,7 @@ func registerBindings(r *keymap.Registry) {
 func registerLocalCommands(p *palette.Palette) {
 	p.MustRegisterLocal(localKeys, "Keybindings and commands, printed here.", "")
 	p.MustRegisterLocal(localQuit, "Leave beam.", "")
-	p.MustRegisterLocal(localNew, "Start a fresh session.", "")
+	p.MustRegisterLocal(localNew, "Start a fresh session, optionally with a registered agent.", "[agent]")
 	p.MustRegisterLocal(localSessions, "Switch to another session (ctrl+s).", "")
 	p.MustRegisterLocal(localEditor, "Compose the draft in $EDITOR.", "")
 	p.MustRegisterLocal(localQueue, "Show queued turns.", "")
@@ -626,7 +626,8 @@ func (a *app) submit(ctx context.Context) {
 	case composer.KindCommand:
 		if e, ok := a.pal.Lookup(commandToken(sub.Text)); ok && e.Local {
 			a.echo(sub.Text)
-			a.runLocal(ctx, e.Name)
+			args := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(sub.Text), "/"+e.Name))
+			a.runLocal(ctx, e.Name, args)
 			return
 		}
 	}
@@ -650,17 +651,14 @@ func (a *app) submit(ctx context.Context) {
 	a.startTurn()
 }
 
-// runLocal executes a client-side slash command. It takes no arguments: not
-// one of beam's locals has any, since a command that needs an argument is
-// almost always the session's business and therefore the core's.
-func (a *app) runLocal(ctx context.Context, name string) {
+func (a *app) runLocal(ctx context.Context, name, args string) {
 	switch name {
 	case localQuit:
 		a.quit = true
 	case localKeys:
 		a.notices = append(a.notices, a.helpLines()...)
 	case localNew:
-		a.newSession(ctx)
+		a.newSession(ctx, args)
 	case localSessions:
 		a.openSessions(ctx)
 	case localQueue:
@@ -731,6 +729,9 @@ func formatTokens(n int64) string {
 // paletteAccept is Enter with the command menu open: complete the selection
 // when the buffer does not already name it, otherwise send the line.
 func (a *app) paletteAccept(ctx context.Context) {
+	if a.pal.AwaitingArgument() {
+		return
+	}
 	e, ok := a.pal.Selected()
 	if !ok {
 		a.pal.Close()

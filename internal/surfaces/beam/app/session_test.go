@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -24,6 +25,7 @@ type sessionBridge struct {
 	listErr error
 	newErr  error
 	loadErr error
+	newReq  libacp.NewSessionRequest
 }
 
 func (b *sessionBridge) ListSessions(ctx context.Context, req libacp.ListSessionsRequest) (libacp.ListSessionsResponse, error) {
@@ -35,6 +37,7 @@ func (b *sessionBridge) ListSessions(ctx context.Context, req libacp.ListSession
 }
 
 func (b *sessionBridge) NewSession(ctx context.Context, req libacp.NewSessionRequest) (libacp.NewSessionResponse, error) {
+	b.newReq = req
 	_, _ = b.FakeBridge.NewSession(ctx, req)
 	if b.newErr != nil {
 		return libacp.NewSessionResponse{}, b.newErr
@@ -116,6 +119,39 @@ func TestUnit_NewSession_MintsSwitchesAndReprintsTheWelcome(t *testing.T) {
 	// Turns after /new must go to the new id, not the one in Deps.
 	h.runCommand("hello there")
 	requireContains(t, h.calls(), `SubmitPrompt(beam-fresh, "hello there")`, "prompt routing after /new")
+}
+
+func TestUnit_NewSession_SelectsRegisteredAgent(t *testing.T) {
+	h, bridge := newSessionHarness(t, func(d *Deps) { d.Cwd = "/work/repo" })
+	h.start()
+	h.runCommand("/new codex")
+	var meta map[string]string
+	if err := json.Unmarshal(bridge.newReq.Meta, &meta); err != nil {
+		t.Fatal(err)
+	}
+	if meta["contenox.agent"] != "codex" || bridge.newReq.Cwd != "/work/repo" {
+		t.Fatalf("unexpected agent session request: %+v", bridge.newReq)
+	}
+	h.runCommand("review this project")
+	requireContains(t, h.calls(), `SubmitPrompt(beam-fresh, "review this project")`, "the selected session receives prompts")
+	h.deliver(enginebridge.TurnEnded{SessionID: "beam-fresh", StopReason: libacp.StopReasonEndTurn})
+	h.runCommand("/new")
+	if len(bridge.newReq.Meta) != 0 {
+		t.Fatal("bare /new must return to the native agent")
+	}
+}
+
+func TestUnit_NewSession_AgentFailureKeepsCurrentSession(t *testing.T) {
+	h, bridge := newSessionHarness(t)
+	bridge.newErr = errors.New("agent not found")
+	h.start()
+	h.runCommand("/new missing")
+	if h.a.sessionID != testSession {
+		t.Fatalf("failed agent selection changed session to %q", h.a.sessionID)
+	}
+	requireContains(t, h.scrollback(), "agent not found", "the selection error is visible")
+	h.runCommand("hello")
+	requireContains(t, h.calls(), `SubmitPrompt(beam-test-session, "hello")`, "the original session remains usable")
 }
 
 // TestUnit_Sessions_PickerShowsTheRoster pins /sessions rendering the roster

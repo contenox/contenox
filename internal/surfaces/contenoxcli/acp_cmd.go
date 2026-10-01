@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -231,6 +232,7 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	var tracker libtracker.ActivityTracker = libtracker.NewTextActivityTracker(logDest)
 
 	reportErr, reportChange, endStartup := tracker.Start(ctx, "startup", profile.name)
+	endStartup = sync.OnceFunc(endStartup)
 	defer endStartup()
 	reportChange("phase", "flags_parsed")
 
@@ -502,10 +504,11 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	case !profile.embedFleet || isDispatchedUnit:
 	case engine != nil:
 		fleet, agents, stop, buildErr := fleetboot.BuildInProcessFleet(ctx, fleetboot.Deps{
-			DB:       db,
-			Bus:      bus,
-			Missions: missions,
-			Tracker:  tracker,
+			AttentionAsker: missionAttentionAsker{hitl: acpHITL, missions: missions, bus: missionPub},
+			DB:             db,
+			Bus:            bus,
+			Missions:       missions,
+			Tracker:        tracker,
 			// Late-bound: nil until the conn factory runs below.
 			Transport:    func() *acpsvc.Transport { return transport },
 			HITL:         acpHITL,
@@ -626,6 +629,7 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 		// The agent-reachable terminal takes the shell scrub (ScrubDenySecrets
 		// by default, resolved above), never the raw os.Environ().
 		return runBeamSurface(ctx, cmd, beamSurface{
+			ready:         endStartup,
 			factory:       transportFactory,
 			bindTransport: func(t *acpsvc.Transport) { transport = t },
 			reporter:      presenceReporter,
@@ -645,6 +649,7 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 		return newPresenceAgent(agent, presenceReporter)
 	})
 
+	endStartup()
 	runErr := conn.Run(ctx)
 	if transport != nil {
 		_ = transport.Close(context.Background())

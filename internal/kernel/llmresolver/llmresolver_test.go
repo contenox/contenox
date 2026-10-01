@@ -199,7 +199,7 @@ func TestUnit_ChatModelResolution_ContextShortfallMessage(t *testing.T) {
 		if !errors.Is(err, llmresolver.ErrNoSatisfactoryModel) {
 			t.Fatalf("want ErrNoSatisfactoryModel, got %v", err)
 		}
-		for _, want := range []string{"4940", "tinyllama", "2048", "larger-context", "fewer tools"} {
+		for _, want := range []string{"4940", "tinyllama", "2048", "larger-context", "lower the requested context window"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("error message missing %q:\n%s", want, err.Error())
 			}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/contenox/contenox/internal/kernel/taskengine/llmretry"
+	"github.com/contenox/contenox/internal/models/modelrepo"
 	"gopkg.in/yaml.v3"
 )
 
@@ -472,6 +473,7 @@ type ChatHistory struct {
 
 // Message represents a single message in a chat conversation.
 type Message struct {
+	Continuation *modelrepo.Continuation `json:"continuation,omitempty"`
 	// ID is not used by the engine; useful for tracking messages and diffing
 	// histories before storage.
 	ID      string `json:"id" example:"msg_123456"`

@@ -213,7 +213,7 @@ func networkWallOptIn() bool {
 func defaultAgentCarveouts() []libsandbox.FSCarveout {
 	return []libsandbox.FSCarveout{
 		{Path: "~/.claude", Mode: libsandbox.ModeRO, Needs: "agent auth/config"},
-		{Path: "~/.codex", Mode: libsandbox.ModeRO, Needs: "agent auth/config"},
+		{Path: "~/.codex", Mode: libsandbox.ModeRW, Needs: "Codex SQLite state and temporary runtime files"},
 		{Path: "~/.config/goose", Mode: libsandbox.ModeRO, Needs: "agent auth/config"},
 	}
 }

@@ -1,16 +1,11 @@
-# v1.1.0
+# v1.2.0
 
-Changes since v1.0.0:
+Changes since v1.1.0:
 
-- Native local inference through modeld, with managed worker installation and startup, llama.cpp and OpenVINO backends, and curated model downloads.
-- `contenox auto` selects a model for available hardware, reserves room for context, checks tool calling and opens the TUI. `contenox pull` supports manual selection.
-- `contenox gateway serve` exposes Ollama-compatible endpoints and OpenAI-compatible chat, models and embeddings endpoints with caller keys, allowances, usage reporting and session-aware routing.
-- Harness usage metering through `contenox usage`, with thinking tokens tracked separately and configurable thinking-token allowance discounts in the gateway.
-- Descriptive configuration names, effective-value explanations, and matching TUI slash commands and ACP settings. Legacy configuration names remain accepted.
-- Fixed `/compact` failing to find the installed compaction chain.
+- External ACP agents: register a program that speaks ACP (`contenox agent add <name> -- <command>`), verify it with one live turn (`contenox agent check`), edit its argv/env/cwd/MCP allowlist, and drive it from Beam or the CLI. The agent runs as a subprocess inside Contenox's Linux sandbox.
+- Missions accept registered agents. `/mission` dispatches to one from the TUI, reports and questions arrive while the conversation continues, and `contenox beam --agent <name>` opens a session with a registered agent as the conversation partner.
+- Experimental ChatGPT subscription backend: `contenox backend add chatgpt --type openai-codex` and `contenox backend login chatgpt` for device-code login, automatic token refresh, model discovery, and chat, streaming and function tools through Contenox's own agent loop.
 
 Upgrade notes:
 
-- Session settings now stay in the session; use `contenox config set` to save defaults. Existing agent limits remain in effect; set `chain.token_limit = 0` to inherit the context budget.
-- Removed the previous `contenox serve` host and relay pairing integration.
-- Native workers are distributed separately from the CLI; availability depends on the platform's published worker packages.
+- `contenox backend add` validates `--type`; account-specific and custom endpoints require `--url`, and `openai-codex` rejects `--api-key`, `--api-key-env` and `--url`.
